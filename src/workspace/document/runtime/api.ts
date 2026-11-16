@@ -32,9 +32,9 @@ export interface DocumentApiDeps {
   createPanel(type: string, request: CreatePanelRequest): PanelId | null | Promise<PanelId | null>
   /** Extra columns of `cate panel list` for one record. */
   listInfo?(record: PanelRecord): { filePath?: string; url?: string } | undefined
-  /** The pair's recommended relation kind (workspace/relations, a module
-   *  above the document). */
-  defaultRelationKind(from: PanelRecord, to: PanelRecord): RelationKind
+  /** The relation kinds the pair offers, the recommended one first
+   *  (workspace/relations, a module above the document). */
+  relationKinds(from: PanelRecord, to: PanelRecord): readonly RelationKind[]
 }
 
 export interface PanelListRow {
@@ -50,12 +50,14 @@ export interface PanelListRow {
   relations: Array<{ relationId: string; toPanelId: PanelId; kind: RelationKind; label?: string }>
 }
 
-/** Relates two panels, or gives a related pair (one relation per pair) the
- *  new kind and label; without a kind, the pair's default. Throws what the
- *  document's relation guard refuses (`rejected`, `gone`). */
+/** Relates two panels, or changes a related pair's relation (one per pair):
+ *  what `link` leaves out stays, an empty label clears it. A new relation
+ *  without a kind takes the pair's recommended one. Refuses a kind the pair
+ *  does not offer, and throws what the document's relation guard refuses
+ *  (`rejected`, `gone`). */
 export function linkPanels(
   document: Pick<DocumentService, 'get' | 'apply'>,
-  defaultKind: DocumentApiDeps['defaultRelationKind'],
+  relationKinds: DocumentApiDeps['relationKinds'],
   link: { fromPanelId: PanelId; toPanelId: PanelId; kind?: RelationKind; label?: string },
 ): { relationId: string; kind: RelationKind } {
   const { fromPanelId, toPanelId } = link
@@ -63,13 +65,18 @@ export function linkPanels(
   const from = panels[fromPanelId]
   const to = panels[toPanelId]
   if (!from || !to) throw new RpcError('gone', `panel ${from ? toPanelId : fromPanelId} is gone`)
-  const kind = link.kind ?? defaultKind(from, to)
+  const offered = relationKinds(from, to)
+  if (link.kind && !offered.includes(link.kind)) {
+    throw new RpcError('rejected', `these panels relate with ${offered.join(', ')}, not ${link.kind}`)
+  }
   const label = link.label?.trim()
   const existing = Object.values(relations).find((r) => r.fromPanelId === fromPanelId && r.toPanelId === toPanelId)
   if (existing) {
-    document.apply({ kind: 'updateRelation', id: existing.id, patch: { kind, label: label || null } })
+    const kind = link.kind ?? existing.kind
+    document.apply({ kind: 'updateRelation', id: existing.id, patch: { kind, ...(label !== undefined ? { label: label || null } : {}) } })
     return { relationId: existing.id, kind }
   }
+  const kind = link.kind ?? offered[0]
   const relationId = randomUUID()
   document.apply({ kind: 'addRelation', relation: { id: relationId, fromPanelId, toPanelId, kind, ...(label ? { label } : {}) } })
   return { relationId, kind }
@@ -111,7 +118,7 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
           })),
         }))
       },
-      link: (args) => linkPanels(document, deps.defaultRelationKind, args),
+      link: (args) => linkPanels(document, deps.relationKinds, args),
       unlink: ({ fromPanelId, toPanelId }) => {
         const relation = Object.values(document.get().relations).find((r) => r.fromPanelId === fromPanelId && r.toPanelId === toPanelId)
         if (!relation) throw new RpcError('gone', 'these panels are not related')

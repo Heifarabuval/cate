@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **CLI relations**: `cate panel link <from> <to> [--kind] [--label]` and `cate panel unlink <from> <to>` create and remove panel relations, held to the same rule as the UI (no cycle, only panels that take part in relations). `cate panel list --json` gives each panel's outgoing `relations`. `cate agent start --relation <kind> [--link-from <id>]` relates a panel to the agent it starts; a refused relation leaves the agent running and says why.
+- **CLI relations**: `cate panel link <from> <to> [--kind] [--label]` and `cate panel unlink <from> <to>` create and remove panel relations, held to the same rules as the UI (the pair's three kinds, no cycle, only panels that take part in relations). `cate panel list --json` gives each panel's outgoing `relations`. `cate agent start --relation <kind> [--link-from <id>]` relates a panel to the agent it starts; a refused relation leaves the agent running and says why.
 
 ## [2.1.0-beta.15] - 2026-11-13
 

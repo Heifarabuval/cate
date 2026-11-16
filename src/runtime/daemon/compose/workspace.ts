@@ -41,7 +41,7 @@ import { createSkillsRuntime, skillsCapabilityImpl } from '@workspace/skills/run
 import { createConnectedEditors, type SharedEditor } from '@workspace/relations/runtime'
 import {
   RELATION_CONTEXT_MODE_FIELD,
-  defaultPanelRelationKind,
+  panelRelationOptions,
   relationChangeProblem,
   relationPanelOf,
   type RelationRoleOf,
@@ -188,8 +188,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   })
   // Relations only between panels taking part in them, and never in a cycle.
   document.guardChanges((change, doc) => relationChangeProblem(change, doc, relationRole))
-  const defaultRelationKind = (from: PanelRecord, to: PanelRecord) =>
-    defaultPanelRelationKind(relationPanelOf(from, relationRole), relationPanelOf(to, relationRole))
+  const relationKinds = (from: PanelRecord, to: PanelRecord) =>
+    panelRelationOptions(relationPanelOf(from, relationRole), relationPanelOf(to, relationRole)).map((option) => option.kind)
 
   // ---- The `cate` API ---------------------------------------------------------
 
@@ -310,7 +310,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       },
       relations: {
         link: (fromPanelId, toPanelId, kind) =>
-          linkPanels(document, defaultRelationKind, { fromPanelId, toPanelId, kind }).relationId,
+          linkPanels(document, relationKinds, { fromPanelId, toPanelId, kind }).relationId,
       },
     },
   })
@@ -362,7 +362,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     presence,
     checkRemoval: (removing, discard) => sessions.checkRemoval(removing, discard),
     createPanel: (type, request) => factory.createPanel(type, { ...request }),
-    defaultRelationKind,
+    relationKinds,
   }))
 
   // ---- Capabilities -----------------------------------------------------------
