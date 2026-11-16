@@ -25,7 +25,7 @@ describe('commands from specs', () => {
   it('derives command words', () => {
     const words = commands.map((c) => c.words.join(' '))
     expect(words).toEqual(expect.arrayContaining([
-      'version', 'panel list', 'panel create', 'panel set', 'panel close', 'editor open',
+      'version', 'panel list', 'panel create', 'panel set', 'panel close', 'panel link', 'panel unlink', 'editor open',
       'terminal read', 'terminal type', 'terminal press',
       'agent wait', 'agent start',
     ]))
@@ -98,6 +98,17 @@ describe('parseCommandLine', () => {
     expect(call(['panel', 'close', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
     expect(call(['panel', 'close', '--no-discard', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
     expect(call(['agent', 'start', '--agent=codex', 'fix', 'it']).args).toMatchObject({ agentId: 'codex', prompt: 'fix it' })
+  })
+
+  it('parses panel link, unlink and agent start relation flags', () => {
+    expect(call(['panel', 'link', 'ab12', 'cd34', '--kind', 'verify', '--label', 'Check it'])).toMatchObject({
+      method: 'cate.panel.link',
+      args: { fromPanelId: 'ab12', toPanelId: 'cd34', kind: 'verify', label: 'Check it' },
+    })
+    expect(call(['panel', 'unlink', 'ab12', 'cd34'])).toMatchObject({ method: 'cate.panel.unlink', args: { fromPanelId: 'ab12', toPanelId: 'cd34' } })
+    expect(() => parse(['panel', 'link', 'ab12', 'cd34', '--kind', 'bogus'])).toThrow()
+    expect(call(['agent', 'start', '--relation', 'trigger', '--link-from', 'ab12', 'fix', 'it']).args)
+      .toMatchObject({ prompt: 'fix it', relation: 'trigger', linkFrom: 'ab12' })
   })
 
   it('lets a positional argument come from its flag instead', () => {
@@ -186,7 +197,7 @@ describe('help', () => {
 
   it('lists command groups at the top level and a group on its own', () => {
     const top = helpText(commands, [], { width: 80, color: false, extras: [['serve', 'Serve a workspace']] })
-    expect(top).toMatch(/Commands:\n {2}panel +List, create, select, rename and close panels/)
+    expect(top).toMatch(/Commands:\n {2}panel +List, create, select, rename, relate and close panels/)
     expect(top).toMatch(/\n {2}version +Print the cate API version/)
     expect(top).toMatch(/\n {2}serve +Serve a workspace/)
     expect(top).toContain('Global flags:')
@@ -234,6 +245,12 @@ describe('runCli', () => {
     expect(await runCli(['agent', 'wait', '--wait-timeout', '20000'], CATE_API, d)).toBe(1)
     expect(callFn).toHaveBeenCalledWith('cate.agent.wait', { timeoutSeconds: 20 }, 27_000)
     expect(out).toEqual(['(no agent runs)\n(timed out before every agent was ready)'])
+  })
+
+  it('says why an agent started without its relation', async () => {
+    const { d, out } = deps({ call: async () => ({ panelId: '1234567890', agentId: 'codex', relationError: 'the relation would close a cycle' }) })
+    expect(await runCli(['agent', 'start', '--relation', 'trigger', 'fix'], CATE_API, d)).toBe(0)
+    expect(out).toEqual(['12345678\n(not linked: the relation would close a cycle)'])
   })
 
   it('prints JSON with --json', async () => {

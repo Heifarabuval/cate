@@ -15,6 +15,7 @@ import {
   type ClientFeature,
 } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
+import { defaultPanelRelationKind, relationChangeProblem, relationPanelOf, type RelationRoleOf } from '@workspace/relations/contract'
 import { canvasApi, panelApi } from '@workspace/document/contract/api'
 import {
   MAIN_WINDOW,
@@ -521,14 +522,53 @@ describe('panel and canvas API handlers', () => {
       settings: { get: () => true },
       tokens,
     })
+    // The relation rule as the daemon installs it: terminals and browsers
+    // take part, canvases do not.
+    const roleOf: RelationRoleOf = (type) => (type === 'terminal' ? { execution: true } : type === 'browser' ? {} : undefined)
+    w.document.guardChanges((change, doc) => relationChangeProblem(change, doc, roleOf))
     registerDocumentApi(router, {
       document: w.document,
       presence: w.presence,
       checkRemoval: (removing, discard) => w.host.checkRemoval(removing, discard),
       createPanel: (type, request) => w.factory.createPanel(type, request),
+      defaultRelationKind: (from, to) => defaultPanelRelationKind(relationPanelOf(from, roleOf), relationPanelOf(to, roleOf)),
     })
     return { ...w, router, tokens }
   }
+
+  it('links, relinks, lists and unlinks panels, refusing what the relation rule names', async () => {
+    const w = apiWorld()
+    w.document.apply(addTo('lead'))
+    w.document.apply(addTo('worker'))
+    w.document.apply(addTo('web', 'browser'))
+    w.document.apply(addTo('board', 'canvas'))
+    const cli = w.tokens.issue({ kind: 'cli', panelId: 'lead' })
+    const call = (method: string, args: object) => w.router.call(cli.caller, `cate.panel.${method}`, args)
+    const relationsOf = async (panelId: string) =>
+      ((await call('list', {})) as Array<{ panelId: string; relations: unknown[] }>).find((r) => r.panelId === panelId)!.relations
+
+    // Between two terminals the pair's default is a handoff.
+    const { relationId } = await call('link', { fromPanelId: 'lead', toPanelId: 'work' }) as { relationId: string }
+    expect(await relationsOf('lead')).toEqual([{ relationId, toPanelId: 'worker', kind: 'trigger' }])
+    expect(await relationsOf('worker')).toEqual([])
+
+    // A linked pair keeps its relation and takes the new meaning.
+    await expect(call('link', { fromPanelId: 'lead', toPanelId: 'worker', kind: 'verify', label: 'Check it' }))
+      .resolves.toMatchObject({ relationId, kind: 'verify' })
+    expect(await relationsOf('lead')).toEqual([{ relationId, toPanelId: 'worker', kind: 'verify', label: 'Check it' }])
+
+    // A cycle, a panel type without a relation role, a panel that is gone.
+    await expect(call('link', { fromPanelId: 'worker', toPanelId: 'lead' })).rejects.toMatchObject({ code: 'rejected', message: expect.stringContaining('cycle') })
+    await expect(call('link', { fromPanelId: 'lead', toPanelId: 'board' })).rejects.toMatchObject({ code: 'rejected' })
+    await expect(call('link', { fromPanelId: 'lead', toPanelId: 'nope' })).rejects.toMatchObject({ code: 'gone' })
+    await call('link', { fromPanelId: 'worker', toPanelId: 'web', kind: 'use' })
+    expect(Object.values(w.document.get().relations)).toHaveLength(2)
+
+    await expect(call('unlink', { fromPanelId: 'lead', toPanelId: 'worker' })).resolves.toEqual({ removed: relationId })
+    expect(await relationsOf('lead')).toEqual([])
+    await expect(call('unlink', { fromPanelId: 'lead', toPanelId: 'worker' })).rejects.toMatchObject({ code: 'gone' })
+    w.dispose()
+  })
 
   it('creates next to the caller, lists, renames, targets and closes', async () => {
     const w = apiWorld()

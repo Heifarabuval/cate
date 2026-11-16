@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { isRpcError } from '@kernel/rpc/contract'
+import { RpcError, isRpcError } from '@kernel/rpc/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { AgentHookConfig } from '../contract'
 import { createAgentsCore, type AgentsCore } from './core'
@@ -15,6 +15,7 @@ let hookConfig: AgentHookConfig
 let ports: {
   terminals: { create: ReturnType<typeof vi.fn>; relaunch: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn> }
   worktrees: { create: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }
+  relations: { link: ReturnType<typeof vi.fn> }
 }
 
 const panels: PanelRecord[] = [
@@ -63,6 +64,7 @@ beforeEach(() => {
       state: vi.fn((panelId: string) => (panelId === 'idle' ? { alive: true, busy: false } : null)),
     },
     worktrees: { create: vi.fn(async (name: string) => ({ id: `wt-${name}`, path: `/repo/.cate/worktrees/${name}` })), remove: vi.fn(async () => {}) },
+    relations: { link: vi.fn(() => 'rel-1') },
   }
 })
 
@@ -131,6 +133,30 @@ describe('agent start', () => {
     await starter().start(undefined, { prompt: 'Fix it', agentId: 'codex', newWorktree: 'fix', placement })
     expect(ports.worktrees.create).toHaveBeenCalledWith('fix')
     expect(ports.terminals.create).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/repo/.cate/worktrees/fix', worktreeId: 'wt-fix', placement }))
+  })
+
+  it('links nothing unless asked', async () => {
+    await starter().start('supervisor', { prompt: 'Fix it' })
+    expect(ports.relations.link).not.toHaveBeenCalled()
+  })
+
+  it('links the caller, or the panel it names, to the new agent', async () => {
+    await expect(starter().start('supervisor', { prompt: 'Fix it', relation: 'trigger' }))
+      .resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex', relationId: 'rel-1' })
+    expect(ports.relations.link).toHaveBeenLastCalledWith('supervisor', 'new-terminal', 'trigger')
+    await starter().start('supervisor', { prompt: 'Fix it', linkFrom: 'idle' })
+    expect(ports.relations.link).toHaveBeenLastCalledWith('idle', 'new-terminal', undefined)
+  })
+
+  it('keeps the started agent when the relation is refused, and says why', async () => {
+    ports.relations.link.mockImplementation(() => { throw new RpcError('rejected', 'the relation would close a cycle') })
+    await expect(starter().start('supervisor', { prompt: 'Fix it', relation: 'verify' }))
+      .resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex', relationError: 'the relation would close a cycle' })
+  })
+
+  it('refuses a relation with no panel to link from', async () => {
+    expect(await refusal(starter().start(undefined, { prompt: 'Fix it', agentId: 'codex', relation: 'trigger' }))).toBe('link-from-required')
+    expect(ports.terminals.create).not.toHaveBeenCalled()
   })
 
   it('removes the worktree it created when the panel cannot start', async () => {

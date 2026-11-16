@@ -2,8 +2,8 @@
 // workspace/document's runtime side. `cate.panel.focus` is gone: focus is
 // client state.
 
-import { bool, defineCateApi, defineCliArea, num, obj, opt, panel, path, str } from '@kernel/api/contract'
-import { PANEL_TYPES } from './schema'
+import { bool, defineCateApi, defineCliArea, num, obj, oneOf, opt, panel, path, str } from '@kernel/api/contract'
+import { PANEL_TYPES, RELATION_KINDS } from './schema'
 
 /** The CLI permission area of these methods. */
 export const panelCliArea = defineCliArea({
@@ -16,7 +16,7 @@ export const panelCliArea = defineCliArea({
   control: {
     key: 'cliPanelControlEnabled',
     code: 'panel-control-disabled',
-    detail: '`cate panel create / close / title`: add, close and rename panels.',
+    detail: '`cate panel create / close / title / link / unlink`: add, close, rename and relate panels.',
   },
 })
 
@@ -48,6 +48,26 @@ export const panelApi = defineCateApi(
       },
       cli: { command: ['panel', 'title'] },
     },
+    link: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Relate two panels (a related pair takes the new kind and label)',
+      args: {
+        fromPanelId: panel().pos('from').help('Source panel id or unique prefix'),
+        toPanelId: panel().pos('to').help('Target panel id or unique prefix'),
+        kind: opt(oneOf(...RELATION_KINDS)).help('Relation kind (default: the pair\'s recommended intent)'),
+        label: opt(str).help('Custom wording of the relation'),
+      },
+    },
+    unlink: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Remove the relation between two panels',
+      args: {
+        fromPanelId: panel().pos('from').help('Source panel id or unique prefix'),
+        toPanelId: panel().pos('to').help('Target panel id or unique prefix'),
+      },
+    },
     'target.set': {
       access: 'read',
       handler: 'service',
@@ -70,7 +90,7 @@ export const panelApi = defineCateApi(
       cli: { command: ['panel', 'clear'] },
     },
   },
-  { area: panelCliArea, summary: 'List, create, select, rename and close panels' },
+  { area: panelCliArea, summary: 'List, create, select, rename, relate and close panels' },
 )
 
 export const canvasApi = defineCateApi(

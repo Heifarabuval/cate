@@ -3,6 +3,7 @@ export { createPresence, type PresenceService } from './presence'
 export { documentCapabilityImpl, presenceCapabilityImpl } from './capabilities'
 export {
   createDocumentApiHandlers,
+  linkPanels,
   registerDocumentApi,
   type CreatePanelRequest,
   type DocumentApiDeps,
