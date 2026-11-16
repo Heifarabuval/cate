@@ -106,6 +106,30 @@ cate editor active                       # which file the target editor shows
 open next to the calling terminal. Only pass `--discard` when the person
 agreed to lose that work.
 
+## Relations
+
+A relation is an arrow from one panel to another that tells the agent at
+either end how the two work together. Its kind:
+
+- `trigger`: hand the next task to the target (`cate agent send`).
+- `verify`: the target checks the source's result.
+- `context`: the source's content goes with the target's prompts.
+- `use`: the source uses the target as a tool or resource.
+
+```bash
+cate panel link <from> <to>                  # kind: the pair's recommended one (trigger between two agents)
+cate panel link <from> <to> --kind verify --label "Run the e2e"
+cate panel unlink <from> <to>
+cate panel list --json                       # each row's `relations`: its outgoing ones
+```
+
+Linking a related pair changes its kind and label. Only terminals, editors,
+browsers and review panels take part; relations never form a cycle, so if
+you hand off to an agent with `trigger`, it cannot link back to you: it
+answers with `cate agent send`. Refusals fail with `rejected` and say why.
+`cate agent start --relation <kind>` links you to the agent it starts
+(`references/agents.md`).
+
 ## Reading terminals
 
 ```bash

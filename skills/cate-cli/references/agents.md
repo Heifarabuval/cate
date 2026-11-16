@@ -30,6 +30,12 @@ worktree (`--worktree <id>`, from `cate panel list --json`) or a new one
 panel's canvas instead. `--title` names the panel permanently; without it the
 agent's own session title replaces the prompt-based one.
 
+`--relation <kind>` relates your panel to the new agent (`trigger` to hand
+it tasks, `verify` to have it check your work; see Relations in the skill),
+`--link-from <id>` relates another panel instead (alone, it uses the pair's
+recommended kind). The agent starts even when the relation is refused: the
+output adds `(not linked: <reason>)`, `--json` gives `relationError`.
+
 Until the agent CLI is up, the panel is listed as `starting`: `wait` waits
 for it, while `send`, `read` and `interrupt` fail with `agent-starting`.
 From then on it is an agent panel like any other.
