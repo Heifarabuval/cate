@@ -5,8 +5,9 @@
 import type { Point } from '@workspace/canvas/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { ApiRouter } from '@kernel/api/runtime'
+import { randomUUID } from 'node:crypto'
 import { RpcError } from '@kernel/rpc/contract'
-import { removalSet, renamePanelChange, type PanelId, type PanelRecord } from '../contract'
+import { removalSet, renamePanelChange, type PanelId, type PanelRecord, type RelationKind } from '../contract'
 import { canvasApi, panelApi } from '../contract/api'
 import type { DocumentService } from './documentService'
 import type { PresenceService } from './presence'
@@ -31,6 +32,9 @@ export interface DocumentApiDeps {
   createPanel(type: string, request: CreatePanelRequest): PanelId | null | Promise<PanelId | null>
   /** Extra columns of `cate panel list` for one record. */
   listInfo?(record: PanelRecord): { filePath?: string; url?: string } | undefined
+  /** The pair's recommended relation kind (workspace/relations, a module
+   *  above the document). */
+  defaultRelationKind(from: PanelRecord, to: PanelRecord): RelationKind
 }
 
 export interface PanelListRow {
@@ -42,6 +46,33 @@ export interface PanelListRow {
   worktreeId?: string
   filePath?: string
   url?: string
+  /** Outgoing relations. */
+  relations: Array<{ relationId: string; toPanelId: PanelId; kind: RelationKind; label?: string }>
+}
+
+/** Relates two panels, or gives a related pair (one relation per pair) the
+ *  new kind and label; without a kind, the pair's default. Throws what the
+ *  document's relation guard refuses (`rejected`, `gone`). */
+export function linkPanels(
+  document: Pick<DocumentService, 'get' | 'apply'>,
+  defaultKind: DocumentApiDeps['defaultRelationKind'],
+  link: { fromPanelId: PanelId; toPanelId: PanelId; kind?: RelationKind; label?: string },
+): { relationId: string; kind: RelationKind } {
+  const { fromPanelId, toPanelId } = link
+  const { panels, relations } = document.get()
+  const from = panels[fromPanelId]
+  const to = panels[toPanelId]
+  if (!from || !to) throw new RpcError('gone', `panel ${from ? toPanelId : fromPanelId} is gone`)
+  const kind = link.kind ?? defaultKind(from, to)
+  const label = link.label?.trim()
+  const existing = Object.values(relations).find((r) => r.fromPanelId === fromPanelId && r.toPanelId === toPanelId)
+  if (existing) {
+    document.apply({ kind: 'updateRelation', id: existing.id, patch: { kind, label: label || null } })
+    return { relationId: existing.id, kind }
+  }
+  const relationId = randomUUID()
+  document.apply({ kind: 'addRelation', relation: { id: relationId, fromPanelId, toPanelId, kind, ...(label ? { label } : {}) } })
+  return { relationId, kind }
 }
 
 /** Default list columns: the record's own `filePath` and `url` fields. */
@@ -64,6 +95,7 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
     panel: {
       list: (): PanelListRow[] => {
         const active = deps.presence.activePanelId()
+        const relations = Object.values(document.get().relations)
         return Object.values(document.get().panels).map((record) => ({
           panelId: record.id,
           type: record.type,
@@ -71,7 +103,20 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
           focused: record.id === active,
           ...(record.worktreeId ? { worktreeId: record.worktreeId } : {}),
           ...info(record),
+          relations: relations.filter((r) => r.fromPanelId === record.id).map((r) => ({
+            relationId: r.id,
+            toPanelId: r.toPanelId,
+            kind: r.kind,
+            ...(r.label ? { label: r.label } : {}),
+          })),
         }))
+      },
+      link: (args) => linkPanels(document, deps.defaultRelationKind, args),
+      unlink: ({ fromPanelId, toPanelId }) => {
+        const relation = Object.values(document.get().relations).find((r) => r.fromPanelId === fromPanelId && r.toPanelId === toPanelId)
+        if (!relation) throw new RpcError('gone', 'these panels are not related')
+        document.apply({ kind: 'removeRelation', id: relation.id })
+        return { removed: relation.id }
       },
       close: async ({ panelId, discard }) => {
         if (!document.get().panels[panelId]) throw new RpcError('gone', `panel ${panelId} is gone`)

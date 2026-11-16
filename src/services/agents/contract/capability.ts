@@ -5,7 +5,7 @@ import type { PanelAgentState } from './session'
 import type { AgentId } from './registry'
 import type { AgentTypeInfo } from './launch'
 import type { AgentAvailability, AgentSetupSnapshot, AgentSetupOperation } from './setup'
-import type { PlaceTarget } from '@workspace/document/contract'
+import type { PlaceTarget, RelationKind } from '@workspace/document/contract'
 import type { UsageLimitsReport, UsagePricing, UsageSummary, UsageSummaryInput } from './usage/types'
 
 /** Starting an agent from a client, as `cate agent start` does from a
@@ -24,6 +24,10 @@ export interface AgentStartRequest {
   position?: { x: number; y: number }
   /** A spot the client already picked (the placement picker). */
   at?: PlaceTarget
+  /** Relate this panel (default with `relation`: the caller) to the new
+   *  agent. A refused relation leaves the agent started (`relationError`). */
+  linkFrom?: string
+  relation?: RelationKind
 }
 
 /** Every panel hosting an agent, keyed by panel id. */
@@ -58,7 +62,7 @@ export const agentsCapability = defineCapability('agents', {
     /** Agents running a turn right now (closing their panels interrupts them). */
     busy: method<void, { panelIds: string[] }>(),
     /** The same functions as `cate agent start / types / send / interrupt`. */
-    start: method<AgentStartRequest, { panelId: string; agentId: AgentId | null }>({ mutates: true, timeoutMs: 90_000 }),
+    start: method<AgentStartRequest, { panelId: string; agentId: AgentId | null; relationId?: string; relationError?: string }>({ mutates: true, timeoutMs: 90_000 }),
     types: method<void, AgentTypeInfo[]>({ timeoutMs: 60_000 }),
     /** The same function as `cate agent send`: the runtime takes the prompt
      *  and sends it once the agent can take one, after those before it; its

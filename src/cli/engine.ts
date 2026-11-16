@@ -400,7 +400,7 @@ function wrap(text: string, width: number): string[] {
 function columns(rows: readonly [string, string][], style: HelpStyle): string[] {
   const indent = 2
   const left = Math.min(Math.max(...rows.map(([name]) => name.length)) + 2, 30)
-  const right = Math.max(style.width - indent - left, 30)
+  const right = Math.max(style.width - indent - left, 20)
   const out: string[] = []
   for (const [name, text] of rows) {
     const lines = text ? wrap(text, right) : ['']

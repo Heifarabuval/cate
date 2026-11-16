@@ -14,7 +14,7 @@ export async function createSetupFixture(overrides: Partial<AgentSetupDeps> = {}
   const deps: AgentSetupDeps = {
     root, agentsDir: path.join(root, 'agents'), env: () => ({}), trust: { requireTrusted() {}, isTrusted: () => true },
     probe,
-    start: { terminals: { create: vi.fn(async (p) => { const resolver = launch.get(p.launch.kind)!; await resolver(p.launch.params, { cwd: root, panelId: 'setup-panel' }); for (const contribute of contributors) await contribute({ terminalId: 'pty', panelId: 'setup-panel', cwd: root, launch: p.launch, executable: 'tool', args: [], env: {} }); return 'setup-panel' }), relaunch: vi.fn(), state: () => null }, worktrees: { create: vi.fn(), remove: vi.fn() } },
+    start: { terminals: { create: vi.fn(async (p) => { const resolver = launch.get(p.launch.kind)!; await resolver(p.launch.params, { cwd: root, panelId: 'setup-panel' }); for (const contribute of contributors) await contribute({ terminalId: 'pty', panelId: 'setup-panel', cwd: root, launch: p.launch, executable: 'tool', args: [], env: {} }); return 'setup-panel' }), relaunch: vi.fn(), state: () => null }, worktrees: { create: vi.fn(), remove: vi.fn() }, relations: { link: vi.fn() } },
     terminal: { registerLaunchIntent: (kind, resolver) => { launch.set(kind, resolver); return () => { launch.delete(kind) } }, registerEnvContributor: (c) => { contributors.add(c); return () => { contributors.delete(c) } }, onExit: (cb) => { exits.add(cb); return () => { exits.delete(cb) } }, onInput: () => () => {}, onOutput: () => () => {}, onActivity: () => () => {}, write: vi.fn(), cwd: vi.fn(), read: vi.fn(), statuses: vi.fn() },
     ...overrides,
   }

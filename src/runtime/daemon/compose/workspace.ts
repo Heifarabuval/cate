@@ -21,6 +21,7 @@ import {
   createDocumentService,
   createPresence,
   documentCapabilityImpl,
+  linkPanels,
   presenceCapabilityImpl,
   registerDocumentApi,
 } from '@workspace/document/runtime'
@@ -38,7 +39,13 @@ import { createRepositoryRuntime, vcsCapabilityImpl } from '@workspace/repositor
 import { skillsCapability, type SkillTarget } from '@workspace/skills/contract'
 import { createSkillsRuntime, skillsCapabilityImpl } from '@workspace/skills/runtime'
 import { createConnectedEditors, type SharedEditor } from '@workspace/relations/runtime'
-import { RELATION_CONTEXT_MODE_FIELD, relationChangeProblem, type RelationRoleOf } from '@workspace/relations/contract'
+import {
+  RELATION_CONTEXT_MODE_FIELD,
+  defaultPanelRelationKind,
+  relationChangeProblem,
+  relationPanelOf,
+  type RelationRoleOf,
+} from '@workspace/relations/contract'
 import { processCapability } from '@services/terminal/contract'
 import {
   createCateCliRuntime,
@@ -181,6 +188,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   })
   // Relations only between panels taking part in them, and never in a cycle.
   document.guardChanges((change, doc) => relationChangeProblem(change, doc, relationRole))
+  const defaultRelationKind = (from: PanelRecord, to: PanelRecord) =>
+    defaultPanelRelationKind(relationPanelOf(from, relationRole), relationPanelOf(to, relationRole))
 
   // ---- The `cate` API ---------------------------------------------------------
 
@@ -299,6 +308,10 @@ export function composeWorkspace(deps: WorkspaceDeps) {
           await repository.removeWorktree({ worktreeId, force: true, deleteBranch: true })
         },
       },
+      relations: {
+        link: (fromPanelId, toPanelId, kind) =>
+          linkPanels(document, defaultRelationKind, { fromPanelId, toPanelId, kind }).relationId,
+      },
     },
   })
 
@@ -349,6 +362,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     presence,
     checkRemoval: (removing, discard) => sessions.checkRemoval(removing, discard),
     createPanel: (type, request) => factory.createPanel(type, { ...request }),
+    defaultRelationKind,
   }))
 
   // ---- Capabilities -----------------------------------------------------------

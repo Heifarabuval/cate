@@ -99,6 +99,17 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   await expect.poll(() => existsSync(workerOutput) ? readFileSync(workerOutput, 'utf8') : '', { timeout: 10_000 }).toBe('CLI_TARGET_OK')
   expect(await runCate('terminal', 'read', '--panel', workerId)).toContain('CLI_TARGET_OK')
 
+  // Relations: link (default kind between two terminals), list, refuse a cycle, unlink.
+  type Row = { panelId: string; relations: Array<{ relationId: string; toPanelId: string; kind: string }> }
+  const relationsOf = async (id: string) => (JSON.parse(await runCate('panel', 'list', '--json')) as Row[]).find((r) => r.panelId === id)!.relations
+  await runCate('panel', 'link', control, workerId)
+  expect(await relationsOf(control)).toEqual([expect.objectContaining({ toPanelId: worker, kind: 'trigger' })])
+  const cycle = await runInTerminal(page, control, cate('panel', 'link', workerId, control))
+  expect(cycle.code).toBe(1)
+  expect(cycle.output).toContain('cycle')
+  await runCate('panel', 'unlink', control, workerId)
+  expect(await relationsOf(control)).toEqual([])
+
   // Close keeps the list consistent for several panel types.
   for (const id of [workerId, browserId, editorId]) await runCate('panel', 'close', id)
   const finalPanels = await runCate('panel', 'list')

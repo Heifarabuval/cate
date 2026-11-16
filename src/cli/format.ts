@@ -173,8 +173,11 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
     return typeof text === 'string' ? text : generic(value)
   },
   createdPanel: (value) => {
-    const panelId = asObject(value)?.panelId
-    return typeof panelId === 'string' ? shortId(panelId) : generic(value)
+    const result = asObject(value)
+    const panelId = result?.panelId
+    if (typeof panelId !== 'string') return generic(value)
+    // `agent start --relation`: the agent started, the relation was refused.
+    return typeof result?.relationError === 'string' ? `${shortId(panelId)}\n(not linked: ${result.relationError})` : shortId(panelId)
   },
   promptId: (value) => {
     const promptId = asObject(value)?.promptId

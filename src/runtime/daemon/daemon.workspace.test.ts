@@ -178,6 +178,21 @@ describe.skipIf(process.platform === 'win32')('daemon workspace', () => {
     const rows = await cliApi.call({ method: 'cate.panel.list' }) as { panelId: string }[]
     expect(rows.map((row) => row.panelId)).toEqual(['term-1'])
 
+    // Relations through the API, held to the daemon's relation rule.
+    await document.apply({
+      op: {
+        kind: 'addPanel',
+        record: { id: 'term-2', type: 'terminal', title: 'Terminal 2', fields: {} },
+        at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+        opId: { clientId: 'c1', counter: 2 },
+      } as DocOp,
+    })
+    const linked = await api.call({ method: 'cate.panel.link', args: { fromPanelId: 'term-1', toPanelId: 'term-2' } }) as { relationId: string }
+    expect(linked).toMatchObject({ kind: 'trigger' })
+    await expect(api.call({ method: 'cate.panel.link', args: { fromPanelId: 'term-2', toPanelId: 'term-1' } })).rejects.toMatchObject({ code: 'rejected' })
+    const related = await api.call({ method: 'cate.panel.list' }) as { panelId: string; relations: unknown[] }[]
+    expect(related.find((row) => row.panelId === 'term-1')?.relations).toEqual([{ relationId: linked.relationId, toPanelId: 'term-2', kind: 'trigger' }])
+
     docSub.cancel()
     sub.cancel()
   }, 30_000)

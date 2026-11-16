@@ -7,7 +7,7 @@
 
 import { RpcError } from '@kernel/rpc/contract'
 import type { Point } from '@workspace/canvas/contract'
-import type { PlaceTarget } from '@workspace/document/contract'
+import type { PlaceTarget, RelationKind } from '@workspace/document/contract'
 import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, isAgentId, isPromptAttachments, type AgentId, type AgentTypeInfo } from '../contract'
 import type { AgentsCore } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks, resolveDriverAgent } from './hooks/readiness'
@@ -42,6 +42,11 @@ export interface AgentStartPorts {
     /** Removes a worktree this start created, when the start failed. */
     remove(worktreeId: string): Promise<void>
   }
+  relations: {
+    /** Relates two panels (`kind` absent: the pair's default) and returns
+     *  the relation's id; throws what the relation rule refuses. */
+    link(fromPanelId: string, toPanelId: string, kind?: RelationKind): string
+  }
 }
 
 export interface AgentStartArgs {
@@ -57,12 +62,24 @@ export interface AgentStartArgs {
   terminalPanelId?: string
   /** Default: next to the calling panel. */
   placement?: AgentPlacement
+  /** Relate this panel (default with `relation`: the caller) to the agent. */
+  linkFrom?: string
+  relation?: RelationKind
+}
+
+/** The panel hosting a started agent; with a relation asked, its id or why
+ *  it was refused (the agent is started either way). */
+export interface AgentStarted {
+  panelId: string
+  agentId: AgentId
+  relationId?: string
+  relationError?: string
 }
 
 export interface AgentStarter {
   /** Starts an agent for `callerPanelId` (undefined for a client); answers
    *  with the panel that hosts it. */
-  start(callerPanelId: string | undefined, args: AgentStartArgs): Promise<{ panelId: string; agentId: AgentId }>
+  start(callerPanelId: string | undefined, args: AgentStartArgs): Promise<AgentStarted>
   /** Every agent CLI, in registry order. */
   types(): Promise<AgentTypeInfo[]>
   /** Started agents whose CLI has not been observed yet: until its first
@@ -136,6 +153,8 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
       const args = input as StartRequest
       if (args.terminalPanelId) checkTerminal(args.terminalPanelId, callerPanelId)
       const placement = args.placement ?? (callerPanelId ? { near: callerPanelId } : {})
+      const linkFrom = args.linkFrom ?? (args.relation ? callerPanelId : undefined)
+      if (args.relation && !linkFrom) fail('link-from-required')
 
       // The agent is picked before any worktree exists, so a refused start
       // leaves none.
@@ -144,6 +163,16 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
 
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
+      /** The relation asked for; a refusal is told, not thrown: the agent
+       *  already runs. */
+      const link = (started: AgentStarted): AgentStarted => {
+        if (!linkFrom) return started
+        try {
+          return { ...started, relationId: ports.relations.link(linkFrom, started.panelId, args.relation) }
+        } catch (error) {
+          return { ...started, relationError: error instanceof Error ? error.message : String(error) }
+        }
+      }
       const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}) } }
       try {
         if (args.terminalPanelId) {
@@ -151,13 +180,13 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
           // launches the canonical executable and argv directly.
           await ports.terminals.relaunch(args.terminalPanelId, { ...checkout, launch })
           pending.set(args.terminalPanelId, { agentId, at: Date.now() })
-          return { panelId: args.terminalPanelId, agentId }
+          return link({ panelId: args.terminalPanelId, agentId })
         }
         const chosen = args.title?.trim()
         const title = chosen || (prompt ? prompt.replace(/\s+/g, ' ').slice(0, 54) : AGENT_DEFS[agentId].displayName)
         const panelId = await ports.terminals.create({ ...checkout, title, ...(chosen ? { titleChosen: true } : {}), launch, placement })
         pending.set(panelId, { agentId, at: Date.now() })
-        return { panelId, agentId }
+        return link({ panelId, agentId })
       } catch (error) {
         if (created) await ports.worktrees.remove(created.id).catch(() => {})
         throw error

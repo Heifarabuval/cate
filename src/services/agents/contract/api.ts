@@ -9,10 +9,12 @@ import {
   defineCliArea,
   num,
   obj,
+  oneOf,
   opt,
   panel,
   str,
 } from '@kernel/api/contract'
+import { RELATION_KINDS } from '@workspace/document/contract'
 
 export const AGENT_WAIT_DEFAULT_SECONDS = 30
 export const AGENT_WAIT_MIN_SECONDS = 5
@@ -70,6 +72,10 @@ export const agentApi = defineCateApi(
         canvasPanelId: opt(panel('canvas')).flag('canvas', 'id')
           .help('Place the panel on this canvas panel\'s canvas (default: next to the calling panel)'),
         position: opt(obj({ x: num, y: num })).hidden(),
+        linkFrom: opt(panel()).flag('link-from', 'id')
+          .help('Relate this panel to the new agent (default with --relation: the calling panel)'),
+        relation: opt(oneOf(...RELATION_KINDS)).flag('relation', 'kind')
+          .help('Relate the calling panel (or --link-from) to the new agent with this kind'),
       },
       timeoutMs: 90_000,
       format: 'createdPanel',
