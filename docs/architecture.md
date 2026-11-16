@@ -2485,13 +2485,13 @@ Everything outside the UI that drives Cate goes through one router.
 | Namespace | Methods | Owner | Handler |
 |---|---|---|---|
 | `cate.version` | | kernel/api | service |
-| `cate.panel.*` | `list`, `close` (`discard` arg), `setTitle`, `target.set`, `target.current`, `target.clear` | workspace/document | service |
+| `cate.panel.*` | `list` (each row's outgoing `relations`), `close` (`discard` arg), `setTitle`, `link` (adds a relation, or sets a related pair's kind and label; held to the relation guard), `unlink`, `target.set`, `target.current`, `target.clear` | workspace/document | service |
 | `cate.canvas.*` | `createPanel` | workspace/document | service |
 | `cate.ui.*` | `notify` | kernel/api (publishes a notification event) | service |
 | `cate.terminal.*` | `read`, `type`, `press` | terminal panel | session |
 | `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`listTabs`) / session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
-| `cate.agent.*` | `start`, `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
+| `cate.agent.*` | `start` (`linkFrom`/`relation`: relates a panel to the new agent; a refusal comes back as `relationError`, the agent still runs), `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
 
 There is no `cate.panel.focus`: focus is client state. Every browser method
 is a CLI command (`cate browser snapshot`, `find`, `click`, `fill`, `type`,
