@@ -123,7 +123,9 @@ cate panel unlink <from> <to>
 cate panel list --json                       # each row's `relations`: its outgoing ones
 ```
 
-Linking a related pair changes its kind and label. Only terminals, editors,
+Linking a related pair changes only what you pass (`--label ""` clears the
+label). Each pair offers three kinds (between two agents: `trigger`,
+`context`, `verify`); another is refused. Only terminals, editors,
 browsers and review panels take part; relations never form a cycle, so if
 you hand off to an agent with `trigger`, it cannot link back to you: it
 answers with `cate agent send`. Refusals fail with `rejected` and say why.

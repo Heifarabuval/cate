@@ -15,7 +15,7 @@ import {
   type ClientFeature,
 } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
-import { defaultPanelRelationKind, relationChangeProblem, relationPanelOf, type RelationRoleOf } from '@workspace/relations/contract'
+import { panelRelationOptions, relationChangeProblem, relationPanelOf, type RelationRoleOf } from '@workspace/relations/contract'
 import { canvasApi, panelApi } from '@workspace/document/contract/api'
 import {
   MAIN_WINDOW,
@@ -531,7 +531,7 @@ describe('panel and canvas API handlers', () => {
       presence: w.presence,
       checkRemoval: (removing, discard) => w.host.checkRemoval(removing, discard),
       createPanel: (type, request) => w.factory.createPanel(type, request),
-      defaultRelationKind: (from, to) => defaultPanelRelationKind(relationPanelOf(from, roleOf), relationPanelOf(to, roleOf)),
+      relationKinds: (from, to) => panelRelationOptions(relationPanelOf(from, roleOf), relationPanelOf(to, roleOf)).map((o) => o.kind),
     })
     return { ...w, router, tokens }
   }
@@ -556,6 +556,14 @@ describe('panel and canvas API handlers', () => {
     await expect(call('link', { fromPanelId: 'lead', toPanelId: 'worker', kind: 'verify', label: 'Check it' }))
       .resolves.toMatchObject({ relationId, kind: 'verify' })
     expect(await relationsOf('lead')).toEqual([{ relationId, toPanelId: 'worker', kind: 'verify', label: 'Check it' }])
+    // What a relink leaves out stays; a kind the pair does not offer is refused.
+    await call('link', { fromPanelId: 'lead', toPanelId: 'worker', label: 'Run e2e' })
+    expect(await relationsOf('lead')).toEqual([{ relationId, toPanelId: 'worker', kind: 'verify', label: 'Run e2e' }])
+    await call('link', { fromPanelId: 'lead', toPanelId: 'worker', kind: 'context' })
+    expect(await relationsOf('lead')).toEqual([{ relationId, toPanelId: 'worker', kind: 'context', label: 'Run e2e' }])
+    await call('link', { fromPanelId: 'lead', toPanelId: 'worker', kind: 'verify', label: '' })
+    expect(await relationsOf('lead')).toEqual([{ relationId, toPanelId: 'worker', kind: 'verify' }])
+    await expect(call('link', { fromPanelId: 'lead', toPanelId: 'worker', kind: 'use' })).rejects.toMatchObject({ code: 'rejected', message: expect.stringContaining('trigger, context, verify') })
 
     // A cycle, a panel type without a relation role, a panel that is gone.
     await expect(call('link', { fromPanelId: 'worker', toPanelId: 'lead' })).rejects.toMatchObject({ code: 'rejected', message: expect.stringContaining('cycle') })
