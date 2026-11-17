@@ -1,6 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLogger } from '@kernel/log/contract'
 import { isRpcError } from '@kernel/rpc/contract'
 import { createDocument, type Json, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
@@ -8,7 +10,7 @@ import { TERMINAL_RESTORE_LAUNCH, type SpawnParams, type TerminalStatus, type Te
 import type { SessionKit } from '@panels/framework/runtime'
 import type { AgenceOp, AgenceSnapshot, AgenceState, RegisseurView } from './contract'
 import { AgenceSession, type AgenceSessionDeps } from './session'
-import type { RegisseurAcquire, RegisseurHandle } from './parts/runtime/regisseur'
+import { createRegisseurs, type RegisseurAcquire, type RegisseurHandle, type Regisseurs } from './parts/runtime/regisseur'
 import type { StateFilesRead } from './parts/runtime/stateFiles'
 
 function fakeTerminal() {
@@ -364,6 +366,18 @@ describe('AgenceSession', () => {
       ])
     })
 
+    it('lets the free answer win over a choice: only the text is posted', async () => {
+      const { session, regisseurs } = await started()
+      await expect(answer(session, { questionId: 'q1', choice: 0, libre: 'plus tard' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: '/ask/q1', form: { libre: 'plus tard' } }])
+    })
+
+    it('renders « Question déjà répondue. » as a conflict', async () => {
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => ({ code: 409, message: 'Question déjà répondue.' }))
+      await expect(answer(session, { questionId: 'q1', choice: 1 })).resolves.toEqual({ ok: false, error: 'conflict', message: 'Question déjà répondue.' })
+    })
+
     it('renders a greyed merge (409) as a conflict, a missing choice (400) as invalid', async () => {
       const { session, regisseurs } = await started()
       regisseurs.answer(async () => ({ code: 409, message: 'Merge grisé : conflit avec la base (« Merger quand même » pour passer outre).' }))
@@ -445,6 +459,106 @@ describe('AgenceSession', () => {
       expect(session.handleApi).toBeUndefined()
       const source = readFileSync(path.join(__dirname, 'session.ts'), 'utf8')
       expect(source).not.toMatch(/writeFile|appendFile|rename|mkdir|unlink|createWriteStream|rmSync|copyFile/)
+    })
+  })
+
+  describe('linked panel titles', () => {
+    it('never shows an empty title: a panel with none known anywhere is not linked', async () => {
+      const blank: PanelRecord = { id: 'p5', type: 'terminal', title: '', fields: {} }
+      const files = { state: state({ needs: [need('n1', { panels: ['p5', 'p6'] })] }) }
+      const { session } = setup({ files, others: [blank] })
+      await session.start()
+      expect(snap(session).suivi?.sections.reste[0].links).toEqual([])
+      expect(snap(session).suivi?.sections.reste[0].meta).toEqual([])
+    })
+
+    it('follows a rename and keeps the last title once the panel is gone', async () => {
+      const linked: PanelRecord = { id: 'p1', type: 'terminal', title: 'Impl C002', fields: {} }
+      const files = { state: state({ needs: [need('n1', { panels: ['p1'] })] }) }
+      const first = setup({ files, others: [linked] })
+      await first.session.start()
+      expect(first.stored()).toEqual({ knownTitles: { p1: 'Impl C002' } })
+      // Next start: the panel was closed meanwhile.
+      const next = setup({ files, saved: first.stored() })
+      await next.session.start()
+      expect(snap(next.session).suivi?.sections.reste[0].links).toEqual([{ panelId: 'p1', title: 'Impl C002', closed: true }])
+    })
+  })
+
+  describe('with the real regisseur registry', () => {
+    const FAKE = path.join(__dirname, 'parts', 'runtime', 'fixtures', 'fake-agence.mjs')
+    let tmp: string
+    let logFile: string
+    let port: number
+    let registry: Regisseurs
+    const trust = { isTrusted: () => true, requireTrusted() {}, onChange: () => () => {} }
+    const ofKind = (event: string) => {
+      try { return readFileSync(logFile, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as { event: string }).filter((entry) => entry.event === event) } catch { return [] }
+    }
+    const makeRegistry = () => createRegisseurs({
+      command: process.execPath,
+      commandArgs: [FAKE],
+      trust,
+      cliEnv: async (panelId) => ({ env: { PATH: process.env.PATH ?? '', FAKE_AGENCE_LOG: logFile, FAKE_AGENCE_PORT: String(port), CATE_TOKEN: `tok-${panelId}` }, revoke() {} }),
+    })
+    /** A session of panel `panelId` on the shared registry, its follow-up already readable. */
+    const open = (panelId: string, saved?: Json) => {
+      const panel = { ...record(), id: panelId }
+      const k = fakeKit(panel, saved)
+      const terminal = fakeTerminal()
+      const files = fakeFiles({ state: state({ port, needs: [need('n1')] }), readAt: 't' })
+      const session = new AgenceSession(k.kit, panel, { root: tmp, terminal: terminal.service, regisseurs: registry, files: files.files })
+      return { session, terminal }
+    }
+
+    beforeEach(async () => {
+      tmp = mkdtempSync(path.join(os.tmpdir(), 'cate-agence-session-'))
+      logFile = path.join(tmp, 'events.log')
+      port = await new Promise<number>((resolve) => {
+        const server = net.createServer().listen(0, '127.0.0.1', () => {
+          const { port: free } = server.address() as net.AddressInfo
+          server.close(() => resolve(free))
+        })
+      })
+      registry = makeRegistry()
+    })
+    afterEach(async () => {
+      await registry.dispose()
+      rmSync(tmp, { recursive: true, force: true })
+    })
+
+    it('runs one agence watch for two panels of the same repository, stopped with the last one', async () => {
+      const first = open('a1')
+      const second = open('a2')
+      await first.session.start()
+      await second.session.start()
+      await vi.waitFor(() => expect(snap(second.session).regisseur.state).toBe('running'), { timeout: 5000 })
+      expect(ofKind('start')).toHaveLength(1)
+      second.session.dispose('removed')
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect(ofKind('sigterm')).toHaveLength(0)
+      expect(snap(first.session).regisseur.state).toBe('running')
+      first.session.dispose('removed')
+      await vi.waitFor(() => expect(ofKind('sigterm')).toHaveLength(1), { timeout: 5000 })
+      await vi.waitFor(() => expect(registry.running()).toBe(0))
+    })
+
+    it('finds its follow-up and runs a single regisseur again after the daemon restarts', async () => {
+      const before = open('a1')
+      await before.session.start()
+      await vi.waitFor(() => expect(snap(before.session).regisseur.state).toBe('running'), { timeout: 5000 })
+      // The daemon stops: sessions are disposed for the shutdown, the registry too.
+      before.session.dispose('shutdown')
+      await registry.dispose()
+      expect(registry.running()).toBe(0)
+      registry = makeRegistry()
+      const after = open('a1', before.session.snapshot().ptyId ? { knownTitles: {} } : undefined)
+      await after.session.start()
+      await vi.waitFor(() => expect(snap(after.session).regisseur.state).toBe('running'), { timeout: 5000 })
+      expect(after.terminal.spawns[0]).toMatchObject({ launch: TERMINAL_RESTORE_LAUNCH, restore: true })
+      expect(snap(after.session).suivi?.sections.reste).toHaveLength(1)
+      expect(registry.running()).toBe(1)
+      expect(ofKind('start')).toHaveLength(2)
     })
   })
 })

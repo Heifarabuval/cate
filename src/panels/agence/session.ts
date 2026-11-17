@@ -102,11 +102,10 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
       'orchestrator.restart': () => this.restart(),
-      answer: ({ questionId, choice, libre, force }) => this.answer(questionId, {
-        ...(choice !== undefined ? { choice: String(choice) } : {}),
-        ...(libre ? { libre } : {}),
-        ...(force ? { force: '1' } : {}),
-      }),
+      // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
+      answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
+        ? { libre }
+        : { ...(choice !== undefined ? { choice: String(choice) } : {}), ...(force ? { force: '1' } : {}) }),
     }
   }
 
