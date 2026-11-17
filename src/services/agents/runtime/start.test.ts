@@ -188,6 +188,17 @@ describe('agent start', () => {
     expect(ports.terminals.create).not.toHaveBeenCalled()
   })
 
+  it('relates and watches the done-when condition of an agent started in an existing terminal', async () => {
+    const watch = vi.fn()
+    const reused = createAgentStarter(agents, ports as unknown as AgentStartPorts, undefined, { watch })
+    await expect(reused.start('supervisor', { prompt: 'Review', terminalPanelId: 'idle', relation: 'trigger', doneWhen: 'npm test' }))
+      .resolves.toEqual({ panelId: 'idle', agentId: 'codex', relationId: 'rel-1' })
+    expect(ports.terminals.relaunch).toHaveBeenCalledWith('idle', expect.objectContaining({ cwd: '/repo/.cate/worktrees/lead' }))
+    expect(ports.terminals.create).not.toHaveBeenCalled()
+    expect(ports.relations.link).toHaveBeenCalledWith('supervisor', 'idle', 'trigger')
+    expect(watch).toHaveBeenCalledWith('idle', { command: 'npm test', cwd: '/repo/.cate/worktrees/lead', callerPanelId: 'supervisor' })
+  })
+
   it('reuses an idle terminal, and refuses a busy one', async () => {
     await expect(starter().start('supervisor', { prompt: 'Review', terminalPanelId: 'idle' })).resolves.toMatchObject({ panelId: 'idle' })
     expect(ports.terminals.relaunch).toHaveBeenCalledWith('idle', expect.objectContaining({ launch: expect.objectContaining({ kind: 'agents.start' }) }))
