@@ -1,10 +1,12 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createLogger } from '@kernel/log/contract'
 import { isRpcError } from '@kernel/rpc/contract'
 import { createDocument, type Json, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH, type SpawnParams, type TerminalStatus, type TerminalStatusChange } from '@services/terminal/contract'
 import type { SessionKit } from '@panels/framework/runtime'
-import type { AgenceSnapshot, AgenceState, RegisseurView } from './contract'
+import type { AgenceOp, AgenceSnapshot, AgenceState, RegisseurView } from './contract'
 import { AgenceSession, type AgenceSessionDeps } from './session'
 import type { RegisseurAcquire, RegisseurHandle } from './parts/runtime/regisseur'
 import type { StateFilesRead } from './parts/runtime/stateFiles'
@@ -41,9 +43,12 @@ function fakeTerminal() {
 
 function fakeRegisseurs(initial: RegisseurView['state'] = 'running') {
   const acquired: RegisseurAcquire[] = []
+  const posts: Array<{ path: string; form: Record<string, string> }> = []
   let released = 0
   let view: RegisseurView = { state: initial, error: initial === 'missing' ? 'agence introuvable (agence)' : null, settingsHint: null }
   const listeners = new Set<(view: RegisseurView) => void>()
+  /** What the next posts answer; a function can hold the answer back. */
+  let answer: (path: string, form: Record<string, string>) => Promise<{ code: number; message: string }> = async () => ({ code: 200, message: 'ok' })
   return {
     regisseurs: {
       acquire(request: RegisseurAcquire): RegisseurHandle {
@@ -52,13 +57,18 @@ function fakeRegisseurs(initial: RegisseurView['state'] = 'running') {
         return {
           view: () => view,
           onChange(listener) { listeners.add(listener); return () => { listeners.delete(listener) } },
-          post: async () => ({ code: 200, message: 'ok' }),
+          post: async (path, form) => {
+            posts.push({ path, form })
+            return answer(path, form)
+          },
           release() { if (!done) { done = true; released++ } },
         }
       },
     },
     acquired,
+    posts,
     released: () => released,
+    answer(next: typeof answer) { answer = next },
     set(next: Partial<RegisseurView>) {
       view = { ...view, ...next }
       for (const listener of listeners) listener(view)
@@ -296,5 +306,81 @@ describe('AgenceSession', () => {
     expect(isRpcError(blocker, 'dirty')).toBe(true)
     terminal.update('pty-1', { activity: { type: 'idle' } })
     expect(session.closeBlocker()).toBeNull()
+  })
+
+  describe('draft ops', () => {
+    const open = { state: state({ needs: [need('n1', { kind: 'draft', ref: 'd1', owner: 'heifara' })], drafts: [{ id: 'd1', needId: 'n1', cible: 'issue:x/y', titre: 'T', statut: 'à valider', url: null }] }), drafts: { d1: 'Texte' } }
+    const started = async () => {
+      const setupped = setup({ files: open })
+      await setupped.session.start()
+      return setupped
+    }
+    const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
+
+    it('posts the send with the hash the view showed, and answers ok', async () => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: '/draft/d1/send', form: { h: 'abc' } }])
+    })
+
+    it('posts drop and edit without a hash', async () => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'draft.drop', draftId: 'd1' })).resolves.toEqual({ ok: true })
+      await expect(op(session, { kind: 'draft.edit', draftId: 'd1' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: '/draft/d1/drop', form: {} }, { path: '/draft/d1/edit', form: {} }])
+    })
+
+    it('refuses a second click on the same draft while the first is running, then accepts a new one', async () => {
+      const { session, regisseurs } = await started()
+      let release!: () => void
+      regisseurs.answer(() => new Promise((resolve) => { release = () => resolve({ code: 200, message: 'ok' }) }))
+      const first = op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })
+      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: false, error: 'busy' })
+      await expect(op(session, { kind: 'draft.drop', draftId: 'd1' })).resolves.toEqual({ ok: false, error: 'busy' })
+      expect(regisseurs.posts).toHaveLength(1)
+      release()
+      await expect(first).resolves.toEqual({ ok: true })
+      regisseurs.answer(async () => ({ code: 200, message: 'ok' }))
+      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: true })
+    })
+
+    it.each(['texte a changé', 'déjà « envoyer »', 'besoin clos'])('renders the regisseur\'s 409 (%s) as a conflict with its message', async (message) => {
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => ({ code: 409, message }))
+      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: false, error: 'conflict', message })
+    })
+
+    it('renders an invalid token as unavailable, not as a conflict', async () => {
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => ({ code: 403, message: 'Jeton invalide' }))
+      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: false, error: 'unavailable', message: 'Jeton invalide' })
+    })
+
+    it.each(['external', 'missing', 'stopped', 'starting'] as const)('is unavailable when the regisseur is %s, posting nothing', async (regisseur) => {
+      const { session, regisseurs } = setup({ files: open, regisseur })
+      await session.start()
+      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it('is unavailable when the post itself fails', async () => {
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => { throw new Error('regisseur-unavailable') })
+      await expect(op(session, { kind: 'draft.edit', draftId: 'd1' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    })
+
+    it('refuses a draft that is not open, posting nothing', async () => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'draft.send', draftId: 'd9', hash: 'abc' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(op(session, { kind: 'draft.send', draftId: '../x', hash: 'abc' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it('exposes no cate api and writes no file', async () => {
+      const { session } = await started()
+      expect(session.handleApi).toBeUndefined()
+      const source = readFileSync(path.join(__dirname, 'session.ts'), 'utf8')
+      expect(source).not.toMatch(/writeFile|appendFile|rename|mkdir|unlink|createWriteStream|rmSync|copyFile/)
+    })
   })
 })
