@@ -15,7 +15,7 @@ import type { Json, PanelRecord } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalActivity, type TerminalStatus } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
-import { classify } from './contract/suivi'
+import { classify, mergeState } from './contract/suivi'
 import type {
   AgenceOp,
   AgenceOpResult,
@@ -68,7 +68,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
    *  what makes the next start a resume). */
   private launched = false
   private activity: TerminalActivity = { type: 'idle' }
-  /** Drafts with an op under way: a second click is refused `busy`. */
+  /** Drafts and questions with an op under way: a second click is refused `busy`. */
   private readonly inFlight = new Set<string>()
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: AgenceSessionDeps) {
@@ -96,7 +96,6 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     await this.spawnOrchestrator(resume)
   }
 
-  // `answer` comes with its story (C030-C031).
   protected override readonly ops = this.handlers() as OpHandlers<AgenceOp>
 
   private handlers(): Partial<OpHandlers<AgenceOp>> {
@@ -105,6 +104,11 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
       'orchestrator.restart': () => this.restart(),
+      answer: ({ questionId, choice, libre, force }) => this.answer(questionId, {
+        ...(choice !== undefined ? { choice: String(choice) } : {}),
+        ...(libre ? { libre } : {}),
+        ...(force ? { force: '1' } : {}),
+      }),
     }
   }
 
@@ -128,23 +132,35 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
 
   /** A draft action is the regisseur's `click()`: same effects, same
    *  refusals. The session writes nothing itself. */
-  private async draftOp(draftId: string, action: 'send' | 'drop' | 'edit', form: Record<string, string>): Promise<AgenceOpResult> {
+  private draftOp(draftId: string, action: 'send' | 'drop' | 'edit', form: Record<string, string>): Promise<AgenceOpResult> {
     const open = SAFE_ID.test(draftId) && this.files?.read().state?.drafts.some((draft) => draft.id === draftId && OPEN_DRAFT.has(draft.statut))
-    if (!open) return { ok: false, error: 'invalid' }
-    if (this.inFlight.has(draftId)) return { ok: false, error: 'busy' }
+    if (!open) return Promise.resolve({ ok: false, error: 'invalid' })
+    return this.click(`draft:${draftId}`, `/draft/${draftId}/${action}`, form)
+  }
+
+  private answer(questionId: string, form: Record<string, string>): Promise<AgenceOpResult> {
+    const open = SAFE_ID.test(questionId) && this.files?.read().state?.questions.some((question) => question.id === questionId && question.answer == null)
+    if (!open) return Promise.resolve({ ok: false, error: 'invalid' })
+    return this.click(`question:${questionId}`, `/ask/${questionId}`, form)
+  }
+
+  /** One click on the regisseur's form, one at a time per draft or question. */
+  private async click(key: string, path: string, form: Record<string, string>): Promise<AgenceOpResult> {
+    if (this.inFlight.has(key)) return { ok: false, error: 'busy' }
     const regisseur = this.regisseur
     if (!regisseur || regisseur.view().state !== 'running') {
       return { ok: false, error: 'unavailable', message: regisseur?.view().error ?? 'regisseur-unavailable' }
     }
-    this.inFlight.add(draftId)
+    this.inFlight.add(key)
     try {
-      const reply = await regisseur.post(`/draft/${draftId}/${action}`, form)
+      const reply = await regisseur.post(path, form)
       if (reply.code === 200) return { ok: true }
-      return { ok: false, error: reply.code === 403 ? 'unavailable' : 'conflict', message: reply.message }
+      const error = reply.code === 403 ? 'unavailable' : reply.code === 400 ? 'invalid' : 'conflict'
+      return { ok: false, error, message: reply.message }
     } catch (err) {
       return { ok: false, error: 'unavailable', message: err instanceof Error ? err.message : String(err) }
     } finally {
-      this.inFlight.delete(draftId)
+      this.inFlight.delete(key)
     }
   }
 
@@ -216,6 +232,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       return
     }
     const state = read.state
+    const now = Date.now()
     this.publish({
       regisseur,
       suivi: {
@@ -223,10 +240,10 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
         agentsActive: state.agentsActive,
         readAt: read.readAt ?? '',
         error: read.error,
-        sections: classify(state, this.titles(state)),
+        sections: classify(state, this.titles(state), now),
       },
       drafts: drafts(state, read.drafts),
-      questions: questions(state),
+      questions: questions(state, now),
     })
   }
 
@@ -267,7 +284,7 @@ function drafts(state: AgenceState, texts: Record<string, string>): Record<strin
   return out
 }
 
-function questions(state: AgenceState): Record<string, QuestionView> {
+function questions(state: AgenceState, now: number): Record<string, QuestionView> {
   const out: Record<string, QuestionView> = {}
   for (const question of state.questions) {
     if (question.answer !== null && question.answer !== undefined) continue
@@ -276,6 +293,7 @@ function questions(state: AgenceState): Record<string, QuestionView> {
       question: question.question,
       options: question.options,
       isMerge: typeof question.action === 'string' && question.action.startsWith('merge:'),
+      ...mergeState(state, question, now),
     }
   }
   return out

@@ -69,3 +69,13 @@ it('goes back to the list when the draft being read is gone (sent or dropped els
   expect(host.querySelector('[data-testid="markdown-preview"]')).toBeNull()
   expect(host.textContent).toContain('À faire par Heifara')
 })
+
+it('asks for the rebase through the answer op, and shows a refusal above the list', async () => {
+  const value = snapshot()
+  value.suivi!.sections.aFaire = [{ id: 'n2', title: 'Merger la 12 ?', kind: 'human', meta: [], evidence: null, link: null, links: [], action: { type: 'question', questionId: 'q2', rebase: true } }]
+  send.mockResolvedValueOnce({ ok: false, error: 'conflict', message: 'Question déjà répondue.' } as never)
+  render(value)
+  await act(async () => { button('Demander le rebase')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 'rebase' })
+  expect(host.querySelector('[role="alert"]')!.textContent).toBe('Question déjà répondue.')
+})

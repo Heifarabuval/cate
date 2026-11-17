@@ -272,7 +272,7 @@ describe('AgenceSession', () => {
         hash: '70538527149e9b9df5ab89f0aa826b4fc0ab807a444be890bce50dd5a47bf634',
       },
     })
-    expect(snapshot.questions).toEqual({ q1: { id: 'q1', question: 'Merger ?', options: [{ label: 'Oui', detail: 'merge' }], isMerge: true } })
+    expect(snapshot.questions).toEqual({ q1: { id: 'q1', question: 'Merger ?', options: [{ label: 'Oui', detail: 'merge' }], isMerge: true, locks: [], ghUnknown: true, rebase: false } })
   })
 
   it('keeps the last state and shows the read error', async () => {
@@ -334,6 +334,62 @@ describe('AgenceSession', () => {
       await expect(restart(session)).resolves.toEqual({ ok: true })
       expect(regisseurs.restarts()).toBe(1)
       expect(terminal.spawns).toHaveLength(1)
+    })
+  })
+
+  describe('answer', () => {
+    const merge = (gh: Record<string, unknown> | null) => ({
+      id: 'q1', needId: 'n9', question: 'Merger la 12 ?', options: [{ label: 'Merger (rebase)', detail: '' }, { label: 'Non', detail: '' }],
+      action: 'merge:x/y#12', answer: null, ...(gh ? { gh } : {}),
+    })
+    const started = async (questions: AgenceState['questions'] = [merge(null)]) => {
+      const setupped = setup({ files: { state: state({ ghRepo: 'x/y', needs: [need('n9', { kind: 'human', ref: 'q1', owner: 'heifara' })], questions }) } })
+      await setupped.session.start()
+      return setupped
+    }
+    const answer = (session: AgenceSession, op: Omit<Extract<AgenceOp, { kind: 'answer' }>, 'kind'>) =>
+      session.handleOp({ kind: 'answer', ...op }, { clientId: 'c1', connectionId: 1 })
+
+    it('posts the choice, the free answer, the rebase and the forced merge to /ask/<id>', async () => {
+      const { session, regisseurs } = await started()
+      await expect(answer(session, { questionId: 'q1', choice: 1 })).resolves.toEqual({ ok: true })
+      await expect(answer(session, { questionId: 'q1', libre: 'plus tard' })).resolves.toEqual({ ok: true })
+      await expect(answer(session, { questionId: 'q1', choice: 'rebase' })).resolves.toEqual({ ok: true })
+      await expect(answer(session, { questionId: 'q1', choice: 0, force: true })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([
+        { path: '/ask/q1', form: { choice: '1' } },
+        { path: '/ask/q1', form: { libre: 'plus tard' } },
+        { path: '/ask/q1', form: { choice: 'rebase' } },
+        { path: '/ask/q1', form: { choice: '0', force: '1' } },
+      ])
+    })
+
+    it('renders a greyed merge (409) as a conflict, a missing choice (400) as invalid', async () => {
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => ({ code: 409, message: 'Merge grisé : conflit avec la base (« Merger quand même » pour passer outre).' }))
+      await expect(answer(session, { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'conflict', message: expect.stringMatching(/Merge grisé/) })
+      regisseurs.answer(async () => ({ code: 400, message: 'Choix manquant.' }))
+      await expect(answer(session, { questionId: 'q1' })).resolves.toEqual({ ok: false, error: 'invalid', message: 'Choix manquant.' })
+    })
+
+    it('refuses an answered or unknown question and a second click, posting nothing more', async () => {
+      const { session, regisseurs } = await started([{ ...merge(null), answer: 'Non' }])
+      await expect(answer(session, { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(answer(session, { questionId: '../q', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+      const open = await started()
+      let release!: () => void
+      open.regisseurs.answer(() => new Promise((resolve) => { release = () => resolve({ code: 200, message: 'ok' }) }))
+      const first = answer(open.session, { questionId: 'q1', choice: 1 })
+      await expect(answer(open.session, { questionId: 'q1', choice: 1 })).resolves.toEqual({ ok: false, error: 'busy' })
+      release()
+      await expect(first).resolves.toEqual({ ok: true })
+    })
+
+    it('shows why Merger is greyed and offers the rebase on a fresh conflict', async () => {
+      const { session } = await started([merge({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', ts: Date.now() / 1000 })])
+      expect(snap(session).questions.q1).toMatchObject({ isMerge: true, locks: ['conflit avec la base'], ghUnknown: false, rebase: true })
+      expect(snap(session).suivi?.sections.aFaire[0]).toMatchObject({ meta: ['Merger grisé : conflit avec la base'], action: { type: 'question', questionId: 'q1', rebase: true } })
     })
   })
 

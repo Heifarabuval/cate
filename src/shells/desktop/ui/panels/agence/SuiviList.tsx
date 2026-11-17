@@ -34,7 +34,13 @@ function Mention({ item, row }: { item: string; row: NeedRow }) {
   return <>{item}</>
 }
 
-function Row({ row, onRead }: { row: NeedRow; onRead(draftId: string): void }) {
+interface RowActions {
+  onRead(draftId: string): void
+  /** « Demander le rebase » on a merge greyed by a conflict. */
+  onRebase(questionId: string): void
+}
+
+function Row({ row, onRead, onRebase }: { row: NeedRow } & RowActions) {
   const action = row.action
   return (
     <li className="px-3 py-2 border-t border-subtle first:border-t-0">
@@ -45,6 +51,11 @@ function Row({ row, onRead }: { row: NeedRow; onRead(draftId: string): void }) {
             {action.inFlight
               ? <span className="whitespace-nowrap text-[11px] text-muted">En cours d&apos;envoi</span>
               : <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRead(action.draftId)}>Lire et envoyer</Button>}
+          </span>
+        )}
+        {action?.type === 'question' && action.rebase && (
+          <span data-testid="need-actions" className="flex shrink-0 items-center gap-1.5">
+            <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRebase(action.questionId)}>Demander le rebase</Button>
           </span>
         )}
       </div>
@@ -62,7 +73,7 @@ function Row({ row, onRead }: { row: NeedRow; onRead(draftId: string): void }) {
   )
 }
 
-export default function SuiviList({ suivi, onRead }: { suivi: SuiviView; onRead(draftId: string): void }) {
+export default function SuiviList({ suivi, onRead, onRebase }: { suivi: SuiviView } & RowActions) {
   return (
     <div className="flex flex-col gap-3 p-3">
       <header>
@@ -75,7 +86,7 @@ export default function SuiviList({ suivi, onRead }: { suivi: SuiviView; onRead(
           <h2 className={`px-3 py-1.5 text-[12px] font-semibold border-b border-subtle ${tone}`}>{`${title} (${suivi.sections[key].length})`}</h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-muted">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} onRead={onRead} />)}</ul>}
+            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} onRead={onRead} onRebase={onRebase} />)}</ul>}
         </section>
       ))}
     </div>
