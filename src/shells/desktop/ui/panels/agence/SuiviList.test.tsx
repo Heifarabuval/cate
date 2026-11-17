@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { NeedRow, SuiviView } from '@panels/agence/contract'
+import type { AgenceOp, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { installMockClientUi } from '../../../../../test/clientUi'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -27,7 +27,10 @@ let ui: ReturnType<typeof installMockClientUi>
 const onRead = vi.fn()
 const onRebase = vi.fn()
 const onOpenUrl = vi.fn()
-const render = (view: SuiviView) => act(() => root.render(<SuiviList workspaceId="ws" suivi={view} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />))
+const send = vi.fn(async (_op: AgenceOp) => ({ ok: true }))
+const render = (view: SuiviView, questions: Record<string, QuestionView> = {}) => act(() => root.render(
+  <SuiviList workspaceId="ws" suivi={view} questions={questions} send={send} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />,
+))
 const headings = () => [...host.querySelectorAll('h2')].map((h) => h.textContent)
 
 beforeEach(() => {
@@ -35,6 +38,7 @@ beforeEach(() => {
   onRead.mockClear()
   onRebase.mockClear()
   onOpenUrl.mockClear()
+  send.mockClear()
   host_.order.length = 0
   host_.revealPanel.mockClear()
   host_.focusPanel.mockClear()
@@ -121,6 +125,27 @@ it('offers « Demander le rebase » on a merge greyed by a conflict, and only th
   expect(host.textContent).toContain('état GitHub inconnu')
   act(() => buttons[0].click())
   expect(onRebase).toHaveBeenCalledWith('q2')
+})
+
+const questionRow = row('n8', { kind: 'human', title: 'Quel nom ?', action: { type: 'question', questionId: 'q1', rebase: false } })
+const questionView: QuestionView = {
+  id: 'q1', question: 'Quel nom pour le panneau ?', options: [{ label: 'Agence', detail: '' }, { label: 'Suivi', detail: '' }],
+  isMerge: false, locks: [], ghUnknown: false, rebase: false,
+}
+
+it('offers « Répondre » on a question line: it opens the question card under the line, and closes it once answered', async () => {
+  render(suivi({ aFaire: [questionRow] }), { q1: questionView })
+  expect(host.querySelector('textarea')).toBeNull()
+  act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre')!.click())
+  expect(host.textContent).toContain('Quel nom pour le panneau ?')
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => /^Suivi/.test(b.textContent ?? ''))!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q1', choice: 1 })
+  expect(host.querySelector('textarea')).toBeNull()
+})
+
+it('offers no « Répondre » for a question the snapshot no longer holds (already answered)', () => {
+  render(suivi({ aFaire: [questionRow] }), {})
+  expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Répondre')).toBe(false)
 })
 
 const linked = (links: NeedRow['links']) => row('l', {

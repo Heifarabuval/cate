@@ -1,7 +1,8 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { focusPanel, revealPanel } from '@client/host'
-import type { NeedRow, SuiviView } from '@panels/agence/contract'
+import type { AgenceOp, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
+import QuestionCard from './QuestionCard'
 
 const SECTIONS = [
   { key: 'bloquant', title: 'Bloquant', tone: 'text-danger' },
@@ -74,10 +75,15 @@ interface RowActions {
   onRebase(questionId: string): void
   /** A link of the follow-up (#N of a PR or an issue, evidence URL). */
   onOpenUrl: OpenUrl
+  /** Open questions by id: a question line offers « Répondre » while its card exists. */
+  questions: Record<string, QuestionView>
+  send(op: AgenceOp): Promise<unknown>
 }
 
-function Row({ row, workspaceId, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string } & RowActions) {
+function Row({ row, workspaceId, questions, send, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string } & RowActions) {
   const action = row.action
+  const [answering, setAnswering] = useState(false)
+  const question = action?.type === 'question' ? questions[action.questionId] : undefined
   return (
     <li className="px-3 py-2 border-t border-subtle first:border-t-0">
       <div className="flex items-start gap-2">
@@ -89,9 +95,10 @@ function Row({ row, workspaceId, onRead, onRebase, onOpenUrl }: { row: NeedRow; 
               : <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRead(action.draftId)}>Lire et envoyer</Button>}
           </span>
         )}
-        {action?.type === 'question' && action.rebase && (
+        {action?.type === 'question' && (action.rebase || question) && (
           <span data-testid="need-actions" className="flex shrink-0 items-center gap-1.5">
-            <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRebase(action.questionId)}>Demander le rebase</Button>
+            {action.rebase && <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRebase(action.questionId)}>Demander le rebase</Button>}
+            {question && <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => setAnswering((open) => !open)}>Répondre</Button>}
           </span>
         )}
       </div>
@@ -105,11 +112,12 @@ function Row({ row, workspaceId, onRead, onRebase, onOpenUrl }: { row: NeedRow; 
           ))}
         </div>
       )}
+      {answering && question && <QuestionCard question={question} send={send} onDone={() => setAnswering(false)} />}
     </li>
   )
 }
 
-export default function SuiviList({ workspaceId, suivi, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
+export default function SuiviList({ workspaceId, suivi, questions, send, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
   return (
     <div className="flex flex-col gap-3 p-3">
       <header>
@@ -122,7 +130,7 @@ export default function SuiviList({ workspaceId, suivi, onRead, onRebase, onOpen
           <h2 className={`px-3 py-1.5 text-[12px] font-semibold border-b border-subtle ${tone}`}>{`${title} (${suivi.sections[key].length})`}</h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-muted">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} questions={questions} send={send} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
         </section>
       ))}
     </div>

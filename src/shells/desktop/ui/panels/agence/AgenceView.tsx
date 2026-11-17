@@ -89,6 +89,8 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                 <SuiviList
                   workspaceId={workspaceId}
                   suivi={snapshot.suivi}
+                  questions={snapshot.questions}
+                  send={send}
                   onRead={setReading}
                   onRebase={(questionId) => void run({ kind: 'answer', questionId, choice: 'rebase' })}
                   onOpenUrl={(url) => { openInCate(workspaceId, panelId, url) }}
