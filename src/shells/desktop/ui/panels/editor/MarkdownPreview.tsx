@@ -7,7 +7,7 @@ import MarkdownCodeBlock from './MarkdownCodeBlock'
 
 /** Where the previewed file lives: its images and links are workspace files
  *  relative to it; a link opens from its panel. */
-const PreviewFile = createContext<{ workspaceId: string; panelId: string; filePath: string } | null>(null)
+const PreviewFile = createContext<{ workspaceId: string; panelId: string; filePath: string; noImages?: boolean } | null>(null)
 
 const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
@@ -18,7 +18,8 @@ const IMAGE_TYPES: Record<string, string> = {
  *  runtime (never this device's disk), the same for every runtime. */
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   const file = useContext(PreviewFile)
-  const path = src && file ? markdownPath(src, file.filePath) : null
+  const noImages = file?.noImages === true
+  const path = !noImages && src && file ? markdownPath(src, file.filePath) : null
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!path || !file) return
@@ -36,6 +37,9 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [path, file])
+  // Untrusted text (an agent's draft): nothing is fetched, so no tracking pixel
+  // leaks the reader's IP; the image shows as its alt text and its URL.
+  if (noImages) return <span className="text-muted">{alt ? `${alt} (${src ?? ''})` : src}</span>
   const shown = path ? url : src
   return shown ? <img src={shown} alt={alt ?? ''} className="max-w-full rounded-md my-2" /> : <span className="text-muted">{alt}</span>
 }
@@ -80,8 +84,10 @@ const markdownComponents: Components = {
   img: ({ src, alt }) => <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
 }
 
-export function MarkdownPreview({ content, workspaceId, panelId, filePath }: { content: string; workspaceId: string; panelId: string; filePath: string }) {
-  const file = useMemo(() => ({ workspaceId, panelId, filePath }), [workspaceId, panelId, filePath])
+/** `noImages`: for text a person did not write (an agent's draft), images are
+ *  not loaded but shown as their alt text and URL. */
+export function MarkdownPreview({ content, workspaceId, panelId, filePath, noImages }: { content: string; workspaceId: string; panelId: string; filePath: string; noImages?: boolean }) {
+  const file = useMemo(() => ({ workspaceId, panelId, filePath, noImages }), [workspaceId, panelId, filePath, noImages])
   return (
     <div className="absolute inset-0 overflow-auto px-6 py-4" data-testid="markdown-preview">
       <div className="max-w-3xl mx-auto prose-markdown space-y-3 [&>:first-child]:mt-0 text-[13px] text-primary leading-relaxed">

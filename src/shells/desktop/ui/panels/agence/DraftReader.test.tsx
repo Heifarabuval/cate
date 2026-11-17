@@ -7,7 +7,7 @@ import { installMockClientUi } from '../../../../../test/clientUi'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../editor/MarkdownPreview', () => ({
-  MarkdownPreview: ({ content }: { content: string }) => <div data-testid="markdown-preview">{content}</div>,
+  MarkdownPreview: ({ content, noImages }: { content: string; noImages?: boolean }) => <div data-testid="markdown-preview" data-no-images={String(noImages === true)}>{content}</div>,
 }))
 import DraftReader from './DraftReader'
 
@@ -43,6 +43,16 @@ it('renders the draft text through the markdown preview, with its target and tit
   expect(host.querySelector('[data-testid="markdown-preview"]')!.textContent).toBe('# Titre\n\nCorps **gras**')
   expect(host.textContent).toContain('Corriger le suivi')
   expect(host.textContent).toContain('issue:Heifarabuval/cate')
+})
+
+it('renders the draft without images, and sends its raw text unchanged', async () => {
+  const texte = 'Voir ![pixel](https://track.example/p.png)'
+  render(draft({ texte }))
+  const preview = host.querySelector('[data-testid="markdown-preview"]')!
+  expect(preview.getAttribute('data-no-images')).toBe('true')
+  expect(preview.textContent).toBe(texte)
+  await click('Envoyer')
+  expect(send).toHaveBeenCalledWith({ kind: 'draft.send', draftId: 'd1', hash: 'hash-affiché' })
 })
 
 it('sends the hash it displayed, and goes back when the send is accepted', async () => {
