@@ -63,7 +63,7 @@ export default function DraftReader({ workspaceId, panelId, draft, send, onBack 
         </div>
       </div>
       <div className="relative min-h-[200px] flex-1 overflow-hidden rounded-lg border border-subtle bg-surface-2">
-        <MarkdownPreview content={draft.texte} workspaceId={workspaceId} panelId={panelId} filePath={`${draft.id}.md`} />
+        <MarkdownPreview content={draft.texte} workspaceId={workspaceId} panelId={panelId} filePath={`${draft.id}.md`} noImages />
       </div>
       {error && <InlineNotice tone="error">{error}</InlineNotice>}
       {open && (

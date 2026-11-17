@@ -53,3 +53,20 @@ it('reads a workspace image through its runtime, never the device disk', async (
   expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview/1')
   host.remove()
 })
+
+it('shows no image of untrusted text: its alt text and its URL in plain text, nothing fetched', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  await act(async () => root.render(
+    <MarkdownPreview workspaceId="w" panelId="d1" filePath="d1.md" noImages content={'avant ![logo](https://track.example/p.png) milieu ![](docs/rel.png) fin ![ref][r]\n\n[r]: https://track.example/r.png'} />,
+  ))
+  await act(async () => {})
+  expect(host.querySelectorAll('img')).toHaveLength(0)
+  expect(host.textContent).toContain('logo (https://track.example/p.png)')
+  expect(host.textContent).toContain('docs/rel.png')
+  expect(host.textContent).toContain('ref (https://track.example/r.png)')
+  expect(h.readBinary).not.toHaveBeenCalled()
+  await act(async () => root.unmount())
+  host.remove()
+})
