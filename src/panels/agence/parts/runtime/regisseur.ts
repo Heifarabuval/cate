@@ -150,6 +150,8 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
     if (proc.inFlight === 0) return stop(proc, reason)
     if (proc.idle) return
     const timer = setTimeout(() => proc.idle?.(), drainMaxMs)
+    // A stop that does not wait (trust revoked, shutdown) must not be held up by this wait's timer.
+    timer.unref()
     proc.idle = () => {
       clearTimeout(timer)
       proc.idle = null
@@ -264,6 +266,7 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
   const offTrust = options.trust.onChange(({ trusted }) => {
     for (const entry of entries.values()) {
       if (!trusted) {
+        // Security first: no wait for clicks in flight, so a send may stay « à valider » though it left.
         if (entry.proc) stop(entry.proc, 'untrusted')
         else if (!entry.starting) set(entry, { state: 'stopped', error: UNTRUSTED })
       } else if (!entry.proc) void start(entry)
@@ -338,6 +341,7 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
       disposed = true
       offTrust()
       for (const entry of [...entries.values()]) for (const handle of [...entry.refs.keys()]) handle.release()
+      // The daemon is going: no wait for clicks in flight, so a send may stay « à valider » though it left.
       for (const proc of procs) stop(proc, 'released')
       await Promise.all([...procs].map((proc) => proc.exited))
     },
