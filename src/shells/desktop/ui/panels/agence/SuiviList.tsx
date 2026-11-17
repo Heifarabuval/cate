@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { focusPanel, revealPanel } from '@client/host'
 import type { NeedRow, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
 
@@ -26,8 +27,39 @@ function Link({ href, onOpenUrl, children }: { href: string; onOpenUrl: OpenUrl;
   )
 }
 
-/** One mention of a line: the #N of a PR and a URL as evidence are links. */
-function Mention({ item, row, onOpenUrl }: { item: string; row: NeedRow; onOpenUrl: OpenUrl }) {
+const PANELS = 'panneau : '
+
+/** A panel the line links: a live one comes forward and takes focus; a closed
+ *  one shows its last known title, no longer clickable. */
+function PanelLink({ workspaceId, link }: { workspaceId: string; link: NeedRow['links'][number] }) {
+  if (link.closed) return <span data-testid="closed-panel">{link.title} · fermé</span>
+  return (
+    <button
+      type="button"
+      onClick={() => { void revealPanel(workspaceId, link.panelId).then(() => focusPanel(workspaceId, link.panelId)) }}
+      className="max-w-full truncate align-bottom text-agent underline decoration-agent/30 hover:decoration-agent"
+    >
+      {link.title}
+    </button>
+  )
+}
+
+/** One mention of a line: the #N of a PR and a URL as evidence are links, and
+ *  so are the panels it concerns. */
+function Mention({ item, row, workspaceId, onOpenUrl }: { item: string; row: NeedRow; workspaceId: string; onOpenUrl: OpenUrl }) {
+  if (item.startsWith(PANELS) && row.links.length > 0) {
+    return (
+      <>
+        {PANELS}
+        {row.links.map((link, index) => (
+          <Fragment key={link.panelId}>
+            {index > 0 && ', '}
+            <PanelLink workspaceId={workspaceId} link={link} />
+          </Fragment>
+        ))}
+      </>
+    )
+  }
   if (row.link && item === row.link.label) return <Link href={row.link.href} onOpenUrl={onOpenUrl}>{item}</Link>
   if (item.startsWith(EVIDENCE) && /^https?:\/\//.test(item.slice(EVIDENCE.length))) {
     const url = item.slice(EVIDENCE.length)
@@ -44,7 +76,7 @@ interface RowActions {
   onOpenUrl: OpenUrl
 }
 
-function Row({ row, onRead, onRebase, onOpenUrl }: { row: NeedRow } & RowActions) {
+function Row({ row, workspaceId, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string } & RowActions) {
   const action = row.action
   return (
     <li className="px-3 py-2 border-t border-subtle first:border-t-0">
@@ -68,7 +100,7 @@ function Row({ row, onRead, onRebase, onOpenUrl }: { row: NeedRow } & RowActions
           {row.meta.map((item, index) => (
             <Fragment key={`${item}-${index}`}>
               {index > 0 && ' · '}
-              <Mention item={item} row={row} onOpenUrl={onOpenUrl} />
+              <Mention item={item} row={row} workspaceId={workspaceId} onOpenUrl={onOpenUrl} />
             </Fragment>
           ))}
         </div>
@@ -77,7 +109,7 @@ function Row({ row, onRead, onRebase, onOpenUrl }: { row: NeedRow } & RowActions
   )
 }
 
-export default function SuiviList({ suivi, onRead, onRebase, onOpenUrl }: { suivi: SuiviView } & RowActions) {
+export default function SuiviList({ workspaceId, suivi, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
   return (
     <div className="flex flex-col gap-3 p-3">
       <header>
@@ -90,7 +122,7 @@ export default function SuiviList({ suivi, onRead, onRebase, onOpenUrl }: { suiv
           <h2 className={`px-3 py-1.5 text-[12px] font-semibold border-b border-subtle ${tone}`}>{`${title} (${suivi.sections[key].length})`}</h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-muted">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
         </section>
       ))}
     </div>

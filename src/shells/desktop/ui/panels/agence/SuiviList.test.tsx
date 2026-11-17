@@ -3,9 +3,15 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { NeedRow, SuiviView } from '@panels/agence/contract'
 import { installMockClientUi } from '../../../../../test/clientUi'
-import SuiviList from './SuiviList'
-
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const host_ = vi.hoisted(() => ({
+  order: [] as string[],
+  revealPanel: vi.fn(async (_workspaceId: string, panelId: string) => { host_.order.push(`reveal:${panelId}`); return true }),
+  focusPanel: vi.fn((_workspaceId: string, panelId: string | null) => { host_.order.push(`focus:${panelId}`) }),
+}))
+vi.mock('@client/host', async (original) => ({ ...await original<object>(), revealPanel: host_.revealPanel, focusPanel: host_.focusPanel }))
+import SuiviList from './SuiviList'
 
 const row = (id: string, patch: Partial<NeedRow> = {}): NeedRow => ({
   id, title: `Besoin ${id}`, kind: 'task', meta: [], evidence: null, link: null, links: [], action: null, ...patch,
@@ -21,7 +27,7 @@ let ui: ReturnType<typeof installMockClientUi>
 const onRead = vi.fn()
 const onRebase = vi.fn()
 const onOpenUrl = vi.fn()
-const render = (view: SuiviView) => act(() => root.render(<SuiviList suivi={view} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />))
+const render = (view: SuiviView) => act(() => root.render(<SuiviList workspaceId="ws" suivi={view} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />))
 const headings = () => [...host.querySelectorAll('h2')].map((h) => h.textContent)
 
 beforeEach(() => {
@@ -29,6 +35,9 @@ beforeEach(() => {
   onRead.mockClear()
   onRebase.mockClear()
   onOpenUrl.mockClear()
+  host_.order.length = 0
+  host_.revealPanel.mockClear()
+  host_.focusPanel.mockClear()
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -112,4 +121,41 @@ it('offers « Demander le rebase » on a merge greyed by a conflict, and only th
   expect(host.textContent).toContain('état GitHub inconnu')
   act(() => buttons[0].click())
   expect(onRebase).toHaveBeenCalledWith('q2')
+})
+
+const linked = (links: NeedRow['links']) => row('l', {
+  meta: [`panneau : ${links.map((link) => link.title).join(', ')}`],
+  links,
+})
+
+it('reveals then focuses the live panel whose title is clicked', async () => {
+  render(suivi({ reste: [linked([{ panelId: 'p1', title: 'Impl C002', closed: false }])] }))
+  const title = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Impl C002')!
+  await act(async () => { title.click() })
+  expect(host_.order).toEqual(['reveal:p1', 'focus:p1'])
+  expect(host_.revealPanel).toHaveBeenCalledWith('ws', 'p1')
+  expect(host_.focusPanel).toHaveBeenCalledWith('ws', 'p1')
+})
+
+it('acts on the panel clicked when a line links several', async () => {
+  render(suivi({ reste: [linked([
+    { panelId: 'p1', title: 'Impl C002', closed: false },
+    { panelId: 'p2', title: 'Review lot C', closed: false },
+  ])] }))
+  expect(host.textContent).toContain('panneau : ')
+  const second = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Review lot C')!
+  await act(async () => { second.click() })
+  expect(host_.order).toEqual(['reveal:p2', 'focus:p2'])
+})
+
+it('shows a closed panel by its last known title followed by « fermé », not clickable, never « Introuvable »', async () => {
+  render(suivi({ reste: [linked([
+    { panelId: 'p1', title: 'Impl C002', closed: true },
+    { panelId: 'p2', title: 'Review lot C', closed: false },
+  ])] }))
+  expect(host.textContent).toContain('Impl C002 · fermé')
+  expect([...host.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Review lot C'])
+  await act(async () => { host.querySelector<HTMLElement>('[data-testid="closed-panel"]')!.click() })
+  expect(host_.revealPanel).not.toHaveBeenCalled()
+  expect(host.textContent!.toLowerCase()).not.toContain('introuvable')
 })
