@@ -9,6 +9,14 @@ import { installMockClientUi } from '../../../../../test/clientUi'
 vi.mock('../editor/MarkdownPreview', () => ({
   MarkdownPreview: ({ content }: { content: string }) => <div data-testid="markdown-preview">{content}</div>,
 }))
+// The terminal view bound to a PTY: here a stand-in that shows what it was given.
+vi.mock('../terminal', () => ({
+  TerminalPane: (props: { panelId: string; visible: boolean; snapshot: { ptyId: string | null; status: string } | null; send: (op: unknown) => Promise<unknown> }) => (
+    <div data-testid="terminal" data-panel={props.panelId} data-pty={props.snapshot?.ptyId ?? ''} data-status={props.snapshot?.status} data-visible={String(props.visible)}>
+      <button type="button" onClick={() => void props.send({ kind: 'restart' })}>terminal retry</button>
+    </div>
+  ),
+}))
 import AgenceView from './AgenceView'
 
 const snapshot = (patch: Partial<AgenceSnapshot> = {}): AgenceSnapshot => ({
@@ -68,6 +76,102 @@ it('goes back to the list when the draft being read is gone (sent or dropped els
   render(snapshot({ drafts: {} }))
   expect(host.querySelector('[data-testid="markdown-preview"]')).toBeNull()
   expect(host.textContent).toContain('À faire par Heifara')
+})
+
+/** A ResizeObserver stand-in: `resize` reports the view's width. */
+function stubResizeObserver() {
+  const callbacks: Array<(entries: unknown[]) => void> = []
+  ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+    constructor(callback: (entries: unknown[]) => void) { callbacks.push(callback) }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  return { resize: (width: number) => act(() => { for (const callback of callbacks) callback([{ contentRect: { width } }]) }) }
+}
+
+it('binds the terminal column to the orchestrator PTY of the snapshot, in this panel\'s name', () => {
+  render(snapshot({ ptyId: 'pty-9' }))
+  const terminal = host.querySelector('[data-testid="terminal"]')!
+  expect(terminal.getAttribute('data-pty')).toBe('pty-9')
+  expect(terminal.getAttribute('data-status')).toBe('running')
+  expect(terminal.getAttribute('data-panel')).toBe('ag1')
+})
+
+it.each([['starting', 'starting'], ['failed', 'failed'], ['exited', 'exited']] as const)('shows an orchestrator that is %s as such in the terminal', (orchestrator, status) => {
+  render(snapshot({ orchestrator }))
+  expect(host.querySelector('[data-testid="terminal"]')!.getAttribute('data-status')).toBe(status)
+})
+
+it.each(['exited', 'failed'] as const)('offers « Relancer l\'orchestrateur » when it is %s, and only then', async (orchestrator) => {
+  render(snapshot({ orchestrator: 'running' }))
+  expect(button('Relancer l\'orchestrateur')).toBeUndefined()
+  render(snapshot({ orchestrator }))
+  await act(async () => { button('Relancer l\'orchestrateur')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'orchestrator.restart' })
+})
+
+it('turns the terminal\'s own retry into the restart op, and shows a refusal', async () => {
+  send.mockResolvedValueOnce({ ok: false, error: 'unavailable', message: 'orchestrator-failed' } as never)
+  render(snapshot({ orchestrator: 'failed' }))
+  await act(async () => { button('terminal retry')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'orchestrator.restart' })
+  expect(host.querySelector('[role="alert"]')!.textContent).toContain('orchestrator-failed')
+})
+
+it('shows the CLI settings hint of the regisseur', () => {
+  render(snapshot({ regisseur: { state: 'running', error: null, settingsHint: 'réglages CLI du workspace à activer dans Cate : panneaux' } }))
+  expect(host.querySelector('[data-testid="regisseur-banner"]')!.textContent).toContain('réglages CLI du workspace à activer dans Cate : panneaux')
+})
+
+it('says agence is missing, with its message, and offers no follow-up', () => {
+  render(snapshot({ suivi: null, regisseur: { state: 'missing', error: 'agence introuvable (agence)', settingsHint: null } }))
+  expect(host.querySelector('[data-testid="regisseur-banner"]')!.textContent).toContain('agence introuvable (agence)')
+  expect(host.textContent).not.toContain('Régisseur arrêté')
+})
+
+it('says the follow-up is read only when another regisseur already serves the repository', () => {
+  render(snapshot({ regisseur: { state: 'external', error: 'régisseur déjà actif sur 4321', settingsHint: null } }))
+  expect(host.querySelector('[data-testid="regisseur-banner"]')!.textContent).toMatch(/lecture seule/)
+})
+
+it('says the regisseur stopped, with its reason, and restarts it on demand', async () => {
+  render(snapshot({ regisseur: { state: 'stopped', error: "agence watch s'est arrêté (SIGKILL)", settingsHint: null } }))
+  expect(host.querySelector('[data-testid="regisseur-banner"]')!.textContent).toContain("agence watch s'est arrêté (SIGKILL)")
+  await act(async () => { button('Relancer le régisseur')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'orchestrator.restart' })
+})
+
+it('shows no banner while the regisseur runs or starts', () => {
+  render(snapshot())
+  expect(host.querySelector('[data-testid="regisseur-banner"]')).toBeNull()
+  render(snapshot({ regisseur: { state: 'starting', error: null, settingsHint: null } }))
+  expect(host.querySelector('[data-testid="regisseur-banner"]')).toBeNull()
+})
+
+it('puts the conversation and the follow-up side by side when there is room', () => {
+  const observer = stubResizeObserver()
+  render(snapshot())
+  observer.resize(1000)
+  expect(host.querySelector('[role="tablist"]')).toBeNull()
+  expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
+  expect(host.textContent).toContain('À faire par Heifara')
+})
+
+it('switches to the tabs Conversation and Suivi under 640 px, keeping the terminal mounted', () => {
+  const observer = stubResizeObserver()
+  render(snapshot())
+  observer.resize(500)
+  const tabs = [...host.querySelectorAll('[role="tab"]')]
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['Conversation', 'Suivi'])
+  const column = () => host.querySelector('[data-testid="suivi-column"]')!
+  expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+  expect(column().className).toMatch(/\bhidden\b/)
+  expect(host.querySelector('[data-testid="terminal"]')!.getAttribute('data-visible')).toBe('true')
+  act(() => (tabs[1] as HTMLElement).click())
+  expect(column().className).not.toMatch(/\bhidden\b/)
+  expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="terminal"]')!.getAttribute('data-visible')).toBe('false')
 })
 
 it('asks for the rebase through the answer op, and shows a refusal above the list', async () => {
