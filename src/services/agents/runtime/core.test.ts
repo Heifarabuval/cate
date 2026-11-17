@@ -17,7 +17,7 @@ it('keeps the latest source title after rename, close and restart, including con
     state: () => null, panelIds: () => [], onChange: () => () => {},
     send: async () => ({ ok: true }), interrupt: async () => ({ ok: true }),
     conversation: async () => null, conversationStamp: async () => null,
-    onStep: () => () => {}, onConversationReset: () => () => {}, dispose() {},
+    onStep: () => () => {}, onConversationReset: () => () => {}, onTurnEnd: () => () => {}, dispose() {},
   }
   const deps: AgentsCoreDeps = {
     root: '/repo', agentsDir: directory,

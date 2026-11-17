@@ -76,6 +76,8 @@ export const agentApi = defineCateApi(
           .help('Relate this panel to the new agent (default with --relation: the calling panel)'),
         relation: opt(oneOf(...RELATION_KINDS)).flag('relation', 'kind')
           .help('Relate the calling panel (or --link-from) to the new agent with this kind'),
+        doneWhen: opt(str.nonEmpty().maxLength(2_000)).flag('done-when', 'command')
+          .help('Shell command that says the task is done: run in the agent\'s checkout after each turn (60 s timeout); exit 0 closes the panel and tells the caller'),
       },
       timeoutMs: 90_000,
       format: 'createdPanel',

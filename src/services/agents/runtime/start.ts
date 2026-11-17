@@ -10,6 +10,7 @@ import type { Point } from '@workspace/canvas/contract'
 import type { PlaceTarget, RelationKind } from '@workspace/document/contract'
 import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, isAgentId, isPromptAttachments, type AgentId, type AgentTypeInfo } from '../contract'
 import type { AgentsCore } from './core'
+import type { DoneWhen } from './doneWhen'
 import { evaluateAgentCliHooks, inspectAgentCliHooks, resolveDriverAgent } from './hooks/readiness'
 
 /** Where a new panel goes: an explicit target, or near a panel (on its
@@ -65,6 +66,8 @@ export interface AgentStartArgs {
   /** Relate this panel (default with `relation`: the caller) to the agent. */
   linkFrom?: string
   relation?: RelationKind
+  /** A shell command whose exit 0 after a turn finishes the task (doneWhen.ts). */
+  doneWhen?: string
 }
 
 /** The panel hosting a started agent; with a relation asked, its id or why
@@ -97,7 +100,7 @@ function fail(code: string): never {
 /** Start arguments once validated. */
 type StartRequest = Omit<AgentStartArgs, 'agentId'> & { agentId?: AgentId }
 
-export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, setup?: { types?(): Promise<AgentTypeInfo[]> }): AgentStarter {
+export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, setup?: { types?(): Promise<AgentTypeInfo[]> }, doneWhen?: Pick<DoneWhen, 'watch'>): AgentStarter {
   const pending = new Map<string, { agentId: AgentId; at: number }>()
   /** Still starting: recent, its terminal running, its agent not observed. */
   const stillStarting = (panelId: string, at: number): boolean => {
@@ -150,6 +153,9 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
       if (prompt?.includes('\0')) fail('invalid-prompt')
       if (input.agentId !== undefined && !isAgentId(input.agentId)) fail('unsupported-agent')
       if (input.worktreeId && input.newWorktree) fail('choose-worktreeId-or-newWorktree')
+      const doneWhenCommand = input.doneWhen?.trim()
+      if (input.doneWhen !== undefined && !doneWhenCommand) fail('done-when-required')
+      if (doneWhenCommand?.includes('\0')) fail('invalid-done-when')
       const args = input as StartRequest
       if (args.terminalPanelId) checkTerminal(args.terminalPanelId, callerPanelId)
       const placement = args.placement ?? (callerPanelId ? { near: callerPanelId } : {})
@@ -173,20 +179,23 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
           return { ...started, relationError: error instanceof Error ? error.message : String(error) }
         }
       }
+      const started = (panelId: string): AgentStarted => {
+        pending.set(panelId, { agentId, at: Date.now() })
+        // A reused terminal drops the condition of the agent it ran before.
+        doneWhen?.watch(panelId, doneWhenCommand ? { command: doneWhenCommand, cwd: checkout.cwd, ...(callerPanelId ? { callerPanelId } : {}) } : null)
+        return link({ panelId, agentId })
+      }
       const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}) } }
       try {
         if (args.terminalPanelId) {
           // Reuse the panel, not its shell process: restarting the PTY
           // launches the canonical executable and argv directly.
           await ports.terminals.relaunch(args.terminalPanelId, { ...checkout, launch })
-          pending.set(args.terminalPanelId, { agentId, at: Date.now() })
-          return link({ panelId: args.terminalPanelId, agentId })
+          return started(args.terminalPanelId)
         }
         const chosen = args.title?.trim()
         const title = chosen || (prompt ? prompt.replace(/\s+/g, ' ').slice(0, 54) : AGENT_DEFS[agentId].displayName)
-        const panelId = await ports.terminals.create({ ...checkout, title, ...(chosen ? { titleChosen: true } : {}), launch, placement })
-        pending.set(panelId, { agentId, at: Date.now() })
-        return link({ panelId, agentId })
+        return started(await ports.terminals.create({ ...checkout, title, ...(chosen ? { titleChosen: true } : {}), launch, placement }))
       } catch (error) {
         if (created) await ports.worktrees.remove(created.id).catch(() => {})
         throw error

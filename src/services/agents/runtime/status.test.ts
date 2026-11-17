@@ -374,3 +374,19 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(notify).not.toHaveBeenCalled()
   })
 })
+
+describe('turn-end edge (done-when checks)', () => {
+  it('reports every turn-end, also one after a permission wait that does not change the status', () => {
+    const ended = vi.fn()
+    const turns = createAgentStatusMachine(() => {}, ended)
+    turns.notePresence(PTY, true, false, null)
+    turns.noteHookEvent(hookEvent('turn-start'))
+    turns.noteHookEvent(hookEvent('turn-end'))
+    expect(ended).toHaveBeenCalledTimes(1)
+    turns.noteHookEvent(hookEvent('turn-start'))
+    turns.noteHookEvent(hookEvent('permission-wait'))
+    turns.noteHookEvent(hookEvent('turn-end'))
+    expect(ended).toHaveBeenCalledTimes(2)
+    expect(ended).toHaveBeenCalledWith(PTY)
+  })
+})

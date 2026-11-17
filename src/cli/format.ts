@@ -72,12 +72,24 @@ function promptCounts(prompts: unknown): string {
   return [...counts].map(([state, count]) => `${count} ${state}`).join(', ')
 }
 
+/** An agent's done-when condition and its last result (`npm test → exit 1`). */
+function doneWhenText(value: unknown): string {
+  const condition = asObject(value)
+  if (!condition) return ''
+  const last = asObject(condition.last)
+  const result = condition.checking === true ? 'checking'
+    : !last ? 'not checked yet'
+    : last.outcome === 'notDone' ? `exit ${text(last.exitCode)}`
+    : `${text(last.outcome)}: ${text(last.reason)}`
+  return `${text(condition.command)} → ${result}`
+}
+
 function agentRuns(value: unknown): string {
   if (!Array.isArray(value)) return generic(value)
   if (value.length === 0) return '(no agent runs)'
-  return table(['ID', 'STATE', 'PROMPTS', 'TITLE'], value.map((item) => {
+  return table(['ID', 'STATE', 'PROMPTS', 'TITLE', 'DONE WHEN'], value.map((item) => {
     const run = asObject(item) ?? {}
-    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', promptCounts(run.prompts), text(run.title ?? run.agentName ?? run.agentId)]
+    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', promptCounts(run.prompts), text(run.title ?? run.agentName ?? run.agentId), doneWhenText(run.doneWhen)]
   }))
 }
 

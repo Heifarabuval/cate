@@ -7,13 +7,18 @@ import type { agentApi } from '../contract/api'
 import { AGENT_DEFS, isPromptAttachments, type AgentId, type AgentStartRequest, type PanelAgentState } from '../contract'
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
+import type { DoneWhen } from './doneWhen'
+
+/** Said by `cate agent start` without `--done-when`. */
+export const NO_DONE_WHEN_NOTE = 'no done-when condition: the panel will stay open'
 
 /** The panel's prompts on their way, without their attachments. */
 function promptsOf(agents: AgentsCore, panelId: string) {
   return agents.prompts.of(panelId).map(({ attachments: _attachments, ...prompt }) => prompt)
 }
 
-function summary(agents: AgentsCore, state: PanelAgentState) {
+function summary(agents: AgentsCore, state: PanelAgentState, doneWhen?: DoneWhen) {
+  const condition = doneWhen?.state(state.panelId)
   return {
     panelId: state.panelId,
     title: agents.document.panel(state.panelId)?.title ?? '',
@@ -22,12 +27,14 @@ function summary(agents: AgentsCore, state: PanelAgentState) {
     state: state.status,
     canReceivePrompt: state.canReceivePrompt,
     prompts: promptsOf(agents, state.panelId),
+    ...(condition ? { doneWhen: condition } : {}),
   }
 }
 
 /** A started agent before its CLI is observed: listed and waited for, not
  *  yet prompted. */
-function startingSummary(agents: AgentsCore, { panelId, agentId }: { panelId: string; agentId: AgentId }) {
+function startingSummary(agents: AgentsCore, { panelId, agentId }: { panelId: string; agentId: AgentId }, doneWhen?: DoneWhen) {
+  const condition = doneWhen?.state(panelId)
   return {
     panelId,
     title: agents.document.panel(panelId)?.title ?? '',
@@ -36,16 +43,17 @@ function startingSummary(agents: AgentsCore, { panelId, agentId }: { panelId: st
     state: 'starting',
     canReceivePrompt: false,
     prompts: promptsOf(agents, panelId),
+    ...(condition ? { doneWhen: condition } : {}),
   }
 }
 
 type AgentSummary = ReturnType<typeof summary> | ReturnType<typeof startingSummary>
 
 /** Every agent panel `list` and `wait` see, starting ones last. */
-function agentSummaries(agents: AgentsCore, starter: AgentStarter): AgentSummary[] {
+function agentSummaries(agents: AgentsCore, starter: AgentStarter, doneWhen?: DoneWhen): AgentSummary[] {
   return [
-    ...liveAgents(agents).map((state) => summary(agents, state)),
-    ...starter.starting().map((started) => startingSummary(agents, started)),
+    ...liveAgents(agents).map((state) => summary(agents, state, doneWhen)),
+    ...starter.starting().map((started) => startingSummary(agents, started, doneWhen)),
   ]
 }
 
@@ -111,13 +119,16 @@ export async function interruptAgent(agents: AgentsCore, panelId: string): Promi
   return { ok: true }
 }
 
-export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter): CateServiceHandlers<typeof agentApi> {
+export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter, doneWhen?: DoneWhen): CateServiceHandlers<typeof agentApi> {
   return {
-    start: (args, ctx) => startAgent(starter, ctx.caller.panelId, args as AgentStartRequest),
+    async start(args, ctx) {
+      const started = await startAgent(starter, ctx.caller.panelId, args as AgentStartRequest)
+      return args.doneWhen ? started : { ...started, note: NO_DONE_WHEN_NOTE }
+    },
 
     types: () => starter.types(),
 
-    list: () => agentSummaries(agents, starter),
+    list: () => agentSummaries(agents, starter, doneWhen),
 
     async read({ panelId }) {
       refuseStarting(starter, panelId)
