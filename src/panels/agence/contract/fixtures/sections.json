@@ -1,0 +1,235 @@
+[
+ {
+  "name": "Bloquant",
+  "count": 4,
+  "needs": [
+   {
+    "title": "Écrire le test du hash",
+    "meta": [
+     "débloque C007"
+    ],
+    "action": null
+   },
+   {
+    "title": "PR du lot C",
+    "meta": [
+     "#8",
+     "budget de 30 min dépassé : continuer, réduire ou arrêter ?",
+     "panneau : Impl C002"
+    ],
+    "action": null
+   },
+   {
+    "title": "Agent sur permission",
+    "meta": [
+     "agent bloqué sur une permission ou une question",
+     "panneau : Review lot C"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fermer le terminal",
+    "meta": [
+     "fermeture refusée (travail non sauvegardé ou programme en cours) : à fermer à la main",
+     "panneau : Impl C002, Review lot C"
+    ],
+    "action": null
+   }
+  ]
+ },
+ {
+  "name": "À faire par Heifara",
+  "count": 4,
+  "needs": [
+   {
+    "title": "Bloquant de Heifara",
+    "meta": [],
+    "action": null
+   },
+   {
+    "title": "Valider le brouillon issue",
+    "meta": [],
+    "action": "draft:d1"
+   },
+   {
+    "title": "Slack en cours",
+    "meta": [],
+    "action": "draft:d2"
+   },
+   {
+    "title": "Choisir le merge",
+    "meta": [
+     "acceptation : réponse écrite"
+    ],
+    "action": "question:q1"
+   }
+  ]
+ },
+ {
+  "name": "Fait",
+  "count": 20,
+  "needs": [
+   {
+    "title": "Fait 24",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/24"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 22",
+    "meta": [
+     "preuve : sortie de test 22"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 23",
+    "meta": [
+     "preuve : sortie de test 23"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 20",
+    "meta": [
+     "preuve : sortie de test 20"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 21",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/21"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 18",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/18"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 19",
+    "meta": [
+     "preuve : sortie de test 19"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 16",
+    "meta": [
+     "preuve : sortie de test 16"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 17",
+    "meta": [
+     "preuve : sortie de test 17"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 14",
+    "meta": [
+     "preuve : sortie de test 14"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 15",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/15"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 12",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/12"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 13",
+    "meta": [
+     "preuve : sortie de test 13"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 10",
+    "meta": [
+     "preuve : sortie de test 10"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 11",
+    "meta": [
+     "preuve : sortie de test 11"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 8",
+    "meta": [
+     "preuve : sortie de test 8"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 9",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/9"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 6",
+    "meta": [
+     "preuve : https://github.com/x/y/pull/6"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 7",
+    "meta": [
+     "preuve : sortie de test 7"
+    ],
+    "action": null
+   },
+   {
+    "title": "Fait 4",
+    "meta": [
+     "preuve : sortie de test 4"
+    ],
+    "action": null
+   }
+  ]
+ },
+ {
+  "name": "Reste à faire",
+  "count": 2,
+  "needs": [
+   {
+    "title": "Issue ouverte",
+    "meta": [
+     "#7",
+     "débloque C011",
+     "acceptation : test vert",
+     "panneau : Agence : cate"
+    ],
+    "action": null
+   },
+   {
+    "title": "Tâche simple",
+    "meta": [],
+    "action": null
+   }
+  ]
+ }
+]

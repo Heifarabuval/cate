@@ -103,3 +103,56 @@ export interface AgenceFields {
 export interface AgenceCreateOptions extends PanelCreateOptions {
   root?: string
 }
+
+/** A need of the CLI's state (`add_need` in agence.py). */
+export interface StateNeed {
+  id: string
+  kind: string
+  title: string
+  ref: string | null
+  owner: string
+  blocking: boolean
+  unblocks: string | null
+  panels: string[]
+  acceptance: string | null
+  budgetMin: number | null
+  evidence: string | null
+  status: 'open' | 'done' | string
+  closeFailed: boolean
+  agentBlocked: boolean
+  overBudget: boolean
+  updated: string
+}
+
+export interface StateDraft {
+  id: string
+  needId: string
+  cible: string
+  titre: string | null
+  statut: string
+  url: string | null
+}
+
+export interface StateQuestion {
+  id: string
+  needId: string
+  question: string
+  options: Array<{ label: string; detail: string }>
+  answer: string | null
+}
+
+/** The part of the CLI's state the panel reads. */
+export interface AgenceState {
+  repo: string
+  ghRepo: string | null
+  agentsActive: number
+  panels: Record<string, string>
+  titles: Record<string, string>
+  needs: StateNeed[]
+  drafts: StateDraft[]
+  questions: StateQuestion[]
+}
+
+/** What the document says of a linked panel: its last known title, and
+ *  whether it is gone. */
+export type PanelTitles = Record<string, { title: string; closed: boolean }>
