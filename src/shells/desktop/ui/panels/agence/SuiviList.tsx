@@ -78,9 +78,11 @@ interface RowActions {
   /** Open questions by id: a question line offers « Répondre » while its card exists. */
   questions: Record<string, QuestionView>
   send(op: AgenceOp): Promise<unknown>
+  /** A narrow column: the buttons under a title take short names (FR-007). */
+  compact?: boolean
 }
 
-function Row({ row, workspaceId, questions, send, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string } & RowActions) {
+function Row({ row, workspaceId, questions, send, compact, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string } & RowActions) {
   const action = row.action
   const [answering, setAnswering] = useState(false)
   const question = action?.type === 'question' ? questions[action.questionId] : undefined
@@ -97,8 +99,18 @@ function Row({ row, workspaceId, questions, send, onRead, onRebase, onOpenUrl }:
         )}
         {action?.type === 'question' && (action.rebase || question) && (
           <span data-testid="need-actions" className="flex shrink-0 items-center gap-1.5">
-            {action.rebase && <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRebase(action.questionId)}>Demander le rebase</Button>}
-            {question && <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => setAnswering((open) => !open)}>Répondre</Button>}
+            {action.rebase && (
+              <Button
+                size="sm"
+                variant="primary"
+                className="shrink-0 whitespace-nowrap"
+                onClick={() => onRebase(action.questionId)}
+                {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
+              >
+                {compact ? 'Rebase' : 'Demander le rebase'}
+              </Button>
+            )}
+            {question && <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</Button>}
           </span>
         )}
       </div>
@@ -112,12 +124,12 @@ function Row({ row, workspaceId, questions, send, onRead, onRebase, onOpenUrl }:
           ))}
         </div>
       )}
-      {answering && question && <QuestionCard question={question} send={send} onDone={() => setAnswering(false)} />}
+      {answering && question && <QuestionCard question={question} send={send} compact={compact} onDone={() => setAnswering(false)} />}
     </li>
   )
 }
 
-export default function SuiviList({ workspaceId, suivi, questions, send, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
+export default function SuiviList({ workspaceId, suivi, questions, send, compact, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
   return (
     <div className="flex flex-col gap-3 p-3">
       <header>
@@ -130,7 +142,7 @@ export default function SuiviList({ workspaceId, suivi, questions, send, onRead,
           <h2 className={`px-3 py-1.5 text-[12px] font-semibold border-b border-subtle ${tone}`}>{`${title} (${suivi.sections[key].length})`}</h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-muted">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} questions={questions} send={send} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
         </section>
       ))}
     </div>

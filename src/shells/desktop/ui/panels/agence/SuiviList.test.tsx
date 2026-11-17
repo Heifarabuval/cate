@@ -28,8 +28,8 @@ const onRead = vi.fn()
 const onRebase = vi.fn()
 const onOpenUrl = vi.fn()
 const send = vi.fn(async (_op: AgenceOp) => ({ ok: true }))
-const render = (view: SuiviView, questions: Record<string, QuestionView> = {}) => act(() => root.render(
-  <SuiviList workspaceId="ws" suivi={view} questions={questions} send={send} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />,
+const render = (view: SuiviView, questions: Record<string, QuestionView> = {}, compact = false) => act(() => root.render(
+  <SuiviList workspaceId="ws" suivi={view} questions={questions} send={send} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} compact={compact} />,
 ))
 const headings = () => [...host.querySelectorAll('h2')].map((h) => h.textContent)
 
@@ -141,6 +141,29 @@ it('offers « Répondre » on a question line: it opens the question card under 
   await act(async () => { [...host.querySelectorAll('button')].find((b) => /^Suivi/.test(b.textContent ?? ''))!.click() })
   expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q1', choice: 1 })
   expect(host.querySelector('textarea')).toBeNull()
+})
+
+it('says whether the question card is open on « Répondre »', () => {
+  render(suivi({ aFaire: [questionRow] }), { q1: questionView })
+  const reply = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre' && b.hasAttribute('aria-expanded'))!
+  expect(reply().getAttribute('aria-expanded')).toBe('false')
+  act(() => reply().click())
+  expect(reply().getAttribute('aria-expanded')).toBe('true')
+  act(() => reply().click())
+  expect(reply().getAttribute('aria-expanded')).toBe('false')
+})
+
+it('names the rebase button briefly in a narrow column, the full name kept as title and accessible name', () => {
+  const conflict = row('q2', { kind: 'human', title: 'Merger la 12 ?', action: { type: 'question', questionId: 'q2', rebase: true } })
+  const merge: QuestionView = { ...questionView, id: 'q2', isMerge: true, locks: ['conflit avec la base'], rebase: true }
+  render(suivi({ aFaire: [conflict] }), { q2: merge }, true)
+  expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Demander le rebase')).toBe(false)
+  const short = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Rebase')!
+  expect(short.getAttribute('aria-label')).toBe('Demander le rebase')
+  expect(short.getAttribute('title')).toBe('Demander le rebase')
+  // The card it opens is compact too.
+  act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre')!.click())
+  expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Forcer')).toBe(true)
 })
 
 it('offers no « Répondre » for a question the snapshot no longer holds (already answered)', () => {
