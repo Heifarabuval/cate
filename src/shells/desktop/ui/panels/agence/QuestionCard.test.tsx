@@ -84,11 +84,32 @@ it('greys Merger with its reasons, offers Merger quand même, and the rebase on 
   expect(host.textContent).toContain('Merger grisé')
   expect(host.textContent).toContain('n11 : Revue de la PR 12')
   expect(host.textContent).toContain('conflit avec la base')
+  ui.confirm.mockResolvedValueOnce(true)
   await click('Merger quand même')
   expect(send).toHaveBeenLastCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
   await click('Demander le rebase')
   expect(send).toHaveBeenLastCalledWith({ kind: 'answer', questionId: 'q2', choice: 'rebase' })
+  // Only the merge over locks asks.
+  expect(ui.confirm).toHaveBeenCalledTimes(1)
+})
+
+it('asks before merging over the locks, naming each, and sends nothing when declined', async () => {
+  render(mergeQuestion({ locks: ['n11 : Revue de la PR 12', 'conflit avec la base'], rebase: true }))
+  ui.confirm.mockResolvedValueOnce(false)
+  await click('Merger quand même')
+  expect(ui.confirm).toHaveBeenCalledTimes(1)
+  const message = String((ui.confirm.mock.calls[0] as unknown[])[0])
+  expect(message).toContain('n11 : Revue de la PR 12')
+  expect(message).toContain('conflit avec la base')
+  expect(send).not.toHaveBeenCalled()
+  expect(button('Merger quand même')!.disabled).toBe(false)
+})
+
+it('merges without any dialog when nothing locks it', async () => {
+  render(mergeQuestion())
+  await click(/^Merger \(rebase\)/)
   expect(ui.confirm).not.toHaveBeenCalled()
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 0 })
 })
 
 it('offers no rebase when the lock is not a conflict', () => {
