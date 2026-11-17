@@ -76,6 +76,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   void setup.inspect().catch(() => {})
   const offSettings = deps.onAgentSettingsChange?.(() => setup.invalidate())
   const doneWhen = createDoneWhen({
+    file: path.join(deps.agentsDir, 'done-when.json'),
     run: (command, cwd) => runDoneWhenCommand(command, cwd, deps.env()),
     panelTitle: (panelId) => deps.document.panel(panelId)?.title,
     close: (panelId) => deps.removePanel(panelId),
@@ -90,7 +91,11 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     },
   })
   const offTurnEnd = core.terminals.onTurnEnd((panelId) => { void doneWhen.check(panelId) })
+  const offPanels = deps.document.onChange(() => doneWhen.prune())
   const starter = createAgentStarter(core, deps.start, setup, doneWhen)
+  // Conditions read back: an agent that finished while the runtime was down
+  // sends no turn-end.
+  void doneWhen.resume()
   let usageLoading: Promise<AgentUsageService> | undefined
   const loadUsage = () => usageLoading ??= (async () => {
     const { createAgentUsage } = await import('./usage/usage')
@@ -126,6 +131,6 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     },
     capability: () => agentsCapabilityImpl(core, starter, usage, setup),
     apiHandlers: () => createAgentApiHandlers(core, starter, doneWhen),
-    dispose: () => { offTurnEnd(); offSettings?.(); setup.dispose(); core.dispose() },
+    dispose: () => { offTurnEnd(); offPanels(); doneWhen.dispose(); offSettings?.(); setup.dispose(); core.dispose() },
   }
 }

@@ -576,6 +576,7 @@ persisted session and document file. It is created with mode `0700`.
   skills/sources.json   the workspace's skill sources
   browser/              history.json, bookmarks.json, downloads/
   agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps),
+                        done-when.json (done-when conditions),
                         usage/ (model-rates.json, the LiteLLM rate snapshot; scan-cache.json,
                         transcripts parsed for usage, by size and mtime)
   terminal-logs/
@@ -1849,7 +1850,11 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   nothing until the next turn; a timeout or an error is kept as the last
   result. `cate agent list` shows the condition and that result. Without
   `--done-when` the start result carries a note that the panel stays open.
-  Conditions live in memory: a runtime restart drops them.
+  Conditions persist per panel in `agents/done-when.json` (command, checkout,
+  caller), written at start and dropped when the panel closes or is removed;
+  at runtime start each one read back whose panel still exists is checked
+  once, since an agent that finished while the runtime was down sends no
+  turn-end.
 - **terminal agents** (`terminal.ts`): plug into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).

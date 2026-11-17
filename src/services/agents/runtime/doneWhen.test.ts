@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -102,6 +102,59 @@ describe('done-when conditions', () => {
     doneWhen.watch('agent', null)
     await doneWhen.check('agent')
     expect(deps.run).not.toHaveBeenCalled()
+  })
+})
+
+describe('done-when.json', () => {
+  let dir = ''
+  afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
+
+  function persisted(open: Set<string>, run: DoneWhenDeps['run'] = async () => ({ exitCode: 1 })) {
+    const file = path.join(dir, 'done-when.json')
+    const deps = {
+      file,
+      run: vi.fn(run),
+      panelTitle: (panelId: string) => (open.has(panelId) ? 'Fix login' : undefined),
+      close: vi.fn((panelId: string) => { open.delete(panelId) }),
+      notify: vi.fn(),
+    }
+    return { doneWhen: createDoneWhen(deps), deps, read: () => JSON.parse(readFileSync(file, 'utf8')) }
+  }
+
+  it('writes a condition at start and drops it when the panel closes or is removed', async () => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'cate-done-when-file-'))
+    const open = new Set(['agent', 'other'])
+    const first = persisted(open, async () => ({ exitCode: 0 }))
+    first.doneWhen.watch('agent', { command: 'npm test', cwd: '/repo/wt', callerPanelId: 'lead' })
+    first.doneWhen.watch('other', { command: 'true', cwd: '/repo' })
+    first.doneWhen.dispose()
+    expect(first.read()).toEqual({ agent: { command: 'npm test', cwd: '/repo/wt', callerPanelId: 'lead' }, other: { command: 'true', cwd: '/repo' } })
+
+    const second = persisted(open, async () => ({ exitCode: 0 }))
+    await second.doneWhen.check('agent')
+    open.delete('other')
+    second.doneWhen.prune()
+    second.doneWhen.dispose()
+    expect(second.read()).toEqual({})
+  })
+
+  it('reads conditions back at runtime start and checks each once, skipping panels that are gone', async () => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'cate-done-when-file-'))
+    writeFileSync(path.join(dir, 'done-when.json'), JSON.stringify({
+      agent: { command: 'npm test', cwd: '/repo/wt', callerPanelId: 'lead' },
+      gone: { command: 'true', cwd: '/repo' },
+      broken: { cwd: '/repo' },
+    }))
+    const open = new Set(['agent', 'broken'])
+    const { doneWhen, deps, read } = persisted(open, async () => ({ exitCode: 0 }))
+    expect(doneWhen.state('agent')).toEqual({ command: 'npm test', checking: false })
+    await doneWhen.resume()
+    expect(deps.run).toHaveBeenCalledTimes(1)
+    expect(deps.run).toHaveBeenCalledWith('npm test', '/repo/wt')
+    expect(deps.close).toHaveBeenCalledWith('agent')
+    expect(deps.notify).toHaveBeenCalledWith('lead', { panelId: 'agent', title: 'Fix login', command: 'npm test' })
+    doneWhen.dispose()
+    expect(read()).toEqual({})
   })
 })
 
