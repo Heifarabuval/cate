@@ -87,6 +87,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
             : snapshot.suivi
               ? (
                 <SuiviList
+                  workspaceId={workspaceId}
                   suivi={snapshot.suivi}
                   onRead={setReading}
                   onRebase={(questionId) => void run({ kind: 'answer', questionId, choice: 'rebase' })}
