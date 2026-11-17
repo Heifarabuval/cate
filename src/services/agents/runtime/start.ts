@@ -93,6 +93,8 @@ export interface AgentStarter {
   starting(): Array<{ panelId: string; agentId: AgentId }>
   /** The model and effort a panel's agent was started with, if any. */
   launchOptions(panelId: string): AgentLaunchOptions | undefined
+  /** Drops the options of panels the document no longer has. */
+  prune(): void
 }
 
 /** How long a started agent counts as starting before its CLI is observed. */
@@ -233,6 +235,10 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
     },
 
     launchOptions: (panelId) => options.get(panelId),
+
+    prune() {
+      for (const panelId of [...options.keys()]) if (!agents.document.panel(panelId)) options.delete(panelId)
+    },
 
     starting() {
       const out: Array<{ panelId: string; agentId: AgentId }> = []

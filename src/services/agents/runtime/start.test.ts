@@ -221,6 +221,21 @@ describe('agent start', () => {
     expect(agentStarter.launchOptions('idle')).toBeUndefined()
   })
 
+  it('forgets the options of a panel that left the document', async () => {
+    const agentStarter = starter()
+    await agentStarter.start('supervisor', { prompt: 'Fix it', model: 'gpt-5' })
+    panels.push({ id: 'new-terminal', type: 'terminal', title: 'Fix it', fields: {} })
+    try {
+      agentStarter.prune()
+      expect(agentStarter.launchOptions('new-terminal')).toEqual({ model: 'gpt-5' })
+      panels.pop()
+      agentStarter.prune()
+      expect(agentStarter.launchOptions('new-terminal')).toBeUndefined()
+    } finally {
+      if (panels.at(-1)?.id === 'new-terminal') panels.pop()
+    }
+  })
+
   it('takes model and effort with a relation and a done-when condition in the same start', async () => {
     hookConfig = { codex: 'on', 'claude-code': 'on' }
     const watch = vi.fn()
