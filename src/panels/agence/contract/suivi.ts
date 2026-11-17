@@ -9,7 +9,11 @@ const DONE_SHOWN = 20
 function row(state: AgenceState, need: StateNeed, titles: PanelTitles): NeedRow {
   const links = need.panels.flatMap((panelId) => titles[panelId]?.title ? [{ panelId, title: titles[panelId].title, closed: titles[panelId].closed }] : [])
   const meta: string[] = []
-  if ((need.kind === 'pr' || need.kind === 'issue') && need.ref && state.ghRepo) meta.push(`#${need.ref}`)
+  let link: NeedRow['link'] = null
+  if ((need.kind === 'pr' || need.kind === 'issue') && need.ref && state.ghRepo) {
+    link = { label: `#${need.ref}`, href: `https://github.com/${state.ghRepo}/${need.kind === 'pr' ? 'pull' : 'issues'}/${need.ref}` }
+    meta.push(link.label)
+  }
   if (need.unblocks) meta.push(`débloque ${need.unblocks}`)
   if (need.acceptance) meta.push(`acceptation : ${need.acceptance}`)
   if (need.overBudget) meta.push(`budget de ${need.budgetMin} min dépassé : continuer, réduire ou arrêter ?`)
@@ -24,7 +28,7 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles): NeedRow 
   } else if (need.status === 'open' && need.kind === 'human' && need.ref?.startsWith('q')) {
     action = { type: 'question', questionId: need.ref }
   }
-  return { id: need.id, title: need.title, kind: need.kind, meta, evidence, links, action }
+  return { id: need.id, title: need.title, kind: need.kind, meta, evidence, link, links, action }
 }
 
 export function classify(state: AgenceState, titles: PanelTitles): SuiviSections {

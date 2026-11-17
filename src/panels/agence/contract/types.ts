@@ -46,6 +46,8 @@ export type NeedRow = {
   /** The mentions of `need_line` in agence.py. */
   meta: string[]
   evidence: string | null
+  /** The #N of a PR or an issue, as a link; null when the repository is unknown. */
+  link: { label: string; href: string } | null
   links: NeedLink[]
   action: NeedAction | null
 }

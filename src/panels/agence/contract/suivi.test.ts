@@ -57,6 +57,15 @@ describe('classify', () => {
     expect(sections.bloquant.every((row) => row.evidence === null)).toBe(true)
   })
 
+  it('links the #N of a PR or an issue to GitHub when the repository is known, and only then', () => {
+    const rows = [...sections.bloquant, ...sections.reste]
+    expect(rows.find((row) => row.title === 'PR du lot C')?.link).toEqual({ label: '#8', href: 'https://github.com/Heifarabuval/cate/pull/8' })
+    expect(rows.find((row) => row.title === 'Issue ouverte')?.link).toEqual({ label: '#7', href: 'https://github.com/Heifarabuval/cate/issues/7' })
+    expect(rows.find((row) => row.title === 'Tâche simple')?.link).toBeNull()
+    const noRepo = classify({ ...state, ghRepo: null }, known(state.titles))
+    expect([...noRepo.bloquant, ...noRepo.reste].every((row) => row.link === null)).toBe(true)
+  })
+
   it('classifies an empty state into four empty sections', () => {
     expect(classify({ ...state, needs: [], drafts: [], questions: [] }, {})).toEqual({ bloquant: [], aFaire: [], fait: [], reste: [] })
   })
