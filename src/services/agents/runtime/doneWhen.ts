@@ -43,7 +43,15 @@ export interface DoneWhen {
   check(panelId: string): Promise<void>
 }
 
-interface Watched { command: string; cwd: string; callerPanelId?: string; checking: boolean; last?: DoneWhenResult }
+interface Watched {
+  command: string
+  cwd: string
+  callerPanelId?: string
+  checking: boolean
+  /** A turn ended while the check ran: it judged the state before that turn. */
+  recheck?: boolean
+  last?: DoneWhenResult
+}
 
 export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
   const watched = new Map<string, Watched>()
@@ -60,34 +68,47 @@ export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
       return w ? { command: w.command, checking: w.checking, ...(w.last ? { last: w.last } : {}) } : undefined
     },
 
-    async check(panelId) {
-      const w = watched.get(panelId)
-      if (!w || w.checking) return
-      if (deps.panelTitle(panelId) === undefined) { watched.delete(panelId); return }
-      w.checking = true
-      let run: DoneWhenRun
-      try {
-        run = await deps.run(w.command, w.cwd)
-      } catch (error) {
-        run = { error: error instanceof Error ? error.message : String(error) }
-      }
-      w.checking = false
-      // Closed (or re-watched by a new start) while the command ran.
-      if (watched.get(panelId) !== w) return
-      const title = deps.panelTitle(panelId)
-      if (title === undefined) { watched.delete(panelId); return }
-      if ('timedOut' in run) { w.last = { at: now(), outcome: 'timeout', reason: `timed out after ${DONE_WHEN_TIMEOUT_MS / 1_000} s` }; return }
-      if ('error' in run) { w.last = { at: now(), outcome: 'error', reason: run.error }; return }
-      if (run.exitCode !== 0) { w.last = { at: now(), outcome: 'notDone', exitCode: run.exitCode }; return }
-      try {
-        deps.close(panelId)
-      } catch (error) {
-        w.last = { at: now(), outcome: 'error', reason: `exited 0 but the panel could not close: ${error instanceof Error ? error.message : String(error)}` }
-        return
-      }
-      watched.delete(panelId)
-      deps.notify(w.callerPanelId, { panelId, title, command: w.command })
-    },
+    check,
+  }
+
+  /** One run, then one more if a turn ended during it (the flag is taken
+   *  before the rerun, so only later turn-ends set it again). */
+  async function check(panelId: string): Promise<void> {
+    const w = watched.get(panelId)
+    if (!w) return
+    if (w.checking) { w.recheck = true; return }
+    await runOnce(panelId, w)
+    if (w.recheck && watched.get(panelId) === w) {
+      w.recheck = false
+      await check(panelId)
+    }
+  }
+
+  async function runOnce(panelId: string, w: Watched): Promise<void> {
+    if (deps.panelTitle(panelId) === undefined) { watched.delete(panelId); return }
+    w.checking = true
+    let run: DoneWhenRun
+    try {
+      run = await deps.run(w.command, w.cwd)
+    } catch (error) {
+      run = { error: error instanceof Error ? error.message : String(error) }
+    }
+    w.checking = false
+    // Closed (or re-watched by a new start) while the command ran.
+    if (watched.get(panelId) !== w) return
+    const title = deps.panelTitle(panelId)
+    if (title === undefined) { watched.delete(panelId); return }
+    if ('timedOut' in run) { w.last = { at: now(), outcome: 'timeout', reason: `timed out after ${DONE_WHEN_TIMEOUT_MS / 1_000} s` }; return }
+    if ('error' in run) { w.last = { at: now(), outcome: 'error', reason: run.error }; return }
+    if (run.exitCode !== 0) { w.last = { at: now(), outcome: 'notDone', exitCode: run.exitCode }; return }
+    try {
+      deps.close(panelId)
+    } catch (error) {
+      w.last = { at: now(), outcome: 'error', reason: `exited 0 but the panel could not close: ${error instanceof Error ? error.message : String(error)}` }
+      return
+    }
+    watched.delete(panelId)
+    deps.notify(w.callerPanelId, { panelId, title, command: w.command })
   }
 }
 

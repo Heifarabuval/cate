@@ -65,16 +65,36 @@ describe('done-when conditions', () => {
     expect(during.deps.notify).not.toHaveBeenCalled()
   })
 
-  it('runs one check at a time per panel', async () => {
+  it('runs one check at a time per panel, and checks once more for turn-ends during it', async () => {
     let finish!: (run: DoneWhenRun) => void
     const { doneWhen, deps } = setup(() => new Promise((resolve) => { finish = resolve }))
     const first = doneWhen.check('agent')
     expect(doneWhen.state('agent')?.checking).toBe(true)
     await doneWhen.check('agent')
+    await doneWhen.check('agent')
     expect(deps.run).toHaveBeenCalledTimes(1)
     finish({ exitCode: 3 })
+    await vi.waitFor(() => expect(deps.run).toHaveBeenCalledTimes(2))
+    finish({ exitCode: 3 })
     await first
+    expect(deps.run).toHaveBeenCalledTimes(2)
     expect(doneWhen.state('agent')?.checking).toBe(false)
+  })
+
+  it('a turn-end during a failing check reruns it once it ends, and closes when the condition became true', async () => {
+    let finishFirst!: (run: DoneWhenRun) => void
+    const runs: Array<() => Promise<DoneWhenRun>> = [
+      () => new Promise((resolve) => { finishFirst = resolve }),
+      async () => ({ exitCode: 0 }),
+    ]
+    const { doneWhen, deps } = setup(() => runs.shift()!())
+    const first = doneWhen.check('agent')
+    await doneWhen.check('agent')
+    finishFirst({ exitCode: 1 })
+    await first
+    expect(deps.run).toHaveBeenCalledTimes(2)
+    expect(deps.close).toHaveBeenCalledWith('agent')
+    expect(deps.notify).toHaveBeenCalledTimes(1)
   })
 
   it('watching without a condition drops the previous one', async () => {
