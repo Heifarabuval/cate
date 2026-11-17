@@ -1,4 +1,4 @@
-/* global process, URLSearchParams */
+/* global process, URLSearchParams, setTimeout */
 // A stand-in for `agence watch --token-stdin` (common/tools/agence.py): takes
 // the token on the first line of stdin, serves the regisseur's JSON replies on
 // FAKE_AGENCE_PORT, stops at SIGTERM or at the end of stdin. FAKE_AGENCE_MODE:
@@ -7,6 +7,7 @@
 //   unknown-option  an older CLI without --token-stdin: argparse error, exit 2
 //   settings        runs, and complains about the workspace CLI settings
 //   stubborn        runs, and ignores SIGTERM (only SIGKILL ends it)
+// A form with h=lent is answered after FAKE_AGENCE_DELAY ms (default 500).
 // FAKE_AGENCE_LOG gets one JSON line per event.
 import { appendFileSync } from 'node:fs'
 import http from 'node:http'
@@ -50,7 +51,9 @@ lines.once('line', (line) => {
       if (form.get('token') !== token) return reply(403, 403, 'Jeton invalide')
       log({ event: 'post', method: req.method, url: req.url, accept: req.headers.accept, form: Object.fromEntries(form) })
       if (form.get('h') === 'ancien') return reply(409, 409, 'texte a changé')
-      reply(200, 200, 'ok')
+      // A slow click (an issue being created): replies after FAKE_AGENCE_DELAY ms.
+      const delay = form.get('h') === 'lent' ? Number(process.env.FAKE_AGENCE_DELAY ?? 500) : 0
+      setTimeout(() => { log({ event: 'replied', url: req.url }); reply(200, 200, 'ok') }, delay)
     })
   })
   server.listen(port, '127.0.0.1', () => {
