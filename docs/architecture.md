@@ -1800,7 +1800,11 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     A failed prompt's text may still be in the CLI's input, so nothing more
     is typed into it until a turn starts (someone pressed Enter: the input
     went with that turn) or it is withdrawn (`withdraw`, which also takes
-    back a queued prompt, with its text and attachments). A prompt that was
+    back a queued prompt, with its text and attachments). Text a client typed
+    into the input (bytes from any viewer, other than an Enter, Ctrl+U or
+    Ctrl+C, which empty it) holds `canReceivePrompt` false until one of them
+    plus a short settle, a turn start, or 2 minutes without a key: the prompt
+    stays `queued` and never goes out glued to it. A prompt that was
     taken is gone: the conversation shows it. A panel whose agent is gone
     loses its prompts. `cate agent wait` waits for an agent at its prompt
     with its prompts gone out, or one failed;
