@@ -39,6 +39,9 @@ export interface RegisseursOptions {
   commandArgs?: string[]
   /** How long a SIGTERM gets before SIGKILL. */
   killAfterMs?: number
+  /** How long a stop waits for the clicks in flight (default: a POST's
+   *  timeout, which no click outlasts). */
+  drainMaxMs?: number
 }
 
 export interface RegisseurAcquire {
@@ -83,6 +86,13 @@ interface Proc {
   owner: RegisseurHandle
   exited: Promise<void>
   stop: StopReason | null
+  /** POSTs under way: agence.py has no SIGTERM handler, a click killed between
+   *  its GitHub call and its state write would leave the draft to send twice. */
+  inFlight: number
+  /** A stop asked while clicks are in flight: new POSTs are refused, the stop
+   *  happens once the last one answered or after `drainMaxMs`. */
+  stopping: StopReason | null
+  idle: (() => void) | null
 }
 
 interface Entry {
@@ -103,6 +113,7 @@ const UNTRUSTED = 'workspace not trusted: the regisseur starts once trust is gra
 export function createRegisseurs(options: RegisseursOptions): Regisseurs {
   const command = options.command ?? 'agence'
   const killAfterMs = options.killAfterMs ?? 3000
+  const drainMaxMs = options.drainMaxMs ?? POST_TIMEOUT_MS
   const entries = new Map<string, Entry>()
   /** The last process of each root, until it exits. */
   const exiting = new Map<string, Promise<void>>()
@@ -129,6 +140,21 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
     child.kill('SIGTERM')
     const timer = setTimeout(() => child.kill('SIGKILL'), killAfterMs)
     void proc.exited.then(() => clearTimeout(timer))
+  }
+
+  /** Stops once no click is in flight (bounded by `drainMaxMs`); a later
+   *  reason replaces an earlier one (the owner went, then the last panel). */
+  const stopWhenIdle = (proc: Proc, reason: StopReason): void => {
+    if (proc.stop) return
+    proc.stopping = reason
+    if (proc.inFlight === 0) return stop(proc, reason)
+    if (proc.idle) return
+    const timer = setTimeout(() => proc.idle?.(), drainMaxMs)
+    proc.idle = () => {
+      clearTimeout(timer)
+      proc.idle = null
+      stop(proc, proc.stopping ?? reason)
+    }
   }
 
   /** Starts the entry's process once the previous one of its root exited. */
@@ -168,7 +194,7 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
   const spawnProcess = (entry: Entry, owner: RegisseurHandle, lease: RegisseurLease): void => {
     let done!: () => void
     const exited = new Promise<void>((resolve) => { done = resolve })
-    const proc: Proc = { child: null, token: randomBytes(24).toString('base64url'), owner, exited, stop: null }
+    const proc: Proc = { child: null, token: randomBytes(24).toString('base64url'), owner, exited, stop: null, inFlight: 0, stopping: null, idle: null }
     procs.add(proc)
     entry.proc = proc
     exiting.set(entry.root, exited)
@@ -185,8 +211,9 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
       else if (proc.stop !== 'owner') set(entry, view)
       else if (!current(entry)) set(entry, { state: 'stopped', error: null })
       done()
-      // The owner went and others remain: start again in their name.
-      if (proc.stop === 'owner' && current(entry)) void start(entry)
+      // The owner went and others remain: start again in their name. Trust
+      // revoked then granted again before the exit: start again too.
+      if ((proc.stop === 'owner' || (proc.stop === 'untrusted' && options.trust.isTrusted())) && current(entry)) void start(entry)
     }
 
     let child: ChildProcess
@@ -261,16 +288,22 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
       async post(path, form) {
         const port = request.port()
         const proc = owner.proc
-        if (owner.view.state !== 'running' || !proc || proc.stop || !port) throw new Error('regisseur-unavailable')
-        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-          method: 'POST',
-          headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ ...form, token: proc.token }).toString(),
-          signal: AbortSignal.timeout(POST_TIMEOUT_MS),
-        })
-        const reply = await response.json() as Partial<RegisseurReply>
-        if (typeof reply.code !== 'number' || typeof reply.message !== 'string') throw new Error('regisseur-bad-reply')
-        return { code: reply.code, message: reply.message }
+        if (owner.view.state !== 'running' || !proc || proc.stop || proc.stopping || !port) throw new Error('regisseur-unavailable')
+        proc.inFlight += 1
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+            method: 'POST',
+            headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ ...form, token: proc.token }).toString(),
+            signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+          })
+          const reply = await response.json() as Partial<RegisseurReply>
+          if (typeof reply.code !== 'number' || typeof reply.message !== 'string') throw new Error('regisseur-bad-reply')
+          return { code: reply.code, message: reply.message }
+        } finally {
+          proc.inFlight -= 1
+          if (proc.inFlight === 0) proc.idle?.()
+        }
       },
       restart() {
         if (released || owner.proc || owner.starting || !current(owner) || !options.trust.isTrusted()) return false
@@ -284,11 +317,11 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
         const proc = owner.proc
         if (!owner.refs.size) {
           if (entries.get(root) === owner) entries.delete(root)
-          if (proc) stop(proc, 'released')
+          if (proc) stopWhenIdle(proc, 'released')
           else if (!owner.starting) set(owner, { state: 'stopped', error: null })
         } else if (proc?.owner === handle) {
           set(owner, { state: 'starting', error: null })
-          stop(proc, 'owner')
+          stopWhenIdle(proc, 'owner')
         }
       },
     }

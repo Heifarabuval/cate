@@ -63,10 +63,10 @@ const events = (): Array<Record<string, unknown>> => {
 const ofKind = (event: string) => events().filter((entry) => entry.event === event)
 
 /** Takes panel `panelId`'s reference on a root's regisseur, the fake running in `mode`. */
-async function acquire(root: string, options: { mode?: string; port?: number; panelId?: string; on?: Regisseurs } = {}): Promise<RegisseurHandle> {
+async function acquire(root: string, options: { mode?: string; port?: number; panelId?: string; on?: Regisseurs; env?: Record<string, string> } = {}): Promise<RegisseurHandle> {
   const port = options.port ?? await freePort()
   const panelId = options.panelId ?? 'p1'
-  panelEnv[panelId] = { FAKE_AGENCE_PORT: String(port), ...(options.mode ? { FAKE_AGENCE_MODE: options.mode } : {}) }
+  panelEnv[panelId] = { FAKE_AGENCE_PORT: String(port), ...(options.mode ? { FAKE_AGENCE_MODE: options.mode } : {}), ...options.env }
   const handle = (options.on ?? regisseurs).acquire({ root, panelId, port: () => port })
   handles.push(handle)
   return handle
@@ -263,6 +263,66 @@ describe('regisseur', () => {
     handle.onChange((view) => seen.push(view.state))
     await settled(handle, 'running')
     expect(seen).toContain('running')
+  })
+
+  // agence.py has no SIGTERM handler: a click killed between its GitHub call
+  // and its state write leaves the draft « à valider », and a second Envoyer
+  // creates the issue twice. A stop waits for the clicks in flight.
+  it('lets a click in flight finish before it restarts for another owner, and refuses new clicks meanwhile', async () => {
+    const port = await freePort()
+    const first = await acquire(tmp, { port })
+    const second = await acquire(tmp, { port, panelId: 'p2' })
+    await settled(first, 'running')
+    const slow = first.post('/draft/d1/send', { h: 'lent' })
+    await vi.waitFor(() => expect(ofKind('post')).toHaveLength(1))
+    first.release()
+    await expect(second.post('/draft/d1/send', { h: 'abc' })).rejects.toThrow('regisseur-unavailable')
+    await expect(slow).resolves.toEqual({ code: 200, message: 'ok' })
+    await vi.waitFor(() => expect(ofKind('start')).toHaveLength(2), { timeout: 5000 })
+    const kinds = events().map((entry) => entry.event)
+    expect(kinds.indexOf('sigterm')).toBeGreaterThan(kinds.indexOf('replied'))
+    await settled(second, 'running')
+  })
+
+  it('lets a click in flight finish when the last panel goes', async () => {
+    const handle = await acquire(tmp)
+    await settled(handle, 'running')
+    const slow = handle.post('/draft/d1/send', { h: 'lent' })
+    await vi.waitFor(() => expect(ofKind('post')).toHaveLength(1))
+    handle.release()
+    await expect(slow).resolves.toEqual({ code: 200, message: 'ok' })
+    await vi.waitFor(() => expect(ofKind('sigterm')).toHaveLength(1), { timeout: 5000 })
+    const kinds = events().map((entry) => entry.event)
+    expect(kinds.indexOf('sigterm')).toBeGreaterThan(kinds.indexOf('replied'))
+  })
+
+  it('stops anyway once the wait for clicks in flight reaches its bound', async () => {
+    const bounded = create({ drainMaxMs: 150 })
+    try {
+      const handle = await acquire(tmp, { on: bounded, env: { FAKE_AGENCE_DELAY: '3000' } })
+      await settled(handle, 'running')
+      const slow = handle.post('/draft/d1/send', { h: 'lent' })
+      slow.catch(() => {})
+      await vi.waitFor(() => expect(ofKind('post')).toHaveLength(1))
+      const released = Date.now()
+      handle.release()
+      await vi.waitFor(() => expect(ofKind('sigterm')).toHaveLength(1), { timeout: 2000 })
+      expect(Date.now() - released).toBeLessThan(1500)
+      expect(ofKind('replied')).toHaveLength(0)
+      await expect(slow).rejects.toThrow()
+    } finally { await bounded.dispose() }
+  })
+
+  it('starts again when trust comes back before the stopped process exited', async () => {
+    const slowToDie = create({ killAfterMs: 300 })
+    try {
+      const handle = await acquire(tmp, { mode: 'stubborn', on: slowToDie })
+      await settled(handle, 'running')
+      trust.set(false)
+      trust.set(true)
+      await vi.waitFor(() => expect(ofKind('start')).toHaveLength(2), { timeout: 5000 })
+      await settled(handle, 'running')
+    } finally { await slowToDie.dispose() }
   })
 
   it('stops every process at dispose and waits for them, killing one that ignores SIGTERM', async () => {
