@@ -120,8 +120,8 @@ its session.
  ┌──────────────────────────────────────────────────────────────────────────┐
  │ shells     desktop (window host, native OS, React UI) · mobile (iOS core) │
  ├──────────────────────────────────────────────────────────────────────────┤
- │ panels     framework + terminal · editor · browser · review · canvas ·   │
- │            surface                                                       │
+ │ panels     framework + terminal · editor · browser · review · agence ·   │
+ │            canvas · surface                                              │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ client     core · connections · workspaces · document mirror · host      │
  ├──────────────────────────────────────────────────────────────────────────┤
@@ -265,6 +265,7 @@ The split follows the client test (section 3).
 | Agents: hook ingestion, pid presence, change history, session stores, conversation reads |
 | Agents: status state machine, resume stamps, driver selection |
 | Starting agents in a terminal panel |
+| The agence panel's follow-up (reading `<root>/.cate/tmp/agence/`) and its regisseur, a child process of the daemon, one per repository root (11.3) |
 | Browser data: history, bookmarks, passwords, downloads |
 | Browser session: tabs, URLs, navigation state, titles |
 | The document: panel records, docks, canvases, detached windows, relations, worktree metadata |
@@ -335,7 +336,7 @@ Every piece of state belongs to exactly one class.
 | Class | Owner | Examples | Shared with |
 |---|---|---|---|
 | **Document** | the runtime | panel records, windows and dock trees, canvases, nodes and geometry, node mini docks, relations, worktree metadata | every client of the workspace |
-| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's source filters, agent status and the prompts on their way to the agent | every client viewing the panel |
+| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's source filters, agent status and the prompts on their way to the agent, the agence panel's follow-up read from the files of the `agence` CLI | every client viewing the panel |
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
 | **Device** | one client device | client settings, workspace list, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
@@ -2038,8 +2039,37 @@ Every panel type meets the same contract.
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay |
+| agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created by `cate panel create agence`, absent from the menus; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
+
+**The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
+writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,
+the CLI is the only writer); the session watches that folder (with a 2 s poll
+as fallback), keeps the last valid state when a file is unreadable, and
+publishes it already classified by a pure function of `contract/` (a port of
+the CLI's `page_suivi`). It never writes those files. Every action (send, drop,
+edit a draft, answer a question) is a POST to the regisseur, the CLI's own
+`agence watch --token-stdin`, so the CLI's `click()` keeps all effects and
+refusals (changed text, already sent, closed need); the session hashes the
+draft text the way the CLI does and passes it along.
+
+The regisseur is a child process of the daemon, with no PTY and no panel:
+one per repository root, shared by the panels of that root through a
+reference count and stopped (`SIGTERM`) when the last one lets go and at
+workspace shutdown (`PanelRuntime.dispose`). It starts only in a trusted
+workspace (9.2): trust revoked stops it without waiting for clicks in flight,
+trust granted starts it again. A port already served by another regisseur puts
+the panel in read-only (`external`); a missing or too old `agence` is `missing`
+with a message. Its session token travels on stdin, never in the environment
+or a file.
+
+Two services reach panel types for this: `PanelServices.cliEnv(panelId)`
+gives a process a panel starts outside a PTY the `cate` CLI environment
+(`CATE_SOCKET`, a token in the panel's name, `cate` on `PATH`) and a lease that
+revokes the token; `PanelServices.trust` lets such a type ask workspace trust
+first and react to its changes. Both are composed from the workspace's token
+issuer and trust (`runtime/daemon/compose/cliEnv.ts`).
 
 ## 12. Client
 
@@ -2656,7 +2686,7 @@ client-local work (a file drop still importing).
 | Where | Files |
 |---|---|
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
-| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
+| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and never writes it |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
 | Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
@@ -2712,9 +2742,11 @@ src/
     core/  connections/  workspaces/  document/  host/
   panels/
     framework/              contract runtime/
-    terminal/  editor/  browser/  review/  canvas/  surface/
+    terminal/  editor/  browser/  review/  agence/  canvas/  surface/
                             (browser and review add a client/ side, browser a
-                            desktop/ one)
+                            desktop/ one; agence keeps its pure follow-up
+                            classification in contract/ and its regisseur and
+                            file reading in parts/runtime/)
     definitions.ts  runtime.ts  api.ts  capabilities.ts  settings.ts
                             the panel index files
   shells/
