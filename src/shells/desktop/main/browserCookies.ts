@@ -78,23 +78,26 @@ export function decryptChromium(encrypted: Uint8Array, key: Buffer, version: num
 
 export const chromiumKey = (password: string) => pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1')
 
-// Chromium time: microseconds since 1601-01-01.
-const fromChromiumTime = (us: number) => us / 1e6 - 11_644_473_600
-
-async function readChromium(source: Chromium): Promise<Cookie[]> {
-  const { stdout } = await run('security', ['find-generic-password', '-w', '-s', source.keychain])
-  const key = chromiumKey(stdout.trim())
-  type Row = { host_key: string; name: string; value: string; encrypted_value: Uint8Array; path: string; expires_utc: number; has_expires: number; is_secure: number; is_httponly: number; samesite: number }
+/** The cookies of a Chromium `Cookies` database, decrypted with `key`. */
+export async function chromiumCookiesFrom(file: string, key: Buffer): Promise<Cookie[]> {
+  type Row = { host_key: string; name: string; value: string; encrypted_value: Uint8Array; path: string; expires: number; has_expires: number; is_secure: number; is_httponly: number; samesite: number }
   const { rows, version } = await sqlite<Row>(
-    path.join(SUPPORT, source.dir, 'Default/Cookies'),
-    `SELECT host_key, name, value, encrypted_value, path, expires_utc, has_expires, is_secure, is_httponly, samesite FROM cookies WHERE top_frame_site_key = ''`,
+    file,
+    // expires_utc (microseconds since 1601) exceeds 2^53, which node:sqlite
+    // refuses to read: convert to Unix seconds in SQL.
+    `SELECT host_key, name, value, encrypted_value, path, expires_utc / 1000000 - 11644473600 AS expires, has_expires, is_secure, is_httponly, samesite FROM cookies WHERE top_frame_site_key = ''`,
   )
   return rows.map((r) => cookie({
     domain: r.host_key, name: r.name, path: r.path,
     value: r.value || decryptChromium(r.encrypted_value, key, version),
     secure: !!r.is_secure, httpOnly: !!r.is_httponly, sameSite: sameSite(r.samesite),
-    expires: r.has_expires ? fromChromiumTime(Number(r.expires_utc)) : undefined,
+    expires: r.has_expires ? r.expires : undefined,
   }))
+}
+
+async function readChromium(source: Chromium): Promise<Cookie[]> {
+  const { stdout } = await run('security', ['find-generic-password', '-w', '-s', source.keychain])
+  return chromiumCookiesFrom(path.join(SUPPORT, source.dir, 'Default/Cookies'), chromiumKey(stdout.trim()))
 }
 
 async function firefoxProfile(): Promise<string> {
