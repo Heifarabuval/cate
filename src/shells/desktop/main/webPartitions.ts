@@ -29,6 +29,8 @@ export interface WebPartitionsDeps {
   upstream(): string | undefined
   /** Seam for tests. */
   startProxy?: typeof startLoopbackProxy
+  /** Runs once per partition before its first webview mounts (shared sign-ins). */
+  beforeFirstMount?(partition: string): Promise<void>
 }
 
 export interface WebPartitions {
@@ -117,6 +119,7 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
         // Policy or settings may have changed during setProxy. Finish applying
         // them before allowing even the first caller to mount a webview.
         if (native !== (reaches.get(runtimeId) === true) || upstream !== deps.upstream()) continue
+        await deps.beforeFirstMount?.(partition)
         prepared.add(partition)
         log.info('partition %s uses %s networking', partition, proxy ? 'protected workspace proxy' : 'Chromium')
         return

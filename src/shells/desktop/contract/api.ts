@@ -230,6 +230,9 @@ export interface DesktopApi {
     openExternal(url: string): Promise<void>
     /** Opens the device `settings.json` (client settings) in the OS. */
     openSettingsFile(): Promise<void>
+    /** Copies the shared sign-in cookies of the system's default browser into
+     *  every workspace; that browser's name and the cookies copied. */
+    importBrowserSignIns(): Promise<{ browser: string; imported: number }>
     writeClipboard(text: string): Promise<void>
     readClipboard(): Promise<string>
     notify(notification: NotificationRequest): Promise<void>
