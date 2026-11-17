@@ -42,6 +42,9 @@ import { createMachinePrompts, registerMachineIpc } from './machineIpc'
 import { createInstallProgress } from './installProgress'
 import { DEFAULT_UPDATE_RECORD, normalizeUpdateRecord } from './updater/updateState'
 import { createWebPartitions } from './webPartitions'
+import { createSharedSignIns } from './sharedSignIns'
+import { readDefaultBrowserCookies } from './browserCookies'
+import { handle } from './ipc'
 import { installAppCsp, installWebSecurity } from './webSecurity'
 import { createWindowFactory, shellPaths } from './windowFactory'
 import { WindowRegistry } from './windowRegistry'
@@ -214,9 +217,16 @@ void ensureRuntime().catch(() => {})
 const settingsFile = path.join(userData, 'settings.json')
 try { fs.writeFileSync(settingsFile, '{}\n', { flag: 'wx' }) } catch { /* exists */ }
 const backgrounds = createCanvasBackgrounds(path.join(userData, CANVAS_BACKGROUNDS_DIR))
+// Created on first use: Electron sessions exist only once the app is ready.
+let signIns: ReturnType<typeof createSharedSignIns> | null = null
+const sharedSignIns = () => signIns ??= createSharedSignIns({
+  hub: session.fromPartition('persist:shared-sign-ins').cookies,
+  domains: () => settings().browserSharedSignInDomains,
+})
 const partitions = createWebPartitions({
   session: (partition) => session.fromPartition(partition),
   upstream: () => settings().browserProxyUrl || undefined,
+  beforeFirstMount: (partition) => sharedSignIns().attach(session.fromPartition(partition).cookies),
 })
 
 const quit = createQuitController({
@@ -378,6 +388,10 @@ app.whenReady().then(() => {
 
   registerDeviceIpc(device, registry)
   registerNatives({ registry, settingsFile, backgrounds, focusWindow })
+  handle(C.browserImportSignIns, async () => {
+    const browser = app.getApplicationNameForProtocol('https://')
+    return { browser, imported: await sharedSignIns().importCookies(await readDefaultBrowserCookies(browser)) }
+  })
   registerCapture(registry)
   registerTransportIpc({ host, partitions })
   registerMachineIpc(machines, installs)

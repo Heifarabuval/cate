@@ -16,6 +16,8 @@ import {
   useWorkspaceSettings,
 } from '../../../kernel/settings'
 import { tryRuntimeFor } from '@kernel/rpc/client'
+import { isDomainName } from '@services/browser/contract'
+import { useDesktopPort } from '../../desktop'
 import type { SettingsPageProps } from '../registry'
 
 function setWs<K extends WorkspaceSettingKey>(workspaceId: string, key: K, value: WorkspaceSettings[K]): void {
@@ -158,8 +160,31 @@ export function BrowserPage(): JSX.Element {
   const proxyUrl = useClientSetting('browserProxyUrl')
   const linkTarget = useClientSetting('linkOpenTarget')
   const [proxyDraft, setProxyDraft] = useState(proxyUrl)
+  const sharedDomains = useClientSetting('browserSharedSignInDomains')
+  const [domainsDraft, setDomainsDraft] = useState(sharedDomains.join(', '))
+  const [importState, setImportState] = useState<{ busy: boolean; message: string }>({ busy: false, message: '' })
+  const desktop = useDesktopPort()
 
   useEffect(() => { setProxyDraft(proxyUrl) }, [proxyUrl])
+  useEffect(() => { setDomainsDraft(sharedDomains.join(', ')) }, [sharedDomains])
+
+  const saveDomains = () => {
+    const entered = domainsDraft.split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^\./, '')).filter(Boolean)
+    const valid = [...new Set(entered.filter(isDomainName))]
+    setDomainsDraft(valid.join(', '))
+    if (valid.join() !== sharedDomains.join()) setClientSetting('browserSharedSignInDomains', valid)
+  }
+
+  const importSignIns = async () => {
+    if (!desktop) return
+    setImportState({ busy: true, message: '' })
+    try {
+      const { browser, imported } = await desktop.importBrowserSignIns()
+      setImportState({ busy: false, message: `${imported} cookies imported from ${browser}.` })
+    } catch (error) {
+      setImportState({ busy: false, message: errorMessage(error) })
+    }
+  }
 
   const saveProxy = () => {
     const value = proxyDraft.trim()
@@ -183,6 +208,26 @@ export function BrowserPage(): JSX.Element {
             { value: 'external', label: 'In system browser' },
           ]}
         />
+      </SettingRow>
+      <SettingRow
+        label="Shared sign-ins"
+        keywords="accounts google github cookies login session import default browser"
+        description={`Every workspace's browser shares the sign-ins of these domains and their subdomains; other sites stay per workspace. Import copies them from your default browser (macOS).${importState.message ? ` ${importState.message}` : ''}`}
+      >
+        <div className="flex items-center gap-2">
+          <TextInput
+            value={domainsDraft}
+            onChange={setDomainsDraft}
+            onBlur={saveDomains}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            placeholder="google.com, github.com"
+            layoutClassName="w-56 px-2"
+            className="font-mono"
+          />
+          <SecondaryButton onClick={() => void importSignIns()} disabled={importState.busy || !desktop}>
+            {importState.busy ? 'Importing…' : 'Import'}
+          </SecondaryButton>
+        </div>
       </SettingRow>
       <SettingRow
         label="Proxy"

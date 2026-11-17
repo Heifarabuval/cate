@@ -1193,7 +1193,7 @@ or that changes shared state, is a **workspace** setting.
 | Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
-| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
+| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace shares, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
 | Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
@@ -2231,6 +2231,13 @@ the runtime's machine on every client.
   client machine cannot use it to reach the runtime. If any connection to a
   runtime requires protected routing, that partition stays protected for the
   rest of the launch; switching policy closes existing native connections.
+  Shared sign-ins: cookies of the domains in `browserSharedSignInDomains`
+  (and their subdomains) are copied between every workspace partition and a
+  hub partition (`persist:shared-sign-ins`) that keeps them while no
+  workspace is open; a partition receives them before its first webview
+  mounts. Other cookies stay per workspace. "Import" in the browser settings
+  reads those cookies from the system's default browser (macOS: Chromium
+  browsers, Firefox, Safari with Full Disk Access).
 - **iOS.** WebKit connects to loopback hosts directly and never through a
   proxy, so there is no web proxy: before a page of the workspace loads a
   loopback URL (any frame), the app listens on the phone's own loopback at
