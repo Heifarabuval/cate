@@ -9,7 +9,6 @@ const KINDS: Record<DraftView['kind'], string> = {
 
 /** What a refusal says, in the regisseur's own words when it gave some. */
 function refusal(result: Extract<AgenceOpResult, { ok: false }>): string {
-  if (result.error === 'busy') return 'Une action est déjà en cours sur ce brouillon.'
   if (result.error === 'invalid') return 'Brouillon introuvable.'
   if (result.error === 'unavailable') return `Régisseur indisponible${result.message ? ` : ${result.message}` : '.'}`
   if (/texte a changé/.test(result.message ?? '')) return 'Le texte a changé, relis avant d\'envoyer.'

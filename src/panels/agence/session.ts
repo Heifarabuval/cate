@@ -68,8 +68,6 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
    *  what makes the next start a resume). */
   private launched = false
   private activity: TerminalActivity = { type: 'idle' }
-  /** Drafts and questions with an op under way: a second click is refused `busy`. */
-  private readonly inFlight = new Set<string>()
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: AgenceSessionDeps) {
     super(kit, record, initialSnapshot())
@@ -135,23 +133,23 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   private draftOp(draftId: string, action: 'send' | 'drop' | 'edit', form: Record<string, string>): Promise<AgenceOpResult> {
     const open = SAFE_ID.test(draftId) && this.files?.read().state?.drafts.some((draft) => draft.id === draftId && OPEN_DRAFT.has(draft.statut))
     if (!open) return Promise.resolve({ ok: false, error: 'invalid' })
-    return this.click(`draft:${draftId}`, `/draft/${draftId}/${action}`, form)
+    return this.click(`/draft/${draftId}/${action}`, form)
   }
 
   private answer(questionId: string, form: Record<string, string>): Promise<AgenceOpResult> {
     const open = SAFE_ID.test(questionId) && this.files?.read().state?.questions.some((question) => question.id === questionId && question.answer == null)
     if (!open) return Promise.resolve({ ok: false, error: 'invalid' })
-    return this.click(`question:${questionId}`, `/ask/${questionId}`, form)
+    return this.click(`/ask/${questionId}`, form)
   }
 
-  /** One click on the regisseur's form, one at a time per draft or question. */
-  private async click(key: string, path: string, form: Record<string, string>): Promise<AgenceOpResult> {
-    if (this.inFlight.has(key)) return { ok: false, error: 'busy' }
+  /** One click on the regisseur's form. The session host runs this panel's
+   *  ops one at a time, so a second click waits for the first and then gets
+   *  the regisseur's own refusal (déjà « envoyer », déjà répondue). */
+  private async click(path: string, form: Record<string, string>): Promise<AgenceOpResult> {
     const regisseur = this.regisseur
     if (!regisseur || regisseur.view().state !== 'running') {
       return { ok: false, error: 'unavailable', message: regisseur?.view().error ?? 'regisseur-unavailable' }
     }
-    this.inFlight.add(key)
     try {
       const reply = await regisseur.post(path, form)
       if (reply.code === 200) return { ok: true }
@@ -159,8 +157,6 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       return { ok: false, error, message: reply.message }
     } catch (err) {
       return { ok: false, error: 'unavailable', message: err instanceof Error ? err.message : String(err) }
-    } finally {
-      this.inFlight.delete(key)
     }
   }
 
