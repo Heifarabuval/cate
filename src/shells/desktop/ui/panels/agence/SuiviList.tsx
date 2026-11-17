@@ -1,5 +1,4 @@
 import { Fragment, type ReactNode } from 'react'
-import { clientUi } from '@kernel/interaction'
 import type { NeedRow, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
 
@@ -12,11 +11,14 @@ const SECTIONS = [
 
 const EVIDENCE = 'preuve : '
 
-function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+/** Opens a URL in Cate (the view decides where). */
+type OpenUrl = (url: string) => void
+
+function Link({ href, onOpenUrl, children }: { href: string; onOpenUrl: OpenUrl; children: ReactNode }) {
   return (
     <a
       href={href}
-      onClick={(event) => { event.preventDefault(); clientUi().openExternal(href) }}
+      onClick={(event) => { event.preventDefault(); onOpenUrl(href) }}
       className="text-agent underline decoration-agent/30 hover:decoration-agent"
     >
       {children}
@@ -25,11 +27,11 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
 }
 
 /** One mention of a line: the #N of a PR and a URL as evidence are links. */
-function Mention({ item, row }: { item: string; row: NeedRow }) {
-  if (row.link && item === row.link.label) return <ExternalLink href={row.link.href}>{item}</ExternalLink>
+function Mention({ item, row, onOpenUrl }: { item: string; row: NeedRow; onOpenUrl: OpenUrl }) {
+  if (row.link && item === row.link.label) return <Link href={row.link.href} onOpenUrl={onOpenUrl}>{item}</Link>
   if (item.startsWith(EVIDENCE) && /^https?:\/\//.test(item.slice(EVIDENCE.length))) {
     const url = item.slice(EVIDENCE.length)
-    return <>{EVIDENCE}<ExternalLink href={url}>{url}</ExternalLink></>
+    return <>{EVIDENCE}<Link href={url} onOpenUrl={onOpenUrl}>{url}</Link></>
   }
   return <>{item}</>
 }
@@ -38,9 +40,11 @@ interface RowActions {
   onRead(draftId: string): void
   /** « Demander le rebase » on a merge greyed by a conflict. */
   onRebase(questionId: string): void
+  /** A link of the follow-up (#N of a PR or an issue, evidence URL). */
+  onOpenUrl: OpenUrl
 }
 
-function Row({ row, onRead, onRebase }: { row: NeedRow } & RowActions) {
+function Row({ row, onRead, onRebase, onOpenUrl }: { row: NeedRow } & RowActions) {
   const action = row.action
   return (
     <li className="px-3 py-2 border-t border-subtle first:border-t-0">
@@ -64,7 +68,7 @@ function Row({ row, onRead, onRebase }: { row: NeedRow } & RowActions) {
           {row.meta.map((item, index) => (
             <Fragment key={`${item}-${index}`}>
               {index > 0 && ' · '}
-              <Mention item={item} row={row} />
+              <Mention item={item} row={row} onOpenUrl={onOpenUrl} />
             </Fragment>
           ))}
         </div>
@@ -73,7 +77,7 @@ function Row({ row, onRead, onRebase }: { row: NeedRow } & RowActions) {
   )
 }
 
-export default function SuiviList({ suivi, onRead, onRebase }: { suivi: SuiviView } & RowActions) {
+export default function SuiviList({ suivi, onRead, onRebase, onOpenUrl }: { suivi: SuiviView } & RowActions) {
   return (
     <div className="flex flex-col gap-3 p-3">
       <header>
@@ -86,7 +90,7 @@ export default function SuiviList({ suivi, onRead, onRebase }: { suivi: SuiviVie
           <h2 className={`px-3 py-1.5 text-[12px] font-semibold border-b border-subtle ${tone}`}>{`${title} (${suivi.sections[key].length})`}</h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-muted">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} onRead={onRead} onRebase={onRebase} />)}</ul>}
+            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
         </section>
       ))}
     </div>

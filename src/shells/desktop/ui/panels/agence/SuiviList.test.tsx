@@ -20,13 +20,15 @@ let root: Root
 let ui: ReturnType<typeof installMockClientUi>
 const onRead = vi.fn()
 const onRebase = vi.fn()
-const render = (view: SuiviView) => act(() => root.render(<SuiviList suivi={view} onRead={onRead} onRebase={onRebase} />))
+const onOpenUrl = vi.fn()
+const render = (view: SuiviView) => act(() => root.render(<SuiviList suivi={view} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />))
 const headings = () => [...host.querySelectorAll('h2')].map((h) => h.textContent)
 
 beforeEach(() => {
   ui = installMockClientUi()
   onRead.mockClear()
   onRebase.mockClear()
+  onOpenUrl.mockClear()
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -69,7 +71,7 @@ it('keeps a title on one truncated line and its buttons from shrinking (FR-007)'
   expect(host.querySelector('button')!.className).toMatch(/\bwhitespace-nowrap\b/)
 })
 
-it('makes the #N of a PR a link that opens outside the app', () => {
+it('makes the #N of a PR a link that opens in Cate, not in the system browser', () => {
   render(suivi({ reste: [row('p', { kind: 'pr', meta: ['#8', 'débloque C007'], link: { label: '#8', href: 'https://github.com/x/y/pull/8' } })] }))
   const link = host.querySelector('a')!
   expect(link.textContent).toBe('#8')
@@ -77,7 +79,8 @@ it('makes the #N of a PR a link that opens outside the app', () => {
   const event = new MouseEvent('click', { bubbles: true, cancelable: true })
   act(() => { link.dispatchEvent(event) })
   expect(event.defaultPrevented).toBe(true)
-  expect(ui.openExternal).toHaveBeenCalledWith('https://github.com/x/y/pull/8')
+  expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/8')
+  expect(ui.openExternal).not.toHaveBeenCalled()
   expect(host.textContent).toContain('débloque C007')
 })
 
@@ -88,6 +91,8 @@ it('makes the evidence URL of a done need a link, and leaves plain evidence as t
   ] }))
   const links = [...host.querySelectorAll('a')]
   expect(links.map((a) => a.getAttribute('href'))).toEqual(['https://github.com/x/y/pull/9'])
+  act(() => links[0].click())
+  expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/9')
   expect(host.textContent).toContain('preuve : sortie de test 4')
 })
 
