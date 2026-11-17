@@ -471,6 +471,15 @@ describe('terminal agents', () => {
       expect(canReceive()).toBe(true)
     })
 
+    it('keeps a bracketed paste cut between chunks as text, its line breaks included, until a real Enter', async () => {
+      await atPrompt()
+      for (const chunk of ['\x1b[200~a', 'b\r', '\x1b[201~']) terminal.service.write('pty-1', chunk)
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(canReceive()).toBe(false)
+      terminal.service.write('pty-1', '\r')
+      await vi.waitFor(() => expect(canReceive()).toBe(true))
+    })
+
     it('counts an unterminated sequence longer than the cap as text', async () => {
       await atPrompt()
       terminal.service.write('pty-1', `\x1b]${'x'.repeat(300)}`)

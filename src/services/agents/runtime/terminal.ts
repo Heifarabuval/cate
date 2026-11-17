@@ -170,6 +170,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const typing = new Map<string, { afterBackslash: boolean; settle?: ReturnType<typeof setTimeout> }>()
   /** The incomplete escape sequence each terminal's last input chunk ended in. */
   const inputTails = new Map<string, string>()
+  /** Terminals whose client input is inside a bracketed paste, from one chunk
+   *  to the next: every byte is text there. */
+  const inPaste = new Set<string>()
   /** Writes of our own prompts, which are not a client's typing. */
   let ownWrites = 0
   const hold = (terminalId: string, afterBackslash: boolean, settleMs?: number): void => {
@@ -199,18 +202,25 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       inputTails.delete(terminalId)
       data = joined
     }
+    if (inPaste.has(terminalId)) data = `\x1b[200~${data}`
     let text = typing.has(terminalId) && typing.get(terminalId)!.settle === undefined
     let afterBackslash = typing.get(terminalId)?.afterBackslash ?? false
     let cleared = false
     const type = (backslash: boolean): void => { text = true; cleared = false; afterBackslash = backslash }
     const clear = (): void => { text = false; cleared = true; afterBackslash = false }
-    for (const [, paste, submit, altEnter, ch] of data.matchAll(INPUT_TOKENS)) {
-      if (paste) type(false)
-      else if (altEnter) type(false)
+    let pasting = false
+    for (const match of data.matchAll(INPUT_TOKENS)) {
+      const [, paste, submit, altEnter, ch] = match
+      if (paste !== undefined) {
+        if (paste) type(false)
+        pasting = !match[0].endsWith('\x1b[201~')
+      } else if (altEnter) type(false)
       else if (submit || ch === '\r' || ch === '\n') { if (afterBackslash) type(false); else clear() }
       else if (ch === '\x15' || ch === '\x03') clear()
       else if (ch !== undefined && isTextChar(ch)) type(ch === '\\')
     }
+    if (pasting) inPaste.add(terminalId)
+    else inPaste.delete(terminalId)
     if (text) hold(terminalId, afterBackslash)
     else if (cleared && typing.has(terminalId)) hold(terminalId, false, TYPED_INPUT_SETTLE_MS)
   }
@@ -266,6 +276,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
 
   const forget = (terminalId: string): void => {
     inputTails.delete(terminalId)
+    inPaste.delete(terminalId)
     release(terminalId)
     resets.drop(terminalId)
     const info = terminals.get(terminalId)
