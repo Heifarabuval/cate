@@ -13,3 +13,11 @@ it('lists each type once, and only document panel types', () => {
   for (const type of types) expect(PANEL_TYPES).toContain(type)
   expect(panelDefinition('review')?.icon).toBe('git-compare')
 })
+
+it('declares the agence panel: an execution panel with no cate api', () => {
+  const agence = panelDefinition('agence')
+  expect(agence?.icon).toBe('briefcase')
+  expect(agence?.relation?.execution).toBe(true)
+  expect(agence?.api).toBeUndefined()
+  expect(PANEL_TYPES).toContain('agence')
+})
