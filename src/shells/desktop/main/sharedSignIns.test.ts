@@ -1,8 +1,12 @@
 import { createCipheriv, createHash } from 'node:crypto'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import type { Cookie, CookiesSetDetails } from 'electron'
 import { createSharedSignIns, isSharedDomain, type CookieJar } from './sharedSignIns'
-import { chromiumKey, decryptChromium, parseBinaryCookies } from './browserCookies'
+import { chromiumCookiesFrom, chromiumKey, decryptChromium, parseBinaryCookies } from './browserCookies'
 
 // A jar that, like Chromium, reports its own writes as `changed` events.
 function jar() {
@@ -77,6 +81,28 @@ describe('default browser cookies', () => {
     const cipher = createCipheriv('aes-128-cbc', key, Buffer.alloc(16, ' '))
     const encrypted = Buffer.concat([Buffer.from('v10'), cipher.update(Buffer.concat([host, Buffer.from('token-123')])), cipher.final()])
     expect(decryptChromium(encrypted, key, 24)).toBe('token-123')
+  })
+
+  it('reads a Chromium database whose expiry times exceed 2^53', async () => {
+    const key = chromiumKey('peanuts')
+    const cipher = createCipheriv('aes-128-cbc', key, Buffer.alloc(16, ' '))
+    const host = createHash('sha256').update('.github.com').digest()
+    const encrypted = Buffer.concat([Buffer.from('v10'), cipher.update(Buffer.concat([host, Buffer.from('token-123')])), cipher.final()])
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-test-'))
+    const file = path.join(dir, 'Cookies')
+    const db = new DatabaseSync(file)
+    db.exec(`CREATE TABLE meta (key TEXT, value TEXT); INSERT INTO meta VALUES ('version', '24');
+      CREATE TABLE cookies (host_key TEXT, top_frame_site_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, has_expires INTEGER, is_secure INTEGER, is_httponly INTEGER, samesite INTEGER)`)
+    // A real Arc expiry: 2026-12-22T09:23:40Z in Chromium time.
+    db.prepare(`INSERT INTO cookies VALUES ('.github.com', '', 'user_session', '', ?, '/', 13442405020329902, 1, 1, 1, 1)`).run(encrypted)
+    db.close()
+    try {
+      const [c] = await chromiumCookiesFrom(file, key)
+      expect(c).toMatchObject({ domain: '.github.com', name: 'user_session', value: 'token-123', secure: true, httpOnly: true, sameSite: 'lax' })
+      expect(new Date(c.expirationDate! * 1000).toISOString()).toBe('2026-12-22T09:23:40.000Z')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('parses a Safari binarycookies file', () => {
