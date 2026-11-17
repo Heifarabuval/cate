@@ -14,10 +14,11 @@ import { RpcError } from '@kernel/rpc/contract'
 import type { Json, PanelRecord } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalActivity, type TerminalStatus } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
-import { PanelSession, type DisposeReason, type SessionKit } from '@panels/framework/runtime'
+import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
 import { classify } from './contract/suivi'
 import type {
   AgenceOp,
+  AgenceOpResult,
   AgencePersisted,
   AgenceSnapshot,
   AgenceState,
@@ -46,6 +47,8 @@ export const ORCHESTRATOR_LAUNCH: LaunchIntent = { kind: 'agents.start', params:
 
 const INITIAL_COLS = 80
 const INITIAL_ROWS = 24
+const OPEN_DRAFT: ReadonlySet<string> = new Set(['à valider', 'envoyer'])
+const SAFE_ID = /^[\w-]+$/
 const DRAFT_KINDS: ReadonlySet<string> = new Set(['issue', 'pr', 'comment', 'slack', 'mail'])
 
 const initialSnapshot = (): AgenceSnapshot => ({
@@ -67,6 +70,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
    *  what makes the next start a resume). */
   private launched = false
   private activity: TerminalActivity = { type: 'idle' }
+  /** Drafts with an op under way: a second click is refused `busy`. */
+  private readonly inFlight = new Set<string>()
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: AgenceSessionDeps) {
     super(kit, record, initialSnapshot())
@@ -94,6 +99,17 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     await this.spawnOrchestrator(resume)
   }
 
+  // `answer` and `orchestrator.restart` come with their stories.
+  protected override readonly ops = this.draftOps() as OpHandlers<AgenceOp>
+
+  private draftOps(): Partial<OpHandlers<AgenceOp>> {
+    return {
+      'draft.send': ({ draftId, hash }) => this.draftOp(draftId, 'send', { h: hash }),
+      'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
+      'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
+    }
+  }
+
   /** Closing would end the orchestrator's program. */
   override closeBlocker(): RpcError | null {
     if (!this.state.ptyId || this.state.orchestrator !== 'running' || this.activity.type !== 'running') return null
@@ -112,6 +128,28 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   }
 
   // ---- Internals ------------------------------------------------------------
+
+  /** A draft action is the regisseur's `click()`: same effects, same
+   *  refusals. The session writes nothing itself. */
+  private async draftOp(draftId: string, action: 'send' | 'drop' | 'edit', form: Record<string, string>): Promise<AgenceOpResult> {
+    const open = SAFE_ID.test(draftId) && this.files?.read().state?.drafts.some((draft) => draft.id === draftId && OPEN_DRAFT.has(draft.statut))
+    if (!open) return { ok: false, error: 'invalid' }
+    if (this.inFlight.has(draftId)) return { ok: false, error: 'busy' }
+    const regisseur = this.regisseur
+    if (!regisseur || regisseur.view().state !== 'running') {
+      return { ok: false, error: 'unavailable', message: regisseur?.view().error ?? 'regisseur-unavailable' }
+    }
+    this.inFlight.add(draftId)
+    try {
+      const reply = await regisseur.post(`/draft/${draftId}/${action}`, form)
+      if (reply.code === 200) return { ok: true }
+      return { ok: false, error: reply.code === 403 ? 'unavailable' : 'conflict', message: reply.message }
+    } catch (err) {
+      return { ok: false, error: 'unavailable', message: err instanceof Error ? err.message : String(err) }
+    } finally {
+      this.inFlight.delete(draftId)
+    }
+  }
 
   private async startRegisseur(): Promise<void> {
     let lease: { env: Record<string, string>; revoke(): void }

@@ -87,8 +87,12 @@ export type AgenceOp =
   | { kind: 'answer'; questionId: string; choice?: number; libre?: string }
   | { kind: 'orchestrator.restart' }
 
-/** Why an op was refused (`{ ok: false, error }`). */
+/** Why an op was refused. */
 export type AgenceOpError = 'busy' | 'conflict' | 'unavailable' | 'invalid'
+
+/** What an op answers: refusals are answers, not errors. `message` is the
+ *  regisseur's own wording (« texte a changé », ...) for the view to show. */
+export type AgenceOpResult = { ok: true } | { ok: false; error: AgenceOpError; message?: string }
 
 /** `sessions/<panelId>.json`: the last title seen of each linked panel. */
 export type AgencePersisted = {
