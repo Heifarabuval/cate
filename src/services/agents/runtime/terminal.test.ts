@@ -461,6 +461,31 @@ describe('terminal agents', () => {
     })
 
     it.each([
+      ['an OSC 11 reply cut in the middle', ['\x1b]11;rgb:0000/', '0000/0000\x07']],
+      ['a DCS reply cut before its ESC \\', ['\x1bP>|xterm(388)', '\x1b\\']],
+      ['a CSI cut after ESC [', ['\x1b[', 'I']],
+      ['an ESC alone, then ] in the next chunk', ['\x1b', ']10;rgb:ffff/ffff/ffff\x07']],
+    ])('does not count %s as text', async (_name, chunks) => {
+      await atPrompt()
+      for (const chunk of chunks) terminal.service.write('pty-1', chunk)
+      expect(canReceive()).toBe(true)
+    })
+
+    it('counts an unterminated sequence longer than the cap as text', async () => {
+      await atPrompt()
+      terminal.service.write('pty-1', `\x1b]${'x'.repeat(300)}`)
+      expect(canReceive()).toBe(false)
+    })
+
+    it('lets an Escape typed alone and an Enter after it end the typing', async () => {
+      await atPrompt()
+      terminal.service.write('pty-1', 'abc')
+      terminal.service.write('pty-1', '\x1b')
+      terminal.service.write('pty-1', '\r')
+      await vi.waitFor(() => expect(canReceive()).toBe(true))
+    })
+
+    it.each([
       ['Alt+Enter', 'abc\x1b\r'],
       ['backslash then Enter', 'abc\\\r'],
       ['a newline inside a bracketed paste', '\x1b[200~a\rb\x1b[201~'],

@@ -128,6 +128,10 @@ const INPUT_TOKENS = new RegExp([
   '(\\x1b[\\r\\n])',
   '([\\s\\S])'
 ].join('|'), 'g')
+// An escape sequence the chunk ends in the middle of: kept to be joined to
+// the next chunk. Past the cap it is text.
+const INCOMPLETE_SEQUENCE = /\x1b(?:\[M[\s\S]{0,2}|\[[0-?]*[ -/]*|\][^\x07\x1b]*\x1b?|P[^\x1b]*\x1b?|O)?$/
+const INCOMPLETE_SEQUENCE_MAX = 256
 const isTextChar = (ch: string): boolean => ch >= ' ' && ch !== '\x7f'
 
 export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminalService, options: TerminalAgentsOptions): TerminalAgents {
@@ -164,6 +168,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
    *  submitted or emptied (`afterBackslash`: its last character is `\`),
    *  or just did (`settle` pending): no prompt is typed over it. */
   const typing = new Map<string, { afterBackslash: boolean; settle?: ReturnType<typeof setTimeout> }>()
+  /** The incomplete escape sequence each terminal's last input chunk ended in. */
+  const inputTails = new Map<string, string>()
   /** Writes of our own prompts, which are not a client's typing. */
   let ownWrites = 0
   const hold = (terminalId: string, afterBackslash: boolean, settleMs?: number): void => {
@@ -181,6 +187,18 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }
   const noteTyped = (terminalId: string, data: string): void => {
     if (ownWrites > 0 || !terminals.has(terminalId)) return
+    // A lone Escape joins the next chunk only when that one goes on with a
+    // sequence; else it was the key (Esc, then Enter).
+    const tail = inputTails.get(terminalId) ?? ''
+    const joined = (tail === '\x1b' && !/^[[\]PO]/.test(data) ? '' : tail) + data
+    const cut = INCOMPLETE_SEQUENCE.exec(joined)
+    if (cut && joined.length - cut.index <= INCOMPLETE_SEQUENCE_MAX) {
+      inputTails.set(terminalId, joined.slice(cut.index))
+      data = joined.slice(0, cut.index)
+    } else {
+      inputTails.delete(terminalId)
+      data = joined
+    }
     let text = typing.has(terminalId) && typing.get(terminalId)!.settle === undefined
     let afterBackslash = typing.get(terminalId)?.afterBackslash ?? false
     let cleared = false
@@ -247,6 +265,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }
 
   const forget = (terminalId: string): void => {
+    inputTails.delete(terminalId)
     release(terminalId)
     resets.drop(terminalId)
     const info = terminals.get(terminalId)
