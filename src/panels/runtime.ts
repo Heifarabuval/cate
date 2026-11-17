@@ -22,6 +22,7 @@ import { browserPanel, browserServiceHandlers } from './browser/runtime'
 import { browserApi } from '@services/browser/contract'
 import { surfacePanel } from './surface/runtime'
 import { canvasPanel } from './canvas/runtime'
+import { createAgencePanels } from './agence/runtime'
 
 /** The runtime services the daemon has for panel types; each type's entry
  *  below names the ones it takes (`PanelRuntime<keys>`). */
@@ -140,4 +141,10 @@ const canvas: PanelRuntime = () => canvasPanel()
 
 const surface: PanelRuntime = () => surfacePanel()
 
-export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface]
+const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv'> = (services) => createAgencePanels({
+  root: services.root,
+  terminal: services.terminal,
+  cliEnv: (panelId) => services.cliEnv(panelId),
+})
+
+export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence]

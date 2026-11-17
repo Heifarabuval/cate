@@ -6,7 +6,7 @@ import type { PanelCreateOptions } from '@panels/framework/contract'
 
 export type OrchestratorState = 'starting' | 'running' | 'exited' | 'failed'
 
-export interface RegisseurView {
+export type RegisseurView = {
   state: 'starting' | 'running' | 'stopped' | 'external' | 'missing'
   error: string | null
   /** The regisseur's stderr hint when the `cate` CLI settings are off. */
@@ -15,7 +15,7 @@ export interface RegisseurView {
 
 export type DraftKind = 'issue' | 'pr' | 'comment' | 'slack' | 'mail'
 
-export interface DraftView {
+export type DraftView = {
   id: string
   cible: string
   kind: DraftKind
@@ -26,20 +26,20 @@ export interface DraftView {
   hash: string
 }
 
-export interface QuestionView {
+export type QuestionView = {
   id: string
   question: string
   options: Array<{ label: string; detail: string }>
   isMerge: boolean
 }
 
-export interface NeedLink { panelId: string; title: string; closed: boolean }
+export type NeedLink = { panelId: string; title: string; closed: boolean }
 
 export type NeedAction =
   | { type: 'draft'; draftId: string; inFlight: boolean }
   | { type: 'question'; questionId: string }
 
-export interface NeedRow {
+export type NeedRow = {
   id: string
   title: string
   kind: string
@@ -50,14 +50,14 @@ export interface NeedRow {
   action: NeedAction | null
 }
 
-export interface SuiviSections {
+export type SuiviSections = {
   bloquant: NeedRow[]
   aFaire: NeedRow[]
   fait: NeedRow[]
   reste: NeedRow[]
 }
 
-export interface SuiviView {
+export type SuiviView = {
   repo: string
   agentsActive: number
   /** ISO time of the last state read. */
@@ -67,7 +67,7 @@ export interface SuiviView {
   sections: SuiviSections
 }
 
-export interface AgenceSnapshot {
+export type AgenceSnapshot = {
   /** The orchestrator's PTY, for `process.attach`. */
   ptyId: string | null
   orchestrator: OrchestratorState
@@ -91,7 +91,7 @@ export type AgenceOp =
 export type AgenceOpError = 'busy' | 'conflict' | 'unavailable' | 'invalid'
 
 /** `sessions/<panelId>.json`: the last title seen of each linked panel. */
-export interface AgencePersisted {
+export type AgencePersisted = {
   knownTitles: Record<string, string>
 }
 
@@ -138,6 +138,8 @@ export interface StateQuestion {
   needId: string
   question: string
   options: Array<{ label: string; detail: string }>
+  /** `merge:<repo>#<number>`: answering the first option merges. */
+  action: string | null
   answer: string | null
 }
 
