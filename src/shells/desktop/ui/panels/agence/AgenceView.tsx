@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { openUrlBeside } from '@client/host'
 import type { AgenceOp, AgenceOpResult, AgenceSnapshot } from '@panels/agence/contract'
 import { Button, InlineNotice, LoadingState } from '../../kernel/interaction'
 import type { PanelViewProps } from '../../client/host/views'
@@ -6,7 +7,6 @@ import DraftReader from './DraftReader'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
 import TerminalPane from './TerminalPane'
-import { openInCate } from './openLink'
 
 /** Under this width the conversation and the follow-up are tabs, not columns. */
 const NARROW_PX = 640
@@ -93,7 +93,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                   send={send}
                   onRead={setReading}
                   onRebase={(questionId) => void run({ kind: 'answer', questionId, choice: 'rebase' })}
-                  onOpenUrl={(url) => { openInCate(workspaceId, panelId, url) }}
+                  onOpenUrl={(url) => { openUrlBeside(workspaceId, panelId, url) }}
                 />
               )
               : <div className="p-4 text-[12px] text-muted">Aucun suivi pour l&apos;instant.</div>}
