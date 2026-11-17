@@ -95,6 +95,14 @@ Panel ids may be the unique short ids `agent list` prints. `wait` accepts
 5000 to 60000 milliseconds and, with no ids, monitors every live agent panel;
 it exits 1 when it timed out, after printing the states.
 
+`cate agent usage [--panel <id>] [--json]` shows what each live agent panel's
+session has used: `model`, `inputTokens` (cached part included), `outputTokens`
+and `costUsd`, the API-equivalent cost from Cate's price table, not money
+spent. `costUsd` is null (a dash) when a model has no price. An agent that
+records no tokens, or a panel with no session yet, answers null in every field.
+It reads one session, so it answers in seconds; it is the whole session, a
+resumed one included, and a `/clear` starts a new one.
+
 Send bounded prompts. `send` hands the prompt to the runtime and prints its
 id at once, busy agent or not: the runtime types it once the agent is at its
 prompt, after the prompts sent before it, one at a time, exactly once. A

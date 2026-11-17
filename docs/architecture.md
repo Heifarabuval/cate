@@ -1869,6 +1869,14 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   at runtime start each one read back whose panel still exists is checked
   once, since an agent that finished while the runtime was down sends no
   turn-end.
+- **Session usage** (`cate agent usage`, read access, 30 s timeout): per
+  live agent panel, what its known session has used (`sessionOf`):
+  `model` (most tokens), `inputTokens` (cached included), `outputTokens`,
+  `costUsd` (null when a response has no price; every field null for an agent
+  without token counts). `AgentUsageService.session` reuses the workspace
+  scan's cached transcript reader, pricing and aggregator, but reads only the
+  session's own files when its store names them (`files`), else that agent's
+  transcripts of the last 7 days, and keeps the records of that `sessionId`.
 - **terminal agents** (`terminal.ts`): plug into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).
