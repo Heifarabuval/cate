@@ -40,7 +40,7 @@ function normalize(parsed: unknown): AgenceState {
   const raw = parsed as Partial<AgenceState>
   if (!Array.isArray(raw.needs)) throw new Error('state has no needs list')
   return {
-    repo: '', ghRepo: null, agentsActive: 0, panels: {}, titles: {}, drafts: [], questions: [],
+    repo: '', ghRepo: null, agentsActive: 0, port: null, panels: {}, titles: {}, drafts: [], questions: [],
     ...raw,
   } as AgenceState
 }

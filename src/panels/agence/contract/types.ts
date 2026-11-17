@@ -146,6 +146,8 @@ export interface AgenceState {
   repo: string
   ghRepo: string | null
   agentsActive: number
+  /** The regisseur's port, set by `agence boot`. */
+  port: number | null
   panels: Record<string, string>
   titles: Record<string, string>
   needs: StateNeed[]
