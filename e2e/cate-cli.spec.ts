@@ -77,8 +77,9 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(await runCate('version')).toMatch(/^\d+$/)
   expect(await runCate('panel', 'list')).toContain('terminal')
 
-  // Agents: --done-when is part of start, and list answers with no agent.
-  expect(await runCate('agent', 'start', '--help')).toContain('--done-when')
+  // Agents: --done-when, --model and --effort are part of start, and list answers with no agent.
+  const startHelp = await runCate('agent', 'start', '--help')
+  for (const flag of ['--done-when', '--model', '--effort']) expect(startHelp).toContain(flag)
   expect(await runCate('agent', 'list')).toContain('(no agent runs)')
 
   // Editor and panel verbs.

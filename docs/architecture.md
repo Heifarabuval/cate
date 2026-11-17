@@ -1686,7 +1686,8 @@ downloads list and its views, and hands page work to it.
 Owns the agent vocabulary of section 2. All of it runs in the runtime.
 
 - **contract**: the `AGENTS` registry. Each `AgentDef` declares its CLI
-  (`command`, `resume`, `sessionStore`, `promptArgs`, `interruptKeys`), its
+  (`command`, `resume`, `sessionStore`, `promptArgs`, `launchOptions`,
+  `interruptKeys`), its
   skills targets, process matching and prompt-context hooks; its hook spec is
   `AGENT_HOOK_SPECS`. Per-agent tables are total `Record<AgentId, …>` (an
   agent without an entry says so with `null`), so a new agent is a compile
@@ -1834,7 +1835,14 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   account inspection: those remain background availability information.
   New-panel creation acknowledges document placement before PTY startup;
   its terminal session reports starting, running or failed to every client.
-  Once
+  `--model` and `--effort` are independent launch options: each `AgentDef`
+  declares `launchOptions` (the argv that picks a model, the argv and known
+  levels of an effort, or null where the CLI has no such option), the
+  starter refuses an undeclared option or an unknown level before creating
+  anything (`model-unsupported`, `effort-unsupported`), and
+  `agentLaunchCommand` puts the argv before the prompt, on a new panel and a
+  reused one alike. The starter keeps what each panel was started with in
+  memory; `cate agent list` shows it (`model`, `effort`). Once
   started it is an agent panel like any other: `cate.agent.*` reads,
   prompts and interrupts it by its panel. `types` lists the agent CLIs and
   whether each can start in a terminal here. The review panel starts its

@@ -1,6 +1,7 @@
 # Agents and terminal input
 
-Contents: the loop, starting an agent, ending a task (`--done-when`),
+Contents: the loop, starting an agent, model and effort (`--model`,
+`--effort`), ending a task (`--done-when`),
 sending and waiting, reading answers, typing into terminals.
 
 `cate agent` starts coding agents (terminal CLIs such as Claude Code or
@@ -39,6 +40,22 @@ output adds `(not linked: <reason>)`, `--json` gives `relationError`.
 Until the agent CLI is up, the panel is listed as `starting`: `wait` waits
 for it, while `send`, `read` and `interrupt` fail with `agent-starting`.
 From then on it is an agent panel like any other.
+
+## Model and effort: `--model`, `--effort`
+
+```bash
+cate agent start --model sonnet --effort low --title "#n3 verifier" "$(cat BRIEF.md)"
+cate agent start --effort high "Fix the flaky login test"
+```
+
+Both go to the agent CLI at launch, and each works without the other. `--model` is free text
+(the CLI's own model id or alias); the `--effort` levels differ per agent.
+An agent that has no such option, or does not know the level, refuses the
+start before anything is created: `effort-unsupported: Codex does not know
+the effort "max" (low, medium, high)`. They combine with `--relation` and
+`--done-when` in the same command. `cate agent list` shows them in the
+MODEL and EFFORT columns (`--json`: `model`, `effort`), blank for an agent
+started without. After a runtime restart they are blank again.
 
 ## Ending a task: `--done-when`
 
