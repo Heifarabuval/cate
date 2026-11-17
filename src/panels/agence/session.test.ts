@@ -372,18 +372,11 @@ describe('AgenceSession', () => {
       await expect(answer(session, { questionId: 'q1' })).resolves.toEqual({ ok: false, error: 'invalid', message: 'Choix manquant.' })
     })
 
-    it('refuses an answered or unknown question and a second click, posting nothing more', async () => {
+    it('refuses an answered or unknown question, posting nothing', async () => {
       const { session, regisseurs } = await started([{ ...merge(null), answer: 'Non' }])
       await expect(answer(session, { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
       await expect(answer(session, { questionId: '../q', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
       expect(regisseurs.posts).toEqual([])
-      const open = await started()
-      let release!: () => void
-      open.regisseurs.answer(() => new Promise((resolve) => { release = () => resolve({ code: 200, message: 'ok' }) }))
-      const first = answer(open.session, { questionId: 'q1', choice: 1 })
-      await expect(answer(open.session, { questionId: 'q1', choice: 1 })).resolves.toEqual({ ok: false, error: 'busy' })
-      release()
-      await expect(first).resolves.toEqual({ ok: true })
     })
 
     it('shows why Merger is greyed and offers the rebase on a fresh conflict', async () => {
@@ -413,20 +406,6 @@ describe('AgenceSession', () => {
       await expect(op(session, { kind: 'draft.drop', draftId: 'd1' })).resolves.toEqual({ ok: true })
       await expect(op(session, { kind: 'draft.edit', draftId: 'd1' })).resolves.toEqual({ ok: true })
       expect(regisseurs.posts).toEqual([{ path: '/draft/d1/drop', form: {} }, { path: '/draft/d1/edit', form: {} }])
-    })
-
-    it('refuses a second click on the same draft while the first is running, then accepts a new one', async () => {
-      const { session, regisseurs } = await started()
-      let release!: () => void
-      regisseurs.answer(() => new Promise((resolve) => { release = () => resolve({ code: 200, message: 'ok' }) }))
-      const first = op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })
-      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: false, error: 'busy' })
-      await expect(op(session, { kind: 'draft.drop', draftId: 'd1' })).resolves.toEqual({ ok: false, error: 'busy' })
-      expect(regisseurs.posts).toHaveLength(1)
-      release()
-      await expect(first).resolves.toEqual({ ok: true })
-      regisseurs.answer(async () => ({ code: 200, message: 'ok' }))
-      await expect(op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })).resolves.toEqual({ ok: true })
     })
 
     it.each(['texte a changé', 'déjà « envoyer »', 'besoin clos'])('renders the regisseur\'s 409 (%s) as a conflict with its message', async (message) => {

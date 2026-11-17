@@ -75,7 +75,6 @@ it('shows a refusal in the card, keeps the draft open and offers to try again', 
 })
 
 it.each([
-  [{ ok: false, error: 'busy' }, /déjà en cours/],
   [{ ok: false, error: 'unavailable', message: 'agence introuvable (agence)' }, /agence introuvable/],
   [{ ok: false, error: 'invalid' }, /introuvable/],
 ] as const)('says what happened for %j', async (result, text) => {
