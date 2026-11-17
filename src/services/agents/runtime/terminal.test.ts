@@ -12,7 +12,7 @@ import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentsDocument } from './promptContext'
 import type { RelationContextMode } from '@workspace/relations/contract'
 import { AGENT_SESSION_STORES } from './sessions'
-import { createTerminalAgents, type AgentTerminalService, type TerminalAgents } from './terminal'
+import { createTerminalAgents, TYPED_INPUT_IDLE_MS, type AgentTerminalService, type TerminalAgents } from './terminal'
 import type { NotificationEvent } from '@workspace/notifications/contract'
 
 
@@ -416,6 +416,42 @@ describe('terminal agents', () => {
       await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
       await vi.advanceTimersByTimeAsync(10_000)
       await expect(sent).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/^agent-prompt-not-taken/) })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a prompt queued while text typed by a client sits in the input, until it is cleared', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    terminal.service.write('pty-1', 'on va devoir aussi')
+    expect(agents.panels.state('term')?.canReceivePrompt).toBe(false)
+    expect(agents.send('term', 'report')).toMatchObject({ state: 'queued' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(terminal.writes).toEqual([{ id: 'pty-1', data: 'on va devoir aussi' }])
+    // Focus reports and arrows are not text; Ctrl+U empties the input.
+    terminal.service.write('pty-1', '\x1b[I\x1b[A')
+    expect(agents.prompts.of('term')).toMatchObject([{ state: 'queued' }])
+    terminal.service.write('pty-1', '\x15')
+    await vi.waitFor(() => expect(terminal.writes.at(-1)).toEqual({ id: 'pty-1', data: '\r' }))
+    expect(terminal.writes.map((w) => w.data)).toEqual(['on va devoir aussi', '\x1b[I\x1b[A', '\x15', '\x1b[200~report\x1b[201~', '\r'])
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    await vi.waitFor(() => expect(agents.prompts.of('term')).toEqual([]))
+  })
+
+  it('sends a queued prompt once the typed text is submitted with Enter, and after the idle delay', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      terminal.service.write('pty-1', 'abandoned')
+      agents.send('term', 'report')
+      await vi.advanceTimersByTimeAsync(TYPED_INPUT_IDLE_MS - 1)
+      expect(terminal.writes).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1)
+      await vi.waitFor(() => expect(terminal.writes).toHaveLength(3))
     } finally {
       vi.useRealTimers()
     }

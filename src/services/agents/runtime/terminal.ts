@@ -108,6 +108,18 @@ interface TerminalInfo {
 const SUBMIT_CONFIRM_MS = 10_000
 /** Between two interrupt keys (opencode's second Esc confirms the first). */
 const INTERRUPT_KEY_GAP_MS = 500
+/** Text a client typed that no Enter or clear has taken is assumed gone after
+ *  this long without a key (a backspaced input cannot be seen empty). */
+export const TYPED_INPUT_IDLE_MS = 120_000
+/** After an Enter or a clear key a prompt still waits this long: the Enter
+ *  starts a turn whose hook arrives a moment later, and a prompt pasted in
+ *  between would be counted as that turn's. */
+export const TYPED_INPUT_SETTLE_MS = 500
+// What a client's bytes do to the agent's input: escape sequences (focus,
+// arrows, paste markers) are no text; Enter, Ctrl+U and Ctrl+C empty it.
+const ESCAPE_SEQUENCES = /\x1b\[[0-?]*[ -/]*[@-~]|\x1bO./g
+const CLEARING_KEYS = /[\r\n\x15\x03]/
+const isTextChar = (ch: string): boolean => ch >= ' ' && ch !== '\x7f'
 
 export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminalService, options: TerminalAgentsOptions): TerminalAgents {
   const { hooks, presence, promptContext, document, notifications } = agents
@@ -138,6 +150,30 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   /** Whether each terminal's agent has Cate's hook files where it runs,
    *  inspected once per agent run (absent while unknown). */
   const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null }>()
+
+  /** Terminals whose input holds text a client typed (or just submitted),
+   *  with the timer that ends the hold: no prompt is typed over it. */
+  const typing = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Writes of our own prompts, which are not a client's typing. */
+  let ownWrites = 0
+  const hold = (terminalId: string, ms: number): void => {
+    clearTimeout(typing.get(terminalId))
+    const first = !typing.has(terminalId)
+    typing.set(terminalId, setTimeout(() => release(terminalId), ms))
+    if (first) changed(terminalId)
+  }
+  const release = (terminalId: string): void => {
+    clearTimeout(typing.get(terminalId))
+    if (typing.delete(terminalId)) changed(terminalId)
+  }
+  const noteTyped = (terminalId: string, data: string): void => {
+    if (ownWrites > 0 || !terminals.has(terminalId)) return
+    const keys = [...data.replace(ESCAPE_SEQUENCES, '')]
+    const last = keys.findLastIndex((ch) => CLEARING_KEYS.test(ch))
+    if (keys.slice(last + 1).some(isTextChar)) hold(terminalId, TYPED_INPUT_IDLE_MS)
+    else if (last >= 0 && typing.has(terminalId)) hold(terminalId, TYPED_INPUT_SETTLE_MS)
+  }
+  const canReceive = (terminalId: string): boolean => status.canReceivePrompt(terminalId) && !typing.has(terminalId)
 
   const panelOf = (terminalId: string): string | null => terminals.get(terminalId)?.panelId ?? null
   const changed = (terminalId: string): void => {
@@ -188,6 +224,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }
 
   const forget = (terminalId: string): void => {
+    clearTimeout(typing.get(terminalId))
+    typing.delete(terminalId)
     resets.drop(terminalId)
     const info = terminals.get(terminalId)
     presence.drop(terminalId)
@@ -258,7 +296,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     return command ? { input: command } : {}
   }))
 
-  offs.push(terminal.onInput((terminalId, data) => hooks.noteInput(terminalId, data)))
+  offs.push(terminal.onInput((terminalId, data) => {
+    noteTyped(terminalId, data)
+    hooks.noteInput(terminalId, data)
+  }))
 
   offs.push(hooks.onToolCall((terminalId, call) => {
     const panelId = panelOf(terminalId)
@@ -344,6 +385,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       hookAgent.set(event.terminalId, event.agentId)
       changed(event.terminalId)
     }
+    // A turn took what sat in the input.
+    if (event.kind === 'turn-start') release(event.terminalId)
     if (event.kind === 'turn-start' && AGENT_DEFS[event.agentId].promptContextHook != null) {
       promptContext.consume(panelId, event.agentId)
       attachmentContext.delete(event.terminalId)
@@ -425,7 +468,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       contextPolicy: !def ? null : def.promptContextHook ? 'supported' : 'unsupported',
       status: current,
       present,
-      canReceivePrompt: status.canReceivePrompt(terminalId),
+      canReceivePrompt: canReceive(terminalId),
       session: sessionOf(panelId, terminalId),
       ...(present && agentId && hooksMissing(terminalId, agentId) ? { hooksMissing: true as const } : {}),
     }
@@ -438,7 +481,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       // A native submit hook reads the context: publish it before Enter.
       syncPromptContext(terminalId)
       await typePrompt({
-        write: (data) => terminal.write(terminalId, data),
+        write: (data) => {
+          ownWrites++
+          try { terminal.write(terminalId, data) } finally { ownWrites-- }
+        },
         onOutput: (listener) => terminal.onOutput((id) => { if (id === terminalId) listener() }),
       }, prompt, terminal.bracketedPaste?.(terminalId) ?? true)
       return true
@@ -467,7 +513,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     async send(panelId, prompt, attachments = []): Promise<AgentSendResult> {
       const terminalId = liveTerminal(panelId)
       if (!terminalId || !status.present(terminalId)) return { ok: false, error: 'agent-not-running' }
-      if (!status.canReceivePrompt(terminalId)) return { ok: false, error: 'agent-busy' }
+      if (!canReceive(terminalId)) return { ok: false, error: 'agent-busy' }
       const input = agentPromptInput(status.agentId(terminalId), prompt, attachments)
       // The agent's submit hook takes the context and its turn-start
       // consumes it; consuming here would clear it before the hook reads it.
@@ -547,6 +593,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     dispose() {
       disposed = true
       processSessions.clear()
+      for (const timer of typing.values()) clearTimeout(timer)
+      typing.clear()
       for (const off of offs.splice(0)) off()
       stampsFile.dispose()
     },
