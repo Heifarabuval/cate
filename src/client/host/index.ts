@@ -30,6 +30,7 @@ export { registerSurface, runSurfaceRequest, serveSurfaces, type SurfaceHandler 
 export { keepMountedPanelIds, setEqual } from './keepMounted'
 export { createPanel, clientPanelKit, inheritedCheckout, newId } from './createPanel'
 export { openLink, openClickedLink, installLinkSettings, panelShowingFile, type LinkSettings, type LinkTarget, type OpenLinkOptions } from './links'
+export { openUrlBeside } from './openBeside'
 export { markdownLinkTarget, markdownPath } from './markdownLinks'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type ConfirmedClose } from './close'
 export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
