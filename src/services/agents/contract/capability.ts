@@ -28,6 +28,9 @@ export interface AgentStartRequest {
    *  agent. A refused relation leaves the agent started (`relationError`). */
   linkFrom?: string
   relation?: RelationKind
+  /** `cate agent start --done-when`: a shell command whose exit 0 after a
+   *  turn closes the agent's panel. */
+  doneWhen?: string
 }
 
 /** Every panel hosting an agent, keyed by panel id. */

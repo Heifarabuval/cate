@@ -123,6 +123,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const exitListeners = new Set<(panelId: string, exitCode: number) => void>()
   const stepListeners = new Set<(panelId: string, step: AgentStep) => void>()
   const resetListeners = new Set<(panelId: string) => void>()
+  const turnEndListeners = new Set<(panelId: string) => void>()
   const resets = createConversationResets((terminalId) => {
     const panelId = panelOf(terminalId)
     if (panelId) for (const listener of resetListeners) listener(panelId)
@@ -155,6 +156,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       agentName: change.agentId ? AGENT_DEFS[change.agentId].displayName : null,
       permission: change.attention.permission,
     }))
+  }, (terminalId) => {
+    const panelId = panelOf(terminalId)
+    if (panelId) for (const listener of turnEndListeners) listener(panelId)
   })
 
   const stamps: ResumeStamps = createResumeStamps({
@@ -530,6 +534,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     onConversationReset(listener) {
       resetListeners.add(listener)
       return () => { resetListeners.delete(listener) }
+    },
+    onTurnEnd(listener) {
+      turnEndListeners.add(listener)
+      return () => { turnEndListeners.delete(listener) }
     },
     onExit(listener) {
       exitListeners.add(listener)

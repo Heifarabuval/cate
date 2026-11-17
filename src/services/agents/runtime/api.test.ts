@@ -6,7 +6,8 @@ import { isRpcError } from '@kernel/rpc/contract'
 import type { ApiHandlerContext } from '@kernel/api/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { PanelAgentState } from '../contract'
-import { createAgentApiHandlers } from './api'
+import { createAgentApiHandlers, NO_DONE_WHEN_NOTE } from './api'
+import { createDoneWhen } from './doneWhen'
 import { agentsCapabilityImpl } from './capability'
 import { createAgentsCore, type AgentsCore, type AgentTerminals } from './core'
 import type { AgentStarter } from './start'
@@ -27,6 +28,7 @@ function fakeTerminals() {
     conversationStamp: async () => null,
     onStep: () => () => {},
     onConversationReset: () => () => {},
+    onTurnEnd: () => () => {},
     dispose: () => {},
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
@@ -229,6 +231,21 @@ describe('cate.agent.start', () => {
   it('leaves the place to the starter without a canvas, and starts for a client without a panel', async () => {
     await handlers.start({ prompt: 'Fix it', agentId: 'codex' }, ctx({ kind: 'client', panelId: undefined }))
     expect(starter.start).toHaveBeenCalledWith(undefined, { prompt: 'Fix it', agentId: 'codex' })
+  })
+})
+
+describe('cate.agent.start --done-when', () => {
+  it('says the panel stays open without a condition, and lists a condition with its last result', async () => {
+    expect(await handlers.start({ prompt: 'Fix it' }, ctx())).toEqual({ panelId: 'new', agentId: 'codex', note: NO_DONE_WHEN_NOTE })
+    expect(await handlers.start({ prompt: 'Fix it', doneWhen: 'npm test' }, ctx())).toEqual({ panelId: 'new', agentId: 'codex' })
+    expect(starter.start).toHaveBeenLastCalledWith('supervisor', { prompt: 'Fix it', doneWhen: 'npm test' })
+
+    const doneWhen = createDoneWhen({ run: async () => ({ exitCode: 1 }), panelTitle: () => 'Backend', close: () => {}, notify: () => {}, now: () => 7 })
+    doneWhen.watch('term', { command: 'npm test', cwd: '/repo' })
+    await doneWhen.check('term')
+    terminal.set('term', { status: 'running', canReceivePrompt: false })
+    const listed = await createAgentApiHandlers(agents, starter, doneWhen).list({}, ctx())
+    expect((listed as unknown[])[0]).toMatchObject({ panelId: 'term', doneWhen: { command: 'npm test', checking: false, last: { at: 7, outcome: 'notDone', exitCode: 1 } } })
   })
 })
 

@@ -55,6 +55,7 @@ beforeEach(() => {
     conversationStamp: async () => null,
     onStep: () => () => {},
     onConversationReset: () => () => {},
+    onTurnEnd: () => () => {},
     dispose: () => {},
   }))
   ports = {
@@ -146,6 +147,15 @@ describe('agent start', () => {
     expect(ports.relations.link).toHaveBeenLastCalledWith('supervisor', 'new-terminal', 'trigger')
     await starter().start('supervisor', { prompt: 'Fix it', linkFrom: 'idle' })
     expect(ports.relations.link).toHaveBeenLastCalledWith('idle', 'new-terminal', undefined)
+  })
+
+  it('relates the new agent and watches its done-when condition in the same start', async () => {
+    const watch = vi.fn()
+    const both = createAgentStarter(agents, ports as unknown as AgentStartPorts, undefined, { watch })
+    await expect(both.start('supervisor', { prompt: 'Fix it', relation: 'trigger', doneWhen: ' npm test ' }))
+      .resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex', relationId: 'rel-1' })
+    expect(ports.relations.link).toHaveBeenLastCalledWith('supervisor', 'new-terminal', 'trigger')
+    expect(watch).toHaveBeenCalledWith('new-terminal', { command: 'npm test', cwd: '/repo/.cate/worktrees/lead', callerPanelId: 'supervisor' })
   })
 
   it('keeps the started agent when the relation is refused, and says why', async () => {

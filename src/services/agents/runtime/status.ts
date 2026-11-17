@@ -97,7 +97,9 @@ function permissionBody(event: AgentHookEvent): string {
   return text.length > PERMISSION_BODY_MAX ? `${text.slice(0, PERMISSION_BODY_MAX - 1)}…` : text
 }
 
-export function createAgentStatusMachine(onChange: (change: AgentStatusChange) => void): AgentStatusMachine {
+/** `onTurnEnd`: every accepted turn-end, also one the status gate swallows
+ *  (it already waited after a denied permission). */
+export function createAgentStatusMachine(onChange: (change: AgentStatusChange) => void, onTurnEnd?: (terminalId: string) => void): AgentStatusMachine {
   const trackers = new Map<string, Tracker>()
 
   const trackerFor = (terminalId: string): Tracker => {
@@ -204,6 +206,7 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
           // A turn-end recovered from a user interrupt is silent: the user is
           // already at the terminal.
           recompute(event.terminalId, event.interrupted ? undefined : {})
+          onTurnEnd?.(event.terminalId)
           break
         case 'session-end':
           t.activeTurnId = null

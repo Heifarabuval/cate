@@ -109,6 +109,8 @@ describe('parseCommandLine', () => {
     expect(() => parse(['panel', 'link', 'ab12', 'cd34', '--kind', 'bogus'])).toThrow()
     expect(call(['agent', 'start', '--relation', 'trigger', '--link-from', 'ab12', 'fix', 'it']).args)
       .toMatchObject({ prompt: 'fix it', relation: 'trigger', linkFrom: 'ab12' })
+    expect(call(['agent', 'start', '--relation', 'verify', '--done-when', 'npm test', 'fix', 'it']).args)
+      .toMatchObject({ prompt: 'fix it', relation: 'verify', doneWhen: 'npm test' })
   })
 
   it('lets a positional argument come from its flag instead', () => {
@@ -321,6 +323,26 @@ describe('runCli', () => {
       prompt: 'Fix the login', agentId: 'codex', newWorktree: 'fix-login',
     }), 92_000)
     expect(out).toEqual(['panel-01'])
+  })
+
+  it('passes --done-when, prints a note on stderr, and lists the condition with its last result', async () => {
+    const call = vi.fn(async () => ({ panelId: 'panel-0123456789', agentId: 'codex' }))
+    const started = deps({ call })
+    await runCli(['agent', 'start', '--done-when', 'npm test', 'Fix'], CATE_API, started.d)
+    expect(call).toHaveBeenCalledWith('cate.agent.start', expect.objectContaining({ prompt: 'Fix', doneWhen: 'npm test' }), 92_000)
+    expect(started.err).toEqual([])
+    const open = deps({ call: async () => ({ panelId: 'panel-0123456789', agentId: 'codex', note: 'no done-when condition: the panel will stay open' }) })
+    await runCli(['agent', 'start', 'Fix'], CATE_API, open.d)
+    expect(open.out).toEqual(['panel-01'])
+    expect(open.err).toEqual(['no done-when condition: the panel will stay open'])
+    const listed = deps({ call: async () => [
+      { panelId: 'panel-0123456789', title: 'A', state: 'running', prompts: [], doneWhen: { command: 'npm test', checking: false, last: { at: 1, outcome: 'notDone', exitCode: 1 } } },
+      { panelId: 'panel-9876543210', title: 'B', state: 'running', prompts: [], doneWhen: { command: 'slow', checking: false, last: { at: 1, outcome: 'timeout', reason: 'timed out after 60 s' } } },
+    ] })
+    await runCli(['agent', 'list'], CATE_API, listed.d)
+    expect(listed.out[0]).toContain('DONE WHEN')
+    expect(listed.out[0]).toContain('npm test → exit 1')
+    expect(listed.out[0]).toContain('slow → timeout: timed out after 60 s')
   })
 
   it('sends a prompt and prints its id; list and read show the prompts on their way', async () => {

@@ -97,6 +97,8 @@ export interface AgentTerminals extends AgentPanelSource {
   onStep(listener: (panelId: string, step: AgentStep) => void): () => void
   /** The CLI replaced/cleared its visible conversation. */
   onConversationReset(listener: (panelId: string) => void): () => void
+  /** A panel's agent ended a turn (its turn-end hook). */
+  onTurnEnd(listener: (panelId: string) => void): () => void
   dispose(): void
 }
 

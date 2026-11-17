@@ -36,6 +36,7 @@ function setup() {
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     onStep: (listener) => { stepListeners.add(listener); return () => { stepListeners.delete(listener) } },
     onConversationReset: (listener) => { resetListeners.add(listener); return () => { resetListeners.delete(listener) } },
+    onTurnEnd: () => () => {},
     dispose: () => {},
   }
   const step = (panelId: string, next: AgentStep) => { for (const listener of stepListeners) listener(panelId, next) }

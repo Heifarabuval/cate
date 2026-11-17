@@ -77,6 +77,10 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(await runCate('version')).toMatch(/^\d+$/)
   expect(await runCate('panel', 'list')).toContain('terminal')
 
+  // Agents: --done-when is part of start, and list answers with no agent.
+  expect(await runCate('agent', 'start', '--help')).toContain('--done-when')
+  expect(await runCate('agent', 'list')).toContain('(no agent runs)')
+
   // Editor and panel verbs.
   const editorId = await runCate('editor', 'open', `${path.join(workspace, 'cli-fixture.ts')}:1:8`)
   expect(editorId).toMatch(/^[a-z0-9-]{8}$/i)

@@ -293,6 +293,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     resolveCheckout,
     snapshot: snapshotProcessTree,
     notify: (event) => notifications.publish(event),
+    removePanel: (panelId) => { document.apply({ kind: 'removePanels', ids: [panelId], discard: [panelId] }) },
     flushConnected: (panelId) => connectedEditors.flush(panelId),
     relationRole: (type) => relationRole(type),
     log: log.child('agents'),

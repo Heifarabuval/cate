@@ -645,6 +645,9 @@ export async function runCli(
     } else {
       await prepareOutput(method.format, value, { image: deps.writeImage, text: deps.writeText })
       deps.stdout(formatOutput(method.format, value))
+      // A note goes to stderr so `id=$(cate ...)` still captures the output.
+      const note = value && typeof value === 'object' ? (value as { note?: unknown }).note : undefined
+      if (typeof note === 'string') deps.stderr(note)
     }
     // A result can fail without an error: a wait that timed out (its states
     // are still printed).

@@ -20,6 +20,7 @@ import { createAgentsCore, type AgentsCoreDeps } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
 import { createTerminalAgents, type AgentTerminalService } from './terminal'
 import { createAgentStarter, type AgentStartArgs, type AgentStartPorts } from './start'
+import { createDoneWhen, runDoneWhenCommand } from './doneWhen'
 import { AGENT_SESSION_STORES } from './sessions'
 import type { AgentUsageService, AgentUsageDeps } from './usage/usage'
 
@@ -30,6 +31,9 @@ export interface AgentsRuntimeDeps extends AgentsCoreDeps {
   start: AgentStartPorts
   /** The environment the agent CLIs run with (limit probes). */
   env(): NodeJS.ProcessEnv
+  /** Removes a panel from the runtime side, dropping its work (no view
+   *  close guard runs): a met done-when condition. */
+  removePanel(panelId: string): void
   /** Explicit setup opts this CLI into workspace hook injection. */
   onAgentSettingsChange?(listener: () => void): () => void
   enableAgent?(agentId: AgentId): Promise<void>
@@ -71,7 +75,22 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   // Warm availability on the runtime, before any client opens a launch menu.
   void setup.inspect().catch(() => {})
   const offSettings = deps.onAgentSettingsChange?.(() => setup.invalidate())
-  const starter = createAgentStarter(core, deps.start, setup)
+  const doneWhen = createDoneWhen({
+    run: (command, cwd) => runDoneWhenCommand(command, cwd, deps.env()),
+    panelTitle: (panelId) => deps.document.panel(panelId)?.title,
+    close: (panelId) => deps.removePanel(panelId),
+    notify(callerPanelId, { panelId, title, command }) {
+      const body = `Agent "${title}" (${panelId.slice(0, 8)}) is done: \`${command}\` exited 0, so Cate closed its panel.`
+      // An agent caller (an orchestrator) gets it as a prompt; anyone else
+      // as a notification.
+      try {
+        if (callerPanelId && deps.document.panel(callerPanelId)) { sendToAgent(core, starter, callerPanelId, body); return }
+      } catch { /* the caller hosts no agent */ }
+      deps.notify({ kind: 'runtime.warning', ...(callerPanelId ? { panelId: callerPanelId } : {}), title: 'Agent done', body })
+    },
+  })
+  const offTurnEnd = core.terminals.onTurnEnd((panelId) => { void doneWhen.check(panelId) })
+  const starter = createAgentStarter(core, deps.start, setup, doneWhen)
   let usageLoading: Promise<AgentUsageService> | undefined
   const loadUsage = () => usageLoading ??= (async () => {
     const { createAgentUsage } = await import('./usage/usage')
@@ -106,7 +125,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
       return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
     },
     capability: () => agentsCapabilityImpl(core, starter, usage, setup),
-    apiHandlers: () => createAgentApiHandlers(core, starter),
-    dispose: () => { offSettings?.(); setup.dispose(); core.dispose() },
+    apiHandlers: () => createAgentApiHandlers(core, starter, doneWhen),
+    dispose: () => { offTurnEnd(); offSettings?.(); setup.dispose(); core.dispose() },
   }
 }
