@@ -77,6 +77,7 @@ import {
 import { PANEL_RUNTIMES, type PanelPorts, type PanelRuntime, type PanelServices } from '@panels/runtime'
 import { installLayout } from '../contract'
 import type { BusyRegistry } from '../runtime'
+import { createCliEnv } from './cliEnv'
 import { onQuarantine, quarantinedFiles, type Quarantined } from '@kernel/state/node'
 
 export interface WorkspaceDeps {
@@ -245,6 +246,16 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     revokeToken: (token) => tokens.revoke(token),
   })
   offs.push(terminal.registerEnvContributor(terminalCli.envForTerminal))
+  // Panel processes outside a PTY (the agence panel's regisseur).
+  const cliEnv = createCliEnv({
+    launcherDir: paths.terminalCli,
+    nodePath: process.execPath,
+    cliPath: layout.cateCli,
+    socketPath: deps.endpoint,
+    mintToken: (panelId) => tokens.issue({ kind: 'cli', panelId }).token,
+    revokeToken: (token) => tokens.revoke(token),
+    baseEnv,
+  })
   offs.push(terminal.onExit(terminalCli.forgetTerminal))
 
   const browserData = createBrowserDataRuntime({
@@ -336,6 +347,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     terminal,
     browserData,
     agents: agentsRuntime,
+    cliEnv: (panelId) => cliEnv.cliEnv(panelId),
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
   const registry = createPanelRegistry(modules.map(({ definition, session }) => ({ definition, session })))
@@ -406,6 +418,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     }
     for (const term of terminal.list()) if (term.alive) terminal.kill(term.id)
     terminalCli.dispose()
+    cliEnv.dispose()
   }))
 
   return {
@@ -444,6 +457,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       agentsRuntime.dispose()
       await terminal.shutdown()
       terminalCli.dispose()
+      cliEnv.dispose()
       repository.dispose()
       presence.dispose()
       await skills.dispose()

@@ -36,6 +36,10 @@ export interface PanelServices {
   terminal: TerminalService
   browserData: BrowserDataRuntime
   agents: AgentsRuntime
+  /** The `cate` CLI env for a process the panel starts without a PTY: the
+   *  socket, a token in the panel's name, `cate` on PATH. The session
+   *  revokes it when it stops the process. */
+  cliEnv(panelId: string): Promise<{ env: Record<string, string>; revoke(): void }>
 }
 
 export interface PanelAttachContext {
