@@ -31,13 +31,21 @@ export type QuestionView = {
   question: string
   options: Array<{ label: string; detail: string }>
   isMerge: boolean
+  /** Why Merger is greyed (needs that target the PR, then the GitHub motif);
+   *  « Merger quand même » passes over them. */
+  locks: string[]
+  /** The PR's GitHub state is unknown or stale. */
+  ghUnknown: boolean
+  /** A conflict: « Demander le rebase » is offered. */
+  rebase: boolean
 }
 
 export type NeedLink = { panelId: string; title: string; closed: boolean }
 
 export type NeedAction =
   | { type: 'draft'; draftId: string; inFlight: boolean }
-  | { type: 'question'; questionId: string }
+  /** `rebase`: Merger is greyed by a conflict, « Demander le rebase » is offered. */
+  | { type: 'question'; questionId: string; rebase: boolean }
 
 export type NeedRow = {
   id: string
@@ -86,7 +94,9 @@ export type AgenceOp =
   | { kind: 'draft.send'; draftId: string; hash: string }
   | { kind: 'draft.drop'; draftId: string }
   | { kind: 'draft.edit'; draftId: string }
-  | { kind: 'answer'; questionId: string; choice?: number; libre?: string }
+  /** `choice`: an option's index, or `rebase` (a conflict: the orchestrator
+   *  has the PR rebased); `force`: « Merger quand même » over the locks. */
+  | { kind: 'answer'; questionId: string; choice?: number | 'rebase'; libre?: string; force?: boolean }
   | { kind: 'orchestrator.restart' }
 
 /** Why an op was refused. */
@@ -137,6 +147,8 @@ export interface StateDraft {
   titre: string | null
   statut: string
   url: string | null
+  /** `HH:MM` of the last edit through Modifier. */
+  modifie?: string | null
 }
 
 export interface StateQuestion {
@@ -147,6 +159,8 @@ export interface StateQuestion {
   /** `merge:<repo>#<number>`: answering the first option merges. */
   action: string | null
   answer: string | null
+  /** The PR's GitHub state as the regisseur last read it (`ts` in seconds). */
+  gh?: { mergeable?: string; mergeStateStatus?: string; ts?: number } | null
 }
 
 /** The part of the CLI's state the panel reads. */

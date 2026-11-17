@@ -19,12 +19,14 @@ let host: HTMLDivElement
 let root: Root
 let ui: ReturnType<typeof installMockClientUi>
 const onRead = vi.fn()
-const render = (view: SuiviView) => act(() => root.render(<SuiviList suivi={view} onRead={onRead} />))
+const onRebase = vi.fn()
+const render = (view: SuiviView) => act(() => root.render(<SuiviList suivi={view} onRead={onRead} onRebase={onRebase} />))
 const headings = () => [...host.querySelectorAll('h2')].map((h) => h.textContent)
 
 beforeEach(() => {
   ui = installMockClientUi()
   onRead.mockClear()
+  onRebase.mockClear()
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -92,4 +94,17 @@ it('makes the evidence URL of a done need a link, and leaves plain evidence as t
 it('shows the linked panels in the meta line', () => {
   render(suivi({ reste: [row('l', { meta: ['panneau : Impl C002'], links: [{ panelId: 'p1', title: 'Impl C002', closed: false }] })] }))
   expect(host.textContent).toContain('panneau : Impl C002')
+})
+
+it('offers « Demander le rebase » on a merge greyed by a conflict, and only there', () => {
+  render(suivi({ aFaire: [
+    row('q2', { kind: 'human', meta: ['Merger grisé : conflit avec la base'], action: { type: 'question', questionId: 'q2', rebase: true } }),
+    row('q3', { kind: 'human', meta: ['état GitHub inconnu'], action: { type: 'question', questionId: 'q3', rebase: false } }),
+  ] }))
+  const buttons = [...host.querySelectorAll('button')].filter((b) => b.textContent === 'Demander le rebase')
+  expect(buttons).toHaveLength(1)
+  expect(host.textContent).toContain('Merger grisé : conflit avec la base')
+  expect(host.textContent).toContain('état GitHub inconnu')
+  act(() => buttons[0].click())
+  expect(onRebase).toHaveBeenCalledWith('q2')
 })

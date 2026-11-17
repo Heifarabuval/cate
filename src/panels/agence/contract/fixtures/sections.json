@@ -8,7 +8,7 @@
     "meta": [
      "débloque C007"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "PR du lot C",
@@ -17,7 +17,7 @@
      "budget de 30 min dépassé : continuer, réduire ou arrêter ?",
      "panneau : Impl C002"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Agent sur permission",
@@ -25,7 +25,7 @@
      "agent bloqué sur une permission ou une question",
      "panneau : Review lot C"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fermer le terminal",
@@ -33,35 +33,78 @@
      "fermeture refusée (travail non sauvegardé ou programme en cours) : à fermer à la main",
      "panneau : Impl C002, Review lot C"
     ],
-    "action": null
+    "actions": []
    }
   ]
  },
  {
   "name": "À faire par Heifara",
-  "count": 4,
+  "count": 8,
   "needs": [
    {
     "title": "Bloquant de Heifara",
     "meta": [],
-    "action": null
+    "actions": []
    },
    {
     "title": "Valider le brouillon issue",
-    "meta": [],
-    "action": "draft:d1"
+    "meta": [
+     "modifié à 14:05"
+    ],
+    "actions": [
+     "draft:d1"
+    ]
    },
    {
     "title": "Slack en cours",
     "meta": [],
-    "action": "draft:d2"
+    "actions": [
+     "draft:d2"
+    ]
    },
    {
     "title": "Choisir le merge",
     "meta": [
      "acceptation : réponse écrite"
     ],
-    "action": "question:q1"
+    "actions": [
+     "question:q1"
+    ]
+   },
+   {
+    "title": "Merger la 12 ?",
+    "meta": [
+     "Merger grisé : n11 : Revue de la PR 12 ; conflit avec la base"
+    ],
+    "actions": [
+     "rebase:q2",
+     "question:q2"
+    ]
+   },
+   {
+    "title": "Merger la 13 ?",
+    "meta": [
+     "Merger grisé : n12 : Attendre la 13 ; checks ou revue requis"
+    ],
+    "actions": [
+     "question:q3"
+    ]
+   },
+   {
+    "title": "Merger la 14 ?",
+    "meta": [
+     "état GitHub inconnu"
+    ],
+    "actions": [
+     "question:q4"
+    ]
+   },
+   {
+    "title": "Quel nom ?",
+    "meta": [],
+    "actions": [
+     "question:q5"
+    ]
    }
   ]
  },
@@ -74,146 +117,146 @@
     "meta": [
      "preuve : https://github.com/x/y/pull/24"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 22",
     "meta": [
      "preuve : sortie de test 22"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 23",
     "meta": [
      "preuve : sortie de test 23"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 20",
     "meta": [
      "preuve : sortie de test 20"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 21",
     "meta": [
      "preuve : https://github.com/x/y/pull/21"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 18",
     "meta": [
      "preuve : https://github.com/x/y/pull/18"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 19",
     "meta": [
      "preuve : sortie de test 19"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 16",
     "meta": [
      "preuve : sortie de test 16"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 17",
     "meta": [
      "preuve : sortie de test 17"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 14",
     "meta": [
      "preuve : sortie de test 14"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 15",
     "meta": [
      "preuve : https://github.com/x/y/pull/15"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 12",
     "meta": [
      "preuve : https://github.com/x/y/pull/12"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 13",
     "meta": [
      "preuve : sortie de test 13"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 10",
     "meta": [
      "preuve : sortie de test 10"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 11",
     "meta": [
      "preuve : sortie de test 11"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 8",
     "meta": [
      "preuve : sortie de test 8"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 9",
     "meta": [
      "preuve : https://github.com/x/y/pull/9"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 6",
     "meta": [
      "preuve : https://github.com/x/y/pull/6"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 7",
     "meta": [
      "preuve : sortie de test 7"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Fait 4",
     "meta": [
      "preuve : sortie de test 4"
     ],
-    "action": null
+    "actions": []
    }
   ]
  },
  {
   "name": "Reste à faire",
-  "count": 2,
+  "count": 5,
   "needs": [
    {
     "title": "Issue ouverte",
@@ -223,12 +266,33 @@
      "acceptation : test vert",
      "panneau : Agence : cate"
     ],
-    "action": null
+    "actions": []
    },
    {
     "title": "Tâche simple",
     "meta": [],
-    "action": null
+    "actions": []
+   },
+   {
+    "title": "Revue de la PR 12",
+    "meta": [
+     "#12"
+    ],
+    "actions": []
+   },
+   {
+    "title": "Attendre la 13",
+    "meta": [
+     "débloque attend #13"
+    ],
+    "actions": []
+   },
+   {
+    "title": "Autre dépôt",
+    "meta": [
+     "débloque Heifarabuval/autre#13"
+    ],
+    "actions": []
    }
   ]
  }
