@@ -20,10 +20,13 @@ const sentryDefine = {
 // (scripts/build-id.mjs).
 const buildDefine = { __CATE_BUILD__: JSON.stringify(computeBuildId(__dirname)) }
 
+// `CATE_SELF_UPDATE=0`: a fork build that never checks Cate releases.
+const updateDefine = { __CATE_SELF_UPDATE__: JSON.stringify(process.env.CATE_SELF_UPDATE !== '0') }
+
 export default defineConfig({
   main: {
     resolve: { alias },
-    define: { ...sentryDefine, ...buildDefine },
+    define: { ...sentryDefine, ...buildDefine, ...updateDefine },
     plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'dist/main',

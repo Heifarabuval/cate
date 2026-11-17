@@ -49,6 +49,9 @@ export interface AutoUpdaterDeps {
   cancelUpdateRestart(): void
   /** `CATE_DEV_UPDATE=1`: a local feed in an unpackaged build. */
   devUpdate?: boolean
+  /** False in a build made with `CATE_SELF_UPDATE=0` (a fork that updates
+   *  from its own checkout): never check the releases feed. */
+  selfUpdate?: boolean
   setTimeout?: (fn: () => void, ms: number) => unknown
   setInterval?: (fn: () => void, ms: number) => unknown
 }
@@ -66,6 +69,7 @@ export interface AutoUpdater {
 }
 
 const DISABLED: UpdateStatus = { state: 'disabled', version: null, message: 'Updates are available in installed builds of Cate.' }
+const NO_SELF_UPDATE: UpdateStatus = { state: 'disabled', version: null, message: 'This build updates from its own checkout, not from Cate releases.' }
 
 function message(error: unknown, fallback: string): string {
   const text = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
@@ -77,11 +81,13 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
   const later = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms))
   const every = deps.setInterval ?? ((fn, ms) => setInterval(fn, ms))
   const devUpdate = !deps.app.isPackaged && deps.devUpdate === true
-  const enabled = deps.app.isPackaged || devUpdate
+  const selfUpdate = deps.selfUpdate !== false
+  const enabled = (deps.app.isPackaged && selfUpdate) || devUpdate
   // The dev feed never really installs: do not record its install-loop state.
   const persistInstallState = deps.app.isPackaged
 
-  let status: UpdateStatus = enabled ? { state: 'idle', version: null } : DISABLED
+  const off = selfUpdate ? DISABLED : NO_SELF_UPDATE
+  let status: UpdateStatus = enabled ? { state: 'idle', version: null } : off
   let dismissedVersion: string | null = null
   let pendingInstall = false
   let manualPrompted = false
@@ -240,7 +246,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
   return {
     start() {
       if (!enabled) {
-        push(DISABLED)
+        push(off)
         return
       }
       if (devUpdate) updater.forceDevUpdateConfig = true
@@ -260,7 +266,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
     checkManually() {
       manualCheck = true
       if (!enabled) {
-        push(DISABLED)
+        push(off)
         return
       }
       manualPrompted = false
