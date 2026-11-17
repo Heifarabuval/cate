@@ -348,6 +348,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     browserData,
     agents: agentsRuntime,
     cliEnv: (panelId) => cliEnv.cliEnv(panelId),
+    trust,
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
   const registry = createPanelRegistry(modules.map(({ definition, session }) => ({ definition, session })))
@@ -452,6 +453,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     async shutdown(): Promise<void> {
       for (const off of offs.splice(0).reverse()) off()
       sessions.dispose()
+      await Promise.all(modules.map((module) => module.dispose?.()))
       broker.dispose()
       connectedEditors.dispose()
       agentsRuntime.dispose()

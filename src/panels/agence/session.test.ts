@@ -45,6 +45,7 @@ function fakeRegisseurs(initial: RegisseurView['state'] = 'running') {
   const acquired: RegisseurAcquire[] = []
   const posts: Array<{ path: string; form: Record<string, string> }> = []
   let released = 0
+  let restarts = 0
   let view: RegisseurView = { state: initial, error: initial === 'missing' ? 'agence introuvable (agence)' : null, settingsHint: null }
   const listeners = new Set<(view: RegisseurView) => void>()
   /** What the next posts answer; a function can hold the answer back. */
@@ -61,6 +62,11 @@ function fakeRegisseurs(initial: RegisseurView['state'] = 'running') {
             posts.push({ path, form })
             return answer(path, form)
           },
+          restart() {
+            if (view.state === 'running' || view.state === 'starting') return false
+            restarts++
+            return true
+          },
           release() { if (!done) { done = true; released++ } },
         }
       },
@@ -68,6 +74,7 @@ function fakeRegisseurs(initial: RegisseurView['state'] = 'running') {
     acquired,
     posts,
     released: () => released,
+    restarts: () => restarts,
     answer(next: typeof answer) { answer = next },
     set(next: Partial<RegisseurView>) {
       view = { ...view, ...next }
@@ -124,32 +131,25 @@ function setup(options: { saved?: Json; regisseur?: RegisseurView['state']; file
   const terminal = fakeTerminal()
   const regisseurs = fakeRegisseurs(options.regisseur)
   const files = fakeFiles(options.files)
-  const leases: Array<{ panelId: string; revoked: boolean }> = []
   const k = fakeKit(record(options.fields), options.saved, options.others)
   const deps: AgenceSessionDeps = {
     root: '/repo',
     terminal: terminal.service,
     regisseurs: regisseurs.regisseurs,
     files: files.files,
-    async cliEnv(panelId) {
-      const lease = { panelId, revoked: false }
-      leases.push(lease)
-      return { env: { CATE_SOCKET: '/sock', CATE_TOKEN: `tok-${leases.length}`, PATH: '/bin' }, revoke() { lease.revoked = true } }
-    },
   }
   const session = new AgenceSession(k.kit, record(options.fields), deps)
-  return { session, terminal, regisseurs, files, leases, ...k }
+  return { session, terminal, regisseurs, files, ...k }
 }
 
 const snap = (session: AgenceSession): AgenceSnapshot => session.snapshot()
 
 describe('AgenceSession', () => {
   it('does nothing until start: no PTY, no regisseur, no file watch', () => {
-    const { terminal, regisseurs, files, leases } = setup()
+    const { terminal, regisseurs, files } = setup()
     expect(terminal.spawns).toEqual([])
     expect(regisseurs.acquired).toEqual([])
     expect(files.dirs).toEqual([])
-    expect(leases).toEqual([])
   })
 
   it('starts the orchestrator at first start: a PTY of the panel launching /orchestrateur with Claude Code', async () => {
@@ -184,26 +184,23 @@ describe('AgenceSession', () => {
     expect(files.dirs).toEqual(['/other/.cate/tmp/agence'])
   })
 
-  it('takes a regisseur reference with a CLI env in its name at start, and gives both back at dispose', async () => {
-    const { session, regisseurs, leases, files } = setup({ files: { state: state({ port: 4321 }) } })
+  it('takes a regisseur reference in its name at start, and gives it back at dispose (the CLI lease is the regisseur\'s)', async () => {
+    const { session, regisseurs, files } = setup({ files: { state: state({ port: 4321 }) } })
     await session.start()
-    expect(leases).toEqual([{ panelId: 'ag1', revoked: false }])
-    expect(regisseurs.acquired).toEqual([expect.objectContaining({ root: '/repo', env: { CATE_SOCKET: '/sock', CATE_TOKEN: 'tok-1', PATH: '/bin' } })])
+    expect(regisseurs.acquired).toEqual([expect.objectContaining({ root: '/repo', panelId: 'ag1' })])
     expect(regisseurs.acquired[0].port()).toBe(4321)
     expect(snap(session).regisseur).toEqual({ state: 'running', error: null, settingsHint: null })
     session.dispose('removed')
     expect(regisseurs.released()).toBe(1)
-    expect(leases[0].revoked).toBe(true)
     expect(files.disposed()).toBe(1)
   })
 
   it('gives everything back when it is disposed while starting', async () => {
-    const { session, regisseurs, leases, terminal } = setup()
+    const { session, regisseurs, terminal } = setup()
     const started = session.start()
     session.dispose('removed')
     await started
     expect(regisseurs.acquired.length).toBe(regisseurs.released())
-    expect(leases.every((lease) => lease.revoked)).toBe(true)
     expect(terminal.spawns.length).toBe(terminal.closed.length)
   })
 
@@ -306,6 +303,38 @@ describe('AgenceSession', () => {
     expect(isRpcError(blocker, 'dirty')).toBe(true)
     terminal.update('pty-1', { activity: { type: 'idle' } })
     expect(session.closeBlocker()).toBeNull()
+  })
+
+  describe('orchestrator.restart', () => {
+    const restart = (session: AgenceSession) => session.handleOp({ kind: 'orchestrator.restart' }, { clientId: 'c1', connectionId: 1 })
+
+    it('is busy while the orchestrator and the regisseur both run', async () => {
+      const { session, terminal, regisseurs } = setup()
+      await session.start()
+      await expect(restart(session)).resolves.toEqual({ ok: false, error: 'busy' })
+      expect(terminal.spawns).toHaveLength(1)
+      expect(regisseurs.restarts()).toBe(0)
+    })
+
+    it('resumes an exited orchestrator in a new PTY, closing the old one', async () => {
+      const { session, terminal } = setup()
+      await session.start()
+      terminal.update('pty-1', { alive: false, exitCode: 0, activity: { type: 'idle' } })
+      await expect(restart(session)).resolves.toEqual({ ok: true })
+      expect(terminal.spawns[1]).toMatchObject({ panelId: 'ag1', launch: TERMINAL_RESTORE_LAUNCH, restore: true })
+      expect(terminal.closed).toEqual(['pty-1'])
+      expect(snap(session)).toMatchObject({ ptyId: 'pty-2', orchestrator: 'running' })
+    })
+
+    it('restarts a regisseur that stopped, leaving a running orchestrator alone', async () => {
+      const { session, terminal, regisseurs } = setup()
+      await session.start()
+      regisseurs.set({ state: 'stopped', error: "agence watch s'est arrêté (SIGKILL)" })
+      expect(snap(session).regisseur).toMatchObject({ state: 'stopped', error: "agence watch s'est arrêté (SIGKILL)" })
+      await expect(restart(session)).resolves.toEqual({ ok: true })
+      expect(regisseurs.restarts()).toBe(1)
+      expect(terminal.spawns).toHaveLength(1)
+    })
   })
 
   describe('draft ops', () => {

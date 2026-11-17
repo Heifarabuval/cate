@@ -35,9 +35,8 @@ export interface AgenceSessionDeps {
   /** Canonical workspace root: the repository when the record names none. */
   root: string
   terminal: Pick<TerminalService, 'spawn' | 'close' | 'statuses' | 'onStatusChange'>
+  /** The regisseur registry; it owns each regisseur's `cate` CLI lease. */
   regisseurs: Pick<Regisseurs, 'acquire'>
-  /** The `cate` CLI env the regisseur runs with; revoked when it stops. */
-  cliEnv(panelId: string): Promise<{ env: Record<string, string>; revoke(): void }>
   /** Reads `<root>/.cate/tmp/agence/` (`createStateFiles`). */
   files(dir: string, onChange: (read: StateFilesRead) => void): StateFiles
 }
@@ -64,7 +63,6 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   private readonly offs: Array<() => void> = []
   private files: StateFiles | null = null
   private regisseur: RegisseurHandle | null = null
-  private lease: { revoke(): void } | null = null
   private knownTitles: Record<string, string> = {}
   /** The orchestrator ran once: titles may now be saved (the saved file is
    *  what makes the next start a resume). */
@@ -94,19 +92,19 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     }))
     this.files = this.deps.files(path.join(this.root, '.cate', 'tmp', 'agence'), () => this.refresh())
     this.refresh()
-    await this.startRegisseur()
-    if (this.disposed) return
+    this.startRegisseur()
     await this.spawnOrchestrator(resume)
   }
 
-  // `answer` and `orchestrator.restart` come with their stories.
-  protected override readonly ops = this.draftOps() as OpHandlers<AgenceOp>
+  // `answer` comes with its story (C030-C031).
+  protected override readonly ops = this.handlers() as OpHandlers<AgenceOp>
 
-  private draftOps(): Partial<OpHandlers<AgenceOp>> {
+  private handlers(): Partial<OpHandlers<AgenceOp>> {
     return {
       'draft.send': ({ draftId, hash }) => this.draftOp(draftId, 'send', { h: hash }),
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
+      'orchestrator.restart': () => this.restart(),
     }
   }
 
@@ -121,7 +119,6 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     for (const off of this.offs.splice(0)) off()
     this.files?.dispose()
     this.regisseur?.release()
-    this.lease?.revoke()
     // On shutdown the terminal service saves the screen for the resume.
     const id = this.state.ptyId
     if (id && reason !== 'shutdown') this.closePty(id)
@@ -151,20 +148,25 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     }
   }
 
-  private async startRegisseur(): Promise<void> {
-    let lease: { env: Record<string, string>; revoke(): void }
-    try {
-      lease = await this.deps.cliEnv(this.panelId)
-    } catch (err) {
-      this.publish({ regisseur: { state: 'stopped', error: err instanceof Error ? err.message : String(err), settingsHint: null } })
-      return
-    }
-    if (this.disposed) return lease.revoke()
-    this.lease = lease
+  /** Starts what died: the orchestrator (resumed in a new PTY) and the
+   *  regisseur. Busy when both run. Nothing restarts by itself. */
+  private async restart(): Promise<AgenceOpResult> {
+    const orchestratorDown = this.state.orchestrator === 'exited' || this.state.orchestrator === 'failed'
+    const regisseurRestarted = this.regisseur?.restart() ?? false
+    if (!orchestratorDown) return regisseurRestarted ? { ok: true } : { ok: false, error: 'busy' }
+    const previous = this.state.ptyId
+    // The new PTY reuses the panel's terminal logs: the old one goes first.
+    if (previous) this.closePty(previous)
+    this.publish({ ptyId: null, orchestrator: 'starting' })
+    await this.spawnOrchestrator(this.launched)
+    return this.state.orchestrator === 'running' ? { ok: true } : { ok: false, error: 'unavailable', message: 'orchestrator-failed' }
+  }
+
+  private startRegisseur(): void {
     const regisseur = this.deps.regisseurs.acquire({
       root: this.root,
+      panelId: this.panelId,
       port: () => this.files?.read().state?.port ?? null,
-      env: lease.env,
     })
     this.regisseur = regisseur
     this.offs.push(regisseur.onChange(() => this.refresh()))

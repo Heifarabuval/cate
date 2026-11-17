@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createRegisseurs, type RegisseurHandle, type Regisseurs } from './regisseur'
+import { createRegisseurs, type RegisseurHandle, type Regisseurs, type RegisseursOptions } from './regisseur'
 
 const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-agence.mjs')
 
@@ -12,6 +12,44 @@ let tmp: string
 let logFile: string
 let regisseurs: Regisseurs
 const handles: RegisseurHandle[] = []
+/** The fake's environment for each panel's lease (its mode and port). */
+let panelEnv: Record<string, Record<string, string>>
+let leases: Array<{ panelId: string; token: string; revoked: boolean }>
+let trust: ReturnType<typeof fakeTrust>
+
+function fakeTrust(initial = true) {
+  let trusted = initial
+  const listeners = new Set<(state: { trusted: boolean }) => void>()
+  return {
+    isTrusted: () => trusted,
+    requireTrusted() { if (!trusted) throw new Error('untrusted: workspace not trusted') },
+    onChange(listener: (state: { trusted: boolean }) => void) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    set(next: boolean) {
+      trusted = next
+      for (const listener of [...listeners]) listener({ trusted })
+    },
+  }
+}
+
+function create(options: Partial<RegisseursOptions> = {}): Regisseurs {
+  return createRegisseurs({
+    command: process.execPath,
+    commandArgs: [FAKE],
+    trust,
+    async cliEnv(panelId) {
+      const lease = { panelId, token: `tok-${panelId}-${leases.length + 1}`, revoked: false }
+      leases.push(lease)
+      return {
+        env: { PATH: process.env.PATH ?? '', FAKE_AGENCE_LOG: logFile, ...panelEnv[panelId], CATE_TOKEN: lease.token },
+        revoke() { lease.revoked = true },
+      }
+    },
+    ...options,
+  })
+}
 
 const freePort = () => new Promise<number>((resolve) => {
   const server = net.createServer().listen(0, '127.0.0.1', () => {
@@ -24,32 +62,35 @@ const events = (): Array<Record<string, unknown>> => {
 }
 const ofKind = (event: string) => events().filter((entry) => entry.event === event)
 
-/** Takes a reference on a root's regisseur, the fake running in `mode`. */
-async function acquire(root: string, mode = '', port?: number): Promise<RegisseurHandle> {
-  const chosen = port ?? await freePort()
-  const handle = regisseurs.acquire({
-    root,
-    port: () => chosen,
-    env: { PATH: process.env.PATH ?? '', FAKE_AGENCE_PORT: String(chosen), FAKE_AGENCE_LOG: logFile, ...(mode ? { FAKE_AGENCE_MODE: mode } : {}) },
-  })
+/** Takes panel `panelId`'s reference on a root's regisseur, the fake running in `mode`. */
+async function acquire(root: string, options: { mode?: string; port?: number; panelId?: string; on?: Regisseurs } = {}): Promise<RegisseurHandle> {
+  const port = options.port ?? await freePort()
+  const panelId = options.panelId ?? 'p1'
+  panelEnv[panelId] = { FAKE_AGENCE_PORT: String(port), ...(options.mode ? { FAKE_AGENCE_MODE: options.mode } : {}) }
+  const handle = (options.on ?? regisseurs).acquire({ root, panelId, port: () => port })
   handles.push(handle)
   return handle
 }
 const settled = (handle: RegisseurHandle, state: string) => vi.waitFor(() => expect(handle.view().state).toBe(state), { timeout: 5000 })
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 beforeEach(() => {
   tmp = mkdtempSync(path.join(os.tmpdir(), 'cate-regisseur-'))
   logFile = path.join(tmp, 'events.log')
-  regisseurs = createRegisseurs({ command: process.execPath, commandArgs: [FAKE] })
+  panelEnv = {}
+  leases = []
+  trust = fakeTrust()
+  regisseurs = create()
 })
 afterEach(async () => {
   for (const handle of handles.splice(0)) handle.release()
-  await vi.waitFor(() => expect(regisseurs.running()).toBe(0), { timeout: 5000 })
+  await regisseurs.dispose()
+  expect(regisseurs.running()).toBe(0)
   rmSync(tmp, { recursive: true, force: true })
 })
 
 describe('regisseur', () => {
-  it('starts `agence watch --token-stdin` in the root and gives the token on stdin only', async () => {
+  it('starts `agence watch --token-stdin` in the root and gives the form token on stdin only', async () => {
     const handle = await acquire(tmp)
     expect(handle.view().state).toBe('starting')
     await settled(handle, 'running')
@@ -72,76 +113,146 @@ describe('regisseur', () => {
 
   it('runs one process for two references of the same root, and one per root', async () => {
     const port = await freePort()
-    const first = await acquire(tmp, '', port)
-    const second = regisseurs.acquire({ root: tmp, port: () => port, env: { PATH: process.env.PATH ?? '' } })
-    handles.push(second)
+    const first = await acquire(tmp, { port })
+    const second = await acquire(tmp, { port, panelId: 'p2' })
     await settled(first, 'running')
     expect(second.view().state).toBe('running')
     expect(ofKind('start')).toHaveLength(1)
     mkdirSync(path.join(tmp, 'other'))
-    const other = await acquire(path.join(tmp, 'other'))
+    const other = await acquire(path.join(tmp, 'other'), { panelId: 'p3' })
     await settled(other, 'running')
     expect(ofKind('start')).toHaveLength(2)
     expect(regisseurs.running()).toBe(2)
   })
 
-  it('keeps the process while a reference is left, and sends SIGTERM at the last release', async () => {
+  it('keeps the process when a reference that does not own it goes, and sends SIGTERM at the last release', async () => {
     const port = await freePort()
-    const first = await acquire(tmp, '', port)
-    const second = regisseurs.acquire({ root: tmp, port: () => port, env: {} })
-    await settled(first, 'running')
-    first.release()
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    const owner = await acquire(tmp, { port })
+    const other = await acquire(tmp, { port, panelId: 'p2' })
+    await settled(owner, 'running')
+    other.release()
+    await pause(150)
     expect(ofKind('sigterm')).toHaveLength(0)
-    expect(second.view().state).toBe('running')
-    second.release()
+    expect(owner.view().state).toBe('running')
+    owner.release()
     await vi.waitFor(() => expect(ofKind('sigterm')).toHaveLength(1), { timeout: 5000 })
     await vi.waitFor(() => expect(regisseurs.running()).toBe(0))
-    expect(second.view().state).toBe('stopped')
+    expect(owner.view().state).toBe('stopped')
+  })
+
+  it('owns its CLI lease: taken for the process, revoked when the process ends', async () => {
+    const handle = await acquire(tmp)
+    await settled(handle, 'running')
+    expect(leases).toEqual([{ panelId: 'p1', token: 'tok-p1-1', revoked: false }])
+    expect(ofKind('start')[0].cateToken).toBe('tok-p1-1')
+    handle.release()
+    await vi.waitFor(() => expect(leases[0].revoked).toBe(true), { timeout: 5000 })
+  })
+
+  it('restarts in a remaining panel\'s name when the panel it runs for goes, so its cate calls keep working', async () => {
+    const port = await freePort()
+    const first = await acquire(tmp, { port })
+    const second = await acquire(tmp, { port, panelId: 'p2' })
+    await settled(first, 'running')
+    first.release()
+    await vi.waitFor(() => expect(ofKind('start')).toHaveLength(2), { timeout: 5000 })
+    await settled(second, 'running')
+    expect(ofKind('start')[1].cateToken).toBe(leases[1].token)
+    expect(leases.map(({ panelId, revoked }) => ({ panelId, revoked }))).toEqual([{ panelId: 'p1', revoked: true }, { panelId: 'p2', revoked: false }])
+    expect(regisseurs.running()).toBe(1)
+    await expect(second.post('/draft/d1/send', { h: 'abc' })).resolves.toEqual({ code: 200, message: 'ok' })
   })
 
   it('starts a new one after the last release, once the old one is gone', async () => {
     const port = await freePort()
-    const first = await acquire(tmp, '', port)
+    const first = await acquire(tmp, { port })
     await settled(first, 'running')
     first.release()
-    const second = await acquire(tmp, '', port)
+    const second = await acquire(tmp, { port })
     await settled(second, 'running')
     expect(ofKind('start')).toHaveLength(2)
     expect(ofKind('sigterm')).toHaveLength(1)
-    expect(second.view().state).not.toBe('external')
+  })
+
+  it('says it stopped when the process dies on its own, does not restart it by itself, and restarts on demand or on a new reference', async () => {
+    const port = await freePort()
+    const handle = await acquire(tmp, { port })
+    await settled(handle, 'running')
+    process.kill(ofKind('start')[0].pid as number, 'SIGKILL')
+    await settled(handle, 'stopped')
+    expect(handle.view().error).toMatch(/SIGKILL|arrêté/)
+    await vi.waitFor(() => expect(leases[0].revoked).toBe(true))
+    await pause(200)
+    expect(ofKind('start')).toHaveLength(1)
+    expect(handle.restart()).toBe(true)
+    await settled(handle, 'running')
+    expect(ofKind('start')).toHaveLength(2)
+    expect(handle.restart()).toBe(false)
+    process.kill(ofKind('start')[1].pid as number, 'SIGKILL')
+    await settled(handle, 'stopped')
+    const another = await acquire(tmp, { port, panelId: 'p2' })
+    await settled(another, 'running')
+    expect(ofKind('start')).toHaveLength(3)
+  })
+
+  it('starts nothing without trust, then starts when trust is granted', async () => {
+    trust.set(false)
+    const handle = await acquire(tmp)
+    await settled(handle, 'stopped')
+    expect(handle.view().error).toMatch(/trust/)
+    expect(leases).toEqual([])
+    await pause(100)
+    expect(ofKind('start')).toHaveLength(0)
+    trust.set(true)
+    await settled(handle, 'running')
+  })
+
+  it('stops when trust is revoked, revoking its lease, and comes back when trust returns', async () => {
+    const handle = await acquire(tmp)
+    await settled(handle, 'running')
+    trust.set(false)
+    await vi.waitFor(() => expect(ofKind('sigterm')).toHaveLength(1), { timeout: 5000 })
+    await settled(handle, 'stopped')
+    expect(handle.view().error).toMatch(/trust/)
+    await vi.waitFor(() => expect(leases[0].revoked).toBe(true))
+    expect(handle.restart()).toBe(false)
+    trust.set(true)
+    await settled(handle, 'running')
+    expect(ofKind('start')).toHaveLength(2)
   })
 
   it('refuses posts when it is not running', async () => {
-    const handle = await acquire(tmp, 'busy')
+    const handle = await acquire(tmp, { mode: 'busy' })
     await settled(handle, 'external')
     await expect(handle.post('/draft/d1/send', {})).rejects.toThrow('regisseur-unavailable')
   })
 
   it('is external and read only when the port is already served', async () => {
-    const handle = await acquire(tmp, 'busy')
+    const handle = await acquire(tmp, { mode: 'busy' })
     await settled(handle, 'external')
     expect(handle.view().error).toMatch(/déjà actif sur \d+/)
     expect(ofKind('start')).toHaveLength(0)
   })
 
   it('is missing, with its message, when the CLI does not know --token-stdin', async () => {
-    const handle = await acquire(tmp, 'unknown-option')
+    const handle = await acquire(tmp, { mode: 'unknown-option' })
     await settled(handle, 'missing')
     expect(handle.view().error).toMatch(/unrecognized arguments: --token-stdin/)
   })
 
-  it('is missing, with a message, when `agence` is not installed (ENOENT)', async () => {
-    const absent = createRegisseurs({ command: path.join(tmp, 'no-such-agence') })
-    const handle = absent.acquire({ root: tmp, port: () => 40113, env: {} })
-    handles.push(handle)
-    await settled(handle, 'missing')
-    expect(handle.view().error).toMatch(/agence/)
-    expect(absent.running()).toBe(0)
+  it('is missing, with a message, when `agence` is not installed (ENOENT), and gives its lease back', async () => {
+    const absent = create({ command: path.join(tmp, 'no-such-agence'), commandArgs: [] })
+    try {
+      const handle = await acquire(tmp, { on: absent })
+      await settled(handle, 'missing')
+      expect(handle.view().error).toMatch(/agence/)
+      expect(absent.running()).toBe(0)
+      await vi.waitFor(() => expect(leases.every((lease) => lease.revoked)).toBe(true))
+    } finally { await absent.dispose() }
   })
 
   it('takes the settings hint from the regisseur\'s stderr', async () => {
-    const handle = await acquire(tmp, 'settings')
+    const handle = await acquire(tmp, { mode: 'settings' })
     await vi.waitFor(() => expect(handle.view().settingsHint).toMatch(/^réglages CLI du workspace à activer dans Cate/), { timeout: 5000 })
     expect(handle.view().state).toBe('running')
   })
@@ -152,5 +263,20 @@ describe('regisseur', () => {
     handle.onChange((view) => seen.push(view.state))
     await settled(handle, 'running')
     expect(seen).toContain('running')
+  })
+
+  it('stops every process at dispose and waits for them, killing one that ignores SIGTERM', async () => {
+    const stubborn = create({ killAfterMs: 200 })
+    try {
+      const handle = await acquire(tmp, { mode: 'stubborn', on: stubborn })
+      await settled(handle, 'running')
+      const started = Date.now()
+      await stubborn.dispose()
+      expect(stubborn.running()).toBe(0)
+      expect(ofKind('sigterm')).toHaveLength(1)
+      expect(Date.now() - started).toBeGreaterThanOrEqual(150)
+      expect(() => process.kill(ofKind('start')[0].pid as number, 0)).toThrow()
+      await vi.waitFor(() => expect(leases[0].revoked).toBe(true))
+    } finally { await stubborn.dispose() }
   })
 })

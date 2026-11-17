@@ -41,6 +41,13 @@ export interface PanelServices {
    *  socket, a token in the panel's name, `cate` on PATH. The session
    *  revokes it when it stops the process. */
   cliEnv(panelId: string): Promise<{ env: Record<string, string>; revoke(): void }>
+  /** Workspace trust: a process a panel type starts outside the terminal
+   *  service asks it first (architecture 9.2) and stops when it is revoked. */
+  trust: {
+    isTrusted(): boolean
+    requireTrusted(): void
+    onChange(listener: (state: { trusted: boolean }) => void): () => void
+  }
 }
 
 export interface PanelAttachContext {
@@ -66,6 +73,9 @@ export interface PanelModule {
   /** Runs after the session host exists, before sessions are restored:
    *  registers `cate.<type>.*` service handlers and returns the type's ports. */
   attach?(context: PanelAttachContext): PanelPorts | void
+  /** Workspace shutdown, after every session was disposed: ends what the
+   *  type runs outside its sessions and waits for it. */
+  dispose?(): Promise<void> | void
 }
 
 /** A panel type's runtime entry over exactly the services it uses. */
@@ -140,10 +150,11 @@ const canvas: PanelRuntime = () => canvasPanel()
 
 const surface: PanelRuntime = () => surfacePanel()
 
-const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv'> = (services) => createAgencePanels({
+const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv' | 'trust'> = (services) => createAgencePanels({
   root: services.root,
   terminal: services.terminal,
   cliEnv: (panelId) => services.cliEnv(panelId),
+  trust: services.trust,
 })
 
 export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence]

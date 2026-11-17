@@ -6,6 +6,7 @@
 //   busy            the port is taken: exits 2 like cmd_watch
 //   unknown-option  an older CLI without --token-stdin: argparse error, exit 2
 //   settings        runs, and complains about the workspace CLI settings
+//   stubborn        runs, and ignores SIGTERM (only SIGKILL ends it)
 // FAKE_AGENCE_LOG gets one JSON line per event.
 import { appendFileSync } from 'node:fs'
 import http from 'node:http'
@@ -33,6 +34,7 @@ lines.once('line', (line) => {
     argv: process.argv.slice(2),
     cwd: process.cwd(),
     root: process.env.AGENCE_ROOT,
+    cateToken: process.env.CATE_TOKEN,
     token,
     tokenInEnv: Object.values(process.env).some((value) => value.includes(token)),
   })
@@ -60,4 +62,4 @@ lines.once('line', (line) => {
   // The end of stdin: the parent died.
   process.stdin.on('end', () => { log({ event: 'stdin-end' }); server.close(); process.exit(0) })
 })
-process.on('SIGTERM', () => { log({ event: 'sigterm' }); process.exit(0) })
+process.on('SIGTERM', () => { log({ event: 'sigterm' }); if (mode !== 'stubborn') process.exit(0) })
