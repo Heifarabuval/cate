@@ -378,6 +378,20 @@ describe('runCli', () => {
     expect(read.out[0]).toContain('[prompt · queued · prompt-2]\nThen docs')
   })
 
+  it('prints agent usage as a table, "-" where there is none, and parses --panel', async () => {
+    expect(call(['agent', 'usage', '--panel', 'abc', '--json']).args).toMatchObject({ targetPanelId: 'abc' })
+    const usage = deps({ call: async () => [
+      { panelId: 'aaaaaaaa-1111', title: 'Impl', agentId: 'claude-code', model: 'claude-sonnet-4-5', inputTokens: 1200, outputTokens: 80, costUsd: 7.083 },
+      { panelId: 'bbbbbbbb-2222', title: 'Other', agentId: 'cursor', model: null, inputTokens: null, outputTokens: null, costUsd: null },
+    ] })
+    await runCli(['agent', 'usage'], CATE_API, usage.d)
+    expect(usage.out[0].split('\n')).toEqual([
+      'ID        TITLE  MODEL              INPUT  OUTPUT  COST',
+      'aaaaaaaa  Impl   claude-sonnet-4-5  1200   80      $7.08',
+      'bbbbbbbb  Other  -                  -      -       -',
+    ])
+  })
+
   it('formats plain results as key and value lines', async () => {
     const titled = deps({ call: async () => ({ panelId: 'p-1', title: 'API tests' }) })
     await runCli(['panel', 'title', 'API', 'tests'], CATE_API, titled.d)

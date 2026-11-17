@@ -8,6 +8,7 @@ import { AGENT_DEFS, isPromptAttachments, type AgentId, type AgentLaunchOptions,
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
 import type { DoneWhen } from './doneWhen'
+import type { AgentUsageService } from './usage/usage'
 
 /** Said by `cate agent start` without `--done-when`. */
 export const NO_DONE_WHEN_NOTE = 'no done-when condition: the panel will stay open'
@@ -119,7 +120,7 @@ export async function interruptAgent(agents: AgentsCore, panelId: string): Promi
   return { ok: true }
 }
 
-export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter, doneWhen?: DoneWhen): CateServiceHandlers<typeof agentApi> {
+export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter, doneWhen: DoneWhen | undefined, usage: Pick<AgentUsageService, 'session'>): CateServiceHandlers<typeof agentApi> {
   return {
     async start(args, ctx) {
       const started = await startAgent(starter, ctx.caller.panelId, args as AgentStartRequest)
@@ -129,6 +130,20 @@ export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter
     types: () => starter.types(),
 
     list: () => agentSummaries(agents, starter, doneWhen),
+
+    async usage({ targetPanelId }) {
+      const states = targetPanelId ? [live(agents, targetPanelId)] : liveAgents(agents)
+      return Promise.all(states.map(async ({ panelId, agentId, session }) => ({
+        panelId,
+        title: agents.document.panel(panelId)?.title ?? '',
+        agentId,
+        model: null,
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        ...(session?.agentId ? await usage.session({ ...session, agentId: session.agentId }) : null),
+      })))
+    },
 
     async read({ panelId }) {
       refuseStarting(starter, panelId)
