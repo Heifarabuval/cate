@@ -87,6 +87,7 @@ beforeEach(() => {
     types: vi.fn(async () => []),
     starting: vi.fn(() => []),
     launchOptions: vi.fn(() => undefined),
+    prune: vi.fn(),
   }
   handlers = createAgentApiHandlers(agents, starter)
 })

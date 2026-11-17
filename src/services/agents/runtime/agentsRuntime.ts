@@ -91,8 +91,8 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     },
   })
   const offTurnEnd = core.terminals.onTurnEnd((panelId) => { void doneWhen.check(panelId) })
-  const offPanels = deps.document.onChange(() => doneWhen.prune())
   const starter = createAgentStarter(core, deps.start, setup, doneWhen)
+  const offPanels = deps.document.onChange(() => { doneWhen.prune(); starter.prune() })
   // Conditions read back: an agent that finished while the runtime was down
   // sends no turn-end.
   void doneWhen.resume()

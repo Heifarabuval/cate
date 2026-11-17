@@ -65,6 +65,15 @@ describe('agentLaunchCommand', () => {
     expect(() => agentLaunchCommand({ agentId: 'cursor', prompt: 'x', effort: 'low' })).toThrow('Cursor has no effort option')
   })
 
+  it('keeps a model with spaces, quotes, semicolons and substitutions one literal argument', () => {
+    const model = `a b "c" 'd'; touch /tmp/pwned $(id) \`id\` | x`
+    for (const agentId of ['claude-code', 'codex', 'cursor', 'opencode'] as const) {
+      const { args } = agentLaunchCommand({ agentId, prompt: 'Fix it', model })
+      expect(args.filter((arg) => arg === model)).toEqual([model])
+      expect(args.indexOf(model)).toBe(args.indexOf('--model') + 1)
+    }
+  })
+
   it('shows the prompt as written', () => {
     const [arg] = agentLaunchCommand({ agentId: 'codex', prompt: 'Fix it' }).args
     expect(agentTaskText(arg)).toBe('Fix it')
