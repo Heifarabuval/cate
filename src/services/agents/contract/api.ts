@@ -76,6 +76,10 @@ export const agentApi = defineCateApi(
           .help('Relate this panel to the new agent (default with --relation: the calling panel)'),
         relation: opt(oneOf(...RELATION_KINDS)).flag('relation', 'kind')
           .help('Relate the calling panel (or --link-from) to the new agent with this kind'),
+        model: opt(str.nonEmpty().maxLength(200)).flag('model', 'id')
+          .help('Model the agent CLI starts with (free text; refused when the agent has no model option)'),
+        effort: opt(str.nonEmpty().maxLength(40)).flag('effort', 'level')
+          .help('Reasoning effort the agent CLI starts with (levels differ per agent; refused when unknown). Independent of --model'),
         doneWhen: opt(str.nonEmpty().maxLength(2_000)).flag('done-when', 'command')
           .help('Shell command that says the task is done: run in the agent\'s checkout after each turn (60 s timeout); exit 0 closes the panel and tells the caller'),
       },

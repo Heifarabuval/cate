@@ -87,9 +87,9 @@ function doneWhenText(value: unknown): string {
 function agentRuns(value: unknown): string {
   if (!Array.isArray(value)) return generic(value)
   if (value.length === 0) return '(no agent runs)'
-  return table(['ID', 'STATE', 'PROMPTS', 'TITLE', 'DONE WHEN'], value.map((item) => {
+  return table(['ID', 'STATE', 'PROMPTS', 'TITLE', 'MODEL', 'EFFORT', 'DONE WHEN'], value.map((item) => {
     const run = asObject(item) ?? {}
-    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', promptCounts(run.prompts), text(run.title ?? run.agentName ?? run.agentId), doneWhenText(run.doneWhen)]
+    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', promptCounts(run.prompts), text(run.title ?? run.agentName ?? run.agentId), text(run.model), text(run.effort), doneWhenText(run.doneWhen)]
   }))
 }
 

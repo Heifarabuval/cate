@@ -86,6 +86,7 @@ beforeEach(() => {
     start: vi.fn(async () => ({ panelId: 'new', agentId: 'codex' as const })),
     types: vi.fn(async () => []),
     starting: vi.fn(() => []),
+    launchOptions: vi.fn(() => undefined),
   }
   handlers = createAgentApiHandlers(agents, starter)
 })
@@ -246,6 +247,18 @@ describe('cate.agent.start --done-when', () => {
     terminal.set('term', { status: 'running', canReceivePrompt: false })
     const listed = await createAgentApiHandlers(agents, starter, doneWhen).list({}, ctx())
     expect((listed as unknown[])[0]).toMatchObject({ panelId: 'term', doneWhen: { command: 'npm test', checking: false, last: { at: 7, outcome: 'notDone', exitCode: 1 } } })
+  })
+})
+
+describe('cate.agent.start --model and --effort', () => {
+  it('lists the model and effort an agent started with, and nothing for one started without', async () => {
+    terminal.set('term', { status: 'running', canReceivePrompt: false })
+    terminal.set('term-2', { status: 'running', canReceivePrompt: false })
+    vi.mocked(starter.launchOptions).mockImplementation((panelId) => (panelId === 'term' ? { model: 'sonnet', effort: 'low' } : undefined))
+    expect(await handlers.list({}, ctx())).toMatchObject([{ panelId: 'term', model: 'sonnet', effort: 'low' }, { panelId: 'term-2' }])
+    expect(((await handlers.list({}, ctx())) as Array<Record<string, unknown>>)[1]).not.toHaveProperty('model')
+    expect(await handlers.start({ prompt: 'Fix it', model: 'sonnet', effort: 'low' }, ctx())).toMatchObject({ panelId: 'new' })
+    expect(starter.start).toHaveBeenLastCalledWith('supervisor', { prompt: 'Fix it', model: 'sonnet', effort: 'low' })
   })
 })
 

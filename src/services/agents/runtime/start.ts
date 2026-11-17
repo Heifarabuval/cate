@@ -8,7 +8,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { Point } from '@workspace/canvas/contract'
 import type { PlaceTarget, RelationKind } from '@workspace/document/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, isAgentId, isPromptAttachments, type AgentId, type AgentTypeInfo } from '../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, agentLaunchOptionsError, isAgentId, isPromptAttachments, type AgentId, type AgentLaunchOptions, type AgentTypeInfo } from '../contract'
 import type { AgentsCore } from './core'
 import type { DoneWhen } from './doneWhen'
 import { evaluateAgentCliHooks, inspectAgentCliHooks, resolveDriverAgent } from './hooks/readiness'
@@ -66,6 +66,9 @@ export interface AgentStartArgs {
   /** Relate this panel (default with `relation`: the caller) to the agent. */
   linkFrom?: string
   relation?: RelationKind
+  /** Model and reasoning effort for the agent CLI (its declared options). */
+  model?: string
+  effort?: string
   /** A shell command whose exit 0 after a turn finishes the task (doneWhen.ts). */
   doneWhen?: string
 }
@@ -88,6 +91,8 @@ export interface AgentStarter {
   /** Started agents whose CLI has not been observed yet: until its first
    *  hook, a started panel is no agent panel to the terminal agents. */
   starting(): Array<{ panelId: string; agentId: AgentId }>
+  /** The model and effort a panel's agent was started with, if any. */
+  launchOptions(panelId: string): AgentLaunchOptions | undefined
 }
 
 /** How long a started agent counts as starting before its CLI is observed. */
@@ -102,6 +107,9 @@ type StartRequest = Omit<AgentStartArgs, 'agentId'> & { agentId?: AgentId }
 
 export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, setup?: { types?(): Promise<AgentTypeInfo[]> }, doneWhen?: Pick<DoneWhen, 'watch'>): AgentStarter {
   const pending = new Map<string, { agentId: AgentId; at: number }>()
+  /** What each started panel's agent was asked for; a reused terminal drops
+   *  the previous agent's. In memory, like `pending`. */
+  const options = new Map<string, AgentLaunchOptions>()
   /** Still starting: recent, its terminal running, its agent not observed. */
   const stillStarting = (panelId: string, at: number): boolean => {
     const terminal = ports.terminals.state(panelId)
@@ -156,6 +164,11 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
       const doneWhenCommand = input.doneWhen?.trim()
       if (input.doneWhen !== undefined && !doneWhenCommand) fail('done-when-required')
       if (doneWhenCommand?.includes('\0')) fail('invalid-done-when')
+      const model = input.model?.trim()
+      const effort = input.effort?.trim()
+      if (input.model !== undefined && !model) fail('model-required')
+      if (input.effort !== undefined && !effort) fail('effort-required')
+      const launchOptions: AgentLaunchOptions = { ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
       const args = input as StartRequest
       if (args.terminalPanelId) checkTerminal(args.terminalPanelId, callerPanelId)
       const placement = args.placement ?? (callerPanelId ? { near: callerPanelId } : {})
@@ -166,6 +179,11 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
       // leaves none.
       const existing = args.newWorktree ? null : checkoutFor(callerPanelId, args.worktreeId)
       const agentId = await chooseAgent(args.agentId, existing?.cwd ?? agents.root)
+      // Asked of the agent's own declaration, never of its type here.
+      for (const option of ['model', 'effort'] as const) {
+        const unsupported = agentLaunchOptionsError(agentId, { [option]: launchOptions[option] })
+        if (unsupported) fail(`${option}-unsupported: ${unsupported}`)
+      }
 
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
@@ -183,9 +201,11 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
         pending.set(panelId, { agentId, at: Date.now() })
         // A reused terminal drops the condition of the agent it ran before.
         doneWhen?.watch(panelId, doneWhenCommand ? { command: doneWhenCommand, cwd: checkout.cwd, ...(callerPanelId ? { callerPanelId } : {}) } : null)
+        if (Object.keys(launchOptions).length) options.set(panelId, launchOptions)
+        else options.delete(panelId)
         return link({ panelId, agentId })
       }
-      const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}) } }
+      const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}), ...launchOptions } }
       try {
         if (args.terminalPanelId) {
           // Reuse the panel, not its shell process: restarting the PTY
@@ -211,6 +231,8 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
       const types = AGENTS.map((agent) => ({ agentId: agent.id, displayName: agent.displayName, ready: ready.has(agent.id) }))
       return types
     },
+
+    launchOptions: (panelId) => options.get(panelId),
 
     starting() {
       const out: Array<{ panelId: string; agentId: AgentId }> = []

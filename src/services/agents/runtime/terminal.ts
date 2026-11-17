@@ -241,10 +241,11 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }))
 
   offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.start, (params) => {
-    const { agentId, prompt, attachments } = (params ?? {}) as { agentId?: unknown; prompt?: unknown; attachments?: unknown }
+    const { agentId, prompt, attachments, model, effort } = (params ?? {}) as { agentId?: unknown; prompt?: unknown; attachments?: unknown; model?: unknown; effort?: unknown }
     if (!isAgentId(agentId) || (prompt !== undefined && typeof prompt !== 'string')) throw new Error('Invalid agent launch')
     if (attachments !== undefined && (prompt === undefined || !isPromptAttachments(attachments))) throw new Error('Invalid agent launch')
-    const command = agentLaunchCommand({ agentId, prompt: prompt === undefined ? undefined : agentPromptInput(agentId, prompt, attachments).text })
+    if ((model !== undefined && typeof model !== 'string') || (effort !== undefined && typeof effort !== 'string')) throw new Error('Invalid agent launch')
+    const command = agentLaunchCommand({ agentId, prompt: prompt === undefined ? undefined : agentPromptInput(agentId, prompt, attachments).text, model, effort })
     return { command }
   }))
 

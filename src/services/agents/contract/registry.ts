@@ -78,6 +78,14 @@ export interface AgentDef {
   /** Shell-free argv that starts the CLI's interactive session without a
    *  prompt. */
   startArgs: readonly string[]
+  /** What `cate agent start --model / --effort` can ask of this CLI; null
+   *  where it has no such option (a start asking for it is refused). */
+  launchOptions: {
+    /** Argv that picks the model (any id the CLI takes). */
+    model: ((model: string) => string[]) | null
+    /** Argv that sets the reasoning effort, with the levels it knows. */
+    effort: { values: readonly string[]; args: (effort: string) => string[] } | null
+  }
   /** The keys, pressed in order, that stop the CLI's turn and keep it at its
    *  prompt (verified by the live interrupt scenario). */
   interruptKeys: readonly AgentInterruptKey[]
@@ -118,6 +126,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.claude/projects',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
+    launchOptions: { model: (m) => ['--model', m], effort: { values: ['low', 'medium', 'high', 'xhigh', 'max'], args: (e) => ['--effort', e] } },
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'claude' || n === 'claude-code',
     promptContextHook: 'additional-context',
@@ -133,6 +142,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.codex/sessions',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
+    launchOptions: { model: (m) => ['--model', m], effort: { values: ['low', 'medium', 'high'], args: (e) => ['-c', `model_reasoning_effort="${e}"`] } },
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'codex',
     promptContextHook: 'additional-context',
@@ -155,6 +165,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.cursor/chats',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
+    launchOptions: { model: (m) => ['--model', m], effort: null },
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
     promptContextHook: null,
@@ -175,6 +186,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.grok/sessions',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
+    launchOptions: { model: null, effort: null },
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'grok' || /^grok-\d/.test(n),
     promptContextHook: null,
@@ -192,6 +204,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     // agent can take follow-up prompts on the same PTY.
     promptArgs: (prompt) => ['--prompt', prompt],
     startArgs: [],
+    launchOptions: { model: (m) => ['--model', m], effort: null },
     interruptKeys: ['escape', 'escape'],
     matchProcess: (n) => n === 'opencode',
     promptContextHook: 'endpoint',
@@ -206,6 +219,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.pi/agent/sessions',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
+    launchOptions: { model: (m) => ['--model', m], effort: { values: ['minimal', 'low', 'medium', 'high', 'xhigh'], args: (e) => ['--thinking', e] } },
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'pi',
     promptContextHook: 'endpoint',
@@ -223,6 +237,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.kiro/sessions',
     promptArgs: (prompt) => ['chat', '--v3', prompt],
     startArgs: ['chat', '--v3'],
+    launchOptions: { model: null, effort: null },
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'kiro-cli',
     promptContextHook: 'plain-text',

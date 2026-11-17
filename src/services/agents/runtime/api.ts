@@ -4,7 +4,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi } from '../contract/api'
-import { AGENT_DEFS, isPromptAttachments, type AgentId, type AgentStartRequest, type PanelAgentState } from '../contract'
+import { AGENT_DEFS, isPromptAttachments, type AgentId, type AgentLaunchOptions, type AgentStartRequest, type PanelAgentState } from '../contract'
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
 import type { DoneWhen } from './doneWhen'
@@ -50,11 +50,11 @@ function startingSummary(agents: AgentsCore, { panelId, agentId }: { panelId: st
 type AgentSummary = ReturnType<typeof summary> | ReturnType<typeof startingSummary>
 
 /** Every agent panel `list` and `wait` see, starting ones last. */
-function agentSummaries(agents: AgentsCore, starter: AgentStarter, doneWhen?: DoneWhen): AgentSummary[] {
+function agentSummaries(agents: AgentsCore, starter: AgentStarter, doneWhen?: DoneWhen): Array<AgentSummary & AgentLaunchOptions> {
   return [
     ...liveAgents(agents).map((state) => summary(agents, state, doneWhen)),
     ...starter.starting().map((started) => startingSummary(agents, started, doneWhen)),
-  ]
+  ].map((agent) => ({ ...agent, ...starter.launchOptions(agent.panelId) }))
 }
 
 /** Prompting or reading an agent that is still starting fails with a hint. */
