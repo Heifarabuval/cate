@@ -58,7 +58,8 @@ After each of the agent's turns, the runtime runs the command in the agent's
 checkout (60 s timeout, one run at a time per panel). Exit 0 closes the
 agent's panel and its process, and tells your panel (as a prompt if an agent
 runs there). A non-zero exit does nothing: it is checked again after the
-next turn. A timeout or an error leaves the panel open with the reason in
+next turn. The condition survives a runtime restart and is checked once
+when the runtime starts again. A timeout or an error leaves the panel open with the reason in
 the DONE WHEN column of `cate agent list` (`--json`: `doneWhen.last`).
 Without `--done-when` the agent starts anyway and `start` says on stderr:
 `no done-when condition: the panel will stay open`; close it yourself with

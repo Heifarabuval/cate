@@ -3,10 +3,13 @@
 // the agent's checkout after each of its turns, one at a time per panel.
 // Exit 0 closes the panel (its process with it) and tells the caller; a
 // non-zero exit changes nothing; a timeout or an error is kept as the last
-// result, which `cate agent list` shows. Held in memory: a runtime restart
-// drops the conditions (the panels stay open).
+// result, which `cate agent list` shows. Conditions persist in
+// `agents/done-when.json` (written at start, dropped with the panel) and are
+// checked once at runtime start: an agent that finished while the runtime was
+// down sends no turn-end.
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createJsonStateFile } from '@kernel/state/node'
 
 export const DONE_WHEN_TIMEOUT_MS = 60_000
 
@@ -33,20 +36,38 @@ export interface DoneWhenDeps {
   /** Tells the panel that started the agent (none for a client). */
   notify(callerPanelId: string | undefined, done: { panelId: string; title: string; command: string }): void
   now?(): number
+  /** `agents/done-when.json`; without it conditions live in memory. */
+  file?: string
 }
+
+/** A condition as set at start, and as `done-when.json` keeps it per panel. */
+export interface DoneWhenCondition { command: string; cwd: string; callerPanelId?: string }
 
 export interface DoneWhen {
   /** Sets (null: drops) the panel's condition. */
-  watch(panelId: string, condition: { command: string; cwd: string; callerPanelId?: string } | null): void
+  watch(panelId: string, condition: DoneWhenCondition | null): void
   state(panelId: string): DoneWhenState | undefined
   /** A turn ended in the panel: runs its condition unless one is running. */
   check(panelId: string): Promise<void>
+  /** Drops the conditions of panels that are gone. */
+  prune(): void
+  /** Runtime start: prunes, then checks every condition read back once. */
+  resume(): Promise<void>
+  dispose(): void
 }
 
-interface Watched {
-  command: string
-  cwd: string
-  callerPanelId?: string
+function normalizeConditions(parsed: unknown): Record<string, DoneWhenCondition> {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+  const out: Record<string, DoneWhenCondition> = {}
+  for (const [panelId, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const c = value as Partial<DoneWhenCondition> | null
+    if (!c || typeof c.command !== 'string' || !c.command.trim() || typeof c.cwd !== 'string') continue
+    out[panelId] = { command: c.command, cwd: c.cwd, ...(typeof c.callerPanelId === 'string' ? { callerPanelId: c.callerPanelId } : {}) }
+  }
+  return out
+}
+
+interface Watched extends DoneWhenCondition {
   checking: boolean
   /** A turn ended while the check ran: it judged the state before that turn. */
   recheck?: boolean
@@ -56,11 +77,23 @@ interface Watched {
 export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
   const watched = new Map<string, Watched>()
   const now = deps.now ?? Date.now
+  const file = deps.file ? createJsonStateFile<Record<string, DoneWhenCondition>>({ file: deps.file, defaults: {}, normalize: normalizeConditions, mode: 0o600 }) : null
+  for (const [panelId, condition] of Object.entries(file?.load() ?? {})) watched.set(panelId, { ...condition, checking: false })
+  const save = (): void => {
+    file?.set(Object.fromEntries([...watched].map(([panelId, { command, cwd, callerPanelId }]) =>
+      [panelId, { command, cwd, ...(callerPanelId ? { callerPanelId } : {}) }])))
+  }
+  const drop = (panelId: string): void => {
+    if (watched.delete(panelId)) save()
+  }
+  const prune = (): void => {
+    for (const panelId of [...watched.keys()]) if (deps.panelTitle(panelId) === undefined) drop(panelId)
+  }
 
   return {
     watch(panelId, condition) {
-      if (condition) watched.set(panelId, { ...condition, checking: false })
-      else watched.delete(panelId)
+      if (condition) { watched.set(panelId, { ...condition, checking: false }); save() }
+      else drop(panelId)
     },
 
     state(panelId) {
@@ -69,6 +102,12 @@ export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
     },
 
     check,
+    prune,
+    async resume() {
+      prune()
+      await Promise.all([...watched.keys()].map(check))
+    },
+    dispose() { file?.dispose() },
   }
 
   /** One run, then one more if a turn ended during it (the flag is taken
@@ -85,7 +124,7 @@ export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
   }
 
   async function runOnce(panelId: string, w: Watched): Promise<void> {
-    if (deps.panelTitle(panelId) === undefined) { watched.delete(panelId); return }
+    if (deps.panelTitle(panelId) === undefined) { drop(panelId); return }
     w.checking = true
     let run: DoneWhenRun
     try {
@@ -97,7 +136,7 @@ export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
     // Closed (or re-watched by a new start) while the command ran.
     if (watched.get(panelId) !== w) return
     const title = deps.panelTitle(panelId)
-    if (title === undefined) { watched.delete(panelId); return }
+    if (title === undefined) { drop(panelId); return }
     if ('timedOut' in run) { w.last = { at: now(), outcome: 'timeout', reason: `timed out after ${DONE_WHEN_TIMEOUT_MS / 1_000} s` }; return }
     if ('error' in run) { w.last = { at: now(), outcome: 'error', reason: run.error }; return }
     if (run.exitCode !== 0) { w.last = { at: now(), outcome: 'notDone', exitCode: run.exitCode }; return }
@@ -107,7 +146,7 @@ export function createDoneWhen(deps: DoneWhenDeps): DoneWhen {
       w.last = { at: now(), outcome: 'error', reason: `exited 0 but the panel could not close: ${error instanceof Error ? error.message : String(error)}` }
       return
     }
-    watched.delete(panelId)
+    drop(panelId)
     deps.notify(w.callerPanelId, { panelId, title, command: w.command })
   }
 }
