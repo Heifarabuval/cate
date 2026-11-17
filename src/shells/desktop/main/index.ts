@@ -46,6 +46,8 @@ import { installAppCsp, installWebSecurity } from './webSecurity'
 import { createWindowFactory, shellPaths } from './windowFactory'
 import { WindowRegistry } from './windowRegistry'
 
+declare const __CATE_SELF_UPDATE__: boolean | undefined
+
 installLogSink(createElectronMainSink({ dev: !app.isPackaged }))
 const log = createLogger('main')
 
@@ -295,6 +297,7 @@ app.whenReady().then(() => {
       void partitions.refresh().catch((error) => log.warn('restoring browser networking after update failure: %O', error))
     },
     devUpdate: process.env.CATE_DEV_UPDATE === '1',
+    selfUpdate: typeof __CATE_SELF_UPDATE__ !== 'boolean' || __CATE_SELF_UPDATE__,
   })
 
   const menu = createAppMenu({

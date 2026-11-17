@@ -52,6 +52,15 @@ describe('auto updater', () => {
     expect(statuses.at(-1)).toMatchObject({ state: 'disabled', manual: true })
   })
 
+  it('never checks in a build made without self-update', () => {
+    const { auto, updater, statuses } = setup({ selfUpdate: false })
+    auto.start()
+    auto.checkManually()
+    expect(updater.checkForUpdatesAndNotify).not.toHaveBeenCalled()
+    expect(updater.checkForUpdates).not.toHaveBeenCalled()
+    expect(statuses.at(-1)).toMatchObject({ state: 'disabled', message: expect.stringContaining('own checkout') })
+  })
+
   it('does not get stuck checking an installation without an active updater', async () => {
     const { auto, updater, deps } = setup({ showMessageBox: vi.fn(async () => ({ response: 0 })) })
     updater.checkForUpdatesAndNotify.mockResolvedValue(null)
