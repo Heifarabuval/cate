@@ -12,7 +12,7 @@ import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentsDocument } from './promptContext'
 import type { RelationContextMode } from '@workspace/relations/contract'
 import { AGENT_SESSION_STORES } from './sessions'
-import { createTerminalAgents, TYPED_INPUT_IDLE_MS, type AgentTerminalService, type TerminalAgents } from './terminal'
+import { createTerminalAgents, type AgentTerminalService, type TerminalAgents } from './terminal'
 import type { NotificationEvent } from '@workspace/notifications/contract'
 
 
@@ -433,21 +433,60 @@ describe('terminal agents', () => {
     await vi.waitFor(() => expect(agents.prompts.of('term')).toEqual([]))
   })
 
-  it('sends a queued prompt once the typed text is submitted with Enter, and after the idle delay', async () => {
-    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
-    terminal.scan('pty-1', 'term', 'claude')
-    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    try {
-      terminal.service.write('pty-1', 'abandoned')
-      agents.send('term', 'report')
-      await vi.advanceTimersByTimeAsync(TYPED_INPUT_IDLE_MS - 1)
-      expect(terminal.writes).toHaveLength(1)
-      await vi.advanceTimersByTimeAsync(1)
-      await vi.waitFor(() => expect(terminal.writes).toHaveLength(3))
-    } finally {
-      vi.useRealTimers()
+  describe('typed input classification', () => {
+    async function atPrompt() {
+      const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+      terminal.scan('pty-1', 'term', 'claude')
+      await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
     }
+    const canReceive = () => agents.panels.state('term')?.canReceivePrompt
+
+    it.each([
+      ['OSC 10 reply (BEL)', '\x1b]10;rgb:ffff/ffff/ffff\x07'],
+      ['OSC 11 reply (ST)', '\x1b]11;rgb:0000/0000/0000\x1b\\'],
+      ['XTVERSION reply (DCS)', '\x1bP>|xterm(388)\x1b\\'],
+      ['X10 mouse report', '\x1b[M !!'],
+      ['focus report', '\x1b[I'],
+    ])('does not count a terminal reply as text: %s', async (_name, data) => {
+      await atPrompt()
+      terminal.service.write('pty-1', data)
+      expect(canReceive()).toBe(true)
+    })
+
+    it.each([
+      ['Alt+Enter', 'abc\x1b\r'],
+      ['backslash then Enter', 'abc\\\r'],
+      ['a newline inside a bracketed paste', '\x1b[200~a\rb\x1b[201~'],
+    ])('keeps holding after %s, however long', async (_name, data) => {
+      await atPrompt()
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        terminal.service.write('pty-1', data)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        expect(canReceive()).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it.each([
+      ['Enter', 'abc\r'],
+      ['Enter as CSI u', 'abc\x1b[13u'],
+      ['Ctrl+U', 'abc\x15'],
+      ['Ctrl+C', 'abc\x03'],
+    ])('lets a prompt go once %s ends the typing', async (_name, data) => {
+      await atPrompt()
+      terminal.service.write('pty-1', data)
+      await vi.waitFor(() => expect(canReceive()).toBe(true))
+    })
+
+    it('counts the Enter after a backslash typed earlier as a line break', async () => {
+      await atPrompt()
+      terminal.service.write('pty-1', 'abc\\')
+      terminal.service.write('pty-1', '\r')
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(canReceive()).toBe(false)
+    })
   })
 
   it('counts a turn someone else\'s Enter started as taking the prompt being sent', async () => {
