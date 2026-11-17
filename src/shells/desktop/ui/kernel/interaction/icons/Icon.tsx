@@ -1,5 +1,5 @@
 import type { ComponentType, CSSProperties } from 'react'
-import { Folders, GitCompareArrows, Globe, Grid2X2, Plus, Terminal } from 'lucide-react'
+import { Briefcase, Folders, GitCompareArrows, Globe, Grid2X2, Plus, Terminal } from 'lucide-react'
 import type { IconName } from '@kernel/interaction/contract'
 
 export interface IconProps {
@@ -15,6 +15,7 @@ const ICONS: Record<IconName, ComponentType<IconProps>> = {
   grid: Grid2X2,
   'git-compare': GitCompareArrows,
   plus: Plus,
+  briefcase: Briefcase,
 }
 
 export function Icon({ name, ...props }: IconProps & { name: IconName }) {
