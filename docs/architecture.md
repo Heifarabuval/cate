@@ -1838,6 +1838,18 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   prompts and interrupts it by its panel. `types` lists the agent CLIs and
   whether each can start in a terminal here. The review panel starts its
   reviewers the same way (`start.ts`).
+- **Done-when conditions** (`doneWhen.ts`): `cate agent start --done-when
+  "<command>"` sets a shell command that says the task is finished. On each
+  turn-end the status machine reports (also one that leaves the status
+  unchanged), the runtime runs it in the agent's checkout with a 60 s
+  timeout, at most one run per panel. Exit 0 closes the panel from the
+  runtime side (a `removePanels` op with `discard`, so no view close guard
+  runs and the session's process dies with it) and tells the calling panel:
+  a prompt when it hosts an agent, else a notification. A non-zero exit does
+  nothing until the next turn; a timeout or an error is kept as the last
+  result. `cate agent list` shows the condition and that result. Without
+  `--done-when` the start result carries a note that the panel stays open.
+  Conditions live in memory: a runtime restart drops them.
 - **terminal agents** (`terminal.ts`): plug into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).

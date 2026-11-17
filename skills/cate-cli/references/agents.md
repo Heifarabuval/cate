@@ -1,7 +1,7 @@
 # Agents and terminal input
 
-Contents: the loop, starting an agent, sending and waiting, reading answers,
-typing into terminals.
+Contents: the loop, starting an agent, ending a task (`--done-when`),
+sending and waiting, reading answers, typing into terminals.
 
 `cate agent` starts coding agents (terminal CLIs such as Claude Code or
 Codex) in their own panels, and observes and steers the live agent panels of
@@ -10,7 +10,7 @@ the workspace.
 ## The loop
 
 ```bash
-id=$(cate agent start --agent codex --new-worktree fix-login "Fix the flaky login test")
+id=$(cate agent start --agent codex --new-worktree fix-login --done-when 'npm test' "Fix the flaky login test")
 cate agent wait "$id" --wait-timeout 60000   # repeat while it exits 1 (timed out)
 cate agent read "$id"
 cate agent send "$id" "Also add a regression test"
@@ -39,6 +39,30 @@ output adds `(not linked: <reason>)`, `--json` gives `relationError`.
 Until the agent CLI is up, the panel is listed as `starting`: `wait` waits
 for it, while `send`, `read` and `interrupt` fail with `agent-starting`.
 From then on it is an agent panel like any other.
+
+## Ending a task: `--done-when`
+
+Before any `cate agent start`, settle the condition that ends the task: take
+the one the person gave, or propose a recommended one and have the person
+validate it. It must be testable, a shell command that answers yes (exit 0)
+or no, never "when the agent says it is done". There are no predefined
+kinds: one command covers every case.
+
+```bash
+cate agent start --done-when 'gh pr view 2 --json state -q .state | grep -qx MERGED' "$(cat BRIEF.md)"
+cate agent start --done-when 'npm test' "Fix the flaky login test"
+cate agent start --done-when 'bus read repo:cate | grep -q TERMINÉ' "Write the release notes"
+```
+
+After each of the agent's turns, the runtime runs the command in the agent's
+checkout (60 s timeout, one run at a time per panel). Exit 0 closes the
+agent's panel and its process, and tells your panel (as a prompt if an agent
+runs there). A non-zero exit does nothing: it is checked again after the
+next turn. A timeout or an error leaves the panel open with the reason in
+the DONE WHEN column of `cate agent list` (`--json`: `doneWhen.last`).
+Without `--done-when` the agent starts anyway and `start` says on stderr:
+`no done-when condition: the panel will stay open`; close it yourself with
+`cate panel close <id> --discard`.
 
 ## Sending and waiting
 

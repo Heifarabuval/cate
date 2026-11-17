@@ -18,7 +18,8 @@ Read the one for your task before its first command:
 - `references/browser.md`: the browser panel. Snapshots and element ids,
   clicking and typing, tabs, uploads, dialogs, saved logins and sign-ups,
   console and network logs, screenshots.
-- `references/agents.md`: starting other coding agents, sending them
+- `references/agents.md`: starting other coding agents (always with a
+  validated `--done-when` condition that closes their panel), sending them
   prompts, waiting for and reading their answers, and typing into terminals
   that have no agent.
 
