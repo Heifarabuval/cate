@@ -140,6 +140,16 @@ export interface UsageSummary {
   scanDurationMs: number
 }
 
+/** What one agent session has used so far (`cate agent usage`). `model` is
+ *  the one that spent most tokens; `inputTokens` includes the cached part;
+ *  `costUsd` is null when any of its responses has no price. */
+export interface AgentSessionUsage {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  costUsd: number | null
+}
+
 /** USD per million tokens. Omitted cache rates use the input rate. */
 export interface UsageModelPriceOverride {
   inputCostPerMillionTokens: number

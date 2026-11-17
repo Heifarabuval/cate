@@ -10,7 +10,7 @@ import path from 'node:path'
 import { RpcError } from '@kernel/rpc/contract'
 import type { Logger } from '@kernel/log/contract'
 import { writeJsonAtomic } from '@kernel/state/node'
-import { AGENTS, type AgentId, type UsageAgentLimits, type UsageAgentStatus, type UsageLimitsReport, type UsageModelPriceOverride, type UsagePricing, type UsageSummary, type UsageSummaryInput } from '../../contract'
+import { AGENTS, type AgentId, type AgentSessionLocator, type AgentSessionUsage, type UsageAgentLimits, type UsageAgentStatus, type UsageLimitsReport, type UsageModelPriceOverride, type UsagePricing, type UsageSummary, type UsageSummaryInput } from '../../contract'
 import type { AgentSessionStores, AgentUsageRecord, AgentUsageScope, AgentUsageSource } from '../sessions/types'
 import { UsageAggregator } from './aggregation'
 import { createOverrideRateTable, parseRateTable, type RateTable } from './pricing'
@@ -33,6 +33,9 @@ const MTIME_SLACK_MS = 36 * 60 * 60 * 1000
 /** The longest window the overview offers; older cache entries are pruned. */
 const CACHE_RETENTION_MS = 90 * DAY_MS
 const LIMITS_TTL_MS = 60 * 1000
+/** How far back a session is searched for in a store that cannot name a
+ *  session's files; one that can (`files`) is read directly, whatever its age. */
+const SESSION_SEARCH_MS = 7 * DAY_MS
 
 export interface AgentUsageDeps {
   /** The canonical workspace root; its worktrees live under it. */
@@ -51,6 +54,8 @@ export interface AgentUsageDeps {
 
 export interface AgentUsageService {
   summary(input: UsageSummaryInput): Promise<UsageSummary>
+  /** One session's usage since it began; null when its agent records none. */
+  session(session: AgentSessionLocator): Promise<AgentSessionUsage | null>
   refreshRates(): Promise<UsagePricing>
   limits(refresh: boolean): Promise<UsageLimitsReport>
 }
@@ -282,6 +287,47 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
     return running
   }
 
+  /** The session's records: its own files when the store names them, else the
+   *  store's recent transcripts. */
+  async function sessionRecords(session: AgentSessionLocator): Promise<AgentUsageRecord[]> {
+    const store = deps.stores[session.agentId]
+    const { source } = store.usage
+    const named = source.kind === 'transcripts' && store.files ? await store.files({ session, homeDir: deps.homeDir }) : null
+    if (source.kind === 'transcripts' && named) {
+      const records: AgentUsageRecord[] = []
+      for (const file of named) {
+        const stats = await fs.stat(file).catch(() => null)
+        if (stats) records.push(...await transcriptRecords(session.agentId, source, { path: file, size: stats.size, mtimeMs: stats.mtimeMs }))
+      }
+      return records
+    }
+    const scope: AgentUsageScope = { sinceMs: now() - SESSION_SEARCH_MS, untilMs: now(), contains: async () => true }
+    return (await scanAgent(session.agentId, source, scope, { live: new Set(), roots: [] })).records
+  }
+
+  async function session(locator: AgentSessionLocator): Promise<AgentSessionUsage | null> {
+    await loadCache()
+    const [, records] = await Promise.all([ensureRates(false), sessionRecords(locator)])
+    await saveCache()
+    const aggregator = new UsageAggregator({ timeZone: 'UTC', sinceDay: '0000-01-01', untilDay: '9999-12-31', rates, priceOverrides: createOverrideRateTable(deps.priceOverrides()) })
+    for (const record of records) if (record.sessionId === locator.sessionId) aggregator.add(locator.agentId, record)
+    const buckets = aggregator.finish()
+    if (buckets.length === 0) return null
+    const tokens = new Map<string, number>()
+    let inputTokens = 0
+    let outputTokens = 0
+    let costUsd: number | null = 0
+    for (const { model, totals, costUsd: cost, unpricedRecords } of buckets) {
+      const input = totals.uncachedInputTokens + totals.cachedInputTokens + totals.cacheCreationTokens
+      inputTokens += input
+      outputTokens += totals.outputTokens
+      tokens.set(model, (tokens.get(model) ?? 0) + input + totals.outputTokens)
+      costUsd = unpricedRecords > 0 || costUsd === null ? null : costUsd + cost
+    }
+    const [model] = [...tokens].sort((a, b) => b[1] - a[1])[0]
+    return { model, inputTokens, outputTokens, costUsd }
+  }
+
   // --- Limits ---
 
   let limitsCache: { at: number; report: Promise<UsageLimitsReport> } | null = null
@@ -310,6 +356,7 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
 
   return {
     summary,
+    session,
     async refreshRates() {
       await ensureRates(true)
       return pricing()

@@ -59,6 +59,8 @@ let agents: AgentsCore
 let terminal: ReturnType<typeof fakeTerminals>
 let handlers: ReturnType<typeof createAgentApiHandlers>
 let starter: AgentStarter
+const sessionUsage = { model: 'gpt-5', inputTokens: 1200, outputTokens: 80, costUsd: 0.5 }
+const usage = { session: vi.fn(async ({ sessionId }: { sessionId: string }) => (sessionId === 's' ? sessionUsage : null)) }
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'cate-agents-api-'))
@@ -89,7 +91,7 @@ beforeEach(() => {
     launchOptions: vi.fn(() => undefined),
     prune: vi.fn(),
   }
-  handlers = createAgentApiHandlers(agents, starter)
+  handlers = createAgentApiHandlers(agents, starter, undefined, usage)
 })
 
 afterEach(() => {
@@ -106,6 +108,18 @@ async function rpcError(promise: unknown): Promise<string> {
 }
 
 describe('cate.agent.*', () => {
+  it('reports each live agent panel\'s session usage, null where the agent has none', async () => {
+    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    terminal.set('term-2', { status: 'running' })
+    terminal.set('idle-shell', { status: 'notRunning' })
+    expect(await handlers.usage({}, ctx())).toEqual([
+      { panelId: 'term', title: 'Backend', agentId: 'codex', ...sessionUsage },
+      { panelId: 'term-2', title: 'Frontend', agentId: 'codex', model: null, inputTokens: null, outputTokens: null, costUsd: null },
+    ])
+    expect(await handlers.usage({ targetPanelId: 'term' }, ctx())).toHaveLength(1)
+    await expect(rpcError(handlers.usage({ targetPanelId: 'none' }, ctx()))).resolves.toBe('agent-panel-not-found')
+  })
+
   it('lists live agents, never an idle terminal', async () => {
     terminal.set('term', { status: 'running', canReceivePrompt: false })
     terminal.set('idle-shell', { status: 'notRunning', present: true })
@@ -246,7 +260,7 @@ describe('cate.agent.start --done-when', () => {
     doneWhen.watch('term', { command: 'npm test', cwd: '/repo' })
     await doneWhen.check('term')
     terminal.set('term', { status: 'running', canReceivePrompt: false })
-    const listed = await createAgentApiHandlers(agents, starter, doneWhen).list({}, ctx())
+    const listed = await createAgentApiHandlers(agents, starter, doneWhen, usage).list({}, ctx())
     expect((listed as unknown[])[0]).toMatchObject({ panelId: 'term', doneWhen: { command: 'npm test', checking: false, last: { at: 7, outcome: 'notDone', exitCode: 1 } } })
   })
 })

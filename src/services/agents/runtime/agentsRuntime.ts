@@ -112,6 +112,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   })().catch((error: unknown) => { usageLoading = undefined; throw error })
   const usage: AgentUsageService = {
     summary: async (input) => (await loadUsage()).summary(input),
+    session: async (locator) => (await loadUsage()).session(locator),
     refreshRates: async () => (await loadUsage()).refreshRates(),
     limits: async (refresh) => (await loadUsage()).limits(refresh),
   }
@@ -130,7 +131,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
       return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
     },
     capability: () => agentsCapabilityImpl(core, starter, usage, setup),
-    apiHandlers: () => createAgentApiHandlers(core, starter, doneWhen),
+    apiHandlers: () => createAgentApiHandlers(core, starter, doneWhen, usage),
     dispose: () => { offTurnEnd(); offPanels(); doneWhen.dispose(); offSettings?.(); setup.dispose(); core.dispose() },
   }
 }

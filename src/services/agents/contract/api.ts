@@ -45,7 +45,7 @@ export const agentCliArea = defineCliArea({
     key: 'cliAgentReadEnabled',
     code: 'agent-read-disabled',
     detail:
-      '`cate agent types / list / wait / read`: observe workers, their conversations and terminal output.',
+      '`cate agent types / list / wait / read / usage`: observe workers, their conversations and terminal output.',
   },
   control: {
     key: 'cliAgentControlEnabled',
@@ -100,6 +100,15 @@ export const agentApi = defineCateApi(
       handler: 'service',
       summary: 'List live agent panels',
       format: 'agentRuns',
+    },
+    usage: {
+      access: 'read',
+      handler: 'service',
+      summary: 'Show what each live agent panel\'s session has used: model, tokens and API-equivalent cost (a dash where its agent records none)',
+      args: { targetPanelId: opt(panel()).pos('panelId').flag('panel', 'id').help('Only this agent panel (default: every live agent panel)') },
+      // One session, read from its own transcript when the agent names it.
+      timeoutMs: 30_000,
+      format: 'agentUsage',
     },
     read: {
       access: 'read',

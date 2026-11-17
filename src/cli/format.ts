@@ -93,6 +93,16 @@ function agentRuns(value: unknown): string {
   }))
 }
 
+function agentUsage(value: unknown): string {
+  if (!Array.isArray(value)) return generic(value)
+  if (value.length === 0) return '(no agent runs)'
+  const dash = (v: unknown) => (v === null || v === undefined ? '-' : String(v))
+  return table(['ID', 'TITLE', 'MODEL', 'INPUT', 'OUTPUT', 'COST'], value.map((item) => {
+    const run = asObject(item) ?? {}
+    return [shortId(text(run.panelId) || '?'), text(run.title), dash(run.model), dash(run.inputTokens), dash(run.outputTokens), typeof run.costUsd === 'number' ? `$${run.costUsd.toFixed(2)}` : '-']
+  }))
+}
+
 function conversation(value: unknown): string {
   const object = asObject(value)
   if (!object || !Array.isArray(object.messages)) return generic(value)
@@ -167,6 +177,7 @@ function browserLog<T>(describe: (entries: T[]) => string) {
 const FORMATTERS: Record<string, (value: unknown) => string> = {
   panelList,
   agentRuns,
+  agentUsage,
   agentWait: (value) => {
     const result = asObject(value)
     const runs = agentRuns(result?.agents)

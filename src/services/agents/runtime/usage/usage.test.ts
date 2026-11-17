@@ -201,6 +201,53 @@ describe('workspace usage', () => {
   })
 })
 
+describe('session usage', () => {
+  let home: string
+  let data: string
+  beforeEach(() => {
+    home = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'cate-usage-home-')))
+    data = mkdtempSync(path.join(os.tmpdir(), 'cate-usage-data-'))
+  })
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(data, { recursive: true, force: true })
+  })
+  const service = () => createAgentUsage({
+    root: '/proj', dataDir: data, homeDir: home, stores: AGENT_SESSION_STORES, env: () => ({}),
+    priceOverrides: () => ({}), fetchRates: async () => RATES, now: () => Date.parse('2026-10-11T00:00:00Z'),
+  })
+  const at = '2026-10-10T12:00:00Z'
+  /** A line of session `session`, whatever the message id. */
+  const line = (session: string, id: string, usage: Record<string, number>) => claudeLine(id, at, '/proj', usage).replace(`"s-${id}"`, `"${session}"`)
+
+  it('totals one session from its own transcript, priced by the rate table', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    // The other session's file must not count.
+    writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 500 })}\n${line('s-a', 'a2', { input_tokens: 200, output_tokens: 20 })}\n`)
+    writeFileSync(path.join(dir, 's-b.jsonl'), `${line('s-b', 'b1', { input_tokens: 9000, output_tokens: 900 })}\n`)
+    const usage = await service().session({ agentId: 'claude-code', sessionId: 's-a', cwd: '/proj' })
+    expect(usage).toMatchObject({ model: 'claude-sonnet-4-5', inputTokens: 1700, outputTokens: 120 })
+    expect(usage?.costUsd).toBeCloseTo(1200 * 3e-6 + 500 * 0.3e-6 + 120 * 15e-6)
+  })
+
+  it('has no cost for a model without a price, and no usage for an unknown session', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 10, output_tokens: 1 }).replace('claude-sonnet-4-5', 'mystery')}\n`)
+    expect(await service().session({ agentId: 'claude-code', sessionId: 's-a', cwd: '/proj' })).toMatchObject({ model: 'mystery', inputTokens: 10, outputTokens: 1, costUsd: null })
+    expect(await service().session({ agentId: 'claude-code', sessionId: 's-none', cwd: '/proj' })).toBeNull()
+  })
+
+  it('finds a session of an agent that does not name its files, and none for an agent without token counts', async () => {
+    const grok = path.join(home, '.grok', 'sessions', encodeURIComponent('/proj'), 'g1')
+    mkdirSync(grok, { recursive: true })
+    writeFileSync(path.join(grok, 'updates.jsonl'), `${JSON.stringify({ timestamp: Date.parse(at) / 1000, params: { sessionId: 'g1', update: { sessionUpdate: 'turn_completed', prompt_id: 'p', usage: { inputTokens: 40, outputTokens: 4, costUsdTicks: 1e8 } } } })}\n`)
+    expect(await service().session({ agentId: 'grok', sessionId: 'g1', cwd: '/proj' })).toMatchObject({ inputTokens: 40, outputTokens: 4, costUsd: 0.01 })
+    expect(await service().session({ agentId: 'cursor', sessionId: 'c1', cwd: '/proj' })).toBeNull()
+  })
+})
+
 describe('usage limits report', () => {
   it('reports what is left and the pace, and only the probes that failed', () => {
     const now = Date.parse('2026-10-11T00:00:00Z')
