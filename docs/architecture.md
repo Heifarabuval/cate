@@ -1839,7 +1839,8 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   declares `launchOptions` (the argv that picks a model, the argv and known
   levels of an effort, or null where the CLI has no such option), the
   starter refuses an undeclared option or an unknown level before creating
-  anything (`model-unsupported`, `effort-unsupported`), and
+  anything (`model-unsupported`, `effort-unsupported`; effort is declared
+  only for CLIs whose help was read, today Claude Code), and
   `agentLaunchCommand` puts the argv before the prompt, on a new panel and a
   reused one alike. The starter keeps what each panel was started with in
   memory; `cate agent list` shows it (`model`, `effort`). Once

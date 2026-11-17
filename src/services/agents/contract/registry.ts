@@ -80,6 +80,7 @@ export interface AgentDef {
   startArgs: readonly string[]
   /** What `cate agent start --model / --effort` can ask of this CLI; null
    *  where it has no such option (a start asking for it is refused). */
+  // ponytail: effort déclaré seulement pour les CLI vérifiées, ajouter après lecture de leur aide
   launchOptions: {
     /** Argv that picks the model (any id the CLI takes). */
     model: ((model: string) => string[]) | null
@@ -142,7 +143,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.codex/sessions',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
-    launchOptions: { model: (m) => ['--model', m], effort: { values: ['low', 'medium', 'high'], args: (e) => ['-c', `model_reasoning_effort="${e}"`] } },
+    launchOptions: { model: (m) => ['--model', m], effort: null },
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'codex',
     promptContextHook: 'additional-context',
@@ -219,7 +220,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.pi/agent/sessions',
     promptArgs: (prompt) => [prompt],
     startArgs: [],
-    launchOptions: { model: (m) => ['--model', m], effort: { values: ['minimal', 'low', 'medium', 'high', 'xhigh'], args: (e) => ['--thinking', e] } },
+    launchOptions: { model: null, effort: null },
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'pi',
     promptContextHook: 'endpoint',

@@ -200,33 +200,35 @@ describe('agent start', () => {
   })
 
   it('passes model and effort to the launch, independently, on a new terminal and on a reused one', async () => {
+    hookConfig = { codex: 'on', 'claude-code': 'on' }
     const agentStarter = starter()
-    await agentStarter.start('supervisor', { prompt: 'Fix it', model: 'gpt-5' })
+    await agentStarter.start('supervisor', { prompt: 'Fix it', agentId: 'claude-code', model: 'gpt-5' })
     expect(ports.terminals.create).toHaveBeenLastCalledWith(expect.objectContaining({
-      launch: { kind: 'agents.start', params: { agentId: 'codex', prompt: 'Fix it', model: 'gpt-5' } },
+      launch: { kind: 'agents.start', params: { agentId: 'claude-code', prompt: 'Fix it', model: 'gpt-5' } },
     }))
     expect(agentStarter.launchOptions('new-terminal')).toEqual({ model: 'gpt-5' })
-    await agentStarter.start('supervisor', { prompt: 'Fix it', effort: 'high' })
+    await agentStarter.start('supervisor', { agentId: 'claude-code', prompt: 'Fix it', effort: 'high' })
     expect(ports.terminals.create).toHaveBeenLastCalledWith(expect.objectContaining({
-      launch: { kind: 'agents.start', params: { agentId: 'codex', prompt: 'Fix it', effort: 'high' } },
+      launch: { kind: 'agents.start', params: { agentId: 'claude-code', prompt: 'Fix it', effort: 'high' } },
     }))
     expect(agentStarter.launchOptions('new-terminal')).toEqual({ effort: 'high' })
-    await agentStarter.start('supervisor', { prompt: 'Review', terminalPanelId: 'idle', model: 'gpt-5', effort: 'low' })
+    await agentStarter.start('supervisor', { agentId: 'claude-code', prompt: 'Review', terminalPanelId: 'idle', model: 'gpt-5', effort: 'low' })
     expect(ports.terminals.relaunch).toHaveBeenLastCalledWith('idle', expect.objectContaining({
-      launch: { kind: 'agents.start', params: { agentId: 'codex', prompt: 'Review', model: 'gpt-5', effort: 'low' } },
+      launch: { kind: 'agents.start', params: { agentId: 'claude-code', prompt: 'Review', model: 'gpt-5', effort: 'low' } },
     }))
     expect(agentStarter.launchOptions('idle')).toEqual({ model: 'gpt-5', effort: 'low' })
-    await agentStarter.start('supervisor', { prompt: 'Again', terminalPanelId: 'idle' })
+    await agentStarter.start('supervisor', { agentId: 'claude-code', prompt: 'Again', terminalPanelId: 'idle' })
     expect(agentStarter.launchOptions('idle')).toBeUndefined()
   })
 
   it('takes model and effort with a relation and a done-when condition in the same start', async () => {
+    hookConfig = { codex: 'on', 'claude-code': 'on' }
     const watch = vi.fn()
     const all = createAgentStarter(agents, ports as unknown as AgentStartPorts, undefined, { watch })
-    await expect(all.start('supervisor', { prompt: 'Fix it', model: 'gpt-5', effort: 'high', relation: 'trigger', doneWhen: 'npm test' }))
-      .resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex', relationId: 'rel-1' })
+    await expect(all.start('supervisor', { prompt: 'Fix it', agentId: 'claude-code', model: 'gpt-5', effort: 'high', relation: 'trigger', doneWhen: 'npm test' }))
+      .resolves.toEqual({ panelId: 'new-terminal', agentId: 'claude-code', relationId: 'rel-1' })
     expect(ports.terminals.create).toHaveBeenCalledWith(expect.objectContaining({
-      launch: { kind: 'agents.start', params: { agentId: 'codex', prompt: 'Fix it', model: 'gpt-5', effort: 'high' } },
+      launch: { kind: 'agents.start', params: { agentId: 'claude-code', prompt: 'Fix it', model: 'gpt-5', effort: 'high' } },
     }))
     expect(ports.relations.link).toHaveBeenLastCalledWith('supervisor', 'new-terminal', 'trigger')
     expect(watch).toHaveBeenCalledWith('new-terminal', { command: 'npm test', cwd: '/repo/.cate/worktrees/lead', callerPanelId: 'supervisor' })
@@ -236,8 +238,11 @@ describe('agent start', () => {
     hookConfig = { codex: 'on', cursor: 'on' }
     await expect(refusal(starter().start(undefined, { prompt: 'Fix it', agentId: 'cursor', effort: 'low', newWorktree: 'fix' })))
       .resolves.toBe('effort-unsupported: Cursor has no effort option')
-    await expect(refusal(starter().start(undefined, { prompt: 'Fix it', effort: 'max', newWorktree: 'fix' })))
-      .resolves.toBe('effort-unsupported: Codex does not know the effort "max" (low, medium, high)')
+    await expect(refusal(starter().start(undefined, { prompt: 'Fix it', effort: 'low', newWorktree: 'fix' })))
+      .resolves.toBe('effort-unsupported: Codex has no effort option')
+    hookConfig = { codex: 'on', 'claude-code': 'on' }
+    await expect(refusal(starter().start(undefined, { prompt: 'Fix it', agentId: 'claude-code', effort: 'huge', newWorktree: 'fix' })))
+      .resolves.toBe('effort-unsupported: Claude Code does not know the effort "huge" (low, medium, high, xhigh, max)')
     await expect(refusal(starter().start(undefined, { prompt: 'Fix it', model: '-x' }))).resolves.toBe('model-unsupported: model cannot start with "-"')
     await expect(refusal(starter().start(undefined, { prompt: 'Fix it', model: '  ' }))).resolves.toBe('model-required')
     expect(ports.worktrees.create).not.toHaveBeenCalled()

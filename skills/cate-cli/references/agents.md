@@ -49,10 +49,11 @@ cate agent start --effort high "Fix the flaky login test"
 ```
 
 Both go to the agent CLI at launch, and each works without the other. `--model` is free text
-(the CLI's own model id or alias); the `--effort` levels differ per agent.
-An agent that has no such option, or does not know the level, refuses the
-start before anything is created: `effort-unsupported: Codex does not know
-the effort "max" (low, medium, high)`. They combine with `--relation` and
+(the CLI's own model id or alias; Claude Code, Codex, Cursor and OpenCode
+take it). `--effort` is declared for Claude Code only (low, medium, high,
+xhigh, max). An agent that has no such option, or does not know the level,
+refuses the start before anything is created: `effort-unsupported: Codex has
+no effort option`. They combine with `--relation` and
 `--done-when` in the same command. `cate agent list` shows them in the
 MODEL and EFFORT columns (`--json`: `model`, `effort`), blank for an agent
 started without. After a runtime restart they are blank again.
