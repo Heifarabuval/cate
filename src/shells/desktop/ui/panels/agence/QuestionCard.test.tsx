@@ -24,7 +24,7 @@ let root: Root
 let ui: ReturnType<typeof installMockClientUi>
 let send: ReturnType<typeof vi.fn<(op: AgenceOp) => Promise<unknown>>>
 const onDone = vi.fn()
-const render = (value: QuestionView) => act(() => root.render(<QuestionCard question={value} send={send} onDone={onDone} />))
+const render = (value: QuestionView, compact = false) => act(() => root.render(<QuestionCard question={value} send={send} onDone={onDone} compact={compact} />))
 const button = (label: string | RegExp) => [...host.querySelectorAll('button')].find((b) => typeof label === 'string' ? b.textContent === label : label.test(b.textContent ?? ''))
 const click = async (label: string | RegExp) => { await act(async () => { button(label)!.click() }) }
 
@@ -147,5 +147,57 @@ it('sends once on a double click: the buttons wait for the answer', async () => 
 it('keeps its buttons on one line without shrinking (FR-007)', () => {
   render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }))
   for (const b of host.querySelectorAll('button')) expect(b.className).toMatch(/\bwhitespace-nowrap\b|\btext-left\b/)
-  expect(host.querySelector('[data-testid="question-actions"]')!.className).toMatch(/\bshrink-0\b/)
+  const actions = host.querySelector('[data-testid="question-actions"]')!
+  expect(actions.className).toMatch(/\bshrink-0\b/)
+  expect(actions.className).toMatch(/\bflex-nowrap\b/)
+  expect(actions.className).not.toMatch(/\bflex-wrap\b/)
+})
+
+it('names its two buttons briefly in a narrow column, the full name kept as title and accessible name', async () => {
+  render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }), true)
+  expect(button('Demander le rebase')).toBeUndefined()
+  expect(button('Merger quand même')).toBeUndefined()
+  const rebase = button('Rebase')!
+  const force = button('Forcer')!
+  expect(rebase.getAttribute('aria-label')).toBe('Demander le rebase')
+  expect(rebase.getAttribute('title')).toBe('Demander le rebase')
+  expect(force.getAttribute('aria-label')).toBe('Merger quand même')
+  expect(force.getAttribute('title')).toBe('Merger quand même')
+  ui.confirm.mockResolvedValueOnce(true)
+  await click('Forcer')
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
+})
+
+it('keeps the full names when there is room', () => {
+  render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }))
+  expect(button('Demander le rebase')).toBeDefined()
+  expect(button('Merger quand même')).toBeDefined()
+  expect(button('Rebase')).toBeUndefined()
+})
+
+it('labels the free answer field', () => {
+  render(question())
+  expect(host.querySelector('textarea')!.getAttribute('aria-label')).toBe('Autre réponse')
+})
+
+it('opens one dialog when Merger quand même is clicked twice before the first answer', async () => {
+  let decide!: (confirmed: boolean) => void
+  ui.confirm.mockReturnValueOnce(new Promise<boolean>((resolve) => { decide = resolve }))
+  render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }))
+  await act(async () => { button('Merger quand même')!.click(); button('Merger quand même')!.click() })
+  expect(ui.confirm).toHaveBeenCalledTimes(1)
+  expect(button('Merger quand même')!.disabled).toBe(true)
+  await act(async () => decide(true))
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
+})
+
+it('is ready again after a declined dialog', async () => {
+  ui.confirm.mockResolvedValueOnce(false)
+  render(mergeQuestion({ locks: ['conflit avec la base'] }))
+  await click('Merger quand même')
+  expect(button('Merger quand même')!.disabled).toBe(false)
+  ui.confirm.mockResolvedValueOnce(true)
+  await click('Merger quand même')
+  expect(send).toHaveBeenCalledTimes(1)
 })

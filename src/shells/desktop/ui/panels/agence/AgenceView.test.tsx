@@ -17,6 +17,11 @@ vi.mock('../terminal', () => ({
     </div>
   ),
 }))
+// What this client shows of a panel (the split between the columns): in memory here.
+vi.mock('../../client/document', async (original) => {
+  const { useState } = await import('react')
+  return { ...await original<object>(), usePanelView: (_workspaceId: string, _panelId: string, _key: string, fallback: unknown) => useState(fallback) }
+})
 import AgenceView from './AgenceView'
 
 const snapshot = (patch: Partial<AgenceSnapshot> = {}): AgenceSnapshot => ({
@@ -172,6 +177,71 @@ it('switches to the tabs Conversation and Suivi under 640 px, keeping the termin
   expect(column().className).not.toMatch(/\bhidden\b/)
   expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
   expect(host.querySelector('[data-testid="terminal"]')!.getAttribute('data-visible')).toBe('false')
+})
+
+const separator = () => host.querySelector('[role="separator"]')
+const conversationBasis = () => (host.querySelector('[data-testid="conversation-column"]') as HTMLElement).style.flexBasis
+/** Drags the separator by `delta` px, from its middle, as a person would. */
+const drag = (delta: number) => {
+  const handle = separator()!.firstElementChild as HTMLElement
+  act(() => { handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 600 })) })
+  act(() => { document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 600 + delta })) })
+  act(() => { document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })) })
+}
+
+it('lets the person resize the columns with the separator, and double click brings the split back', () => {
+  const observer = stubResizeObserver()
+  render(snapshot())
+  observer.resize(1000)
+  expect(separator()!.getAttribute('aria-orientation')).toBe('vertical')
+  expect(conversationBasis()).toBe('60%')
+  drag(100)
+  expect(conversationBasis()).toBe('70%')
+  drag(-300)
+  expect(conversationBasis()).toBe('40%')
+  act(() => { (separator()!.firstElementChild as HTMLElement).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) })
+  expect(conversationBasis()).toBe('60%')
+})
+
+it('keeps each column at least 280 px wide while resizing', () => {
+  const observer = stubResizeObserver()
+  render(snapshot())
+  observer.resize(1000)
+  drag(900)
+  expect(conversationBasis()).toBe('72%')
+  drag(-900)
+  expect(conversationBasis()).toBe('28%')
+})
+
+it('has no separator when the view is tabs', () => {
+  const observer = stubResizeObserver()
+  render(snapshot())
+  observer.resize(500)
+  expect(separator()).toBeNull()
+})
+
+it('ties each tab to its panel for assistive technology', () => {
+  const observer = stubResizeObserver()
+  render(snapshot())
+  observer.resize(500)
+  for (const tab of host.querySelectorAll('[role="tab"]')) {
+    const panel = document.getElementById(tab.getAttribute('aria-controls')!)
+    expect(panel).not.toBeNull()
+    expect(panel!.getAttribute('role')).toBe('tabpanel')
+    expect(panel!.getAttribute('aria-labelledby')).toBe(tab.id)
+  }
+})
+
+it('gives the follow-up short button names in a narrow column', () => {
+  const observer = stubResizeObserver()
+  const value = snapshot()
+  value.suivi!.sections.aFaire = [{ id: 'n2', title: 'Merger la 12 ?', kind: 'human', meta: [], evidence: null, link: null, links: [], action: { type: 'question', questionId: 'q2', rebase: true } }]
+  render(value)
+  observer.resize(1000)
+  expect(button('Demander le rebase')).toBeDefined()
+  observer.resize(320)
+  expect(button('Demander le rebase')).toBeUndefined()
+  expect(button('Rebase')!.getAttribute('aria-label')).toBe('Demander le rebase')
 })
 
 it('asks for the rebase through the answer op, and shows a refusal above the list', async () => {
