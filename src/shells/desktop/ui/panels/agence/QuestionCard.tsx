@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { clientUi } from '@kernel/interaction'
 import type { AgenceOp, AgenceOpResult, QuestionView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
 
@@ -46,6 +47,12 @@ export default function QuestionCard({ question, send, onDone }: QuestionCardPro
     }
   }
 
+  /** Merging over the locks asks first, naming each one it passes over. */
+  const mergeAnyway = async () => {
+    const message = `Merger quand même, malgré :\n${question.locks.map((reason) => `- ${reason}`).join('\n')}`
+    if (await clientUi().confirm(message)) await answer({ choice: 0, force: true })
+  }
+
   return (
     <div className="mt-2 flex flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-2">
       <div className="break-words text-[12px] font-medium text-primary">{question.question}</div>
@@ -74,7 +81,7 @@ export default function QuestionCard({ question, send, onDone }: QuestionCardPro
           {question.rebase && (
             <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void answer({ choice: 'rebase' })}>Demander le rebase</Button>
           )}
-          <Button size="sm" variant="danger" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void answer({ choice: 0, force: true })}>Merger quand même</Button>
+          <Button size="sm" variant="danger" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void mergeAnyway()}>Merger quand même</Button>
         </div>
       )}
       <textarea
