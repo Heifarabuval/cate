@@ -113,6 +113,13 @@ describe('parseCommandLine', () => {
       .toMatchObject({ prompt: 'fix it', relation: 'verify', doneWhen: 'npm test' })
   })
 
+  it('parses --model and --effort on their own and with --relation and --done-when', () => {
+    expect(call(['agent', 'start', '--model', 'sonnet', 'fix']).args).toEqual({ prompt: 'fix', model: 'sonnet' })
+    expect(call(['agent', 'start', '--effort', 'low', 'fix']).args).toEqual({ prompt: 'fix', effort: 'low' })
+    expect(call(['agent', 'start', '--model', 'sonnet', '--effort', 'low', '--relation', 'verify', '--done-when', 'npm test', 'fix']).args)
+      .toEqual({ prompt: 'fix', model: 'sonnet', effort: 'low', relation: 'verify', doneWhen: 'npm test' })
+  })
+
   it('lets a positional argument come from its flag instead', () => {
     expect(call(['agent', 'send', 'ab12', 'hello', 'there']).args).toEqual({ targetPanelId: 'ab12', prompt: 'hello there' })
     expect(call(['agent', 'send', '--panel', 'ab12', 'hello', 'there']).args).toEqual({ targetPanelId: 'ab12', prompt: 'hello there' })
@@ -343,6 +350,18 @@ describe('runCli', () => {
     expect(listed.out[0]).toContain('DONE WHEN')
     expect(listed.out[0]).toContain('npm test → exit 1')
     expect(listed.out[0]).toContain('slow → timeout: timed out after 60 s')
+  })
+
+  it('lists the model and effort of each agent, blank when it started without', async () => {
+    const listed = deps({ call: async () => [
+      { panelId: 'panel-0123456789', title: 'A', state: 'running', prompts: [], model: 'sonnet', effort: 'low' },
+      { panelId: 'panel-9876543210', title: 'B', state: 'running', prompts: [] },
+    ] })
+    await runCli(['agent', 'list'], CATE_API, listed.d)
+    const [header, first, second] = listed.out[0].split('\n')
+    expect(header).toMatch(/MODEL\s+EFFORT/)
+    expect(first).toMatch(/sonnet\s+low/)
+    expect(second).not.toMatch(/sonnet|low/)
   })
 
   it('sends a prompt and prints its id; list and read show the prompts on their way', async () => {

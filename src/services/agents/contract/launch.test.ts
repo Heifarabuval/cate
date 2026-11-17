@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AGENTS } from './registry'
-import { agentLaunchCommand, agentTaskText } from './launch'
+import { agentLaunchCommand, agentLaunchOptionsError, agentTaskText } from './launch'
 
 describe('agentLaunchCommand', () => {
   it('resolves only canonical agent ids to exact argv without a shell', () => {
@@ -38,6 +38,29 @@ describe('agentLaunchCommand', () => {
 
   it('rejects blank prompts', () => {
     expect(() => agentLaunchCommand({ agentId: 'codex', prompt: '   ' })).toThrow('A prompt is required')
+  })
+
+  it('puts the declared model and effort options before the prompt, each on its own', () => {
+    const prompt = 'Complete this coding task:\n\nFix it'
+    expect(agentLaunchCommand({ agentId: 'claude-code', prompt: 'Fix it', model: 'sonnet', effort: 'low' }).args)
+      .toEqual(['--model', 'sonnet', '--effort', 'low', prompt])
+    expect(agentLaunchCommand({ agentId: 'claude-code', prompt: 'Fix it', model: 'sonnet' }).args).toEqual(['--model', 'sonnet', prompt])
+    expect(agentLaunchCommand({ agentId: 'claude-code', prompt: 'Fix it', effort: 'high' }).args).toEqual(['--effort', 'high', prompt])
+    expect(agentLaunchCommand({ agentId: 'codex', prompt: 'Fix it', model: 'gpt-5', effort: 'high' }).args)
+      .toEqual(['--model', 'gpt-5', '-c', 'model_reasoning_effort="high"', prompt])
+    expect(agentLaunchCommand({ agentId: 'claude-code', model: 'opus' })).toEqual({ executable: 'claude', args: ['--model', 'opus'] })
+  })
+
+  it('refuses an option the agent does not declare or a value it does not know', () => {
+    expect(agentLaunchOptionsError('claude-code', { model: 'sonnet', effort: 'low' })).toBeNull()
+    expect(agentLaunchOptionsError('claude-code', {})).toBeNull()
+    expect(agentLaunchOptionsError('cursor', { model: 'auto' })).toBeNull()
+    expect(agentLaunchOptionsError('cursor', { effort: 'low' })).toBe('Cursor has no effort option')
+    expect(agentLaunchOptionsError('kiro', { model: 'x' })).toBe('Kiro has no model option')
+    expect(agentLaunchOptionsError('codex', { effort: 'max' })).toBe('Codex does not know the effort "max" (low, medium, high)')
+    expect(agentLaunchOptionsError('claude-code', { model: '--dangerously-skip-permissions' })).toBe('model cannot start with "-"')
+    expect(agentLaunchOptionsError('claude-code', { model: 'a\0b' })).toBe('model cannot contain NUL bytes')
+    expect(() => agentLaunchCommand({ agentId: 'cursor', prompt: 'x', effort: 'low' })).toThrow('Cursor has no effort option')
   })
 
   it('shows the prompt as written', () => {

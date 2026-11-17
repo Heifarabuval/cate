@@ -299,6 +299,13 @@ describe('terminal agents', () => {
     expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: '/bin/sh', prompt: 'x' }, { cwd: root, panelId: 'w' })).toThrow()
   })
 
+  it('resolves a start launch with model and effort to the argv, and refuses what the agent does not declare', async () => {
+    expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'claude-code', prompt: 'Fix it', model: 'sonnet', effort: 'low' }, { cwd: root, panelId: 'w' }))
+      .toEqual({ command: { executable: 'claude', args: ['--model', 'sonnet', '--effort', 'low', 'Complete this coding task:\n\nFix it'] } })
+    expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'cursor', prompt: 'x', effort: 'low' }, { cwd: root, panelId: 'w' })).toThrow('Cursor has no effort option')
+    expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'codex', prompt: 'x', model: 3 }, { cwd: root, panelId: 'w' })).toThrow('Invalid agent launch')
+  })
+
   it('sends a prompt only to an agent at its prompt, as a bracketed paste and Enter', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     await expect(agentTerminals.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
