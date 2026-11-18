@@ -72,7 +72,16 @@ export const MAX_PATCH_CHARS = 250_000
 export const MAX_PATCHES_CHARS = 8_000_000
 
 const UNEXPECTED = 'Unexpected GitHub response'
-const REPO = '[\\w.-]+/[\\w.-]+'
+// GitHub's own limits: an owner has 39 characters at most, a repository 100; both start with a letter or a digit,
+// which also rules out `.`, `..` and a leading `-` (an option for gh).
+const REPO = '[A-Za-z0-9][A-Za-z0-9._-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}'
+const REPO_NAME = new RegExp(`^${REPO}$`)
+
+/** `owner/name` as GitHub spells it; the only form allowed to reach a `gh` command line. */
+export function isRepositoryName(value: string): boolean {
+  return REPO_NAME.test(value)
+}
+
 const SHORT_REF = new RegExp(`^(${REPO})#(\\d+)$`)
 const URL_REF = new RegExp(`^https://github\\.com/(${REPO})/pull/(\\d+)(?:/files)?/?$`)
 

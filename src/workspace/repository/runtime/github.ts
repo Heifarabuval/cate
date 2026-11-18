@@ -7,6 +7,7 @@ import os from 'node:os'
 import {
   GhReadError,
   githubRepository,
+  isRepositoryName,
   parsePullRequests,
   PR_QUERY,
   toGhReadError,
@@ -54,6 +55,11 @@ interface Login {
   timer?: ReturnType<typeof setTimeout>
 }
 
+/** Nothing but a well-formed `owner/name` and a positive number may reach a `gh` command line. */
+function assertPullRequest(repository: string, number: number): void {
+  if (!isRepositoryName(repository) || !Number.isSafeInteger(number) || number < 1) throw new GhReadError('error', 'Invalid pull request')
+}
+
 export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): GithubHost {
   let running = 0
   const waiting: Array<() => void> = []
@@ -71,7 +77,7 @@ export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): Github
   }
 
   async function readJson(repository: string, number: number, args: string[], limits?: { timeout: number; maxBuffer: number }): Promise<unknown> {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isSafeInteger(number) || number < 1) throw new GhReadError('error', 'Invalid pull request')
+    assertPullRequest(repository, number)
     try {
       return JSON.parse(await gh(args, limits))
     } catch (error) {
@@ -173,24 +179,24 @@ export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): Github
     },
 
     async pullRequestContext(root, repository, number) {
-      if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isSafeInteger(number) || number < 1) throw new Error('Invalid pull request')
+      assertPullRequest(repository, number)
       const options = { cwd: root, env: deps.env(), timeout: 120_000, windowsHide: true }
       let remote: string
       try { remote = (await exec('git', ['remote', 'get-url', 'origin'], options)).stdout }
       catch { return null }
       if (githubRepository(remote) !== repository.toLowerCase()) return null
-      const data = JSON.parse((await exec('gh', ['pr', 'view', String(number), '--repo', repository, '--json', 'headRefName,baseRefOid'], options)).stdout)
+      const data = JSON.parse((await exec('gh', ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', 'headRefName,baseRefOid'], options)).stdout)
       if (typeof data.headRefName !== 'string' || !/^[a-f0-9]{40,64}$/.test(data.baseRefOid)) throw new Error('GitHub returned invalid pull request details')
       await exec('git', ['fetch', 'origin', data.baseRefOid], options)
       return { headRefName: data.headRefName, baseOid: data.baseRefOid }
     },
 
-    pullRequestView: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', repository, '--json', PR_VIEW_FIELDS]),
+    pullRequestView: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', PR_VIEW_FIELDS]),
 
-    pullRequestChecks: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', repository, '--json', PR_CHECKS_FIELDS]),
+    pullRequestChecks: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', PR_CHECKS_FIELDS]),
 
     pullRequestFiles: (repository, number) =>
-      readJson(repository, number, ['api', '--method', 'GET', '--paginate', `repos/${repository}/pulls/${number}/files?per_page=100`],
+      readJson(repository, number, ['api', '--hostname', 'github.com', '--method', 'GET', '--paginate', `repos/${repository}/pulls/${number}/files?per_page=100`],
         { timeout: PR_FILES_TIMEOUT_MS, maxBuffer: PR_FILES_BUFFER }),
 
     async token() {
