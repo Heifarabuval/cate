@@ -78,14 +78,26 @@ it('sends choice 0 from the Merger button of a merge question', async () => {
   expect(host.textContent).not.toContain('Demander le rebase')
 })
 
+it('puts Merger quand même (rebase) in place of the greyed option, same size, reasons right above', async () => {
+  render(mergeQuestion({ locks: ['n11 : Revue de la PR 12', 'conflit avec la base'], rebase: true }))
+  const options = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="option"]')]
+  expect(options.map((o) => o.querySelector('b')!.textContent)).toEqual(['Merger quand même (rebase)', 'Demander des changements'])
+  const force = options[0]
+  expect(force.disabled).toBe(false)
+  expect(force.className).not.toMatch(/border-agent/)
+  expect(force.className).toBe(options[1].className.replace('border-subtle', 'border-danger'))
+  const reasons = host.querySelector('ul')!
+  expect(force.previousElementSibling).toBe(reasons.parentElement)
+  expect(button(/^Merger \(rebase\)/)).toBeUndefined()
+})
+
 it('greys Merger with its reasons, offers Merger quand même, and the rebase on a conflict', async () => {
   render(mergeQuestion({ locks: ['n11 : Revue de la PR 12', 'conflit avec la base'], rebase: true }))
-  expect(button(/^Merger \(rebase\)/)!.disabled).toBe(true)
   expect(host.textContent).toContain('Merger grisé')
   expect(host.textContent).toContain('n11 : Revue de la PR 12')
   expect(host.textContent).toContain('conflit avec la base')
   ui.confirm.mockResolvedValueOnce(true)
-  await click('Merger quand même')
+  await click(/^Merger quand même \(rebase\)/)
   expect(send).toHaveBeenLastCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
   await click('Demander le rebase')
   expect(send).toHaveBeenLastCalledWith({ kind: 'answer', questionId: 'q2', choice: 'rebase' })
@@ -96,13 +108,13 @@ it('greys Merger with its reasons, offers Merger quand même, and the rebase on 
 it('asks before merging over the locks, naming each, and sends nothing when declined', async () => {
   render(mergeQuestion({ locks: ['n11 : Revue de la PR 12', 'conflit avec la base'], rebase: true }))
   ui.confirm.mockResolvedValueOnce(false)
-  await click('Merger quand même')
+  await click(/^Merger quand même \(rebase\)/)
   expect(ui.confirm).toHaveBeenCalledTimes(1)
   const message = String((ui.confirm.mock.calls[0] as unknown[])[0])
   expect(message).toContain('n11 : Revue de la PR 12')
   expect(message).toContain('conflit avec la base')
   expect(send).not.toHaveBeenCalled()
-  expect(button('Merger quand même')!.disabled).toBe(false)
+  expect(button(/^Merger quand même \(rebase\)/)!.disabled).toBe(false)
 })
 
 it('merges without any dialog when nothing locks it', async () => {
@@ -114,7 +126,7 @@ it('merges without any dialog when nothing locks it', async () => {
 
 it('offers no rebase when the lock is not a conflict', () => {
   render(mergeQuestion({ locks: ['checks ou revue requis'], rebase: false }))
-  expect(button('Merger quand même')).toBeDefined()
+  expect(button(/^Merger quand même \(rebase\)/)).toBeDefined()
   expect(button('Demander le rebase')).toBeUndefined()
 })
 
@@ -153,25 +165,22 @@ it('keeps its buttons on one line without shrinking (FR-007)', () => {
   expect(actions.className).not.toMatch(/\bflex-wrap\b/)
 })
 
-it('names its two buttons briefly in a narrow column, the full name kept as title and accessible name', async () => {
+it('names the rebase button briefly in a narrow column, the full name kept as title and accessible name; the force card keeps its name', async () => {
   render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }), true)
   expect(button('Demander le rebase')).toBeUndefined()
-  expect(button('Merger quand même')).toBeUndefined()
   const rebase = button('Rebase')!
-  const force = button('Forcer')!
   expect(rebase.getAttribute('aria-label')).toBe('Demander le rebase')
   expect(rebase.getAttribute('title')).toBe('Demander le rebase')
-  expect(force.getAttribute('aria-label')).toBe('Merger quand même')
-  expect(force.getAttribute('title')).toBe('Merger quand même')
+  expect(button('Forcer')).toBeUndefined()
   ui.confirm.mockResolvedValueOnce(true)
-  await click('Forcer')
+  await click(/^Merger quand même \(rebase\)/)
   expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
 })
 
 it('keeps the full names when there is room', () => {
   render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }))
   expect(button('Demander le rebase')).toBeDefined()
-  expect(button('Merger quand même')).toBeDefined()
+  expect(button(/^Merger quand même \(rebase\)/)).toBeDefined()
   expect(button('Rebase')).toBeUndefined()
 })
 
@@ -184,9 +193,9 @@ it('opens one dialog when Merger quand même is clicked twice before the first a
   let decide!: (confirmed: boolean) => void
   ui.confirm.mockReturnValueOnce(new Promise<boolean>((resolve) => { decide = resolve }))
   render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }))
-  await act(async () => { button('Merger quand même')!.click(); button('Merger quand même')!.click() })
+  await act(async () => { button(/^Merger quand même \(rebase\)/)!.click(); button(/^Merger quand même \(rebase\)/)!.click() })
   expect(ui.confirm).toHaveBeenCalledTimes(1)
-  expect(button('Merger quand même')!.disabled).toBe(true)
+  expect(button(/^Merger quand même \(rebase\)/)!.disabled).toBe(true)
   await act(async () => decide(true))
   expect(send).toHaveBeenCalledTimes(1)
   expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
@@ -195,9 +204,9 @@ it('opens one dialog when Merger quand même is clicked twice before the first a
 it('is ready again after a declined dialog', async () => {
   ui.confirm.mockResolvedValueOnce(false)
   render(mergeQuestion({ locks: ['conflit avec la base'] }))
-  await click('Merger quand même')
-  expect(button('Merger quand même')!.disabled).toBe(false)
+  await click(/^Merger quand même \(rebase\)/)
+  expect(button(/^Merger quand même \(rebase\)/)!.disabled).toBe(false)
   ui.confirm.mockResolvedValueOnce(true)
-  await click('Merger quand même')
+  await click(/^Merger quand même \(rebase\)/)
   expect(send).toHaveBeenCalledTimes(1)
 })

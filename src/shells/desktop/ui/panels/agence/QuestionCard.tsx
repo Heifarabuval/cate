@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import type { AgenceOp, AgenceOpResult, QuestionView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
-import { ACTION, ACTION_DANGER } from './styles'
+import { ACTION } from './styles'
 
 type Answer = Extract<AgenceOp, { kind: 'answer' }>
 
@@ -24,7 +24,7 @@ export interface QuestionCardProps {
 
 /** A question an agent asked: its options (the first one recommended), a free
  *  answer, and for a merge Merger greyed with its reasons, « Merger quand
- *  même » and « Demander le rebase ». The regisseur's `click()` decides: a
+ *  même » (in the place of the greyed option) and « Demander le rebase ». The regisseur's `click()` decides: a
  *  refusal shows here, in the card. */
 export default function QuestionCard({ question, send, onDone, compact = false }: QuestionCardProps) {
   const [pending, setPending] = useState(false)
@@ -61,46 +61,40 @@ export default function QuestionCard({ question, send, onDone, compact = false }
     <div className="mt-2 flex flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-2">
       <div className="break-words text-[12px] font-medium text-primary">{question.question}</div>
       {question.ghUnknown && <div className="text-[11px] text-secondary">état GitHub inconnu</div>}
-      {greyed && (
-        <div className="text-[11px] text-secondary">
-          Merger grisé :
-          <ul className="list-disc pl-4">{question.locks.map((reason) => <li key={reason} className="break-words">{reason}</li>)}</ul>
-        </div>
-      )}
-      {question.options.map((option, index) => (
-        <button
-          key={option.label}
-          type="button"
-          data-testid="option"
-          disabled={pending || (index === 0 && greyed)}
-          onClick={() => void answer({ choice: index })}
-          className={`rounded-md border px-2 py-1.5 text-left text-[12px] text-primary disabled:border-dashed disabled:opacity-100 ${index === 0 ? 'border-agent' : 'border-subtle'} hover:bg-hover disabled:hover:bg-transparent`}
-        >
-          <b className="block break-words text-primary">{index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
-          {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
-        </button>
-      ))}
-      {greyed && (
-        <div data-testid="question-actions" className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
-          {question.rebase && (
-            <Button
-              size="sm"
-              className={ACTION}
+      {question.options.map((option, index) => {
+        // Merger greyed: « Merger quand même » takes the option's place, same card, its reasons right above.
+        const force = index === 0 && greyed
+        return (
+          <Fragment key={option.label}>
+            {force && (
+              <div className="text-[11px] text-secondary">
+                Merger grisé :
+                <ul className="list-disc pl-4">{question.locks.map((reason) => <li key={reason} className="break-words">{reason}</li>)}</ul>
+              </div>
+            )}
+            <button
+              type="button"
+              data-testid="option"
               disabled={pending}
-              onClick={() => void answer({ choice: 'rebase' })}
-              {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
+              onClick={() => void (force ? mergeAnyway() : answer({ choice: index }))}
+              className={`rounded-md border px-2 py-1.5 text-left text-[12px] text-primary ${force ? 'border-danger' : index === 0 ? 'border-agent' : 'border-subtle'} hover:bg-hover disabled:hover:bg-transparent`}
             >
-              {compact ? 'Rebase' : 'Demander le rebase'}
-            </Button>
-          )}
+              <b className="block break-words text-primary">{force ? 'Merger quand même (rebase)' : index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
+              {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
+            </button>
+          </Fragment>
+        )
+      })}
+      {greyed && question.rebase && (
+        <div data-testid="question-actions" className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
           <Button
             size="sm"
-            className={ACTION_DANGER}
+            className={ACTION}
             disabled={pending}
-            onClick={() => void mergeAnyway()}
-            {...(compact ? { title: 'Merger quand même', 'aria-label': 'Merger quand même' } : {})}
+            onClick={() => void answer({ choice: 'rebase' })}
+            {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
           >
-            {compact ? 'Forcer' : 'Merger quand même'}
+            {compact ? 'Rebase' : 'Demander le rebase'}
           </Button>
         </div>
       )}
@@ -112,7 +106,7 @@ export default function QuestionCard({ question, send, onDone, compact = false }
         placeholder="Autre réponse"
         className="w-full resize-y rounded-md border border-subtle bg-surface-2 p-1.5 text-[12px] text-primary placeholder:text-secondary"
       />
-      <div data-testid={greyed ? undefined : 'question-actions'} className="flex shrink-0 justify-end">
+      <div data-testid={greyed && question.rebase ? undefined : 'question-actions'} className="flex shrink-0 justify-end">
         <Button size="sm" className={ACTION} disabled={pending || text.trim() === ''} onClick={() => void answer({ libre: text.trim() })}>Répondre</Button>
       </div>
       {error && <InlineNotice tone="error" className="!text-primary">{error}</InlineNotice>}
