@@ -18,7 +18,13 @@ export interface RuntimeMismatch {
   update: 'runtime' | 'app'
   runtimeVersion: string
   appVersion: string
+  /** Set when both releases are equal and only the builds differ. */
+  runtimeBuild?: string
+  appBuild?: string
 }
+
+/** The hash of a build id (`<version>+<hash>`), short enough to show. */
+export const shortBuild = (build?: string): string => (build ?? '').split('+').pop()!.slice(0, 8)
 
 /** A protocol mismatch that prevents using the workspace. */
 export function runtimeMismatch(state: ConnectionState, appVersion: string): RuntimeMismatch | null {
@@ -27,10 +33,15 @@ export function runtimeMismatch(state: ConnectionState, appVersion: string): Run
   return { update: newer ? 'app' : 'runtime', runtimeVersion: state.runtimeVersion, appVersion }
 }
 
-/** Older compatible releases are candidates for an idle update, not blockers. */
-function updateCandidate(state: ConnectionState, appVersion: string): RuntimeMismatch | null {
-  if (state.kind === 'connected' && state.runtimeVersion && compareSemver(state.runtimeVersion, appVersion) < 0) {
-    return { update: 'runtime', runtimeVersion: state.runtimeVersion, appVersion }
+/** Older compatible releases, or another build of this release when both
+ *  builds are known, are candidates for an idle update, not blockers. */
+function updateCandidate(state: ConnectionState, appVersion: string, runtimeBuild?: string, appBuild?: string): RuntimeMismatch | null {
+  if (state.kind === 'connected' && state.runtimeVersion) {
+    const order = compareSemver(state.runtimeVersion, appVersion)
+    if (order < 0) return { update: 'runtime', runtimeVersion: state.runtimeVersion, appVersion }
+    if (order === 0 && runtimeBuild && appBuild && runtimeBuild !== appBuild) {
+      return { update: 'runtime', runtimeVersion: state.runtimeVersion, appVersion, runtimeBuild, appBuild }
+    }
   }
   return runtimeMismatch(state, appVersion)
 }
@@ -136,10 +147,13 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   const tried = new Set<WorkspaceConnection>()
   const watched = new Map<WorkspaceConnection, () => void>()
   const check = (connection: WorkspaceConnection): void => {
-    const mismatch = updateCandidate(connection.state, deps.version)
+    const candidateOf = () => updateCandidate(connection.state, deps.version, connection.rpc.remote?.build, deps.build)
+    const mismatch = candidateOf()
     if (!mismatch) {
       setRequired(connection, null)
-      tried.delete(connection)
+      // Only a settled verdict ends the try: a restart passes through
+      // offline states and must not allow a second try.
+      if (connection.state.kind === 'connected' || connection.state.kind === 'incompatible') tried.delete(connection)
       return
     }
     if (connection.state.kind === 'incompatible') setRequired(connection, mismatch)
@@ -154,7 +168,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
         (info) => info.clients.every((client) => client.clientId === connection.clientId),
         () => false,
       )
-      const candidate = updateCandidate(connection.state, deps.version)
+      const candidate = candidateOf()
       if (alone && candidate) setRequired(connection, candidate)
     })
   }

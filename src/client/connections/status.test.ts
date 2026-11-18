@@ -66,3 +66,13 @@ it('only asks a compatible client to update when the core requires it', () => {
   expect(connectionStatus(older, { ...context, requiredUpdate: { update: 'runtime', runtimeVersion: '2.0.3', appVersion: '2.0.4' } })).toMatchObject({ remedies: ['updateRuntime'] })
   expect(connectionStatus({ kind: 'connected', runtimeVersion: '2.0.5' }, context)).toBeNull()
 })
+
+it('names the builds, not a version to itself, when only the build differs', () => {
+  const requiredUpdate = { update: 'runtime', runtimeVersion: '2.0.4', appVersion: '2.0.4', runtimeBuild: '2.0.4+aaaaaaaaaaaa', appBuild: '2.0.4+bbbbbbbbbbbb' } as const
+  const status = connectionStatus({ kind: 'connected', runtimeVersion: '2.0.4' }, { startsRuntime: true, version: '2.0.4', requiredUpdate })
+  expect(status?.message).toContain('another build of Cate 2.0.4')
+  expect(status?.message).toContain('aaaaaaaa')
+  expect(status?.message).toContain('ends its terminals and running agents')
+  expect(status?.message).not.toContain('aaaaaaaaaaaa')
+  expect(status?.remedies).toEqual(['updateRuntime'])
+})
