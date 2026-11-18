@@ -21,11 +21,13 @@ const log = createLogger('renderer')
 performance.mark('renderer-script-start')
 
 const reportError = initRendererSentry()
+// A thrown or rejected DOM Event serializes as `{ isTrusted: true }`: name it instead.
+const describeThrown = (value: unknown) => value instanceof Event ? `${value.type} event on ${value.target?.constructor.name ?? 'unknown target'}` : value
 window.addEventListener('error', (e) => {
-  if (e instanceof ErrorEvent) log.error('Uncaught error: %s', e.error ?? e.message)
+  if (e instanceof ErrorEvent) log.error('Uncaught error: %s (%s:%d)', describeThrown(e.error) ?? e.message, e.filename, e.lineno)
 })
 window.addEventListener('unhandledrejection', (e) => {
-  log.error('Unhandled promise rejection: %s', e.reason)
+  log.error('Unhandled promise rejection: %s', describeThrown(e.reason))
 })
 
 const root = createRoot(document.getElementById('root')!)
