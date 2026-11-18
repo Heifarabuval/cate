@@ -57,9 +57,10 @@ class FakeRun:
 class Base(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.mkdtemp(prefix='agence-test-')
-		self.env = {k: os.environ.get(k) for k in ('AGENCE_ROOT', 'CATE_SOCKET', 'CLAUDE_PROJECT_DIR')}
+		self.env = {k: os.environ.get(k) for k in ('AGENCE_ROOT', 'CATE_SOCKET', 'CLAUDE_PROJECT_DIR', 'AGENCE_NOM')}
 		os.environ['AGENCE_ROOT'] = self.tmp
 		os.environ['CATE_SOCKET'] = '/tmp/x.sock'
+		os.environ['AGENCE_NOM'] = 'Max'  # jamais le gitconfig de la machine dans les attendus
 		self.run = FakeRun()
 		self.old_run = agence.RUN
 		agence.RUN = self.run
@@ -98,6 +99,89 @@ class Environnement(Base):
 		del os.environ['CATE_SOCKET']
 		code, _ = self.cli('start')
 		self.assertEqual(code, 2)
+
+
+class Nom(Base):
+	"""Nom de l'humain : AGENCE_NOM > gitconfig agence.nom > premier mot de user.name > « toi », relu à chaque appel."""
+
+	def setUp(self):
+		super().setUp()
+		self.gitenv = {k: os.environ.get(k) for k in ('GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM')}
+		self.gitconfig = os.path.join(self.tmp, 'gitconfig')
+		open(self.gitconfig, 'w').close()
+		os.environ['GIT_CONFIG_GLOBAL'] = self.gitconfig
+		os.environ['GIT_CONFIG_NOSYSTEM'] = '1'
+		del os.environ['AGENCE_NOM']
+		self.cwd = os.getcwd()
+		os.chdir(self.tmp)  # hors dépôt : pas de config locale
+
+	def tearDown(self):
+		os.chdir(self.cwd)
+		for k, v in self.gitenv.items():
+			if v is None:
+				os.environ.pop(k, None)
+			else:
+				os.environ[k] = v
+		super().tearDown()
+
+	def git_set(self, key, value):
+		subprocess.run(['git', 'config', '--file', self.gitconfig, key, value], check=True)
+
+	def test_ordre_des_sources(self):
+		self.assertEqual(agence.nom_source(), ('toi', 'défaut'))
+		self.git_set('user.name', 'Jean Dupont')
+		self.assertEqual(agence.nom_source(), ('Jean', 'git user.name'))
+		self.git_set('agence.nom', 'Max')
+		self.assertEqual(agence.nom_source(), ('Max', 'git agence.nom'))
+		os.environ['AGENCE_NOM'] = 'Léa'
+		self.assertEqual(agence.nom_source(), ('Léa', 'AGENCE_NOM'))
+
+	def test_user_name_vide_rend_toi(self):
+		self.git_set('user.name', '  ')
+		self.assertEqual(agence.nom(), 'toi')
+
+	def test_pas_de_cache(self):
+		self.git_set('agence.nom', 'Max')
+		self.assertEqual(agence.nom(), 'Max')
+		self.git_set('agence.nom', 'Zoé')
+		self.assertEqual(agence.nom(), 'Zoé')
+
+	def test_commande_nom(self):
+		self.git_set('agence.nom', 'Max')
+		code, out = self.cli('nom')
+		self.assertEqual((code, out), (0, 'Max (git agence.nom)\n'))
+
+
+class SansNomEnDur(Base):
+	"""Aucun « heifara » ne sort quand le nom vaut autre chose (AGENCE_NOM=Max dans Base)."""
+
+	def test_source_sans_heifara_hors_valeur_stockee(self):
+		with open(agence.__file__, encoding='utf-8') as f:
+			lignes = [(i, l) for i, l in enumerate(f, 1) if 'heifara' in l.lower()]
+		self.assertEqual([l.split('=')[0].strip() for _, l in lignes], ['OWNER_HUMAIN'], lignes)
+
+	def test_suivi_au_nom_configure(self):
+		with agence.tx() as st:
+			agence.add_need(st, 'human', 'Décider C', owner=agence.OWNER_HUMAIN, blocking=True)
+		page = agence.page_suivi(self.state())
+		self.assertIn('À faire par Max', page)
+		self.assertNotIn('heifara', page.lower())
+
+	def test_owner_humain_en_entree_et_en_sortie(self):
+		self.cli('need', 'add', 'Merger la PR 5', '--owner', 'humain')
+		self.assertEqual(self.state()['needs'][0]['owner'], agence.OWNER_HUMAIN)
+		self.cli('need', 'add', 'Ancien mot', '--owner', agence.OWNER_HUMAIN)  # le skill actuel le dit encore
+		_, out = self.cli('need', 'list')
+		_, show = self.cli('need', 'show', self.state()['needs'][0]['id'])
+		self.assertEqual([l.split('\t')[3] for l in out.splitlines()], ['humain', 'humain'])
+		self.assertNotIn('heifara', (out + show).lower())
+
+	def test_aide_sans_heifara(self):
+		for argv in ([], ['start'], ['need', 'add']):
+			out = io.StringIO()
+			with redirect_stdout(out), self.assertRaises(SystemExit):
+				agence.main([*argv, '--help'])
+			self.assertNotIn('heifara', out.getvalue().lower(), argv)
 
 
 class Etat(Base):
@@ -1121,11 +1205,11 @@ class Suivi(Base):
 			d, _ = agence.add_need(st, 'task', 'Fait D')
 			agence.close_need(st, d['id'], 'done', 'https://github.com/x/y/pull/3')
 		page = agence.page_suivi(self.state())
-		order = [page.index(s) for s in ('Bloquant', 'À faire par Heifara', 'Fait', 'Reste à faire')]
+		order = [page.index(s) for s in ('Bloquant', 'À faire par Max', 'Fait', 'Reste à faire')]
 		self.assertEqual(order, sorted(order))
 		self.assertIn('débloque la PR', page)
 		self.assertIn('https://github.com/x/y/pull/3', page)
-		self.assertLess(page.index('Bloque B'), page.index('À faire par Heifara'))
+		self.assertLess(page.index('Bloque B'), page.index('À faire par Max'))
 		self.assertGreater(page.index('Reste A'), page.index('Reste à faire'))
 
 	def test_echappement_html(self):

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """agence : l'univers d'un projet orchestré sur le canvas Cate.
 
-Spec : Skills/specs/001-orchestrateur-canvas. Seule cette CLI écrit l'état
-<repo>/.cate/tmp/agence/state.json (verrou fcntl, écriture atomique).
+Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
+écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
+la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « toi ».
 
   agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents règle le plafond d'agents en plein tour (défaut 8)
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
@@ -13,6 +14,7 @@ Spec : Skills/specs/001-orchestrateur-canvas. Seule cette CLI écrit l'état
   agence watch                       régisseur : boucle de suivi + pages (127.0.0.1:<port>)
   agence guard                       hook PreToolUse (JSON sur stdin)
   agence url                         adresse de la page de suivi
+  agence nom                         nom de l'humain et sa source
 
 Codes : 0 ok, 1 refus métier, 2 environnement.
 """
@@ -62,6 +64,32 @@ def _run(cmd, input=None, timeout=120):
 
 
 RUN = _run
+# ponytail: valeur stockée de owner, lue telle quelle par le panneau (src/panels/agence/contract/suivi.ts) ;
+# jamais affichée. Passe à 'humain' avec le panneau (spec 006, L2-05 et L2-15).
+OWNER_HUMAIN = 'heifara'
+
+
+def nom_source():
+	"""(nom de l'humain, source), relu à chaque appel : AGENCE_NOM > gitconfig agence.nom > premier mot de user.name > « toi ».
+	Par _run, pas RUN : c'est de la configuration, pas une commande que les tests simulent."""
+	v = os.environ.get('AGENCE_NOM', '').strip()
+	if v:
+		return v, 'AGENCE_NOM'
+	for key in ('agence.nom', 'user.name'):
+		code, out, _ = _run(['git', 'config', '--get', key], timeout=5)
+		mots = out.split() if code == 0 else []
+		if mots:
+			return (out.strip() if key == 'agence.nom' else mots[0]), f'git {key}'
+	return 'toi', 'défaut'
+
+
+def nom():
+	return nom_source()[0]
+
+
+def qui(n):
+	"""owner tel que la CLI l'écrit et le lit : « humain » pour la valeur stockée OWNER_HUMAIN."""
+	return 'humain' if n['owner'] == OWNER_HUMAIN else n['owner']
 
 
 def now_iso():
@@ -173,7 +201,7 @@ def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=
 
 
 def note(n, text, by):
-	"""Ligne datée au journal d'un besoin (by : 'clic' écrit par la CLI sur un clic de Heifara, 'cli' dit par un agent).
+	"""Ligne datée au journal d'un besoin (by : 'clic' écrit par la CLI sur un clic de l'humain, 'cli' dit par un agent).
 	Les états écrits avant ce champ n'en ont pas : toujours lire par n.get('journal', [])."""
 	text = ' '.join(text.split())  # une ligne, sans tabulation : un texte d'agent ne forge pas une ligne « clic »
 	n.setdefault('journal', []).append({'ts': now_iso(), 'by': by, 'text': text})
@@ -181,7 +209,7 @@ def note(n, text, by):
 
 def need_text(n):
 	"""Besoin et son journal, une ligne chacun."""
-	head = f"{n['id']}\t{n['status']}\t{n['kind']}\t{n['owner']}\t{n['title']}"
+	head = f"{n['id']}\t{n['status']}\t{n['kind']}\t{qui(n)}\t{n['title']}"
 	voulu = ' '.join(f'--{k} {n[k]}' for k in ('model', 'effort') if n.get(k))  # à passer à cate agent start
 	return '\n'.join([head] + ([f'\tréglages : {voulu}'] if voulu else []) + [f"\t{j['ts']}\t{j['by']}\t{j['text']}" for j in n.get('journal', [])])
 
@@ -284,8 +312,8 @@ def toast(titre, texte):
 
 
 def attend(n):
-	"""Ligne ouverte qui attend Heifara : sections « À faire par Heifara » ou « Bloquant » du suivi."""
-	return n['status'] == 'open' and (n['owner'] == 'heifara' or n['blocking'] or n['overBudget']
+	"""Ligne ouverte qui attend l'humain : sections « À faire par <nom> » ou « Bloquant » du suivi."""
+	return n['status'] == 'open' and (n['owner'] == OWNER_HUMAIN or n['blocking'] or n['overBudget']
 	                                  or n['agentBlocked'] or n['closeFailed'])
 
 
@@ -445,7 +473,8 @@ def cmd_need(a):
 	if a.action == 'add':
 		by_orch = bool(a.panel) and caller_is_orchestrator()
 		with tx() as st:
-			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=a.owner, blocking=a.blocking, unblocks=a.unblocks,
+			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
+			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
 			                source=a.frm, panels=a.panel or (), done_when=a.done_when, acceptance=a.acceptance,
 			                budget=a.budget, model=a.model, effort=a.effort)
 			if by_orch:
@@ -477,7 +506,7 @@ def cmd_need(a):
 		for n in st['needs']:
 			if a.open and n['status'] != 'open':
 				continue
-			print(f"{n['id']}\t{n['status']}\t{n['kind']}\t{n['owner']}\t{n['title']}")
+			print(need_text(n).split('\n')[0])
 	return 0
 
 
@@ -498,7 +527,7 @@ def cmd_draft(a):
 				f.write(texte.strip() + '\n')
 			kind = a.cible.split(':', 1)[0]
 			label = a.titre or texte.strip().splitlines()[0][:60]
-			n, _ = add_need(st, 'draft', f'Valider le brouillon ({kind}) « {label} »', ref=did, owner='heifara',
+			n, _ = add_need(st, 'draft', f'Valider le brouillon ({kind}) « {label} »', ref=did, owner=OWNER_HUMAIN,
 			                blocking=True, unblocks=a.unblocks, source=a.frm, done_when=f'draft-sent:{did}')
 			if not sous_panneau_agence(st):
 				b = cate('panel', 'create', 'browser', url(st, f'/draft/{did}'))['panelId']
@@ -689,7 +718,7 @@ def cmd_ask(a):
 			raise Refus("régisseur non démarré : l'orchestrateur lance d'abord « agence boot »")
 		agent = a.frm or st['panels'].get('orchestrator')
 		qid = new_id(st, 'q')
-		n, _ = add_need(st, 'human', a.question, ref=qid, owner='heifara', blocking=True, unblocks=a.unblocks,
+		n, _ = add_need(st, 'human', a.question, ref=qid, owner=OWNER_HUMAIN, blocking=True, unblocks=a.unblocks,
 		                source=agent)
 		if not sous_panneau_agence(st):
 			b = cate('panel', 'create', 'browser', url(st, f'/ask/{qid}'))['panelId']
@@ -727,7 +756,7 @@ def click(path, form):
 			if action == 'drop':
 				drop_draft(st, did)
 				note(find(st, 'needs', d['needId']), f'brouillon {did} abandonné', 'clic')
-				notify(d['agent'] or st['panels'].get('orchestrator'), f'Heifara a abandonné le brouillon {did}.')
+				notify(d['agent'] or st['panels'].get('orchestrator'), f'{nom()} a abandonné le brouillon {did}.')
 				return 303, '/'
 			with open(draft_path(did)) as f:
 				texte = f.read().strip()
@@ -738,7 +767,7 @@ def click(path, form):
 			if kind in ('slack', 'mail'):
 				note(find(st, 'needs', d['needId']), f"Envoyer cliqué sur {did} ({d['cible']})", 'clic')
 				notify(st['panels'].get('orchestrator'),
-				       f"Heifara a cliqué Envoyer sur le brouillon {did} ({d['cible']}). Envoie-le maintenant par l'outil MCP "
+				       f"{nom()} a cliqué Envoyer sur le brouillon {did} ({d['cible']}). Envoie-le maintenant par l'outil MCP "
 				       f"avec exactement le texte de « agence draft show {did} », puis « agence draft sent {did} --evidence <lien> ».")
 				return 303, '/'
 			try:
@@ -750,7 +779,7 @@ def click(path, form):
 			note(find(st, 'needs', d['needId']), f'{did} envoyé : {link_url}', 'clic')
 			n = close_need(st, d['needId'], 'done', link_url or 'envoyé')
 			apply(st, [('close', p, n['id']) for p in n['panels']])
-			notify(d['agent'] or st['panels'].get('orchestrator'), f'Brouillon {did} envoyé par Heifara : {link_url}')
+			notify(d['agent'] or st['panels'].get('orchestrator'), f'Brouillon {did} envoyé par {nom()} : {link_url}')
 			return 303, '/'
 	m = re.match(r'^/wt/(n\d+)/(remove|keep)$', path)
 	if m:
@@ -791,7 +820,7 @@ def click(path, form):
 				n = close_need(st, q['needId'], 'done', f"réponse : {q['answer']}")
 				note(n, f"Demander le rebase cliqué ({merge_motif(q) or 'à jour'})", 'clic')
 				apply(st, [('close', p, n['id']) for p in n['panels']])
-				notify(st['panels'].get('orchestrator'), f"Heifara demande le rebase de {q['action'][len('merge:'):]} "
+				notify(st['panels'].get('orchestrator'), f"{nom()} demande le rebase de {q['action'][len('merge:'):]} "
 				       f"({merge_motif(q) or 'à jour'}) : fais-la rebaser par un agent, puis repose agence ask --merge.")
 				return 303, '/'
 			if libre:
@@ -818,7 +847,7 @@ def click(path, form):
 			if forced:
 				note(n, 'Merger quand même malgré : ' + ' ; '.join(forced), 'clic')
 			apply(st, [('close', p, n['id']) for p in n['panels']])
-			msg = f"Réponse de Heifara à « {q['question']} » : {answer}"
+			msg = f"Réponse de {nom()} à « {q['question']} » : {answer}"
 			notify(q['agent'], msg)
 			orch = st['panels'].get('orchestrator')
 			if orch and orch != q['agent']:  # l'orchestrateur garde la décision après un /clear
@@ -1011,13 +1040,13 @@ def section(st, name, needs, cls=''):
 
 def page_suivi(st):
 	opened = [n for n in st['needs'] if n['status'] == 'open']
-	mine = [n for n in opened if n['owner'] == 'heifara']
-	block = [n for n in opened if n['owner'] != 'heifara' and attend(n)]
+	mine = [n for n in opened if n['owner'] == OWNER_HUMAIN]
+	block = [n for n in opened if n['owner'] != OWNER_HUMAIN and attend(n)]
 	rest = [n for n in opened if n not in mine and n not in block]
 	done = sorted([n for n in st['needs'] if n['status'] == 'done'], key=lambda n: n['updated'], reverse=True)[:20]
 	body = (f"<h1>{e(st['repo'])}</h1><div class=\"sub\">Agents : {st['agentsActive']} en cours, {st['agentsWaiting']} en attente (plafond {plafond(st)}) · "
 	        f"mis à jour {time.strftime('%H:%M:%S')}</div>"
-	        + section(st, 'Bloquant', block, 'block') + section(st, 'À faire par Heifara', mine, 'me')
+	        + section(st, 'Bloquant', block, 'block') + section(st, f'À faire par {nom()}', mine, 'me')
 	        + section(st, 'Fait', done) + section(st, 'Reste à faire', rest))
 	return layout(f"Suivi : {st['repo']}", body, refresh=True)
 
@@ -1183,7 +1212,7 @@ SAISIES = {g: {'oui': ('press', 'enter'), 'non': ('press', 'escape')} for g in (
 def parse_ecran(text):
 	"""Demande affichée au bas d'un écran de terminal : {genre, commande, motif, choix} ou None.
 	genre : hook (confirmation d'un hook), modele (Switch model?), blast (blast-radius) et question (cases à cocher),
-	ces deux derniers sans bouton. choix : ['oui', 'non'] si Heifara peut répondre d'un bouton (menu dont le curseur
+	ces deux derniers sans bouton. choix : ['oui', 'non'] si l'humain peut répondre d'un bouton (menu dont le curseur
 	est sur « 1. »), [] sinon."""
 	pairs = []  # (ligne préfixée par « │ », curseur ❯, texte) ; les lignes vides ou faites de bordures sont écartées
 	for l in text.splitlines():
@@ -1307,8 +1336,8 @@ def tick(st, live, agents, gh, now, screens=None):
 		if done_by:
 			close_need(st, n['id'], 'done', done_by.get('url') or done_by['state'])
 			effects += [('close', p, n['id']) for p in n['panels'] if p in live]
-			if n['owner'] == 'heifara':
-				effects.append(('notify', orch, f"Fait par Heifara : {n['title']} ({done_by['state']})."))
+			if n['owner'] == OWNER_HUMAIN:
+				effects.append(('notify', orch, f"Fait par {nom()} : {n['title']} ({done_by['state']})."))
 			continue
 		in_flight = n['kind'] == 'draft' and any(d['id'] == n['ref'] and d['statut'] == 'envoyer' for d in st['drafts'])
 		if n['panels'] and not any(p in live for p in n['panels']) and not in_flight:
@@ -1437,7 +1466,7 @@ def run_after(effects, base=None):
 					find(st, 'needs', nid)['closeFailed'] = True
 			for nid, path, branch in offers:
 				n, _ = add_need(st, 'human', f'Supprimer le worktree {os.path.basename(path)} (branche {branch} mergée) ?',
-				                ref=f'wt:{path}', owner='heifara', source=nid)
+				                ref=f'wt:{path}', owner=OWNER_HUMAIN, source=nid)
 				n['worktree'] = {'path': path, 'branch': branch}
 
 
@@ -1450,7 +1479,7 @@ def worktree_ok(repo, path, branch):
 
 
 def worktree_offers(snap, nid, live, base=None):
-	"""Worktrees du besoin (nom « <besoin>-<rôle> », voir le skill) à proposer à Heifara : [(besoin, chemin, branche)].
+	"""Worktrees du besoin (nom « <besoin>-<rôle> », voir le skill) à proposer à l'humain : [(besoin, chemin, branche)].
 	Jamais tant qu'un panneau vivant du besoin existe, jamais supprimés ici."""
 	need = next((n for n in snap['needs'] if n['id'] == nid), None)
 	if not need or any(p in live for p in need['panels']):
@@ -1543,7 +1572,7 @@ def decision(kind, reason):
 
 FETCH_RE = re.compile(r'\b(curl|wget|http|https|xh|nc|python3?|node|ruby|perl|open|osascript)\b')
 WRITE_RE = re.compile(r'(>|sed -i|\btee\b|\bmv\b|\bcp\b|\brm\b|python|perl|truncate|\bjq\b.*>)')
-PAGE_DENY = "Les pages du régisseur sont pour Heifara : un agent ne clique pas à sa place."
+PAGE_DENY = "Les pages du régisseur sont pour l'humain : un agent ne clique pas à sa place."
 STATE_DENY = "state.json s'écrit seulement par la CLI agence."
 
 
@@ -1584,7 +1613,7 @@ def guard(payload):
 			if not d:
 				return None
 			d['allowed'] = True
-		return decision('allow', f"Brouillon {d['id']} validé par le clic de Heifara (cible et texte identiques).")
+		return decision('allow', f"Brouillon {d['id']} validé par le clic de {nom()} (cible et texte identiques).")
 	port = st.get('port')
 	local = re.compile(rf'(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]):{port}\b') if port else None
 	if tool == 'Bash':
@@ -1645,7 +1674,7 @@ def parser():
 	sub = p.add_subparsers(dest='cmd', required=True)
 	s = sub.add_parser('start')
 	s.add_argument('--notify', action=argparse.BooleanOptionalAction, default=None,
-	               help="notification système quand une ligne attend Heifara (activée par défaut ; --no-notify la coupe pour ce projet, relue à chaque tour)")
+	               help="notification système quand une ligne attend l'humain (activée par défaut ; --no-notify la coupe pour ce projet, relue à chaque tour)")
 	s.add_argument('--max-agents', type=entier_positif, metavar='N',
 	               help=f"plafond d'agents en plein tour pour ce projet (défaut {MAX_AGENTS} ; les agents en attente de saisie, l'orchestrateur et le régisseur ne comptent pas)")
 	s.set_defaults(fn=cmd_start)
@@ -1659,7 +1688,7 @@ def parser():
 	add.add_argument('title')
 	add.add_argument('--kind', default='task', choices=KINDS)
 	add.add_argument('--ref')
-	add.add_argument('--owner', default='agent', choices=('agent', 'heifara'))
+	add.add_argument('--owner', default='agent', choices=('agent', 'humain', OWNER_HUMAIN), metavar='{agent,humain}', help="humain : la ligne attend l'humain (agence nom)")
 	add.add_argument('--blocking', action='store_true')
 	add.add_argument('--unblocks')
 	add.add_argument('--panel', action='append')
@@ -1718,6 +1747,7 @@ def parser():
 	w.set_defaults(fn=cmd_watch)
 	sub.add_parser('guard').set_defaults(fn=cmd_guard)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
+	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
 
 
