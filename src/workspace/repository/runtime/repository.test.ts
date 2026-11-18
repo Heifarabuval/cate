@@ -306,6 +306,23 @@ describe('worktree lifecycle', () => {
     expect(untrusted(() => repo.github.originRepository())).toBe(true)
   })
 
+  test.skipIf(process.platform === 'win32')('hands a caller signal through to gh: an aborted read never starts it', async () => {
+    const bin = path.join(root, '.bin')
+    const ran = path.join(root, 'gh-ran')
+    await fs.mkdir(bin)
+    await fs.writeFile(path.join(bin, 'gh'), `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(ran)}, '')\nprocess.stdout.write('{}')\n`, { mode: 0o755 })
+    const pathBefore = process.env.PATH
+    process.env.PATH = bin
+    try {
+      for (const read of [repo.github.pullRequestView, repo.github.pullRequestChecks, repo.github.pullRequestFiles]) {
+        await expect(read('org/repo', 1, AbortSignal.abort())).rejects.toThrow()
+      }
+    } finally {
+      process.env.PATH = pathBefore
+    }
+    await expect(fs.access(ran)).rejects.toThrow()
+  })
+
   test.each([
     ['https://github.com/Org/Repo.git', 'org/repo'],
     ['git@github.com:Org/Repo.git', 'org/repo'],

@@ -38,12 +38,13 @@ export interface GithubHost {
   cancelLogin(owner: number): void
   /** `root` must already be validated against the workspace. */
   pullRequestContext(root: string, repository: string, number: number): Promise<PullRequestContext | null>
-  /** Read-only reads of one pull request (raw `gh` JSON, parsed by the contract). They reject with a `GhReadError`. */
-  pullRequestView(repository: string, number: number): Promise<unknown>
+  /** Read-only reads of one pull request (raw `gh` JSON, parsed by the contract). They reject with a `GhReadError`,
+   *  also when `signal` aborts: gh is then killed, or never started. */
+  pullRequestView(repository: string, number: number, signal?: AbortSignal): Promise<unknown>
   /** The lighter read for the 30 s refresh: state, checks and mergeability only. */
-  pullRequestChecks(repository: string, number: number): Promise<unknown>
+  pullRequestChecks(repository: string, number: number, signal?: AbortSignal): Promise<unknown>
   /** Every changed file with its patch, all pages in one list. */
-  pullRequestFiles(repository: string, number: number): Promise<unknown>
+  pullRequestFiles(repository: string, number: number, signal?: AbortSignal): Promise<unknown>
   /** The github.com token `gh` would use, for anonymous-tolerant API calls. */
   token(): Promise<string | undefined>
   dispose(): void
@@ -63,12 +64,26 @@ function assertPullRequest(repository: string, number: number): void {
 export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): GithubHost {
   let running = 0
   const waiting: Array<() => void> = []
-  /** The one place `gh` is spawned: at most MAX_GH_CALLS at once, a freed slot goes straight to the next waiter. */
-  const gh = async (args: string[], limits = { timeout: GH_TIMEOUT_MS, maxBuffer: GH_BUFFER }): Promise<string> => {
-    if (running >= MAX_GH_CALLS) await new Promise<void>((resolve) => waiting.push(resolve))
-    else running += 1
+  /** The one place `gh` is spawned: at most MAX_GH_CALLS at once, a freed slot goes straight to the next waiter.
+   *  An aborted `signal` leaves the queue without running gh, or kills the running gh and frees its slot. */
+  const gh = async (args: string[], limits = { timeout: GH_TIMEOUT_MS, maxBuffer: GH_BUFFER }, signal?: AbortSignal): Promise<string> => {
+    signal?.throwIfAborted()
+    if (running >= MAX_GH_CALLS) {
+      await new Promise<void>((resolve, reject) => {
+        const turn = () => {
+          signal?.removeEventListener('abort', leave)
+          resolve()
+        }
+        const leave = () => {
+          waiting.splice(waiting.indexOf(turn), 1)
+          reject(signal?.reason)
+        }
+        waiting.push(turn)
+        signal?.addEventListener('abort', leave, { once: true })
+      })
+    } else running += 1
     try {
-      return (await exec('gh', args, { cwd: os.homedir(), env: deps.env(), windowsHide: true, ...limits })).stdout
+      return (await exec('gh', args, { cwd: os.homedir(), env: deps.env(), windowsHide: true, ...limits, ...(signal ? { signal } : {}) })).stdout
     } finally {
       const next = waiting.shift()
       if (next) next()
@@ -76,10 +91,10 @@ export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): Github
     }
   }
 
-  async function readJson(repository: string, number: number, args: string[], limits?: { timeout: number; maxBuffer: number }): Promise<unknown> {
+  async function readJson(repository: string, number: number, args: string[], limits?: { timeout: number; maxBuffer: number }, signal?: AbortSignal): Promise<unknown> {
     assertPullRequest(repository, number)
     try {
-      return JSON.parse(await gh(args, limits))
+      return JSON.parse(await gh(args, limits, signal))
     } catch (error) {
       throw error instanceof SyntaxError ? new GhReadError('error', 'Unexpected GitHub response') : toGhReadError(error)
     }
@@ -191,13 +206,15 @@ export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): Github
       return { headRefName: data.headRefName, baseOid: data.baseRefOid }
     },
 
-    pullRequestView: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', PR_VIEW_FIELDS]),
+    pullRequestView: (repository, number, signal) =>
+      readJson(repository, number, ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', PR_VIEW_FIELDS], undefined, signal),
 
-    pullRequestChecks: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', PR_CHECKS_FIELDS]),
+    pullRequestChecks: (repository, number, signal) =>
+      readJson(repository, number, ['pr', 'view', String(number), '--repo', `github.com/${repository}`, '--json', PR_CHECKS_FIELDS], undefined, signal),
 
-    pullRequestFiles: (repository, number) =>
+    pullRequestFiles: (repository, number, signal) =>
       readJson(repository, number, ['api', '--hostname', 'github.com', '--method', 'GET', '--paginate', `repos/${repository}/pulls/${number}/files?per_page=100`],
-        { timeout: PR_FILES_TIMEOUT_MS, maxBuffer: PR_FILES_BUFFER }),
+        { timeout: PR_FILES_TIMEOUT_MS, maxBuffer: PR_FILES_BUFFER }, signal),
 
     async token() {
       const env = deps.env()

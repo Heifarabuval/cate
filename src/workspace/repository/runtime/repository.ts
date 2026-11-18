@@ -154,9 +154,9 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
       if (!(await raw.isRepo({}))) return null
       return rawGithub.pullRequestContext(root, repository, number)
     }),
-    pullRequestView: gated((repository: string, number: number) => rawGithub.pullRequestView(repository, number)),
-    pullRequestChecks: gated((repository: string, number: number) => rawGithub.pullRequestChecks(repository, number)),
-    pullRequestFiles: gated((repository: string, number: number) => rawGithub.pullRequestFiles(repository, number)),
+    pullRequestView: gated((repository: string, number: number, signal?: AbortSignal) => rawGithub.pullRequestView(repository, number, signal)),
+    pullRequestChecks: gated((repository: string, number: number, signal?: AbortSignal) => rawGithub.pullRequestChecks(repository, number, signal)),
+    pullRequestFiles: gated((repository: string, number: number, signal?: AbortSignal) => rawGithub.pullRequestFiles(repository, number, signal)),
     originRepository: gated(async () => {
       if (!(await raw.isRepo({}))) return null
       const origin = (await raw.remotes({})).find((remote) => remote.name === 'origin')
