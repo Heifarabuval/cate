@@ -2417,13 +2417,14 @@ a panel type in a menu by hand.
   panel count. Dragging the bar previews every member through the canvas
   view's existing preview (client state) and sends one `batch [setNodeRects,
   updateFrame {at}]` at the end, one undo step. A collapsed frame draws its
-  bar only and `useVisibleNodeIds` drops its members, exempt nodes included;
-  no session is touched, since sessions live in the runtime. `frame.collapse`,
+  bar only and `useVisibleNodeIds` drops its members, focused or pinned ones
+  included. Keep-mounted members (a web view) stay mounted, hidden and inert
+  (`visibility: hidden`, as a drag source), so their page survives the fold.
+  No session is touched, since sessions live in the runtime. `frame.collapse`,
   `frame.expand`, `frame.rename` and `frame.dissolve` are canvas actions on the
   frame under the pointer, else the frame of the selected node; rename asks
   through `ClientUi.promptText`, dissolve confirms nothing because it closes
-  nothing. A native surface of a collapsed frame (a web view) is not handled
-  here yet.
+  nothing.
 
 ### 12.5 Opening, joining and sharing
 

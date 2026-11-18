@@ -110,7 +110,7 @@ it('names the member nodes of collapsed frames only', async () => {
   expect(collapsedNodeIds(canvas)).toBe(collapsedNodeIds(canvas))
 })
 
-it('drops the nodes of a collapsed frame, even focused, pinned or kept alive', async () => {
+it('drops the nodes of a collapsed frame, even focused or pinned, but keeps native surfaces mounted', async () => {
   const { createCanvasView } = await import('./store')
   const { fakeDocument, canvasDocument } = await import('./testing.canvas')
   const { rect } = await import('@workspace/canvas/contract')
@@ -130,6 +130,6 @@ it('drops the nodes of a collapsed frame, even focused, pinned or kept alive', a
     expect(host.textContent).toBe('n0,n1,n2,n3')
     hidden = new Set(['n0', 'n1', 'n2'])
     act(() => root.render(<Nodes />))
-    expect(host.textContent).toBe('n3')
+    expect(host.textContent).toBe('n2,n3')
   } finally { act(() => root.unmount()); store.getState().dispose() }
 })

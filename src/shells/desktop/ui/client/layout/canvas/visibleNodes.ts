@@ -63,8 +63,9 @@ function keepAliveNodeIds(nodes: Record<NodeId, ViewNode>, keepMounted: Readonly
 }
 
 // The members of collapsed frames, cached by canvas identity: a collapsed
-// frame draws its bar only, so its nodes do not mount. Their panels' sessions
-// live in the runtime and are not touched.
+// frame draws its bar only, so its nodes do not mount, except keep-mounted
+// ones, which stay mounted and hidden as when off-screen. Their panels'
+// sessions live in the runtime and are not touched.
 const collapsedCache = new WeakMap<CanvasModel, ReadonlySet<NodeId>>()
 export function collapsedNodeIds(canvas: CanvasModel | undefined): ReadonlySet<NodeId> {
   if (!canvas?.frames) return EMPTY
@@ -80,8 +81,8 @@ export function collapsedNodeIds(canvas: CanvasModel | undefined): ReadonlySet<N
 }
 
 /** Creation-ordered ids of the nodes to mount: those within a quarter-screen's
- *  margin of the viewport, plus the exempt ones; `hidden` ones never mount,
- *  exempt or not. */
+ *  margin of the viewport, plus the exempt ones. `hidden` ones do not mount,
+ *  except keep-mounted ones: those stay mounted and the view hides them. */
 function selectVisibleNodeIds(
   s: Pick<CanvasView, 'nodes' | 'viewportOffset' | 'zoomLevel' | 'containerSize' | 'selection' | 'selectionActive'>,
   keepMounted?: ReadonlySet<PanelId>,
@@ -94,10 +95,11 @@ function selectVisibleNodeIds(
   const cw = containerSize.width
   const ch = containerSize.height
   const sorted = sortedByCreation(nodes)
-  // Before the container is measured, mount everything so nothing flashes.
-  if (cw === 0 || ch === 0 || z <= 0) return sorted.filter((n) => !hidden.has(n.id)).map((n) => n.id)
-
   const keepAlive = keepAliveNodeIds(nodes, keepMounted)
+  const dropped = (id: NodeId) => hidden.has(id) && !keepAlive.has(id)
+  // Before the container is measured, mount everything so nothing flashes.
+  if (cw === 0 || ch === 0 || z <= 0) return sorted.filter((n) => !dropped(n.id)).map((n) => n.id)
+
   const marginX = cw / z * marginScreens
   const marginY = ch / z * marginScreens
   const left = -viewportOffset.x / z - marginX
@@ -107,7 +109,7 @@ function selectVisibleNodeIds(
 
   const result: NodeId[] = []
   for (const n of sorted) {
-    if (hidden.has(n.id)) continue
+    if (dropped(n.id)) continue
     if (n.id === focused || n.isPinned || keepAlive.has(n.id)) {
       result.push(n.id)
       continue
