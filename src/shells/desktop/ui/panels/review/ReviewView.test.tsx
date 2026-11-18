@@ -409,3 +409,76 @@ it('retains the selected diff page when background attribution moves a file into
   await flush()
   expect(send).toHaveBeenLastCalledWith({ kind: 'recordedDiff', recordId: 'rec', path: 'src/a.ts', page: 1 })
 })
+
+// ---- Pull request panels -----------------------------------------------------
+
+const prData = {
+  repository: 'org/repo', number: 8, url: 'https://github.com/org/repo/pull/8', title: 'Fix login', author: 'ana',
+  body: 'Closes the login loop.', state: 'open' as const, draft: false, head: 'fix-login', base: 'main',
+  commits: [{ oid: 'abcdef1234567', title: 'fix: stop the redirect loop', author: 'ana', date: '2026-11-17T09:00:00Z' }],
+  commitCount: 1, commitsTruncated: false,
+  files: [
+    { path: 'src/login.ts', status: 'modified' as const, additions: 1, deletions: 0, diff: 'patch' as const, webUrl: 'https://github.com/org/repo/blob/x/src/login.ts' },
+    { path: 'logo.png', status: 'added' as const, additions: 0, deletions: 0, diff: 'binary' as const, webUrl: 'https://github.com/org/repo/blob/x/logo.png' },
+  ],
+  fileCount: 2, filesTruncated: false, additions: 1, deletions: 0,
+  checks: { state: 'failing' as const, items: [{ name: 'ci / test', result: 'failing' as const, url: null }, { name: 'lint', result: 'passing' as const, url: null }] },
+  mergeability: 'conflict' as const,
+}
+
+function prSnapshot(pr: Partial<NonNullable<ReviewSnapshot['pr']>>): ReviewSnapshot {
+  return agentSnapshot({
+    recorded: { loading: true, error: null, files: [], panels: [], agents: [] },
+    pr: { ref: { repository: 'org/repo', number: 8 }, loading: false, readAt: '2026-11-18T10:00:00Z', checksReadAt: '2026-11-18T10:00:00Z', error: null, data: null, ...pr },
+  })
+}
+
+it('shows a pull request: description, commits, checks, mergeability and each file diff, read only', async () => {
+  send.mockImplementation(async (op: ReviewOp) => op.kind === 'prFileDiff'
+    ? { path: op.path, diff: 'patch', hunks: diff.hunks, page: op.page ?? 0, pageCount: 1, totalLines: 1 }
+    : undefined)
+  render(prSnapshot({ data: prData }))
+  await flush()
+  const text = host.textContent!
+  for (const part of ['Fix login', '#8', 'ana', 'fix-login', 'main', 'Closes the login loop.', 'fix: stop the redirect loop', 'abcdef1', 'ci / test', 'Checks failing', 'Conflicts', 'src/login.ts', 'logo.png']) expect(text).toContain(part)
+  expect(host.textContent).not.toContain('Loading recorded changes')
+  expect(host.querySelector('button[aria-label*="Merge" i], button[aria-label*="Comment" i], button[aria-label*="Approve" i]')).toBeNull()
+  expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'prFileDiff' }))
+  await act(async () => button('Expand src/login.ts').click())
+  expect(send).toHaveBeenCalledWith({ kind: 'prFileDiff', path: 'src/login.ts', page: 0 })
+  expect(host.textContent).toContain('return safe()')
+  await act(async () => button('Expand logo.png').click())
+  expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'prFileDiff', path: 'logo.png' }))
+  expect(host.textContent).toContain('No diff for this file (binary)')
+})
+
+it('shows a readable loading state while the pull request is first read', async () => {
+  render(prSnapshot({ loading: true, readAt: null, checksReadAt: null }))
+  await flush()
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('Loading pull request org/repo#8')
+  expect(host.textContent).not.toContain('Loading recorded changes')
+})
+
+it('shows a failed first read with its message and a retry, never a blank panel', async () => {
+  render(prSnapshot({ readAt: null, checksReadAt: null, error: { kind: 'signed-out', message: 'Sign in to GitHub with gh auth login' } }))
+  await flush()
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Sign in to GitHub with gh auth login')
+  await act(async () => button('Retry').click())
+  expect(send).toHaveBeenCalledWith({ kind: 'refresh' })
+})
+
+it('keeps the last read shown when a later read fails', async () => {
+  render(prSnapshot({ data: prData, error: { kind: 'offline', message: 'GitHub is unreachable' } }))
+  await flush()
+  expect(host.textContent).toContain('Fix login')
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('GitHub is unreachable')
+})
+
+it('asks the session for fresh checks while visible', async () => {
+  vi.useFakeTimers()
+  try {
+    render(prSnapshot({ data: prData }))
+    await act(async () => { vi.advanceTimersByTime(30_000) })
+    expect(send).toHaveBeenCalledWith({ kind: 'prTick' })
+  } finally { vi.useRealTimers() }
+})
