@@ -59,6 +59,8 @@ interface ElementTarget {
 interface RefTarget {
   backendNodeId: number
   documentEpoch: number
+  /** The last command whose tree read listed the element. */
+  seen: number
   frameId?: string
   sessionId?: string
 }
@@ -144,6 +146,11 @@ export class PageDriver {
   private refs = new Map<number, RefTarget>()
   private stableIds = new Map<string, number>()
   private elementCounter = 0
+  /** Commands run, the last one that read the accessibility tree, and the
+   *  last one that succeeded after reading it (it showed the agent ids). */
+  private commands = 0
+  private readCommand = 0
+  private shownCommand = 0
   private observationCounter = 0
   private observations = new BrowserObservationCache()
   private documentEpoch = 0
@@ -269,9 +276,12 @@ export class PageDriver {
         resolve({ result: { action }, dialog })
       })
     })
-    const run = this.enqueue(() => {
+    const run = this.enqueue(async () => {
       this.inputSent = false
-      return this.executeBound(method, args)
+      this.commands += 1
+      const result = await this.executeBound(method, args)
+      if (!result.error) this.forgetUnshownRefs()
+      return result
     }).catch((error) => {
       const message = error instanceof Error ? error.message : 'browser-command-failed'
       const recovery = browserRecovery(message, this.inputSent)
@@ -514,11 +524,27 @@ export class PageDriver {
 
   private dropRefsForFrame(frameId: string, sessionId?: string): void {
     for (const [ref, target] of this.refs) {
-      if (target.frameId === frameId || (sessionId && target.sessionId === sessionId)) {
-        this.refs.delete(ref)
-        this.stableIds.delete(`${target.sessionId ?? 'root'}:${target.backendNodeId}`)
-      }
+      if (target.frameId === frameId || (sessionId && target.sessionId === sessionId)) this.dropRef(ref, target)
     }
+  }
+
+  /** A page that replaces its nodes without navigating (a SPA) grew the refs
+   *  forever. Once a command shows the agent a tree read (a snapshot, `find`,
+   *  an action's observation), keep the elements of that read and of the
+   *  previous shown one: the ids the agent holds stay valid until it gets new
+   *  ones, plus one command to act on the older snapshot; older ids come back
+   *  stale. Elements still on the page keep their id, since every read sees them.
+   *  ponytail: failed commands prune nothing, so a loop of failing locator
+   *  waits (up to 30 s of reads each) grows until the next success. */
+  private forgetUnshownRefs(): void {
+    if (this.readCommand !== this.commands) return
+    for (const [ref, target] of this.refs) if (target.seen < this.shownCommand) this.dropRef(ref, target)
+    this.shownCommand = this.commands
+  }
+
+  private dropRef(ref: number, target: RefTarget): void {
+    this.refs.delete(ref)
+    this.stableIds.delete(`${target.sessionId ?? 'root'}:${target.backendNodeId}`)
   }
 
   private dropFrame(frameId: string): void {
@@ -1085,6 +1111,7 @@ export class PageDriver {
   private async readAXState(viewport: BrowserViewportState): Promise<{ state: string; elements: BrowserElement[] }> {
     const frameIds = await this.currentFrameIds()
     if (!frameIds.length) throw new Error('browser-frame-unavailable')
+    this.readCommand = this.commands
     return readBrowserAX({
       frames: frameIds.map(frameId => {
         const parentFrameId = this.frames.parent(frameId)
@@ -1096,7 +1123,7 @@ export class PageDriver {
         const identity = `${target.sessionId ?? 'root'}:${target.backendNodeId}`
         let id = this.stableIds.get(identity)
         if (id === undefined) { id = ++this.elementCounter; this.stableIds.set(identity, id) }
-        this.refs.set(id, { ...target, documentEpoch: this.documentEpoch })
+        this.refs.set(id, { ...target, documentEpoch: this.documentEpoch, seen: this.commands })
         return id
       },
     })
