@@ -573,7 +573,8 @@ def send_gh(d):
 MERGE_OPTIONS = [{'label': 'Merger (rebase)', 'detail': 'gh pr merge --rebase'},
                  {'label': 'Demander des changements', 'detail': "l'agent reprend la PR"}]
 CONFLIT = 'conflit avec la base'
-MOTIFS = {'DIRTY': CONFLIT, 'BLOCKED': 'checks ou revue requis', 'UNSTABLE': 'checks en échec'}
+MOTIFS = {'DIRTY': CONFLIT, 'BLOCKED': 'revue ou checks requis', 'UNSTABLE': 'checks non verts'}
+CHECK_ECHEC = ('FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED')
 GH_TIMEOUT = 10  # secondes : un gh lent ne doit pas tenir le régisseur
 GH_PERIME = 300  # secondes : au-delà, l'état GitHub relevé est ignoré
 
@@ -584,10 +585,42 @@ def gh_frais(q):
 	return g if time.time() - g.get('ts', 0) <= GH_PERIME else None
 
 
+def nom_check(nom):
+	"""Nom de check (texte de tiers) : sans caractères de contrôle, 60 caractères au plus."""
+	return re.sub(r'\s+', ' ', re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', str(nom))).strip()[:60]
+
+
+def resume_checks(rollup):
+	"""statusCheckRollup -> {'fail': [noms], 'done': terminés, 'total': n} ; None si le champ manque."""
+	if not isinstance(rollup, list):
+		return None
+	fail, done = [], 0
+	for c in rollup:
+		if not isinstance(c, dict):
+			continue
+		if 'state' in c:  # StatusContext : SUCCESS, FAILURE, ERROR, PENDING, EXPECTED
+			etat, fini = c.get('state'), c.get('state') not in ('PENDING', 'EXPECTED')
+		else:  # CheckRun : sans conclusion = pas fini
+			etat, fini = c.get('conclusion'), bool(c.get('conclusion'))
+		done += fini
+		if etat in CHECK_ECHEC:
+			fail.append(nom_check(c.get('name') or c.get('context') or '?'))
+	return {'fail': fail, 'done': done, 'total': len([c for c in rollup if isinstance(c, dict)])}
+
+
 def merge_motif(q):
 	"""Motif GitHub pour lequel la PR n'est pas mergeable (état frais seulement), sinon None."""
 	g = gh_frais(q) or {}
-	return CONFLIT if g.get('mergeable') == 'CONFLICTING' else MOTIFS.get(g.get('mergeStateStatus'))
+	if g.get('mergeable') == 'CONFLICTING':
+		return CONFLIT
+	motif, ck = MOTIFS.get(g.get('mergeStateStatus')), g.get('checks')
+	if g.get('mergeStateStatus') == 'UNSTABLE' and ck:
+		if ck['fail']:
+			plus = len(ck['fail']) - 3
+			return 'checks en échec : ' + ', '.join(ck['fail'][:3]) + (f' et {plus} autres' if plus > 0 else '')
+		if ck['done'] < ck['total']:
+			return f"checks en cours ({ck['done']} sur {ck['total']} terminés)"
+	return motif
 
 
 def vise_pr(texte, repo, num, projet):
@@ -620,10 +653,12 @@ def merge_fetch(st):
 		if not q['action'] or q['answer'] is not None:
 			continue
 		repo, num = q['action'][len('merge:'):].split('#')
-		code, out, err = RUN(['gh', 'pr', 'view', num, '-R', repo, '--json', 'mergeable,mergeStateStatus'], timeout=GH_TIMEOUT)
+		code, out, err = RUN(['gh', 'pr', 'view', num, '-R', repo, '--json', 'mergeable,mergeStateStatus,statusCheckRollup'], timeout=GH_TIMEOUT)
 		try:
-			res[q['id']] = {**json.loads(out), 'ts': time.time()}
-		except (ValueError, TypeError):
+			etat = json.loads(out)
+			ck = resume_checks(etat.pop('statusCheckRollup', None))
+			res[q['id']] = {**etat, 'ts': time.time(), **({'checks': ck} if ck else {})}
+		except (ValueError, TypeError, AttributeError):
 			log(f'gh pr view {repo}#{num} : {(err or out).strip()}')
 	return res
 

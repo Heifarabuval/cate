@@ -838,7 +838,7 @@ class MergeVerrou(Base):
 		self.assertAlmostEqual(g['ts'], time.time(), delta=5)
 		view = self.run.ran('gh', 'pr', 'view')[0]
 		self.assertIn('Heifarabuval/cate', view)
-		self.assertIn('mergeable,mergeStateStatus', view)
+		self.assertIn('mergeable,mergeStateStatus,statusCheckRollup', view)
 		agence.click(f'/ask/{qid}', {'choice': ['1']})
 		self.run.calls.clear()
 		self.assertEqual(agence.merge_fetch(self.state()), {})
@@ -869,6 +869,78 @@ class MergeVerrou(Base):
 		self.etat_gh(qid, 'MERGEABLE', 'BLOCKED')
 		self.assertEqual(agence.click(f'/ask/{qid}', {'choice': ['0']})[0], 409)
 		self.assertNotIn('Demander le rebase', agence.page_ask(self.state(), qid))
+
+	def tour(self, qid, status, rollup):
+		"""Un tour du régisseur : relevé GitHub (faux gh) puis motif affiché."""
+		out = {'mergeable': 'MERGEABLE', 'mergeStateStatus': status}
+		if rollup is not None:
+			out['statusCheckRollup'] = rollup
+		self.run.reply(['gh', 'pr', 'view'], out)
+		with agence.tx() as st:
+			agence.merge_apply(st, agence.merge_fetch(st))
+		return agence.merge_motif(agence.find(self.state(), 'questions', qid))
+
+	@staticmethod
+	def chk(nom, conclusion='SUCCESS', status='COMPLETED'):
+		return {'__typename': 'CheckRun', 'name': nom, 'status': status, 'conclusion': conclusion}
+
+	def test_motif_checks_en_echec_nomme_trois_checks_au_plus(self):
+		qid = self.ask()
+		roll = [self.chk(f'c{i}', c) for i, c in enumerate(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED'])]
+		self.assertEqual(self.tour(qid, 'UNSTABLE', roll), 'checks en échec : c0, c1, c2 et 2 autres')
+		self.assertEqual(self.tour(qid, 'UNSTABLE', roll[:2]), 'checks en échec : c0, c1')
+
+	def test_motif_checks_en_cours_seul(self):
+		qid = self.ask()
+		roll = [self.chk('a'), self.chk('b'), self.chk('c', '', 'IN_PROGRESS'), self.chk('d', '', 'QUEUED')]
+		self.assertEqual(self.tour(qid, 'UNSTABLE', roll), 'checks en cours (2 sur 4 terminés)')
+		self.assertEqual(agence.click(f'/ask/{qid}', {'choice': ['0']})[0], 409)
+
+	def test_motif_melange_l_echec_gagne(self):
+		qid = self.ask()
+		roll = [self.chk('rouge', 'FAILURE'), self.chk('lent', '', 'IN_PROGRESS')]
+		self.assertEqual(self.tour(qid, 'UNSTABLE', roll), 'checks en échec : rouge')
+
+	def test_motif_status_context_de_tiers(self):
+		qid = self.ask()
+		roll = [{'__typename': 'StatusContext', 'context': 'ci/x', 'state': 'FAILURE'}]
+		self.assertEqual(self.tour(qid, 'UNSTABLE', roll), 'checks en échec : ci/x')
+		roll = [{'__typename': 'StatusContext', 'context': 'ci/x', 'state': 'PENDING'}]
+		self.assertEqual(self.tour(qid, 'UNSTABLE', roll), 'checks en cours (0 sur 1 terminés)')
+
+	def test_motif_unstable_tout_vert_reste_generique(self):
+		qid = self.ask()
+		self.assertEqual(self.tour(qid, 'UNSTABLE', [self.chk('a'), self.chk('b', 'SKIPPED')]), 'checks non verts')
+
+	def test_motif_blocked_inchange(self):
+		qid = self.ask()
+		self.assertEqual(self.tour(qid, 'BLOCKED', [self.chk('a', 'FAILURE')]), 'revue ou checks requis')
+
+	def test_motif_etat_ancien_sans_rollup_relu_comme_avant(self):
+		qid = self.ask()
+		self.assertEqual(self.tour(qid, 'UNSTABLE', None), 'checks non verts')
+		self.etat_gh(qid, 'MERGEABLE', 'UNSTABLE')
+		self.assertEqual(agence.merge_motif(agence.find(self.state(), 'questions', qid)), 'checks non verts')
+
+	def test_motif_nom_de_check_piege_nettoye_et_echappe(self):
+		qid = self.ask()
+		piege = 'a\x1b[31mb\n<script>alert(1)</script>' + 'x' * 200
+		motif = self.tour(qid, 'UNSTABLE', [self.chk(piege, 'FAILURE')])
+		self.assertNotIn('\x1b', motif)
+		self.assertNotIn('\n', motif)
+		nom = motif[len('checks en échec : '):]
+		self.assertLessEqual(len(nom), 60)
+		page = agence.page_ask(self.state(), qid) + agence.page_suivi(self.state())
+		self.assertNotIn('<script>', page)
+		self.assertIn('&lt;script&gt;', page)
+
+	def test_motif_change_d_un_tour_a_l_autre_et_se_degrise(self):
+		qid = self.ask()
+		self.assertEqual(self.tour(qid, 'UNSTABLE', [self.chk('a', '', 'IN_PROGRESS'), self.chk('b')]), 'checks en cours (1 sur 2 terminés)')
+		self.assertEqual(self.tour(qid, 'UNSTABLE', [self.chk('a', 'FAILURE'), self.chk('b')]), 'checks en échec : a')
+		self.assertIn('checks en échec : a', agence.page_suivi(self.state()))
+		self.assertIsNone(self.tour(qid, 'CLEAN', [self.chk('a'), self.chk('b')]))
+		self.assertEqual(agence.click(f'/ask/{qid}', {'choice': ['0']}), (303, '/'))
 
 	def test_pr_propre_ou_inconnue_merge(self):
 		qid = self.ask()
