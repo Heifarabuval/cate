@@ -1334,21 +1334,13 @@ def set_perm(n, panel, text):
 
 
 def orphelins(st, rows, agents):
-	"""Panneaux sans agent que l'humain voudra peut-être fermer : {panneau: (titre, motif)}. Deux critères : un terminal
-	titré « #n<chiffres> » absent de cate agent list ; un terminal, navigateur ou canvas relié par trigger depuis
-	l'orchestrateur, sans agent en plein tour. Jamais : panneau du projet ou d'un besoin ouvert, gardé, éditeur, terminal qui appelle."""
-	par_id = {a['panelId']: a for a in agents}
-	lies = {r.get('toPanelId') for r in (rows.get(st['panels'].get('orchestrator')) or {}).get('relations', []) if r.get('kind') == 'trigger'}
-	found = {}
-	for p, r in rows.items():
-		if r.get('caller') or p in st['orphanGardes'] or protege(st, p, None):
-			continue
-		titre = r.get('title') or ''
-		if r.get('type') == 'terminal' and p not in par_id and re.match(r'^#n\d+ ', titre):
-			found[p] = (titre, 'sans-agent')
-		elif p in lies and r.get('type') in ('terminal', 'browser', 'canvas') and par_id.get(p, {}).get('state') != 'running':
-			found[p] = (titre, 'non-rattache')
-	return found
+	"""Terminaux sans agent que l'humain voudra peut-être fermer : {panneau: titre}. Un seul critère (décision n271) :
+	terminal titré « #n<chiffres> » sans agent vivant (ni running ni waitingForInput). Jamais : panneau du projet ou
+	d'un besoin ouvert, gardé, terminal qui appelle."""
+	vivants = {a['panelId'] for a in agents if a.get('state') in ('running', 'waitingForInput')}
+	return {p: r['title'] for p, r in rows.items()
+	        if r.get('type') == 'terminal' and re.match(r'^#n\d+ ', r.get('title') or '') and p not in vivants
+	        and not r.get('caller') and p not in st['orphanGardes'] and not protege(st, p, None)}
 
 
 def tick(st, live, agents, gh, now, screens=None, panneaux=None):
@@ -1438,11 +1430,11 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None):
 		for n in st['needs']:
 			if n['status'] == 'open' and n.get('orphan') and n['orphan']['panel'] not in candidats:
 				close_need(st, n['id'], 'dropped')
-		for p, (titre, motif) in candidats.items():
+		for p, titre in candidats.items():
 			if st['orphanVus'][p] >= 2:
 				n, neuf = add_need(st, 'human', f'Fermer le panneau « {titre} » (sans agent) ?', ref=f'orphan:{p}', owner=OWNER_HUMAIN)
 				if neuf:
-					n['orphan'] = {'panel': p, 'title': titre, 'motif': motif}
+					n['orphan'] = {'panel': p, 'title': titre}
 	for n in st['needs']:  # une notification par ligne qui attend, un rappel, puis rien ; le réglage se relit à chaque tour
 		if not attend(n):
 			n.pop('notifTs', None)  # la ligne repart de zéro si elle attend de nouveau

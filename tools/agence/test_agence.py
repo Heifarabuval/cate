@@ -1718,7 +1718,7 @@ class Orphelins(Base):
 		self.tour(t9)
 		[n] = self.offres()
 		self.assertEqual((n['kind'], n['owner'], n['ref'], n['status']), ('human', agence.OWNER_HUMAIN, 'orphan:t9', 'open'))
-		self.assertEqual(n['orphan'], {'panel': 't9', 'title': '#n12 implémenteur', 'motif': 'sans-agent'})
+		self.assertEqual(n['orphan'], {'panel': 't9', 'title': '#n12 implémenteur'})
 		self.assertIn('#n12 implémenteur', n['title'])
 
 	def test_terminal_sans_agent_titre_autre_jamais_propose(self):
@@ -1726,12 +1726,27 @@ class Orphelins(Base):
 			self.tour(self.row('t1', title='zsh'), self.row('t2', title='npm run dev'), self.row('t3', title='#n12'))
 		self.assertEqual(self.offres(), [])
 
-	def test_panneau_relie_par_trigger_hors_besoin_propose_au_2e_tour(self):
-		b9 = self.row('b9', type='browser', title='Docs')
-		self.tour(b9, orch_relations=self.trigger('b9'))
+	def test_panneau_relie_par_trigger_hors_besoin_jamais_propose(self):
+		"""Décision n271 : seul un terminal titré #n<chiffres> sans agent est orphelin, la relation ne compte pas."""
+		rows = [self.row('t1', title='zsh'), self.row('b9', type='browser', title='Docs'),
+		        self.row('c9', type='canvas', title='Plan'), self.row('t2', title='#n12')]
+		for _ in range(4):
+			self.tour(*rows, orch_relations=self.trigger('t1', 'b9', 'c9', 't2'))
 		self.assertEqual(self.offres(), [])
-		self.tour(b9, orch_relations=self.trigger('b9'))
-		self.assertEqual(self.offres()[0]['orphan'], {'panel': 'b9', 'title': 'Docs', 'motif': 'non-rattache'})
+		self.assertEqual(self.state()['orphanVus'], {})
+
+	def test_terminal_titre_besoin_avec_agent_en_attente_jamais_propose(self):
+		t9 = self.row('t9', title='#n12 x')
+		for _ in range(4):
+			self.tour(t9, agents=[{'panelId': 't9', 'title': 'x', 'state': 'waitingForInput'}])
+		self.assertEqual(self.offres(), [])
+
+	def test_agent_fini_n_est_pas_vivant(self):
+		t9 = self.row('t9', title='#n12 x')
+		agents = [{'panelId': 't9', 'title': 'x', 'state': 'finished'}]
+		self.tour(t9, agents=agents)
+		self.tour(t9, agents=agents)
+		self.assertEqual(len(self.offres()), 1)
 
 	def test_jamais_proposes(self):
 		with agence.tx() as st:
@@ -1740,10 +1755,11 @@ class Orphelins(Base):
 		        self.row('t7', title='#n7 implémenteur'),                       # son agent tourne
 		        self.row('e1', type='editor', title='#n9 notes'),               # un éditeur : travail non enregistré
 		        self.row('me', title='#n2 implémenteur', caller=True),          # le terminal qui appelle
-		        self.row('b8', type='browser', title='Docs')]                   # relié mais agent en plein tour
-		agents = [{'panelId': 't7', 'title': 'impl', 'state': 'running'}, {'panelId': 'b8', 'title': 'x', 'state': 'running'}]
+		        self.row('b8', type='browser', title='#n8 Docs'),               # pas un terminal
+		        self.row('c8', type='canvas', title='#n8 Plan')]                # pas un terminal
+		agents = [{'panelId': 't7', 'title': 'impl', 'state': 'running'}]
 		for _ in range(4):
-			self.tour(*rows, agents=agents, orch_relations=self.trigger('t7', 'e1', 'b8'))
+			self.tour(*rows, agents=agents, orch_relations=self.trigger('t7', 'e1', 'b8', 'c8'))
 		self.assertEqual(self.offres(), [])
 		protegees = [self.row('o1', title='#n3 orchestrateur'), self.row('r1', title='#n3 régisseur'),
 		             self.row('s1', type='terminal', title='#n3 suivi')]  # les panneaux du projet, même titrés #n
@@ -1754,7 +1770,7 @@ class Orphelins(Base):
 	def test_terminal_qui_retrouve_un_agent_repart_a_zero(self):
 		t9 = self.row('t9', title='#n12 implémenteur')
 		self.tour(t9)
-		self.tour(t9, agents=[{'panelId': 't9', 'title': 'impl', 'state': 'finished'}])
+		self.tour(t9, agents=[{'panelId': 't9', 'title': 'impl', 'state': 'running'}])
 		self.assertNotIn('t9', self.state()['orphanVus'])
 		self.tour(t9)
 		self.assertEqual(self.offres(), [])
