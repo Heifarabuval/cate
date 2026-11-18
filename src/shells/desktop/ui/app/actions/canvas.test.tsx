@@ -4,7 +4,6 @@ import { applyOp } from '@workspace/document/contract'
 import { installClientUi } from '@kernel/interaction'
 import type { ClientUi } from '@kernel/interaction/contract'
 import { registerPanelDefinitions } from '@client/host'
-import { setHoveredFrame } from '../../client/layout/canvas/frame/target'
 import { canvasViewFor, resetCanvasViews } from '../../client/layout/canvas'
 import { canvasDocument } from '../../client/layout/canvas/testing.canvas'
 import { attachTestWorkspace, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
@@ -83,8 +82,6 @@ describe('frame actions', () => {
     return { store, propose, confirm, promptText, bindings, frame, context: { workspaceId: 'ws', canvasId: 'c1' } }
   }
 
-  afterEach(() => setHoveredFrame(null))
-
   it('declares the four actions once', () => {
     for (const id of ids) expect(CANVAS_ACTIONS[id].title).toBeTruthy()
   })
@@ -96,7 +93,7 @@ describe('frame actions', () => {
     expect(bindings['frame.collapse'].enabled?.(context)).toBe(true)
     store.getState().focusNode('b')
     expect(bindings['frame.collapse'].enabled?.(context)).toBe(false)
-    setHoveredFrame({ workspaceId: 'ws', canvasId: 'c1', frameId: 'f1' })
+    ws!.state.setHoveredFrame({ canvasId: 'c1', frameId: 'f1' })
     expect(bindings['frame.collapse'].enabled?.(context)).toBe(true)
     await bindings['frame.collapse'].run(context)
     expect(frame().collapsed).toBe(true)

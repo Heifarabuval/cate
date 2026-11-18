@@ -52,6 +52,7 @@ const EMPTY_CLIENT_STATE: ClientState = {
   maximizedStacks: {},
   panelViews: {},
   intents: [],
+  hoveredFrame: null,
 }
 
 export function useClientState<T>(
