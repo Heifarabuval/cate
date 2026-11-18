@@ -3,7 +3,7 @@ import type { AgentHookEventKind, AgentId } from '../../contract'
 /** Native commands used only to drive the real CLI fixtures. Production
  * observes confirmed lifecycle events; it never interprets typed commands. */
 export const CONVERSATION_RESET_COMMANDS: Record<AgentId, string> = {
-  'claude-code': '/clear', codex: '/clear', cursor: '/new-chat', grok: '/clear',
+  'claude-code': '/clear', codex: '/clear', cursor: '/new-chat', gemini: '/clear', grok: '/clear',
   opencode: '/new', pi: '/new', kiro: '/clear',
 }
 
@@ -15,14 +15,14 @@ export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'stored-edit
   before_agent_start: 'turn-start', agent_settled: 'turn-end', ui_prompt_start: 'permission-wait', ui_prompt_end: 'turn-resume', tool_execution_end: 'turn-resume',
   SessionStart: 'session-start', sessionStart: 'session-start',
   'session.created': 'session-start',
-  UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start',
+  UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start', BeforeAgent: 'turn-start',
   PermissionRequest: 'permission-check', Notification: 'permission-wait',
   'permission.asked': 'permission-wait',
   PreToolUse: 'turn-resume', PostToolUse: 'turn-resume', PostToolUseFailure: 'turn-resume',
   PermissionDenied: 'turn-resume', postToolUse: 'turn-resume', afterFileEdit: 'turn-resume',
-  'permission.replied': 'turn-resume',
+  'permission.replied': 'turn-resume', AfterTool: 'turn-resume',
   Stop: 'turn-end', StopFailure: 'turn-end', StopCancelled: 'turn-end', Interrupt: 'turn-end',
-  stop: 'turn-end',
+  stop: 'turn-end', AfterAgent: 'turn-end',
   SessionEnd: 'session-end', sessionEnd: 'session-end',
   'session.status': 'turn-start', // The same native event with status=idle must also end the turn.
   'message.part.updated': 'stored-edit',
@@ -66,6 +66,15 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     interrupt: ['stop'],
     resume: ['sessionStart', 'beforeSubmitPrompt', 'stop'],
     'session-end': ['sessionEnd'],
+  },
+  gemini: {
+    edit: ['SessionStart', 'BeforeAgent', 'Notification', 'AfterTool', 'AfterAgent'],
+    interrupt: [], // AfterAgent never fires on a cancelled turn; Cate uses the PTY Ctrl-C.
+    resume: ['SessionStart', 'BeforeAgent', 'AfterAgent'],
+    'session-end': ['SessionEnd'],
+    'session-reset': ['SessionEnd', 'SessionStart'],
+    'permission-allow': ['Notification', 'AfterTool'],
+    'permission-deny': ['Notification'],
   },
   grok: {
     'session-reset': [], // Native reset, followed by switching back to the original session.

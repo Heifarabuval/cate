@@ -21,6 +21,7 @@ export type AgentId =
   | 'claude-code'
   | 'codex'
   | 'cursor'
+  | 'gemini'
   | 'grok'
   | 'kiro'
   | 'opencode'
@@ -173,6 +174,30 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     promptGuidance: null,
     // ~/.cursor/skills-cursor is cursor's internal built-ins dir; never written.
     skills: folderSkills('cursor', ['.cursor', 'skills']),
+  },
+  // Google's Gemini CLI (0.32.1 read: dist/src/config/config.js, sessionUtils.js).
+  gemini: {
+    id: 'gemini',
+    displayName: 'Gemini',
+    command: 'gemini',
+    // --resume takes the session uuid of the current project and errors on an
+    // unknown one. The chat file is written from the first message only, so a
+    // session is stamped from its first turn.
+    resume: { args: (sid) => ['--resume', sid], fromSessionStart: false },
+    sessionStore: '.gemini/tmp',
+    // -i, not a positional query: a prompt reading `mcp` or `skills` would
+    // otherwise run that subcommand. -i keeps the session interactive.
+    promptArgs: (prompt) => ['--prompt-interactive', prompt],
+    startArgs: [],
+    launchOptions: { model: (m) => ['--model', m], effort: null },
+    // One Ctrl-C cancels the running request; a second within the warning
+    // window quits, so exactly one is sent.
+    interruptKeys: ['ctrl-c'],
+    matchProcess: (n) => n === 'gemini',
+    // BeforeAgent honours hookSpecificOutput.additionalContext (HTML-escaped).
+    promptContextHook: 'additional-context',
+    promptGuidance: null,
+    skills: folderSkills('gemini', ['.gemini', 'skills']),
   },
   // xAI's Grok Build. The npm launcher execs a versioned binary out of
   // ~/.grok/bin, so the versioned spelling shows up alongside the plain one.

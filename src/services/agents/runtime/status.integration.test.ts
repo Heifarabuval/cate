@@ -51,6 +51,12 @@ const fixtures: AgentLifecycleFixture[] = [
     turnEnd: { type: 'session.status', sessionID: SESSION, status: { type: 'idle' } },
   },
   {
+    agentId: 'gemini',
+    sessionStart: { hook_event_name: 'SessionStart', session_id: SESSION, source: 'startup' },
+    turnStart: { hook_event_name: 'BeforeAgent', session_id: SESSION, prompt: 'Review it' },
+    turnEnd: { hook_event_name: 'AfterAgent', session_id: SESSION, prompt: 'Review it', prompt_response: 'Done', stop_hook_active: false },
+  },
+  {
     agentId: 'kiro',
     sessionStart: { hook_event_name: 'agentSpawn', session_id: SESSION },
     turnStart: { hook_event_name: 'userPromptSubmit', session_id: SESSION },
@@ -90,6 +96,17 @@ const permissionFixtures: PermissionFixture[] = [
     agentId: 'opencode',
     turnStart: { type: 'session.status', sessionID: SESSION, status: { type: 'busy' } },
     permissionWait: { type: 'permission.asked', sessionID: SESSION },
+  },
+  {
+    agentId: 'gemini',
+    turnStart: { hook_event_name: 'BeforeAgent', session_id: SESSION, prompt: 'Review it' },
+    permissionWait: {
+      hook_event_name: 'Notification',
+      session_id: SESSION,
+      notification_type: 'ToolPermission',
+      message: 'Tool run_shell_command requires execution permission',
+      details: { type: 'exec', title: 'Confirm Shell Command' },
+    },
   },
 ]
 

@@ -735,6 +735,10 @@ const TOOL_POSTS: Record<AgentId, { edit: (file: string) => Record<string, unkno
     edit: (file) => ({ hook_event_name: 'afterFileEdit', conversation_id: 's', file_path: file, edits: [{ old_string: '', new_string: 'after\n' }] }),
     shell: (command) => ({ hook_event_name: 'postToolUse', conversation_id: 's', tool_use_id: 'b', tool_name: 'Shell', tool_input: { command }, tool_output: '{"exitCode":0}' }),
   },
+  gemini: {
+    edit: (file) => ({ hook_event_name: 'AfterTool', session_id: 's', tool_name: 'write_file', tool_input: { file_path: file, content: 'after\n' }, tool_response: { llmContent: 'Created', returnDisplay: 'Created' } }),
+    shell: (command) => ({ hook_event_name: 'AfterTool', session_id: 's', tool_name: 'run_shell_command', tool_input: { command, description: 'Run it' }, tool_response: { llmContent: '', returnDisplay: '' } }),
+  },
   grok: {
     edit: (file) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'e', toolName: 'write', toolInput: { file_path: file, content: 'after\n' }, toolResponse: {} }),
     shell: (command) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'b', toolName: 'run_terminal_command', toolInput: { command, description: 'Run it' }, toolResponse: {} }),
@@ -858,6 +862,7 @@ describe('terminal agentTerminals input and hook ordering', () => {
     { agentId: 'codex', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'claude-code', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'grok', start: { hookEventName: 'user_prompt_submit' }, wait: { hookEventName: 'notification', notificationType: 'permission_prompt' } },
+    { agentId: 'gemini', start: { hook_event_name: 'BeforeAgent' }, wait: { hook_event_name: 'Notification', notification_type: 'ToolPermission', message: 'Allow command?' } },
     { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
     { agentId: 'pi', start: { type: 'before_agent_start' }, wait: { type: 'ui_prompt_start', title: 'Allow command?' } },
     // These CLIs have no permission-wait hook. Input must preserve their running state.

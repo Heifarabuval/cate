@@ -11,7 +11,7 @@ export const HOOK_SMOKE_PROMPT = 'Reply with only the number 41872 plus one. Do 
 export function cleanHookEnv(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter(([key, value]) => value !== undefined
     && /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LC_.*|TERM.*|TMPDIR|TMP|TEMP|SystemRoot|ComSpec|PATHEXT)$/i.test(key)
-    && !/^(CATE_HOOK_|CATE_TERMINAL_ID$|CLAUDE|ANTHROPIC|CODEX|GROK_)/.test(key))) as Record<string, string>
+    && !/^(CATE_HOOK_|CATE_TERMINAL_ID$|CLAUDE|ANTHROPIC|CODEX|GROK_|GEMINI_|GOOGLE_)/.test(key))) as Record<string, string>
 }
 
 export async function configureHookCli(agentId: AgentId, directory: string, cwd: string, env: Record<string, string>, provider: Awaited<ReturnType<typeof createHookMockProvider>>, initialPrompt = HOOK_SMOKE_PROMPT): Promise<{ args: string[] }> {
@@ -66,6 +66,19 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       env.CURSOR_API_KEY = 'cate-fake-key'
       env.AGENT_CLI_CREDENTIAL_STORE = 'memory'
       return { args: ['--trust', '--endpoint', mockUrl, '--model', 'auto', initialPrompt] }
+    case 'gemini': {
+      // GEMINI_CLI_HOME replaces the home gemini reads ~/.gemini from.
+      env.GEMINI_CLI_HOME = path.join(directory, 'gemini-home')
+      env.GEMINI_API_KEY = 'cate-fake-key'
+      env.GOOGLE_GEMINI_BASE_URL = mockUrl
+      await mkdir(path.join(env.GEMINI_CLI_HOME, '.gemini'), { recursive: true })
+      await writeFile(path.join(env.GEMINI_CLI_HOME, '.gemini', 'settings.json'), JSON.stringify({
+        security: { auth: { selectedType: 'gemini-api-key' }, folderTrust: { enabled: false } },
+        general: { disableAutoUpdate: true, sessionRetention: { enabled: false, warningAcknowledged: true } },
+        ide: { hasSeenNudge: true }, privacy: { usageStatisticsEnabled: false },
+      }))
+      return { args: ['--model', 'cate-mock', '--prompt-interactive', initialPrompt] }
+    }
     case 'grok': {
       env.GROK_FOLDER_TRUST = '0'
       env.GROK_HOME = path.join(directory, 'grok')

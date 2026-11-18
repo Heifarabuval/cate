@@ -5,6 +5,8 @@ import type { AgentId } from '@services/agents/contract'
 import claudeLogo from './logos/claude.svg?url'
 import codexLogo from './logos/codex.svg?url'
 import cursorLogo from './logos/cursor.svg?url'
+// A four-point sparkle in Gemini blue, drawn for Cate (not Google's artwork).
+import geminiLogo from './logos/gemini.svg?url'
 import grokLogo from './logos/grok.svg?url'
 import kiroLogo from './logos/kiro.svg?url'
 // Official Pi artwork, bundled verbatim from https://pi.dev/logo-auto.svg.
@@ -15,6 +17,7 @@ const AGENT_LOGOS: Record<AgentId, string> = {
   'claude-code': claudeLogo,
   codex: codexLogo,
   cursor: cursorLogo,
+  gemini: geminiLogo,
   grok: grokLogo,
   kiro: kiroLogo,
   opencode: opencodeLogo,

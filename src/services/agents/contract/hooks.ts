@@ -754,6 +754,63 @@ const grokSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// gemini — hooks ride in <project>/.gemini/settings.json (project scope, the
+// same {hooks: {<Event>: [groups]}} shape as claude's). Read from the
+// gemini-cli-core 0.32.1 sources (hooks/types.d.ts, hookRegistry.js):
+//  · Project hooks load only in a trusted folder; untrusted ones are skipped
+//    with a warning, new ones are announced once and then trusted.
+//  · Payloads are snake_case: session_id, transcript_path, cwd,
+//    hook_event_name on every event.
+//  · BeforeAgent fires once per prompt, AfterAgent once its final reply is in
+//    (never while tool calls are pending, never on a cancelled turn).
+//  · Notification{notification_type: ToolPermission} fires only when the
+//    policy asks the user (scheduler.js: ASK_USER), right before the prompt.
+//    BeforeTool precedes every tool and is not injected.
+//  · The hook env is the CLI's env, unless the user turns on
+//    security.environmentVariableRedaction: it then drops CATE_HOOK_TOKEN
+//    (/TOKEN/ name pattern) and the bridge cannot post.
+// ---------------------------------------------------------------------------
+
+const GEMINI_EVENTS = ['SessionStart', 'BeforeAgent', 'AfterTool', 'Notification', 'AfterAgent', 'SessionEnd']
+
+const geminiSpec: AgentHookSpec = {
+  interrupt: { via: 'input' },
+  projectFiles: [
+    {
+      relPath: '.gemini/settings.json',
+      // Shared with the user's own gemini settings — merged, never clobbered.
+      build: (existing, ctx) =>
+        mergeSharedHooksFile(existing, GEMINI_EVENTS, () => ({
+          hooks: [{ type: 'command', command: ctx.bridgeCommand }],
+        })),
+      strip: (existing) => stripSharedHooksFile(existing, GEMINI_EVENTS),
+    },
+  ],
+  normalize: (p) => {
+    const base = {
+      sessionId: str(p.session_id),
+      cwd: str(p.cwd) ?? undefined,
+      transcriptPath: str(p.transcript_path) || undefined,
+    }
+    switch (p.hook_event_name) {
+      case 'SessionStart': return { kind: 'session-start', ...base }
+      case 'BeforeAgent': return { kind: 'turn-start', ...base }
+      case 'AfterTool': return { kind: 'turn-resume', ...base }
+      case 'AfterAgent': return { kind: 'turn-end', ...base }
+      case 'SessionEnd': return { kind: 'session-end', ...base, ...(p.reason === 'clear' ? { conversationReset: true as const } : {}) }
+      case 'Notification':
+        return p.notification_type === 'ToolPermission'
+          ? { kind: 'permission-wait', ...base, ...permission(p.message) }
+          : null
+      default: return null
+    }
+  },
+  toolCall: (p) => p.hook_event_name === 'AfterTool'
+    ? snakeCaseToolCall(p, str(p.session_id), obj(p.tool_response).error != null)
+    : null,
+}
+
+// ---------------------------------------------------------------------------
 // opencode — an in-process plugin at <project>/.opencode/plugin/cate-hook.js.
 // opencode scans `{plugin,plugins}/*.{ts,js}` under every config directory it
 // resolves and imports each match at startup (verified against the 1.18.3
@@ -1042,6 +1099,7 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   'claude-code': claudeSpec,
   codex: codexSpec,
   cursor: cursorSpec,
+  gemini: geminiSpec,
   grok: grokSpec,
   kiro: kiroSpec,
   opencode: opencodeSpec,

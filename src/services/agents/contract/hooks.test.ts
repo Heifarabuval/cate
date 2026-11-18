@@ -544,6 +544,91 @@ describe('kiro spec', () => {
   })
 })
 
+describe('gemini spec', () => {
+  const spec = AGENT_HOOK_SPECS.gemini
+  const file = spec.projectFiles![0]
+  // Field-for-field the HookInput of gemini-cli-core 0.32.1 (hooks/types.d.ts).
+  const base = {
+    session_id: '8fd7c046-7ac6-4c7a-ae25-b241eef5bedd',
+    transcript_path: '/home/u/.gemini/tmp/proj/chats/session-2026-03-06T17-19-8fd7c046.json',
+    cwd: '/home/u/proj',
+    timestamp: '2026-03-06T17:19:18.574Z',
+  }
+
+  test('merges its hooks into the shared .gemini/settings.json', () => {
+    expect(file.relPath).toBe('.gemini/settings.json')
+    const parsed = JSON.parse(file.build(null, ctx)!) as {
+      hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>>
+    }
+    expect(Object.keys(parsed.hooks).sort()).toEqual(
+      ['AfterAgent', 'AfterTool', 'BeforeAgent', 'Notification', 'SessionEnd', 'SessionStart'],
+    )
+    for (const groups of Object.values(parsed.hooks)) {
+      expect(groups[0].hooks[0]).toEqual({ type: 'command', command: ctx.bridgeCommand })
+    }
+    // BeforeTool precedes every tool, approved or not: it cannot mark a wait.
+    expect(parsed.hooks.BeforeTool).toBeUndefined()
+  })
+
+  test('keeps the user settings and hooks of a shared file, and strips only ours', () => {
+    const user = JSON.stringify({
+      security: { auth: { selectedType: 'oauth-personal' } },
+      hooks: { AfterTool: [{ matcher: 'write_file', hooks: [{ type: 'command', command: 'lint.sh' }] }] },
+    })
+    const merged = file.build(user, ctx)!
+    const parsed = JSON.parse(merged) as Record<string, any>
+    expect(parsed.security).toEqual({ auth: { selectedType: 'oauth-personal' } })
+    expect(parsed.hooks.AfterTool).toHaveLength(2)
+    expect(file.build(merged, ctx)).toBeNull()
+    expect(JSON.parse((file.strip!(merged) as { content: string }).content)).toEqual(JSON.parse(user))
+    expect(file.strip!(user)).toBeNull()
+  })
+
+  test('lifecycle events normalize with identity fields', () => {
+    expect(norm('gemini', { hook_event_name: 'SessionStart', ...base, source: 'startup' })).toMatchObject({
+      kind: 'session-start',
+      sessionId: base.session_id,
+      cwd: base.cwd,
+      transcriptPath: base.transcript_path,
+    })
+    expect(norm('gemini', { hook_event_name: 'BeforeAgent', ...base, prompt: 'Review PR 36' })?.kind).toBe('turn-start')
+    expect(norm('gemini', { hook_event_name: 'AfterAgent', ...base, prompt: 'x', prompt_response: 'y', stop_hook_active: false })?.kind)
+      .toBe('turn-end')
+    expect(norm('gemini', { hook_event_name: 'AfterTool', ...base, tool_name: 'read_file' })?.kind).toBe('turn-resume')
+    expect(norm('gemini', { hook_event_name: 'SessionEnd', ...base, reason: 'exit' })).toMatchObject({ kind: 'session-end' })
+    // /clear ends the session and starts a fresh one.
+    expect(norm('gemini', { hook_event_name: 'SessionEnd', ...base, reason: 'clear' })).toMatchObject({
+      kind: 'session-end',
+      conversationReset: true,
+    })
+  })
+
+  test('a ToolPermission notification is a human permission wait', () => {
+    expect(norm('gemini', {
+      hook_event_name: 'Notification',
+      ...base,
+      notification_type: 'ToolPermission',
+      message: 'Tool run_shell_command requires execution permission',
+      details: { type: 'exec', title: 'Confirm Shell Command', command: 'rm -rf dist' },
+    })).toMatchObject({ kind: 'permission-wait', permission: 'Tool run_shell_command requires execution permission' })
+    expect(norm('gemini', { hook_event_name: 'Notification', ...base, notification_type: 'Other' })).toBeNull()
+  })
+
+  test('untracked and foreign payloads drop', () => {
+    expect(norm('gemini', { hook_event_name: 'BeforeTool', ...base, tool_name: 'run_shell_command' })).toBeNull()
+    expect(norm('gemini', { hook_event_name: 'BeforeModel', ...base })).toBeNull()
+    expect(norm('gemini', { hook_event_name: 'UserPromptSubmit', ...base })).toBeNull()
+  })
+
+  test('AfterTool reports the tool call, failed when the tool returned an error', () => {
+    const ok = { hook_event_name: 'AfterTool', ...base, tool_name: 'read_file', tool_input: { file_path: 'a.ts' }, tool_response: { llmContent: 'x', returnDisplay: 'x' } }
+    expect(spec.toolCall(ok)).toMatchObject({ sessionId: base.session_id, name: 'read_file', input: { file_path: 'a.ts' }, cwd: base.cwd })
+    expect(spec.toolCall(ok)).not.toHaveProperty('failed')
+    expect(spec.toolCall({ ...ok, tool_response: { llmContent: 'x', error: { message: 'ENOENT' } } })?.failed).toBe(true)
+    expect(spec.toolCall({ ...ok, hook_event_name: 'BeforeTool' })).toBeNull()
+  })
+})
+
 describe('normalizeAgentHookPayload', () => {
   test('unknown agents and untracked payloads drop; raw payload rides along', () => {
     expect(normalizeAgentHookPayload('not-an-agent', 't', { hook_event_name: 'Stop' })).toBeNull()
@@ -592,6 +677,9 @@ describe('interrupt', () => {
       // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook or
       // transcript marker; the runtime recovers it from the Ctrl-C input edge.
       kiro: 'input',
+      // Gemini 0.32.1 fires AfterAgent only after a completed turn; one Ctrl-C
+      // cancels the request (cancelOngoingRequest), so the input edge ends it.
+      gemini: 'input',
     })
   })
 })

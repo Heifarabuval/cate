@@ -23,6 +23,7 @@ describe('native authentication status parsing', () => {
     ['opencode', '└  0 credentials', 0, 'signed-out'],
     ['opencode', '└  2 credentials', 0, 'signed-in'],
     ['grok', '', 0, 'unknown'],
+    ['gemini', '', 0, 'unknown'],
     ['claude-code', 'upstream unavailable', 1, 'unknown'],
     ['cursor', '{invalid json', 1, 'unknown'],
   ])('%s parses %s (%s)', (agentId, output, exitCode, status) => {

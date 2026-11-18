@@ -36,7 +36,7 @@ describe('agent setup', () => {
   })
   const loginCommands: Record<AgentId, string[]> = {
     'claude-code': ['auth', 'login'], codex: ['login', '--device-auth'], cursor: ['login'],
-    pi: [],
+    pi: [], gemini: [],
     grok: ['login', '--device-auth'], kiro: ['login', '--use-device-flow'], opencode: ['auth', 'login'],
   }
   it('rejects untrusted setup work before probing, fetching or opening terminals', async () => {
@@ -61,7 +61,7 @@ describe('agent setup', () => {
     for (const exit of exits) exit('pty', 0)
     expect(setup.operation(op.id)?.status).toBe('completed')
     const info = (await setup.inspect()).agents.find((a) => a.agentId === id)!
-    expect(info.authentication.status).toBe(['grok', 'pi'].includes(id) ? 'unknown' : 'signed-in')
+    expect(info.authentication.status).toBe(['gemini', 'grok', 'pi'].includes(id) ? 'unknown' : 'signed-in')
   })
   it.each(AGENTS)('$id handles failed login, retry, cancellation and late exit', async ({ id }) => {
     const { setup, deps, exits, launch } = await fixture()
@@ -99,7 +99,7 @@ describe('agent setup', () => {
     expect((await restored.begin({ agentId: id, action: 'login' })).id).not.toBe(op.id)
   })
   it('declares native login/install/download for every harness for every supported CLI', () => {
-    expect(Object.keys(AGENT_SETUP_ADAPTERS)).toHaveLength(7)
+    expect(Object.keys(AGENT_SETUP_ADAPTERS)).toHaveLength(8)
     for (const adapter of Object.values(AGENT_SETUP_ADAPTERS)) { expect(adapter.downloadUrl).toMatch(/^https:/); expect(adapter.login.length > 0 || adapter.loginHint).toBeTruthy(); expect(adapter.installer.unix).toBeDefined() }
   })
   it('only returns safe public authentication fields, including signed-out Codex', () => {

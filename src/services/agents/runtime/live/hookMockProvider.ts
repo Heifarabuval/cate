@@ -82,6 +82,7 @@ export async function createHookMockProvider(options: {
         try { input = JSON.parse(body || '{}') } catch { res.writeHead(400); res.end(); return }
       }
       const inference = /\/(messages|chat\/completions|responses|generateAssistantResponse|RunSSE)$/.test(route)
+        || /:(streamGenerateContent|generateContent)$/.test(route)
         || req.headers['x-amz-target'] === 'KiroRuntimeService.GenerateAssistantResponse'
       const protocol = String(req.headers['x-amz-target'] ?? route)
       if (inference) {
@@ -148,6 +149,22 @@ export async function createHookMockProvider(options: {
         res.writeHead(200, { 'content-type': 'application/proto' })
         res.end(route.endsWith('/GetServerConfig') ? Buffer.from([56, 1]) : /\/(GetUsableModels|GetDefaultModelForCli)$/.test(route)
           ? field(1, Buffer.concat([field(1, 'auto'), field(4, 'Cate mock')])) : undefined)
+      } else if (/:(streamGenerateContent|generateContent)$/.test(route)) {
+        // Gemini's generativelanguage API (@google/genai): SSE chunks of one
+        // GenerateContentResponse each, `?alt=sse` on the streaming route.
+        const parts = call ? [{ functionCall: { name: call.name, args: call.arguments } }] : [{ text: replyText }]
+        const chunk = (finishReason?: string) => ({
+          candidates: [{ content: { role: 'model', parts }, index: 0, ...(finishReason ? { finishReason } : {}) }],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3, totalTokenCount: 13 },
+          modelVersion: route.match(/models\/([^:]+):/)?.[1] ?? 'cate-mock',
+        })
+        if (route.endsWith(':generateContent')) { json(chunk('STOP')); return }
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        if (hold) { sse(chunk()); return }
+        sse(chunk('STOP'))
+        res.end()
+      } else if (route.endsWith(':countTokens')) {
+        json({ totalTokens: 10 })
       } else if (route.endsWith('/models')) {
         json({ object: 'list', data: [{ id: 'cate-mock', object: 'model', owned_by: 'cate', created: 1 }] })
       } else if (route.endsWith('/messages/count_tokens')) {

@@ -6,6 +6,7 @@ case "${1:?Pass a supported agent id}" in
   claude-code) npm install --global @anthropic-ai/claude-code@latest ;;
   codex) npm install --global @openai/codex@latest ;;
   cursor) curl --fail --silent --show-error --location https://cursor.com/install | bash ;;
+  gemini) npm install --global @google/gemini-cli@latest ;;
   grok) npm install --global @xai-official/grok@latest ;;
   opencode) npm install --global opencode-ai@latest ;;
   pi) npm install --global --ignore-scripts @earendil-works/pi-coding-agent@latest ;;

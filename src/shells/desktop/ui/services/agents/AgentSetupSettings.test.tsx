@@ -110,9 +110,9 @@ describe('AI & Agents settings', () => {
     expect(setupInspect).not.toHaveBeenCalled()
   })
 
-  it('shows all seven agents, the actual host, version and safe native account identity', async () => {
+  it('shows all eight agents, the actual host, version and safe native account identity', async () => {
     await render()
-    expect(host.querySelectorAll('[data-agent-setup-id]')).toHaveLength(7)
+    expect(host.querySelectorAll('[data-agent-setup-id]')).toHaveLength(8)
     expect(host.textContent).not.toContain('Remote build machine')
     expect(row('codex').textContent).toContain('developer@example.com · Pro')
     expect(row('codex').textContent).not.toContain('Version')

@@ -55,6 +55,9 @@ const claudeTranscript = ({ home, cwd, sessionId }: FixtureEnv): string =>
 const grokTranscript = ({ home, cwd, sessionId }: FixtureEnv): string =>
   path.join(home, '.grok', 'sessions', encodeURIComponent(cwd), sessionId, 'updates.jsonl')
 
+const geminiTranscript = ({ home, sessionId }: FixtureEnv): string =>
+  path.join(home, '.gemini', 'tmp', 'repo', 'chats', `session-2026-11-18T10-00-${sessionId.slice(0, 8)}.json`)
+
 const FIXTURES: Record<AgentId, TitleFixture> = {
   'claude-code': {
     sessionId: '11111111-2222-4333-8444-555555555555',
@@ -88,6 +91,16 @@ const FIXTURES: Record<AgentId, TitleFixture> = {
         path.join(env.home, '.cursor', 'chats', '0123456789abcdef0123456789abcdef', env.sessionId, 'meta.json'),
         JSON.stringify({ schemaVersion: 1, hasConversation: true, title, cwd: env.cwd }),
       )
+    },
+  },
+  gemini: {
+    sessionId: '22222222-3333-4444-8555-666666666666',
+    prompt: (env) => ({ hook_event_name: 'BeforeAgent', session_id: env.sessionId, cwd: env.cwd, transcript_path: geminiTranscript(env), prompt: 'Hi' }),
+    writeTitle(env, title) {
+      // Gemini rewrites the whole session file; its summary is the title.
+      const file = geminiTranscript(env)
+      mkdirSync(path.dirname(file), { recursive: true })
+      writeFileSync(file, JSON.stringify({ sessionId: env.sessionId, messages: [], summary: title }))
     },
   },
   grok: {
