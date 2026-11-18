@@ -17,6 +17,7 @@ import CanvasNode from './CanvasNode'
 import CanvasToolbar from './CanvasToolbar'
 import { NodeErrorBoundary } from './NodeErrorBoundary'
 import { PanelConnectionLayer } from './PanelConnectionLayer'
+import { FrameLayer } from './frame/FrameLayer'
 
 export interface CanvasViewProps {
   workspaceId: string
@@ -52,6 +53,7 @@ function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store }: CanvasView
   const staged = useStagedVisibleNodeIds(visible)
   return (
     <>
+      <FrameLayer workspaceId={workspaceId} canvasId={canvasId} />
       <PanelConnectionLayer workspaceId={workspaceId} />
       {staged.map((nodeId) => (
         <NodeSlot key={nodeId} workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} nodeId={nodeId} />
