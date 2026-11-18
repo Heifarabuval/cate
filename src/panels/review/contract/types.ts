@@ -105,6 +105,11 @@ export interface ReviewRecordedState {
 
 export type PrErrorKind = PullRequestErrorKind | 'no-origin' | 'untrusted'
 
+/** The least time between two reads a view's tick may start. */
+export const PR_TICK_INTERVAL_MS = 25_000
+/** The least time between two full reads a refresh may start; an earlier one gets the last read. */
+export const PR_REFRESH_INTERVAL_MS = 5_000
+
 /** A pull request panel's reading. A failed read keeps the last `data` and `readAt`. */
 export interface ReviewPrState {
   /** null until the workspace origin is resolved (`--pr N`). */

@@ -29,7 +29,7 @@ import { PANEL_DEFINITIONS } from '@panels/definitions'
 import ReviewView from './ReviewView'
 
 registerPanelDefinitions(PANEL_DEFINITIONS)
-import { type ReviewOp, type ReviewSnapshot } from '@panels/review/contract'
+import { PR_REFRESH_INTERVAL_MS, PR_TICK_INTERVAL_MS, type ReviewOp, type ReviewSnapshot } from '@panels/review/contract'
 
 const diff = {
   path: 'src/a.ts', binary: false, tooLarge: false, byteLength: 1,
@@ -49,8 +49,8 @@ let host: HTMLDivElement
 let root: Root
 let send: ReturnType<typeof vi.fn<(op: ReviewOp) => Promise<unknown>>>
 
-function render(snapshot: ReviewSnapshot) {
-  act(() => root.render(<ReviewView workspaceId="ws" panelId="review" record={{ id: 'review', type: 'review', title: 'Review', fields: {} }} session={null as never} send={send} snapshot={snapshot} visible focused={false} />))
+function render(snapshot: ReviewSnapshot, visible = true) {
+  act(() => root.render(<ReviewView workspaceId="ws" panelId="review" record={{ id: 'review', type: 'review', title: 'Review', fields: {} }} session={null as never} send={send} snapshot={snapshot} visible={visible} focused={false} />))
 }
 const flush = () => act(async () => { await Promise.resolve() })
 const button = (label: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
@@ -478,7 +478,70 @@ it('asks the session for fresh checks while visible', async () => {
   vi.useFakeTimers()
   try {
     render(prSnapshot({ data: prData }))
-    await act(async () => { vi.advanceTimersByTime(30_000) })
+    await act(async () => { vi.advanceTimersByTime(PR_TICK_INTERVAL_MS + 5_000) })
     expect(send).toHaveBeenCalledWith({ kind: 'prTick' })
   } finally { vi.useRealTimers() }
+})
+
+it('does not wait two intervals when the session refuses a tick a millisecond too soon', async () => {
+  vi.useFakeTimers()
+  try {
+    // The session reads again only 25 s after its last read, which here started 1 ms after the view mounted.
+    const lastRead = Date.now() + 1
+    let started = false
+    send.mockImplementation(async (op: ReviewOp) => {
+      if (op.kind !== 'prTick') return undefined
+      started = Date.now() - lastRead >= PR_TICK_INTERVAL_MS
+      return started
+    })
+    render(prSnapshot({ data: prData }))
+    await act(async () => { vi.advanceTimersByTime(PR_TICK_INTERVAL_MS + 5_000) })
+    expect(started).toBe(true)
+  } finally { vi.useRealTimers() }
+})
+
+it('sends no tick while the panel is not visible', async () => {
+  vi.useFakeTimers()
+  try {
+    render(prSnapshot({ data: prData }), false)
+    await act(async () => { vi.advanceTimersByTime(PR_TICK_INTERVAL_MS * 4) })
+    expect(send).not.toHaveBeenCalledWith({ kind: 'prTick' })
+    render(prSnapshot({ data: prData }), true)
+    await act(async () => { vi.advanceTimersByTime(PR_TICK_INTERVAL_MS + 5_000) })
+    expect(send).toHaveBeenCalledWith({ kind: 'prTick' })
+  } finally { vi.useRealTimers() }
+})
+
+it('makes Retry and Refresh inert while the session would ignore them, then live again', async () => {
+  vi.useFakeTimers()
+  try {
+    const failed = { kind: 'offline' as const, message: 'GitHub is unreachable' }
+    render(prSnapshot({ data: prData, loading: true }))
+    render(prSnapshot({ data: prData, error: failed }))
+    expect(button('Retry').disabled).toBe(true)
+    expect(button('Refresh pull request').disabled).toBe(true)
+    await act(async () => { button('Retry').click() })
+    expect(send).not.toHaveBeenCalledWith({ kind: 'refresh' })
+    await act(async () => { vi.advanceTimersByTime(PR_REFRESH_INTERVAL_MS) })
+    expect(button('Retry').disabled).toBe(false)
+    await act(async () => { button('Retry').click() })
+    expect(send).toHaveBeenCalledWith({ kind: 'refresh' })
+  } finally { vi.useRealTimers() }
+})
+
+it('says a pull request has no changed file instead of showing nothing', async () => {
+  render(prSnapshot({ data: { ...prData, files: [], fileCount: 0, additions: 0, deletions: 0 } }))
+  await flush()
+  expect(host.textContent).toContain('This pull request changes no files.')
+})
+
+it('keeps third-party text (title, description, file name) as text, never markup', async () => {
+  const title = '<img src=x onerror="alert(1)"> Fix'
+  const body = '<script>alert(2)</script> <b>bold</b>'
+  const path = 'src/<i>x</i>.ts'
+  render(prSnapshot({ data: { ...prData, title, body, files: [{ ...prData.files[0], path }], fileCount: 1 } }))
+  await flush()
+  expect(host.querySelector('img, script, b, i')).toBeNull()
+  for (const text of [title, body, path]) expect(host.textContent).toContain(text)
+  expect(button(`Expand ${path}`)).not.toBeNull()
 })
