@@ -19,6 +19,13 @@ Le 2026-11-18, une journée d'orchestration a révélé quatre pannes sur un Mac
 
 Six récits indépendants y répondent. Chacun se livre et se vérifie seul. Les récits 1 à 3 modifient la CLI `agence` (`tools/agence/`), le récit 4 le code de création de worktree du fork (`src/`), les récits 5 et 6 le setup personnel de l'humain (`~/.claude`, hors du fork).
 
+## Clarifications
+
+### Session 2026-11-18
+
+- Q: Après un plantage, quel terminal est « orphelin » ? → A: seulement un terminal sans agent dont le titre suit `#n<chiffres> <rôle>` (réponse de l'humain, besoin n271). Un terminal sans ce titre n'est jamais proposé.
+- Q: Où cliquer Fermer ou Garder ? → A: sur la page du régisseur seulement (réponse de l'humain, besoin n273). Le panneau agence n'est pas modifié ; l'offre y apparaît sans bouton, comme l'offre « Supprimer le worktree ».
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Le plafond protège la mémoire (Priority: P1)
@@ -70,7 +77,8 @@ Après un plantage, Cate restaure des terminaux dont l'agent est mort. Le suivi 
 
 **Acceptance Scenarios**:
 
-1. **Given** un terminal dont l'agent n'existe plus, détecté sur deux tours du régisseur [NEEDS CLARIFICATION: critère d'un terminal « orphelin » : titre `#n<chiffres> <rôle>` seulement, ou tout terminal sans agent ?], **When** le suivi se met à jour, **Then** il apparaît avec Fermer et Garder.
+1. **Given** un terminal titré `#n<chiffres> <rôle>` dont l'agent n'existe plus, détecté sur deux tours du régisseur, **When** le suivi se met à jour, **Then** il apparaît avec Fermer et Garder.
+   - **Given** un terminal sans agent dont le titre ne suit pas cette forme, **Then** il n'est jamais proposé.
 2. **Given** un panneau lancé par l'orchestrateur et jamais rattaché à un besoin, **When** le suivi se met à jour, **Then** il apparaît avec Fermer et Garder.
 3. **Given** l'orchestrateur, le régisseur, le suivi, un panneau rattaché à un besoin ouvert ou un éditeur non enregistré, **When** le balayage tourne, **Then** aucun n'est proposé.
 4. **Given** un orphelin proposé, **When** l'humain clique Fermer, **Then** le panneau est fermé sans `--discard` ; si la fermeture est refusée, la ligne le dit et le panneau reste.
@@ -162,9 +170,9 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 
 **Récit 3 : balayage**
 
-- **FR-012**: Le régisseur MUST détecter les panneaux orphelins : terminal dont l'agent n'existe plus ([NEEDS CLARIFICATION: voir scénario 1 du récit 3]) et panneau lancé par l'orchestrateur et jamais rattaché à un besoin.
+- **FR-012**: Le régisseur MUST détecter les panneaux orphelins : terminal titré `#n<chiffres> <rôle>` dont l'agent n'existe plus et panneau lancé par l'orchestrateur et jamais rattaché à un besoin.
 - **FR-013**: Un panneau MUST être vu orphelin sur deux tours consécutifs avant d'être proposé.
-- **FR-014**: Chaque orphelin proposé MUST apparaître au suivi avec **Fermer** et **Garder**. Rien ne se ferme sans clic.
+- **FR-014**: Chaque orphelin proposé MUST apparaître au suivi avec **Fermer** et **Garder** sur la page du régisseur. Rien ne se ferme sans clic.
 - **FR-015**: Fermer MUST fermer sans `--discard`. Un refus MUST laisser le panneau et le dire sur la ligne.
 - **FR-016**: Le balayage MUST exclure l'orchestrateur, le régisseur, le suivi, tout panneau rattaché à un besoin ouvert et tout éditeur non enregistré.
 - **FR-017**: Garder MUST retirer l'orphelin de la liste et ne plus le proposer tant que le panneau vit.

@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] Aucun marqueur [NEEDS CLARIFICATION] : 1 reste (critère d'un terminal orphelin), levé par clarify
+- [x] Aucun marqueur [NEEDS CLARIFICATION] : le seul posé est levé (besoin n271)
 - [x] Exigences testables et sans ambiguïté
 - [x] Critères de succès mesurables
 - [x] Critères de succès sans technologie imposée

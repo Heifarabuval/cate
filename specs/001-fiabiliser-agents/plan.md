@@ -49,7 +49,7 @@ Approche : le plus simple d'abord. Aucune dépendance, aucune capability ni opti
 | IX. Écart minimal avec upstream | Un écart `src/` : un fichier nouveau et une ligne dans `git.ts`. Justifié : seul endroit qui crée le worktree (rapport B). Écart à porter à chaque synchro. |
 | X. Aucune fenêtre | OK. Aucune tâche de ce plan ne lance l'app, Playwright, Electron ni `npm run dev`. |
 
-Après conception : aucune violation. Le panneau agence (TS) n'est pas touché par défaut ; si l'humain choisit de l'y ajouter (q272), un lot D s'ajoute, voir « Risques ».
+Après conception : aucune violation. Le panneau agence (TS) n'est pas touché (décision n273).
 
 ## Project Structure
 
@@ -99,8 +99,7 @@ src/workspace/repository/runtime/
 
 ## Risques
 
-- **Q1 (q270)** critère d'orphelin : le plan retient le titre `#n<chiffres> ` ; l'autre option élargit la détection (tâche T-A14 ajustable).
-- **Q2 (q272)** boutons : le plan retient la page du régisseur ; l'autre option ajoute un lot D (`src/panels/agence/contract/suivi.ts`, `types.ts` et la vue desktop) et un écart upstream supplémentaire.
+- **Orphelins** (réponses de l'humain, n271 et n273) : critère = titre `#n<chiffres> ` seulement ; boutons sur la page du régisseur seulement. Conséquence : dans le panneau agence l'offre s'affiche sans bouton, comme l'offre de worktree. Un lot D (`src/panels/agence/`, vue desktop) reste possible plus tard, avec un écart upstream de plus.
 - **Clone** : 14 s de plus à la création d'un worktree sur ce dépôt. Un lockfile identique ne garantit pas des binaires identiques si la racine est restée sur une autre version de Node : accepté, une installation reste possible dans le worktree.
 - **Copie vide mais rouge** : un `node_modules` incomplet de la racine est cloné tel quel. Hors périmètre.
 - **Hook** : un faux positif bloque un agent ; la sortie `ALLOW_E2E=1` existe et le message la nomme.
