@@ -837,18 +837,30 @@ class MergeVerrou(Base):
 		# Même confirmation que QuestionCard.tsx : un clic réflexe sur l'ancienne place de Merger ne merge pas.
 		self.assertRegex(page, r'<form [^>]*onsubmit="return confirm\(&quot;Merger quand même[^"]*Mettre à jour le corps de la PR #4')
 
-	def test_repondre_desactive_tant_que_le_champ_est_vide(self):
+	def test_repondre_actif_sans_js_et_calcule_par_le_script(self):
 		qid = self.ask()
 		page = agence.page_ask(self.state(), qid)
-		self.assertRegex(page, r'<button class="btn" disabled>Répondre</button>')
+		self.assertRegex(page, r'<button class="btn">Répondre</button>')  # sans JavaScript : actif, le serveur refuse le vide
 		if not shutil.which('node'):
-			self.skipTest('node absent : comportement du oninput non exécuté')
-		js = html.unescape(re.search(r'<textarea[^>]* oninput="([^"]*)"', page).group(1))
-		for value, disabled in (('', 'true'), ('   ', 'true'), ('Autre', 'false')):  # le bouton suit le champ
-			prog = ("const b={disabled:true};const t={value:%s,form:{querySelector:(s)=>s==='button'?b:null}};"
-			        "(function(){%s}).call(t);console.log(b.disabled)" % (json.dumps(value), js))
-			out = subprocess.run(['node', '-e', prog], capture_output=True, text=True, check=True).stdout.strip()
-			self.assertEqual(out, disabled, repr(value))
+			self.skipTest('node absent : script de la page non exécuté')
+		js = re.search(r'</form><script>(.*?)</script>', page, re.S).group(1)
+		# Faux DOM : le champ, le bouton, le formulaire et le gestionnaire pageshow que le script enregistre.
+		for loaded, restored, disabled in (('', '', 'true'), ('', 'Vert pomme', 'false'), ('Autre', '', 'true'), ('  ', '  ', 'true')):
+			prog = ("const b={disabled:false},t={value:%s};const f={querySelector:(s)=>s==='button'?b:t};"
+			        "t.form=f;let ps;const addEventListener=(n,h)=>{if(n==='pageshow')ps=h};"
+			        "const document={currentScript:{previousElementSibling:f}};"
+			        "(function(){%s})();const init=b.disabled;t.value=%s;ps();"
+			        "if(t.oninput){t.oninput()}console.log(init+' '+b.disabled)"
+			        % (json.dumps(loaded), js, json.dumps(restored)))
+			out = subprocess.run(['node', '-e', prog], capture_output=True, text=True, check=True).stdout.split()
+			self.assertEqual(out[0], 'true' if not loaded.strip() else 'false', repr(loaded))  # état calculé au chargement
+			self.assertEqual(out[1], disabled, repr(restored))  # et recalculé au retour (pageshow) avec le champ restauré
+		# saisie : l'événement input suit aussi le champ
+		prog = ("const b={disabled:true},t={value:'x'};const f={querySelector:(s)=>s==='button'?b:t};"
+		        "const addEventListener=()=>{};const document={currentScript:{previousElementSibling:f}};"
+		        "(function(){%s})();t.value='Vert';t.oninput();const a=b.disabled;t.value=' ';t.oninput();console.log(a+' '+b.disabled)" % js)
+		out = subprocess.run(['node', '-e', prog], capture_output=True, text=True, check=True).stdout.split()
+		self.assertEqual(out, ['false', 'true'])
 
 	def test_post_sans_choix_ni_texte_message_utile_et_retour_a_la_question(self):
 		qid = self.ask()
@@ -966,7 +978,7 @@ class MergeVerrou(Base):
 		nom = motif[len('checks en échec : '):]
 		self.assertLessEqual(len(nom), 60)
 		page = agence.page_ask(self.state(), qid) + agence.page_suivi(self.state())
-		self.assertNotIn('<script>', page)
+		self.assertNotIn('<script>alert', page)  # la page porte son propre script, jamais celui du nom de check
 		self.assertIn('&lt;script&gt;', page)
 
 	def test_motif_change_d_un_tour_a_l_autre_et_se_degrise(self):
