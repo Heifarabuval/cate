@@ -833,12 +833,14 @@ class MergeVerrou(Base):
 		self.assertTrue(force, 'bouton de même classe que les cartes')
 		self.assertLess(page.index('Mettre à jour le corps de la PR #4'), force.start())  # verrous au-dessus
 		self.assertLess(force.start(), page.index('name="libre"'))
+		# Même confirmation que QuestionCard.tsx : un clic réflexe sur l'ancienne place de Merger ne merge pas.
+		self.assertRegex(page, r'<form [^>]*onsubmit="return confirm\(&quot;Merger quand même[^"]*Mettre à jour le corps de la PR #4')
 
 	def test_repondre_desactive_tant_que_le_champ_est_vide(self):
 		qid = self.ask()
 		page = agence.page_ask(self.state(), qid)
 		self.assertRegex(page, r'<button class="btn" disabled>Répondre</button>')
-		self.assertIn('oninput', page)
+		self.assertIn('oninput="this.form.querySelector(&quot;button&quot;).disabled=!this.value.trim()"', page)
 
 	def test_post_sans_choix_ni_texte_message_utile_et_retour_a_la_question(self):
 		qid = self.ask()
@@ -1521,6 +1523,18 @@ class Regisseur(Base):
 		status, _, body = self.post(self.TOKEN, '/draft/d1/send', 'application/json', h=agence.sha('Texte lu'))
 		self.assertEqual((status, json.loads(body)),
 		                 (409, {'code': 409, 'message': "Ce brouillon n'est plus attendu (besoin clos)."}))
+
+	def test_post_ask_vide_rend_400_avec_retour_a_la_question(self):
+		self.seed()
+		with agence.tx() as st:
+			st['questions'][0]['answer'] = None
+		self.serve()
+		for form in ({}, {'libre': ' '}):
+			status, head, body = self.post(self.TOKEN, '/ask/q2', **form)
+			self.assertEqual((status, head['Content-Type']), (400, 'text/html; charset=utf-8'))
+			self.assertIn('Écris une réponse ou choisis une option.', body)
+			self.assertIn('<a href="/ask/q2">Retour à la question</a>', body)
+		self.assertIsNone(self.state()['questions'][0]['answer'])
 
 	def test_sans_en_tete_pages_actuelles(self):
 		self.seed()

@@ -1053,10 +1053,11 @@ def page_ask(st, qid):
 		def card(i, o):
 			# Merger verrouillé : le bouton « quand même » prend la place de l'option, mêmes dimensions, verrous au-dessus.
 			force = i == 0 and locks
+			confirm = ' onsubmit="return confirm(' + e(json.dumps('Merger quand même, malgré :\n' + '\n'.join(f'- {x}' for x in locks), ensure_ascii=False)) + ')"'
 			reco = '' if force else ' reco' if i == 0 else ''
 			label = 'Merger quand même (rebase)' if force else o['label'] + (' (Recommandé)' if i == 0 else '')
 			return ((('<p class="meta">Merger grisé :</p><ul>' + ''.join(f'<li>{e(x)}</li>' for x in locks) + '</ul>') if force else '')
-			        + f'<form method="post" action="/ask/{qid}" style="display:block"><input type="hidden" name="token" value="{TOKEN}">'
+			        + f'<form method="post" action="/ask/{qid}" style="display:block"{confirm if force else ""}><input type="hidden" name="token" value="{TOKEN}">'
 			        f'<input type="hidden" name="choice" value="{i}">{FORCE if force else ""}'
 			        f'<button class="card{" no" if force else reco}"><b>{e(label)}</b><span class="meta">{e(o["detail"])}</span></button></form>')
 		cards = inconnu + ''.join(card(i, o) for i, o in enumerate(q['options']))
