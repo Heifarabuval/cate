@@ -79,6 +79,29 @@ describe('quit controller', () => {
     ])
   })
 
+  it('a second Cmd+Q confirms a confirmation that never answers', async () => {
+    const showMessageBox = vi.fn(() => new Promise<{ response: number }>(() => {}))
+    const beforeExit = vi.fn(async () => {})
+    const quit = createQuitController({ warnBeforeQuit: () => true, blockers: () => [], parentWindow: () => undefined, beforeExit, showMessageBox })
+    quit.install()
+    quitAttempt()
+    await flush()
+    expect(app.quit).not.toHaveBeenCalled()
+    quitAttempt()
+    await flush()
+    expect(showMessageBox).toHaveBeenCalledOnce()
+    expect(beforeExit).toHaveBeenCalledOnce()
+    expect(quit.committed()).toBe(true)
+    expect(app.quit).toHaveBeenCalledOnce()
+    expect(journal).toEqual([
+      'info quit requested (warn=true, blockers=0)',
+      'info quit confirmation shown: Quit Cate?',
+      'info quit confirmed by a second Cmd+Q',
+      'info quit cleanup started',
+      'info quit committed',
+    ])
+  })
+
   it('exits the process when a committed quit does not finish in time', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const quit = createQuitController({ warnBeforeQuit: () => false, blockers: () => [], parentWindow: () => undefined, beforeExit: async () => {} })

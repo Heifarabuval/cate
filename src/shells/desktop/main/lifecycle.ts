@@ -59,6 +59,8 @@ export function createQuitController(deps: QuitDeps): QuitController {
   let committed = false
   let finishing = false
   let updateRestart = false
+  // Set while a quit's confirmation is open: Cmd+Q again answers it with Quit.
+  let confirmByQuit: (() => void) | null = null
   const show = deps.showMessageBox ?? ((parent, options) => (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)))
 
   const finish = async (action: () => void, warn: boolean): Promise<boolean> => {
@@ -74,15 +76,22 @@ export function createQuitController(deps: QuitDeps): QuitController {
       const prompt = decideQuitPrompt({ warnBeforeQuit, blockers })
       if (prompt) {
         log.info('quit confirmation shown: %s', prompt.message)
-        const { response } = await show(deps.parentWindow(), {
-          type: 'warning',
-          message: prompt.message,
-          detail: prompt.detail,
-          buttons: ['Quit', 'Cancel'],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
-        })
+        const response = await new Promise<number>((resolve, reject) => {
+          // A confirmation that never shows or never answers must not hold every later Cmd+Q.
+          if (warn) confirmByQuit = () => {
+            log.info('quit confirmed by a second Cmd+Q')
+            resolve(0)
+          }
+          show(deps.parentWindow(), {
+            type: 'warning',
+            message: prompt.message,
+            detail: prompt.detail,
+            buttons: ['Quit', 'Cancel'],
+            defaultId: 1,
+            cancelId: 1,
+            noLink: true,
+          }).then(({ response }) => resolve(response), reject)
+        }).finally(() => { confirmByQuit = null })
         if (response !== 0) {
           log.info('quit cancelled by the user')
           return false
@@ -106,6 +115,7 @@ export function createQuitController(deps: QuitDeps): QuitController {
     app.on('before-quit', (event) => {
       if (committed) return
       event.preventDefault()
+      if (confirmByQuit) return confirmByQuit()
       void finish(() => {
         app.quit()
         // Closing windows waits on their renderers; a hung one would hold the quit forever.
