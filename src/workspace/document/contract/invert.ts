@@ -20,9 +20,9 @@ import {
   type DockNodeId,
   type SplitSide,
 } from './dock'
-import { opChanges, type DocBatch, type DocChange, type DocOp, type PanelPatch, type PlaceTarget, type RelationPatch } from './ops'
+import { opChanges, type DocBatch, type DocChange, type DocOp, type FramePatch, type PanelPatch, type PlaceTarget, type RelationPatch } from './ops'
 import { docIndex, dockOf, isCanvasDock, placementOf } from './placement'
-import { documentOrder } from './selectors'
+import { documentOrder, findFrame } from './selectors'
 import type { PanelId, WorkspaceDocument } from './schema'
 
 type Doc = WorkspaceDocument
@@ -106,6 +106,19 @@ function unchangedPart(now: Doc, after: Doc, change: DocChange): DocChange | nul
       const id = change.kind === 'setWorktree' ? change.worktree.id : change.id
       return jsonEqual(now.worktrees[id], after.worktrees[id]) ? change : null
     }
+    case 'updateFrame': {
+      const a = findFrame(after, change.id)
+      const n = findFrame(now, change.id)
+      if (!a || !n) return change
+      const patch = Object.fromEntries(Object.entries(change.patch).filter(([key]) =>
+        jsonEqual(n[key as keyof FramePatch], a[key as keyof FramePatch])))
+      return Object.keys(patch).length ? { ...change, patch } : null
+    }
+    case 'setNodeFrame': {
+      const a = after.canvases[change.canvasId]?.nodes[change.nodeId]
+      const n = now.canvases[change.canvasId]?.nodes[change.nodeId]
+      return !a || !n || n.frameId === a.frameId ? change : null
+    }
     default:
       return change
   }
@@ -165,6 +178,26 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
     }
     case 'removeWorktree':
       return [{ kind: 'setWorktree', worktree: before.worktrees[change.id] }]
+    case 'addFrame':
+      return [{ kind: 'removeFrame', id: change.frame.id }]
+    case 'updateFrame': {
+      const old = findFrame(before, change.id)!
+      const patch: FramePatch = {}
+      for (const key of Object.keys(change.patch) as (keyof FramePatch)[]) {
+        if (change.patch[key] !== undefined) (patch as Record<string, unknown>)[key] = old[key]
+      }
+      return [{ kind: 'updateFrame', id: change.id, patch }]
+    }
+    case 'removeFrame': {
+      const canvasId = docIndex(before).frames.get(change.id)!
+      const members = Object.values(before.canvases[canvasId].nodes).filter((node) => node.frameId === change.id)
+      return [
+        { kind: 'addFrame', canvasId, frame: findFrame(before, change.id)! },
+        ...members.map((node): DocChange => ({ kind: 'setNodeFrame', canvasId, nodeId: node.id, frameId: change.id })),
+      ]
+    }
+    case 'setNodeFrame':
+      return [{ ...change, frameId: before.canvases[change.canvasId].nodes[change.nodeId].frameId ?? null }]
   }
 }
 
@@ -186,6 +219,24 @@ function restore(before: Doc, after: Doc, panels: Set<PanelId>, mode: 'add' | 'm
     const at = targetLike(before, sim, id, newId)
     if (!at) continue
     push(mode === 'add' ? { kind: 'addPanel', record: before.panels[id], at } : { kind: 'placePanel', id, at })
+  }
+  // Frames after the panels (a frame needs its canvas, which a canvas panel's
+  // `addPanel` brings back), memberships after the frames.
+  for (const canvas of Object.values(before.canvases)) {
+    if (!sim.canvases[canvas.id]) continue
+    for (const frame of Object.values(canvas.frames ?? {})) {
+      if (!docIndex(sim).frames.has(frame.id)) push({ kind: 'addFrame', canvasId: canvas.id, frame })
+    }
+  }
+  for (const id of documentOrder(before)) {
+    if (!panels.has(id)) continue
+    const was = placementOf(before, id)?.dock
+    const now = placementOf(sim, id)?.dock
+    if (!was || !now || !isCanvasDock(was) || !isCanvasDock(now)) continue
+    const frameId = before.canvases[was.canvasId].nodes[was.nodeId].frameId
+    if (frameId !== undefined && sim.canvases[now.canvasId].nodes[now.nodeId].frameId !== frameId) {
+      push({ kind: 'setNodeFrame', canvasId: now.canvasId, nodeId: now.nodeId, frameId })
+    }
   }
   if (mode === 'add') {
     for (const relation of Object.values(before.relations)) {
