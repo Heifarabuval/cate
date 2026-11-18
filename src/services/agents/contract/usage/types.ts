@@ -151,11 +151,17 @@ export interface AgentSessionUsage {
   costUsd: number | null
 }
 
-/** The sessions one panel's agent ran, in the checkout `cwd`. */
+/** A session a panel's agent ran, and the checkout it ran in when a hook said. */
+export interface AgentSessionRef {
+  sessionId: string
+  cwd?: string
+}
+
+/** The sessions one panel's agent ran, each with the checkout its files
+ *  are looked for in. */
 export interface AgentSessionsRequest {
   agentId: AgentId
-  sessionIds: string[]
-  cwd: string
+  sessions: Array<{ sessionId: string; cwd: string }>
 }
 
 /** Null: no session, or an agent that records no tokens. `error`: this

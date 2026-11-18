@@ -292,7 +292,7 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
    *  cannot name a session's files, one cache write. Responses count once
    *  (the CLI's own `dedupeKey`, which repeats in a resumed or cleared
    *  session's files); a request that fails answers its own error. */
-  async function sessions(requests: AgentSessionsRequest[]): Promise<AgentSessionUsageResult[]> {
+  async function readSessions(requests: AgentSessionsRequest[]): Promise<AgentSessionUsageResult[]> {
     await loadCache()
     const startedAt = now()
     const contains = workspaceScope(deps.root)
@@ -309,17 +309,17 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
       }
       return found
     }
-    async function recordsOf({ agentId, sessionIds, cwd }: AgentSessionsRequest): Promise<AgentUsageRecord[]> {
-      if (sessionIds.length === 0) return []
+    async function recordsOf({ agentId, sessions: ran }: AgentSessionsRequest): Promise<AgentUsageRecord[]> {
+      if (ran.length === 0) return []
       const store = deps.stores[agentId]
       const { source } = store.usage
       if (source.kind !== 'transcripts' || !store.files) {
-        const ids = new Set(sessionIds)
+        const ids = new Set(ran.map(({ sessionId }) => sessionId))
         return (await searched(agentId)).filter((record) => ids.has(record.sessionId))
       }
       // A session's files hold its own responses and the history a resume copied in.
       const files = new Set<string>()
-      for (const sessionId of sessionIds) for (const file of await store.files({ session: { agentId, sessionId, cwd }, homeDir: deps.homeDir })) files.add(file)
+      for (const { sessionId, cwd } of ran) for (const file of await store.files({ session: { agentId, sessionId, cwd }, homeDir: deps.homeDir })) files.add(file)
       const records: AgentUsageRecord[] = []
       for (const file of files) {
         const stats = await fs.stat(file).catch(() => null)
@@ -354,6 +354,16 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
       const [model] = [...tokens].sort((a, b) => b[1] - a[1])[0]
       return { model, inputTokens, outputTokens, costUsd }
     })
+  }
+
+  /** One call at a time: an overlapping one waits, then finds the files cached
+   *  and writes nothing, instead of both re-reading them and both writing the
+   *  cache. (Not shared with `summary`'s scan.) */
+  let sessionsRun: Promise<unknown> = Promise.resolve()
+  function sessions(requests: AgentSessionsRequest[]): Promise<AgentSessionUsageResult[]> {
+    const run = sessionsRun.then(() => readSessions(requests))
+    sessionsRun = run.catch(() => undefined)
+    return run
   }
 
   // --- Limits ---

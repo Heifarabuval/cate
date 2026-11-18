@@ -17,11 +17,12 @@ import type { AgentUsageService } from './usage/usage'
 function fakeTerminals() {
   const states = new Map<string, PanelAgentState>()
   const listeners = new Set<(panelId: string) => void>()
-  /** The session ids each panel's agent ran since it started. */
-  const seen = new Map<string, string[]>()
+  /** The sessions each panel's agent ran since it started, and the panels whose list was cut. */
+  const seen = new Map<string, Array<{ sessionId: string; cwd?: string }>>()
+  const cut = new Set<string>()
   const terminals: AgentTerminals = {
     state: (panelId) => states.get(panelId) ?? null,
-    sessionIds: (panelId) => seen.get(panelId) ?? [],
+    sessionsOf: (panelId) => ({ sessions: seen.get(panelId) ?? [], truncated: cut.has(panelId) }),
     panelIds: () => states.keys(),
     send: vi.fn(async () => ({ ok: true as const })),
     interrupt: vi.fn(async () => ({ ok: true as const })),
@@ -43,7 +44,7 @@ function fakeTerminals() {
     })
     for (const listener of listeners) listener(panelId)
   }
-  return { terminals, set, seen }
+  return { terminals, set, seen, cut }
 }
 
 const ctx = (overrides: Partial<ApiHandlerContext['caller']> = {}, signal = new AbortController().signal): ApiHandlerContext => ({
@@ -65,7 +66,7 @@ let handlers: ReturnType<typeof createAgentApiHandlers>
 let starter: AgentStarter
 const sessionUsage = { model: 'gpt-5', inputTokens: 1200, outputTokens: 80, costUsd: 0.5 }
 const usage = {
-  sessions: vi.fn<AgentUsageService['sessions']>(async (requests) => requests.map(({ sessionIds }) => (sessionIds.includes('s') ? sessionUsage : null))),
+  sessions: vi.fn<AgentUsageService['sessions']>(async (requests) => requests.map(({ sessions }) => (sessions.some(({ sessionId }) => sessionId === 's') ? sessionUsage : null))),
 }
 
 beforeEach(() => {
@@ -118,7 +119,8 @@ describe('cate.agent.*', () => {
 
   it('reports each live agent panel\'s usage over the sessions it ran, null where there are none, in one read', async () => {
     // term ran 'old' before a /clear and now runs 's'; term-2 has no session yet (a relaunched agent).
-    terminal.seen.set('term', ['old', 's'])
+    // The earlier one ran in another checkout, which is where its files are.
+    terminal.seen.set('term', [{ sessionId: 'old', cwd: '/repo/wt' }, { sessionId: 's', cwd: '/repo' }])
     terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
     terminal.set('term-2', { status: 'running' })
     terminal.set('idle-shell', { status: 'notRunning' })
@@ -128,19 +130,31 @@ describe('cate.agent.*', () => {
     ])
     expect(usage.sessions).toHaveBeenCalledTimes(1)
     expect(usage.sessions).toHaveBeenCalledWith([
-      { agentId: 'codex', sessionIds: ['old', 's'], cwd: '/repo' },
-      { agentId: 'codex', sessionIds: [], cwd: '/repo' },
+      { agentId: 'codex', sessions: [{ sessionId: 'old', cwd: '/repo/wt' }, { sessionId: 's', cwd: '/repo' }] },
+      { agentId: 'codex', sessions: [] },
     ])
     expect(await handlers.usage({ targetPanelId: 'term' }, ctx())).toHaveLength(1)
     await expect(rpcError(handlers.usage({ targetPanelId: 'none' }, ctx()))).resolves.toBe('agent-panel-not-found')
   })
 
   it('names a session the panel reported only through its state, once', async () => {
-    terminal.seen.set('term', ['s'])
-    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    terminal.seen.set('term', [{ sessionId: 's' }])
+    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo/state' } })
     expect(await handlers.usage({}, ctx())).toMatchObject([{ sessionIds: ['s'] }])
+    // A session without a checkout takes the state's, else the workspace root.
+    expect(usage.sessions).toHaveBeenLastCalledWith([{ agentId: 'codex', sessions: [{ sessionId: 's', cwd: '/repo/state' }] }])
     terminal.seen.set('term', [])
     expect(await handlers.usage({}, ctx())).toMatchObject([{ sessionIds: ['s'] }])
+  })
+
+  it('says when the panel\'s list of sessions was cut, so the cost reads as a floor', async () => {
+    terminal.seen.set('term', [{ sessionId: 's', cwd: '/repo' }])
+    terminal.cut.add('term')
+    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    terminal.set('term-2', { session: { agentId: 'codex', sessionId: 't', cwd: '/repo' } })
+    const rows = await handlers.usage({}, ctx()) as Array<Record<string, unknown>>
+    expect(rows[0]).toMatchObject({ panelId: 'term', truncated: true })
+    expect(rows[1]).not.toHaveProperty('truncated')
   })
 
   it('answers an error for the panel whose usage failed, and for all when the read fails, not an error for the call', async () => {

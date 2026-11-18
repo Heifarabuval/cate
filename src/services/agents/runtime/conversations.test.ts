@@ -33,7 +33,7 @@ function setup() {
     interrupt: async () => ({ ok: true }),
     conversation,
     conversationStamp: async () => stamp,
-    sessionIds: () => [],
+    sessionsOf: () => ({ sessions: [], truncated: false }),
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     onStep: (listener) => { stepListeners.add(listener); return () => { stepListeners.delete(listener) } },
     onConversationReset: (listener) => { resetListeners.add(listener); return () => { resetListeners.delete(listener) } },

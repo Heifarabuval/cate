@@ -11,15 +11,23 @@
 // id before its transcript exists and Kiro before its first turn is saved;
 // both are stamped from their first turn event (resume.fromSessionStart).
 
-import { AGENT_DEFS, type AgentHookEvent, type AgentSessionLocator, type TerminalResumeStamp } from '../contract'
+import { AGENT_DEFS, type AgentHookEvent, type AgentSessionLocator, type AgentSessionRef, type TerminalResumeStamp } from '../contract'
+
+/** How many sessions a terminal remembers for usage. Each costs a file lookup
+ *  per `cate agent usage` call, so a panel cleared hundreds of times keeps its
+ *  most recent ones and says the list was cut. */
+export const MAX_USAGE_SESSIONS = 50
 
 interface StampState {
   /** Dedup key of the last emitted stamp. */
   key?: string | null
   latest?: AgentSessionLocator
-  /** Every session id the hooks named since the agent started, oldest first
-   *  (a /clear starts another session; usage sums them all). */
-  sessions: string[]
+  /** The sessions the hooks named since the agent started, oldest first, each
+   *  with the checkout it ran in (a /clear starts another session; usage
+   *  sums them all). At most `MAX_USAGE_SESSIONS`. */
+  sessions: AgentSessionRef[]
+  /** Older sessions were dropped from `sessions`. */
+  truncated: boolean
   /** Ingest counter: an async cwd lookup drops its result when a newer event
    *  (or a clear) landed while it was in flight. */
   seq: number
@@ -39,8 +47,12 @@ export interface ResumeStamps {
   /** The session the terminal's hooks last named, stamped or not. */
   latest(terminalId: string): AgentSessionLocator | undefined
   /** The sessions the terminal's agent ran since it started; empty once it
-   *  exited (`clear`), so a relaunch counts from nothing. */
-  sessions(terminalId: string): string[]
+   *  exited (`clear`), so a relaunch counts from nothing. `truncated`: the
+   *  oldest were dropped. */
+  sessions(terminalId: string): { sessions: AgentSessionRef[]; truncated: boolean }
+  /** Gives a terminal the list it was saved with (a restored panel whose
+   *  agent resumes), for the events that follow to add to. */
+  seed(terminalId: string, sessions: readonly AgentSessionRef[], truncated: boolean): void
   drop(terminalId: string): void
 }
 
@@ -50,7 +62,7 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
   const stateFor = (terminalId: string): StampState => {
     let st = states.get(terminalId)
     if (!st) {
-      st = { seq: 0, sessions: [] }
+      st = { seq: 0, sessions: [], truncated: false }
       states.set(terminalId, st)
     }
     return st
@@ -95,7 +107,16 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
         && (st.latest.agentId !== event.agentId || st.latest.sessionId !== event.sessionId)) return
       st.seq++
       const { agentId, sessionId } = event
-      if (!st.sessions.includes(sessionId)) st.sessions.push(sessionId)
+      const known = st.sessions.find((session) => session.sessionId === sessionId)
+      if (known) {
+        if (event.cwd) known.cwd = event.cwd
+      } else {
+        st.sessions.push({ sessionId, ...(event.cwd ? { cwd: event.cwd } : {}) })
+        if (st.sessions.length > MAX_USAGE_SESSIONS) {
+          st.sessions.shift()
+          st.truncated = true
+        }
+      }
       const identity = { agentId, sessionId, ...(event.cwd ? { cwd: event.cwd } : {}),
         ...(event.transcriptPath ? { transcriptPath: event.transcriptPath } : {}),
         ...(event.leafId !== undefined ? { leafId: event.leafId } : {}) }
@@ -126,11 +147,19 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
       st.seq++
       st.latest = undefined
       st.sessions = []
+      st.truncated = false
       emit(terminalId, null)
     },
 
     sessions(terminalId) {
-      return [...(states.get(terminalId)?.sessions ?? [])]
+      const st = states.get(terminalId)
+      return { sessions: (st?.sessions ?? []).map((session) => ({ ...session })), truncated: st?.truncated ?? false }
+    },
+
+    seed(terminalId, sessions, truncated) {
+      const st = stateFor(terminalId)
+      st.sessions = sessions.slice(-MAX_USAGE_SESSIONS).map((session) => ({ ...session }))
+      st.truncated = truncated || sessions.length > MAX_USAGE_SESSIONS
     },
 
     latest(terminalId) {
