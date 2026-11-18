@@ -1593,14 +1593,23 @@ def verdict_relance(faits):
 		raisons = (['modifications non commitées'] if sale else []) + ([pluriel(ahead, 'commit') + ' non poussé' + 's' * (ahead > 1)] if ahead else [])
 		if raisons:
 			non.append(f"worktree {nom_wt} : {', '.join(raisons)}")
-	non += [f'PR ouverte #{num} {titre}' for num, titre in faits['prs']]
 	non += [f'{source} illisible ({err})' for source, err in faits['illisibles']]
 	if faits['waiting']:
 		info.append(f"{pluriel(len(faits['waiting']), 'agent')} en attente de saisie ({', '.join(faits['waiting'])})")
+	info += [f'PR ouverte #{num} {titre}' for num, titre in faits['prs']]  # une PR ne se perd pas au redémarrage
 	if faits['daemon'] and faits['daemon'][0] != faits['daemon'][1]:
 		info.append(f"daemon à redémarrer (build {faits['daemon'][0]}, app {faits['daemon'][1]}) : terminaux et agents arrêtés")
 	lignes = [f'non : {x}' for x in non] if non else ['oui']
 	return not non, lignes + [f'info : {x}' for x in info]
+
+
+def repo_origin(base):
+	"""owner/repo du remote origin, formes ssh et https ; ValueError si origin est absent ou pas sur GitHub."""
+	code, out, err = RUN(['git', '-C', base, 'remote', 'get-url', 'origin'])
+	m = re.search(r'github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$', out.strip()) if code == 0 else None
+	if not m:
+		raise ValueError(f"remote origin illisible : {(err or out).strip() or 'vide'}")
+	return m.group(1)
 
 
 def lire_faits_relance(st, base=None):
@@ -1644,9 +1653,9 @@ def lire_faits_relance(st, base=None):
 			except ValueError as err:
 				illisible('git', f'{os.path.basename(path)} : {err}')
 
-	repo = gh_repo(st)
-	code, out, err = RUN(['gh', 'pr', 'list', '-R', repo or '', '--state', 'open', '--json', 'number,title,headRefName'], timeout=GH_TIMEOUT) if repo else (1, '', 'dépôt GitHub inconnu')
 	try:
+		repo = repo_origin(base)  # le dépôt du fork : le défaut de gh (gh repo view) vise l'upstream
+		code, out, err = RUN(['gh', 'pr', 'list', '-R', repo, '--state', 'open', '--json', 'number,title,headRefName'], timeout=GH_TIMEOUT)
 		if code != 0:
 			raise ValueError(err or out)
 		faits['prs'] = [(p['number'], p['title']) for p in json.loads(out)]

@@ -1485,16 +1485,12 @@ class Tour(Base):
 
 class Relance(Base):
 	"""agence doctor --relance : peut-on relancer Cate sans rien perdre ? Lecture seule."""
-	REPO = 'o/r'
-
 	def setUp(self):
 		super().setUp()
 		self.home = os.path.join(self.tmp, 'home')
 		self.old_home = os.environ.get('CATE_HOME')
 		os.environ['CATE_HOME'] = self.home
 		self.booted()
-		with agence.tx() as st:
-			st['ghRepo'] = self.REPO
 		self.monde()
 
 	def tearDown(self):
@@ -1513,9 +1509,15 @@ class Relance(Base):
 		with open(path, 'w') as f:
 			f.write(text)
 
-	def monde(self, agents=(), worktrees=(), prs=(), daemon='1.0+a', app='1.0+a'):
+	def monde(self, agents=(), worktrees=(), prs=(), daemon='1.0+a', app='1.0+a', origin='git@github.com:o/r.git'):
 		"""Réponses préparées. L'orchestrateur, le régisseur et le terminal qui appelle tournent toujours.
-		worktrees : dicts name, dirty, ahead, upstream (faux : pas de branche distante suivie), prunable."""
+		worktrees : dicts name, dirty, ahead, upstream (faux : pas de branche distante suivie), prunable.
+		origin : URL du remote origin (None : illisible). gh repo view vise l'upstream, comme dans un fork."""
+		if origin is None:
+			self.run.reply(['git', '-C', self.tmp, 'remote', 'get-url', 'origin'], '', code=2, err="error: No such remote 'origin'")
+		else:
+			self.run.reply(['git', '-C', self.tmp, 'remote', 'get-url', 'origin'], origin + '\n')
+		self.run.reply(['gh', 'repo', 'view'], '0-AI-UG/cate\n')
 		fixes = [{'panelId': p, 'title': p, 'state': 'running', 'canReceivePrompt': True} for p in ('o1', 'r1', 'me')]
 		self.run.reply(['cate', 'agent', 'list'], fixes + list(agents))
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': p, 'type': 'terminal', 'title': p, 'caller': p == 'me',
@@ -1577,9 +1579,20 @@ class Relance(Base):
 		self.monde(worktrees=[{'name': 'n12-impl', 'prunable': True, 'dirty': True}])
 		self.assertEqual(self.doctor(), (0, ['oui']))
 
-	def test_pr_ouverte_non(self):
+	def test_pr_ouverte_info_sans_bloquer(self):
 		self.monde(prs=[{'number': 31, 'title': 'test(ci)', 'headRefName': 'x'}])
-		self.assertEqual(self.doctor(), (1, ['non : PR ouverte #31 test(ci)']))
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : PR ouverte #31 test(ci)']))
+
+	def test_prs_du_fork_lues_par_origin_pas_par_le_defaut_de_gh(self):
+		for origin in ('git@github.com:Heifarabuval/cate.git', 'https://github.com/Heifarabuval/cate.git',
+		               'https://github.com/Heifarabuval/cate', 'ssh://git@github.com/Heifarabuval/cate.git'):
+			with self.subTest(origin=origin):
+				self.run.calls.clear()
+				self.monde(origin=origin)
+				self.assertEqual(self.doctor(), (0, ['oui']))
+				[cmd] = self.run.ran('gh', 'pr', 'list')
+				self.assertEqual(cmd[cmd.index('-R') + 1], 'Heifarabuval/cate')
+				self.assertFalse(self.run.ran('gh', 'repo', 'view'))  # le défaut de gh vise l'upstream
 
 	def test_build_different_info_sans_changer_le_verdict(self):
 		self.monde(daemon='2.1.0+d', app='2.1.0+e')
@@ -1589,10 +1602,11 @@ class Relance(Base):
 
 	def test_plusieurs_raisons_non_d_abord_puis_info(self):
 		self.monde(agents=[self.agent('running'), self.agent('waitingForInput', '#n13 vérificateur', 'a2')],
+		           worktrees=[{'name': 'n12-impl', 'ahead': 1}],
 		           prs=[{'number': 31, 'title': 't', 'headRefName': 'x'}], daemon='a', app='b')
 		code, lines = self.doctor()
 		self.assertEqual(code, 1)
-		self.assertEqual([l.split(' ')[0] for l in lines], ['non', 'non', 'info', 'info'])
+		self.assertEqual([l.split(' ')[0] for l in lines], ['non', 'non', 'info', 'info', 'info'])
 
 	def test_source_illisible_jamais_oui(self):
 		def cate_agent():
@@ -1616,6 +1630,12 @@ class Relance(Base):
 		def gh():
 			self.run.reply(['gh', 'pr', 'list'], '', code=127, err='gh introuvable')
 
+		def origin_absent():
+			self.monde(origin=None)
+
+		def origin_pas_github():
+			self.monde(origin='/srv/git/cate.git')
+
 		def daemon_corrompu():
 			self.ecrire('workspaces', 'w1', 'runtime.json', text='{pas du json')
 
@@ -1623,7 +1643,8 @@ class Relance(Base):
 			os.remove(os.path.join(self.home, 'runtime', 'current'))
 
 		for source, casse in (('cate', cate_agent), ('cate', cate_panel), ('git', git_liste), ('git', git_statut),
-		                      ('git', git_compte), ('gh', gh), ('daemon', daemon_corrompu), ('daemon', daemon_absent)):
+		                      ('git', git_compte), ('gh', gh), ('gh', origin_absent), ('gh', origin_pas_github),
+		                      ('daemon', daemon_corrompu), ('daemon', daemon_absent)):
 			with self.subTest(source=source, cas=casse.__name__):
 				self.monde()
 				casse()
