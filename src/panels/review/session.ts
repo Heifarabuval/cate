@@ -137,13 +137,14 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       ref: pr,
       github: deps.github,
       publish: (state) => this.set({ pr: state }),
-      recordRepository: (repository) => this.recordPrRepository(repository, pr.number),
+      recordOrigin: (repository) => this.recordPrOrigin(repository, pr.number),
     })
   }
 
-  private recordPrRepository(repository: string, number: number): void {
+  /** The pull request is in the workspace origin: a bare `--pr N` now finds this panel (definition `create`). */
+  private recordPrOrigin(repository: string, number: number): void {
     try {
-      this.kit.document.apply({ kind: 'updatePanel', id: this.panelId, patch: { fields: { pr: { repository, number } } } })
+      this.kit.document.apply({ kind: 'updatePanel', id: this.panelId, patch: { fields: { pr: { repository, number, origin: true } } } })
     } catch (cause) {
       this.kit.log.warn('review %s could not record its pull request repository: %s', this.panelId, errorText(cause, 'failed'))
     }

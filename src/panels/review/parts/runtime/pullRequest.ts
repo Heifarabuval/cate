@@ -20,10 +20,11 @@ import type { PrDiffPage, PrErrorKind, ReviewPrState } from '../../contract/type
 /** What a pull request panel needs from GitHub: the repository runtime's `github`, which refuses an untrusted
  *  workspace and runs at most 3 `gh` calls at once. Reads answer raw `gh` JSON, parsed by the repository contract. */
 export interface ReviewGithub {
-  pullRequestView(repository: string, number: number): Promise<unknown>
+  /** An aborted `signal` kills the running `gh` and frees its slot. */
+  pullRequestView(repository: string, number: number, signal?: AbortSignal): Promise<unknown>
   /** The light read: state, draft, checks, mergeability. */
-  pullRequestChecks(repository: string, number: number): Promise<unknown>
-  pullRequestFiles(repository: string, number: number): Promise<unknown>
+  pullRequestChecks(repository: string, number: number, signal?: AbortSignal): Promise<unknown>
+  pullRequestFiles(repository: string, number: number, signal?: AbortSignal): Promise<unknown>
   /** `owner/name` of the workspace origin; null without a GitHub origin. */
   originRepository(): Promise<string | null>
 }
@@ -32,8 +33,8 @@ export interface PullRequestSubjectDeps {
   ref: PullRequestRef
   github: ReviewGithub
   publish(state: ReviewPrState): void
-  /** Writes the resolved origin into the record (`--pr N`). */
-  recordRepository(repository: string): void
+  /** Records that the pull request is in the workspace origin, `repository` (so a bare `N` finds the panel). */
+  recordOrigin(repository: string): void
 }
 
 export interface PullRequestSubject {
@@ -48,6 +49,10 @@ export interface PullRequestSubject {
 
 /** The least time between two reads a view's tick may start. */
 export const PR_TICK_INTERVAL_MS = 25_000
+/** After consecutive failures the tick waits twice as long each time (25, 50, 100 s...), up to this. */
+export const PR_TICK_BACKOFF_MAX_MS = 5 * 60_000
+/** The least time between two full reads a refresh may start; an earlier one gets the last read. */
+export const PR_REFRESH_INTERVAL_MS = 5_000
 const UNTRUSTED = 'Trust this workspace to read GitHub'
 const NO_ORIGIN = 'This workspace has no GitHub origin. Use owner/repo#N.'
 
@@ -65,17 +70,29 @@ export function createPullRequestSubject(deps: PullRequestSubjectDeps): PullRequ
   let patches = new Map<string, string>()
   let running: Read | null = null
   let lastReadAt = 0
+  let lastFullReadAt = 0
+  let failures = 0
+  let originChecked = false
   let disposed = false
+  // Closing the panel kills its running gh (the slot goes to another read) and settles the ops waiting on it,
+  // even on a read that cannot be aborted (the origin, a git read).
+  const aborts = new AbortController()
   let closed!: () => void
   const whenClosed = new Promise<void>((resolve) => { closed = resolve })
 
+  // After dispose the session publishes nothing (`PanelSession.publish`).
   const set = (patch: Partial<ReviewPrState>) => {
-    if (disposed) return
     state = { ...state, ...patch }
     deps.publish(state)
   }
 
+  function succeeded(patch: Partial<ReviewPrState>): void {
+    failures = 0
+    set({ ...patch, error: null })
+  }
+
   function failed(error: unknown): void {
+    failures += 1
     const untrusted = isRpcError(error, 'untrusted')
     const ghError = untrusted ? null : toGhReadError(error)
     const kind: PrErrorKind = ghError?.kind ?? 'untrusted'
@@ -83,9 +100,12 @@ export function createPullRequestSubject(deps: PullRequestSubjectDeps): PullRequ
     set({ loading: false, error: { kind, message: ghError?.message ?? UNTRUSTED } })
   }
 
+  const tickInterval = () => Math.min(PR_TICK_INTERVAL_MS * 2 ** Math.max(0, failures - 1), PR_TICK_BACKOFF_MAX_MS)
+
   /** Runs one read; ops waiting on it settle when the panel closes, whatever `gh` does. */
   function read(kind: Read['kind'], work: () => Promise<void>): Promise<void> {
     lastReadAt = Date.now()
+    if (kind === 'full') lastFullReadAt = lastReadAt
     const entry: Read = { kind, done: Promise.resolve() }
     running = entry
     const work$ = (async () => {
@@ -111,9 +131,17 @@ export function createPullRequestSubject(deps: PullRequestSubjectDeps): PullRequ
       return null
     }
     const resolved = { repository: ref.repository, number: ref.number }
-    deps.recordRepository(resolved.repository)
+    originChecked = true
+    deps.recordOrigin(resolved.repository)
     set({ ref: resolved })
     return resolved
+  }
+
+  /** Once per session, after a read: is an explicit `owner/repo#N` in the workspace origin? A git read, not gh. */
+  async function checkOrigin(ref: Resolved): Promise<void> {
+    originChecked = true
+    const origin = await github.originRepository().catch(() => null)
+    if (!disposed && origin?.toLowerCase() === ref.repository) deps.recordOrigin(ref.repository)
   }
 
   async function readAll(): Promise<void> {
@@ -121,19 +149,21 @@ export function createPullRequestSubject(deps: PullRequestSubjectDeps): PullRequ
     const ref = await resolveRef()
     if (!ref || disposed) return
     // One gh call at a time per pull request: the files, then the view that needs them.
-    const listed = parsePullRequestFiles(await github.pullRequestFiles(ref.repository, ref.number), ref.repository, ref.number)
+    const { signal } = aborts
+    const listed = parsePullRequestFiles(await github.pullRequestFiles(ref.repository, ref.number, signal), ref.repository, ref.number)
     if (disposed) return
-    const data = parsePullRequestView(await github.pullRequestView(ref.repository, ref.number), listed.files)
+    const data = parsePullRequestView(await github.pullRequestView(ref.repository, ref.number, signal), listed.files)
     if (disposed) return
     patches = new Map(Object.entries(listed.patches))
     const at = new Date().toISOString()
-    set({ data, readAt: at, checksReadAt: at, error: null, loading: false })
+    succeeded({ data, readAt: at, checksReadAt: at, loading: false })
+    if (!originChecked) void checkOrigin(ref)
   }
 
   async function readChecks(ref: Resolved): Promise<void> {
-    const checks = parsePullRequestChecks(await github.pullRequestChecks(ref.repository, ref.number))
+    const checks = parsePullRequestChecks(await github.pullRequestChecks(ref.repository, ref.number, aborts.signal))
     if (disposed || !state.data) return
-    set({ data: { ...state.data, ...checks }, checksReadAt: new Date().toISOString(), error: null })
+    succeeded({ data: { ...state.data, ...checks }, checksReadAt: new Date().toISOString() })
   }
 
   return {
@@ -145,11 +175,11 @@ export function createPullRequestSubject(deps: PullRequestSubjectDeps): PullRequ
         if (running.kind === 'full') return running.done
         await running.done
       }
-      if (disposed) return
+      if (disposed || Date.now() - lastFullReadAt < PR_REFRESH_INTERVAL_MS) return
       return read('full', readAll)
     },
     async tick() {
-      if (disposed || running || Date.now() - lastReadAt < PR_TICK_INTERVAL_MS) return false
+      if (disposed || running || Date.now() - lastReadAt < tickInterval()) return false
       const ref = state.ref
       // Nothing read yet (a failed first read): the tick retries the whole read.
       await (ref && state.data ? read('checks', () => readChecks(ref)) : read('full', readAll))
@@ -168,8 +198,8 @@ export function createPullRequestSubject(deps: PullRequestSubjectDeps): PullRequ
     },
     dispose() {
       disposed = true
-      patches.clear()
       running = null
+      aborts.abort()
       closed()
     },
   }
