@@ -3,7 +3,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgenceOp, AgenceOpResult, QuestionView } from '@panels/agence/contract'
 import { installMockClientUi } from '../../../../../test/clientUi'
-import QuestionCard from './QuestionCard'
+import { useAction } from './action'
+import QuestionCard, { type QuestionCardProps } from './QuestionCard'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -24,7 +25,11 @@ let root: Root
 let ui: ReturnType<typeof installMockClientUi>
 let send: ReturnType<typeof vi.fn<(op: AgenceOp) => Promise<unknown>>>
 const onDone = vi.fn()
-const render = (value: QuestionView, compact = false) => act(() => root.render(<QuestionCard question={value} send={send} onDone={onDone} compact={compact} />))
+// The lock belongs to the line that holds the card: the tests give it one.
+function Card(props: Omit<QuestionCardProps, 'action'>) {
+  return <QuestionCard {...props} action={useAction()} />
+}
+const render = (value: QuestionView, compact = false) => act(() => root.render(<Card question={value} send={send} onDone={onDone} compact={compact} />))
 const button = (label: string | RegExp) => [...host.querySelectorAll('button')].find((b) => typeof label === 'string' ? b.textContent === label : label.test(b.textContent ?? ''))
 const click = async (label: string | RegExp) => { await act(async () => { button(label)!.click() }) }
 

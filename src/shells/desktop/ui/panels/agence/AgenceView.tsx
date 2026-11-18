@@ -5,7 +5,7 @@ import { InlineNotice, LoadingState } from '../../kernel/interaction'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { DockResizeHandle } from '../../client/layout/dock'
-import { ActionButton, useAction } from './action'
+import { ActionButton, refusal as refusalText, useAction } from './action'
 import DraftReader from './DraftReader'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
@@ -164,7 +164,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                   onRead={setReading}
                   onRebase={async (questionId) => {
                     const result = await send({ kind: 'answer', questionId, choice: 'rebase' }) as AgenceOpResult
-                    return result.ok ? null : (result.message ?? result.error)
+                    return result.ok ? null : refusalText(result, 'Réponse refusée.')
                   }}
                   onOpenUrl={(url) => { openUrlBeside(workspaceId, panelId, url) }}
                 />

@@ -7,7 +7,7 @@ import { installMockClientUi } from '../../../../../test/clientUi'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../editor/MarkdownPreview', () => ({ MarkdownPreview: () => <div /> }))
-import { ActionButton } from './action'
+import { ActionButton, useAction } from './action'
 import DraftReader from './DraftReader'
 import QuestionCard from './QuestionCard'
 
@@ -17,6 +17,10 @@ const draft: DraftView = {
 const question: QuestionView = {
   id: 'q1', question: 'Quel nom ?', options: [{ label: 'Oui', detail: '' }, { label: 'Non', detail: '' }],
   isMerge: false, locks: [], ghUnknown: false, rebase: false,
+}
+
+function Card() {
+  return <QuestionCard question={question} send={send} action={useAction()} onDone={onDone} />
 }
 
 let host: HTMLDivElement
@@ -89,7 +93,7 @@ it('shows a thrown error in place', async () => {
 
 it('tells the clicked option busy and ignores a second click, then closes on success', async () => {
   slow()
-  act(() => root.render(<QuestionCard question={question} send={send} onDone={onDone} />))
+  act(() => root.render(<Card />))
   const non = button(/^Non/)
   await act(async () => { non.click(); non.click() })
   expect(send).toHaveBeenCalledTimes(1)
@@ -124,4 +128,19 @@ it('tells a screen reader the result politely, outside the button so its name st
   expect(live().textContent).toBe('Fait')
   expect(button('Go').contains(live())).toBe(false)
   expect(button('Go').textContent).toBe('Go')
+})
+
+it('does nothing once its view is gone: no onBack, no timer, for a draft opened since', async () => {
+  vi.useFakeTimers()
+  try {
+    slow()
+    act(() => root.render(<DraftReader workspaceId="ws" panelId="p" draft={draft} send={send} onBack={onBack} />))
+    await act(async () => { button('Envoyer').click() })
+    act(() => root.render(null))
+    await act(async () => reply({ ok: true }))
+    expect(onBack).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
 })

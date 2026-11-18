@@ -90,9 +90,8 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
   // Latched when the line mounts: a later render of the list does not cut the fade.
   const [enter] = useState(arrived)
   const [answering, setAnswering] = useState(false)
-  // The question answered: Répondre says so until the follow-up moves the line or asks another.
-  const [answered, setAnswered] = useState<string | null>(null)
-  const rebase = useAction()
+  // One lock per question, shared with its card: the rebase and an answer never run together.
+  const act = useAction()
   const question = action?.type === 'question' ? questions[action.questionId] : undefined
   return (
     <li className={`px-3 py-2 border-t border-subtle first:border-t-0 ${enter ? ROW_ENTER : ''}`}>
@@ -110,15 +109,16 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
             {action.rebase && (
               <ActionButton
                 className={ACTION}
-                busy={rebase.active === 'rebase'}
-                done={rebase.done === 'rebase'}
-                onClick={() => void rebase.run('rebase', () => onRebase(action.questionId))}
+                busy={act.active === 'rebase'}
+                done={act.done === 'rebase'}
+                disabled={act.waiting('rebase')}
+                onClick={() => void act.run('rebase', () => onRebase(action.questionId))}
                 {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
               >
                 {compact ? 'Rebase' : 'Demander le rebase'}
               </ActionButton>
             )}
-            {question && <ActionButton className={ACTION} done={answered === action.questionId} disabled={rebase.active !== null} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</ActionButton>}
+            {question && <ActionButton className={ACTION} done={act.done !== null && act.done !== 'rebase'} disabled={act.active !== null} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</ActionButton>}
           </span>
         )}
       </div>
@@ -132,8 +132,8 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
           ))}
         </div>
       )}
-      {rebase.error && <InlineNotice tone="error" className="mt-1 !text-primary">{rebase.error}</InlineNotice>}
-      {answering && question && <QuestionCard question={question} send={send} compact={compact} onDone={() => { setAnswering(false); setAnswered(question.id) }} />}
+      {act.error && !(answering && question) && <InlineNotice tone="error" className="mt-1 !text-primary">{act.error}</InlineNotice>}
+      {answering && question && <QuestionCard question={question} send={send} action={act} compact={compact} onDone={() => setAnswering(false)} />}
     </li>
   )
 }
