@@ -1580,8 +1580,18 @@ def cmd_url(a):
 
 # ---------- CLI ----------
 
+def version():
+	"""Le build du runtime qui livre cette CLI (`<install>/BUILD`), `dev` hors install."""
+	try:
+		with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, 'BUILD')) as f:
+			return f.read().strip() or 'dev'
+	except OSError:
+		return 'dev'
+
+
 def parser():
 	p = argparse.ArgumentParser(prog='agence', description=__doc__.split('\n\n')[0])
+	p.add_argument('--version', action='version', version=version())
 	sub = p.add_subparsers(dest='cmd', required=True)
 	s = sub.add_parser('start')
 	s.add_argument('--notify', action=argparse.BooleanOptionalAction, default=None,
