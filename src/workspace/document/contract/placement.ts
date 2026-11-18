@@ -6,6 +6,7 @@ import { visitDock, type DockNode } from './dock'
 import type { DockRef } from './ops'
 import type {
   CanvasId,
+  FrameId,
   NodeId,
   PanelId,
   SplitId,
@@ -25,6 +26,8 @@ export interface DocIndex {
   stacks: ReadonlyMap<StackId, DockRef>
   splits: ReadonlyMap<SplitId, DockRef>
   nodes: ReadonlyMap<NodeId, CanvasId>
+  /** The canvas each frame is on. */
+  frames: ReadonlyMap<FrameId, CanvasId>
   /** The canvas panel showing each canvas. */
   canvasPanels: ReadonlyMap<CanvasId, PanelId>
 }
@@ -45,6 +48,7 @@ function buildIndex(doc: WorkspaceDocument): DocIndex {
   const stacks = new Map<StackId, DockRef>()
   const splits = new Map<SplitId, DockRef>()
   const nodes = new Map<NodeId, CanvasId>()
+  const frames = new Map<FrameId, CanvasId>()
   const canvasPanels = new Map<CanvasId, PanelId>()
 
   const add = (root: DockNode | null, dock: DockRef) => {
@@ -63,11 +67,12 @@ function buildIndex(doc: WorkspaceDocument): DocIndex {
       nodes.set(node.id, canvas.id)
       add(node.dock, { canvasId: canvas.id, nodeId: node.id })
     }
+    for (const frameId of Object.keys(canvas.frames ?? {})) frames.set(frameId, canvas.id)
   }
   for (const panel of Object.values(doc.panels)) {
     if (panel.canvasId) canvasPanels.set(panel.canvasId, panel.id)
   }
-  return { placements, stacks, splits, nodes, canvasPanels }
+  return { placements, stacks, splits, nodes, frames, canvasPanels }
 }
 
 /** Where a panel is placed, or null for an unknown panel. */
