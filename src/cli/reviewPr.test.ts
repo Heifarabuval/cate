@@ -22,13 +22,16 @@ import type { ReviewGithub } from '@panels/review/session'
 const itPosix = it.skipIf(process.platform === 'win32')
 
 const view = {
-  number: 8, url: 'https://github.com/org/repo/pull/8', title: 'Fix login', author: { login: 'ana' }, body: 'Body',
+  number: 8, url: 'https://github.com/org/repo/pull/8', title: "Fix the user's login", author: { login: 'ana' }, body: 'Body',
   state: 'OPEN', isDraft: false, headRefName: 'fix', baseRefName: 'main', isCrossRepository: false,
   commits: [{ oid: 'abcdef1', messageHeadline: 'fix', authors: [{ login: 'ana' }], committedDate: '2026-11-17T09:00:00Z' }],
   changedFiles: 1, additions: 1, deletions: 0,
   statusCheckRollup: [{ __typename: 'CheckRun', name: 'ci', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/org/repo/actions/runs/1' }],
   mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN',
 }
+
+/** `value` as one single-quoted sh word, whatever quotes it holds. */
+const shQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`
 
 let dir: string
 let document: DocumentService
@@ -45,8 +48,8 @@ beforeEach(() => {
   // The fake gh: records its arguments, answers the pull request view, and an empty file list.
   // Shell builtins only: a Node script would boot a whole Node per call, seconds on a loaded machine.
   writeFileSync(path.join(bin, 'gh'), `#!/bin/sh
-printf '%s\\n' "$*" >> '${ghLog}'
-if [ "$1" = api ]; then printf '[]'; else printf '%s' '${JSON.stringify(view)}'; fi
+printf '%s\\n' "$*" >> ${shQuote(ghLog)}
+if [ "$1" = api ]; then printf '[]'; else printf '%s' ${shQuote(JSON.stringify(view))}; fi
 `)
   chmodSync(path.join(bin, 'gh'), 0o755)
   host = createGithubHost({ env: () => ({ ...process.env, PATH: bin }) })
@@ -120,11 +123,16 @@ function setup() {
     sessions.push(session)
     await session.start()
     const pr = () => (session.snapshot() as unknown as ReviewSnapshot).pr!
-    /** Resolves on the session's own changes once `ready` holds; the test's timeout bounds it, not a short poll deadline. */
-    const until = (ready: (state: ReturnType<typeof pr>) => boolean) => new Promise<ReturnType<typeof pr>>((resolve) => {
-      const off = session.attach({ snapshot: () => {}, change: () => check(), gone: () => {} })
-      const check = () => { const state = pr(); if (state && ready(state)) { off(); resolve(state) } }
-      check()
+    /** Resolves on the session's own changes once `ready` holds; rejects with the last state if it never does. */
+    const until = (ready: (state: ReturnType<typeof pr>) => boolean, budgetMs = 4_000) => new Promise<ReturnType<typeof pr>>((resolve, reject) => {
+      let settled = false
+      let off = () => {}
+      const finish = () => { settled = true; clearTimeout(timer); off() }
+      const timer = setTimeout(() => { finish(); reject(new Error(`review state not ready within ${budgetMs} ms: ${JSON.stringify(pr())}`)) }, budgetMs)
+      const check = () => { const state = pr(); if (!settled && state && ready(state)) { finish(); resolve(state) } }
+      off = session.attach({ snapshot: () => {}, change: check, gone: () => {} })
+      if (settled) off()
+      else check()
     })
     return until
   }
@@ -154,7 +162,7 @@ describe('cate panel create review --pr', () => {
     const { create, attach } = setup()
     const { panelId } = await create('--pr', 'org/repo#8')
     const pr = await attach(panelId!)
-    expect((await pr((state) => !state.loading)).data?.title).toBe('Fix login')
+    expect((await pr((state) => !state.loading)).data?.title).toBe("Fix the user's login")
   })
 
   it.each([
@@ -173,7 +181,7 @@ describe('cate panel create review --pr', () => {
     const withOrigin = await create('--pr', '8')
     expect(withOrigin.code).toBe(0)
     const resolved = await attach(withOrigin.panelId!)
-    expect((await resolved((state) => !state.loading)).data?.title).toBe('Fix login')
+    expect((await resolved((state) => !state.loading)).data?.title).toBe("Fix the user's login")
 
     origin = null
     const without = await create('--pr', '9')
