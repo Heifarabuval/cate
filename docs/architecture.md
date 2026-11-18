@@ -108,7 +108,7 @@ No UI is shared between shells.
 
 | Concept | Meaning | Examples |
 |---|---|---|
-| **Agent** | A provider identity, static data in one registry (`AGENTS`). | claude-code, codex, cursor, grok, kiro, opencode, pi |
+| **Agent** | A provider identity, static data in one registry (`AGENTS`). | antigravity, claude-code, codex, cursor, grok, kiro, opencode, pi |
 | **Agent session** | One conversation of an agent CLI running in a terminal panel's PTY, observed through injected hooks and pid presence: `{agentId, sessionId, cwd, worktreeId}`. It reports status, takes a prompt, reads its conversation, lists its changes and resumes. | "claude-code in a terminal" |
 
 Every agent runs as its CLI in a terminal panel; the terminal panel shows
@@ -1844,7 +1844,7 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   - **usage** (`usage/`, the `usage`, `refreshUsageRates` and `usageLimits`
     methods): what the agent CLIs used in this workspace. Each session store
     declares where its CLI records usage (`AgentSessionStore.usage`):
-    append-only transcripts with a line parser (Claude Code, Codex, Grok),
+    append-only transcripts with a line parser (Claude Code, Codex, Grok, Antigravity),
     a store queried per window (OpenCode), or none, with a note on
     what it keeps instead (Kiro's credits, Cursor). The engine reads them
     all with no per-agent code, keeps the records whose session cwd is the

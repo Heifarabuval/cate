@@ -46,7 +46,15 @@ From then on it is an agent panel like any other.
 ```bash
 cate agent start --model sonnet --effort low --title "#n3 verifier" "$(cat BRIEF.md)"
 cate agent start --effort high "Fix the flaky login test"
+cate agent start --agent antigravity --model auto --effort high --relation verify --title "#n12 reviewer" "$(cat BRIEF.md)"
 ```
+
+Antigravity (`agy`, Google's successor to Gemini CLI for personal accounts)
+takes `--model` and `--effort`. Its hooks live in the repo's
+`.agents/hooks.json`. It reports no permission prompt: an agy panel waiting
+for an approval stays `running`, so give a reviewer work that needs none.
+agy's `plan` mode refuses edits but is not documented to skip every prompt;
+only `--dangerously-skip-permissions` does, and Cate does not pass it.
 
 Both go to the agent CLI at launch, and each works without the other. `--model` is free text
 (the CLI's own model id or alias; Claude Code, Codex, Cursor and OpenCode
