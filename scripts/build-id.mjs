@@ -1,7 +1,7 @@
 // The build id baked into the daemon bundle and the desktop app as
 // `__CATE_BUILD__`: the package version plus a hash of everything the runtime
-// install is made from: the source tree, the bundled skills and the
-// lockfile. It names the install a client asks a runtime to run
+// install is made from: the source tree, the bundled skills, the agence CLI
+// and the lockfile. It names the install a client asks a runtime to run
 // (`runtime.update`); compatibility is the shared protocol version. Shell code
 // (src/shells, apart from settings slices) is not in the runtime and is left
 // out.
@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { agenceFiles } from './agence-files.mjs'
 
 /** Tests and the generated version file do not change what ships. */
 const SKIP = /\.(test|itest)\.tsx?$|\.test-helpers\.ts$|[/\\]runtime[/\\]daemon[/\\]contract[/\\]version\.ts$/
@@ -45,6 +46,8 @@ export function computeBuildId(repoRoot) {
   }
   const skills = path.join(repoRoot, 'skills')
   if (existsSync(skills)) for (const file of sourceFiles(skills)) add(file)
+  const agence = path.join(repoRoot, 'tools', 'agence')
+  if (existsSync(agence)) for (const file of agenceFiles(agence)) add(path.join(agence, file))
   const lock = path.join(repoRoot, 'package-lock.json')
   if (existsSync(lock)) add(lock)
   return `${version}+${hash.digest('hex').slice(0, 12)}`

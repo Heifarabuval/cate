@@ -51,6 +51,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { AGENCE_REQUIRED, stageAgence } from './agence-files.mjs'
 import { runtimeBuildOptions, syncRuntimeVersion, buildRuntime } from './build-runtime.mjs'
 import { buildLinuxNodePty } from './linux-node-pty.mjs'
 
@@ -138,6 +139,8 @@ await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime'
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 await stageCateCli(path.join(stageDir, 'cate'))
 cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
+// The agence CLI is POSIX shell and Python: not shipped on Windows.
+if (targetPlatform !== 'win32') stageAgence(path.join(repoRoot, 'tools', 'agence'), stageDir)
 await writeFile(path.join(stageDir, 'BUILD'), `${buildId}\n`)
 signMacNatives(stageDir)
 
@@ -155,6 +158,7 @@ const required = [
   path.join('cate', 'bin', 'cate'),
   path.join('cate', 'bin', 'cate.cmd'),
   path.join('skills', 'cate-cli', 'SKILL.md'),
+  ...(targetPlatform === 'win32' ? [] : AGENCE_REQUIRED),
   'BUILD',
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
