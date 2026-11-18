@@ -7,6 +7,7 @@
 import { rect, type Rect } from '@workspace/canvas/contract'
 import {
   allStacks,
+  FRAME_STATES,
   MAIN_WINDOW,
   PANEL_TYPES,
   visitDock,
@@ -83,6 +84,36 @@ function randomRecord(rng: Rng, newId: () => string, type: PanelType): PanelReco
   return record
 }
 
+function randomFrameChange(doc: WorkspaceDocument, rng: Rng, newId: () => string): DocChange {
+  const canvases = Object.values(doc.canvases)
+  const frames = canvases.flatMap((canvas) => Object.values(canvas.frames ?? {}))
+  const frameId = () => (frames.length && !rng.chance(0.05) ? rng.pick(frames).id : 'no-such-frame')
+  const at = () => ({ x: rng.int(40) * 20, y: rng.int(40) * 20 })
+  const roll = rng.int(10)
+  if (roll < 3 || canvases.length === 0) {
+    const canvasId = canvases.length && !rng.chance(0.05) ? rng.pick(canvases).id : 'no-such-canvas'
+    return { kind: 'addFrame', canvasId, frame: { id: newId(), title: `f${rng.int(100)}`, state: rng.pick(FRAME_STATES), collapsed: rng.chance(0.3), at: at() } }
+  }
+  if (roll < 5) {
+    const patch = rng.pick([
+      { title: `t${rng.int(100)}` },
+      { state: rng.pick(FRAME_STATES) },
+      { collapsed: rng.chance(0.5) },
+      { at: at() },
+      { title: `t${rng.int(100)}`, state: rng.pick(FRAME_STATES) },
+    ])
+    return { kind: 'updateFrame', id: frameId(), patch }
+  }
+  if (roll < 6) return { kind: 'removeFrame', id: frameId() }
+  const withNodes = canvases.filter((canvas) => Object.keys(canvas.nodes).length > 0)
+  if (withNodes.length === 0) return { kind: 'removeFrame', id: frameId() }
+  const canvas = rng.pick(withNodes)
+  const own = Object.keys(canvas.frames ?? {})
+  // Mostly a frame of the node's canvas; sometimes none, another canvas's or a missing one.
+  const target = rng.chance(0.25) ? null : own.length && rng.chance(0.85) ? rng.pick(own) : frameId()
+  return { kind: 'setNodeFrame', canvasId: canvas.id, nodeId: rng.pick(Object.keys(canvas.nodes)), frameId: target }
+}
+
 /** One random change for `doc`. */
 export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => string): DocChange {
   const panels = Object.values(doc.panels)
@@ -98,12 +129,13 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   const relations = Object.values(doc.relations)
   const worktrees = Object.values(doc.worktrees)
 
-  const roll = rng.int(100)
+  const roll = rng.int(115)
   if (roll < 22 || panelIds.length < 2) {
     const type = rng.chance(0.12) ? 'canvas' : rng.pick(PANEL_TYPES.filter((t) => t !== 'canvas'))
     const record = randomRecord(rng, newId, type)
     return { kind: 'addPanel', record, at: randomTarget(doc, rng, newId, type === 'canvas') }
   }
+  if (roll >= 100) return randomFrameChange(doc, rng, newId)
   if (roll < 45) {
     const id = someId()
     return { kind: 'placePanel', id, at: randomTarget(doc, rng, newId, doc.panels[id]?.type === 'canvas') }

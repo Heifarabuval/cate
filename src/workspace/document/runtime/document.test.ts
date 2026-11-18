@@ -6,6 +6,7 @@ import { createLifecycleBus, type LifecycleBus } from '@kernel/lifecycle/contrac
 import { RpcError, createMemoryPortPair, isRpcError, type ClientFeature } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
+import { rect } from '@workspace/canvas/contract'
 import {
   MAIN_WINDOW,
   createDocument,
@@ -107,6 +108,23 @@ describe('document service', () => {
       { removing: ['a'], discard: ['a'] },
       { removing: ['b'], discard: [] },
     ])
+    doc.dispose()
+  })
+
+  it('refuses a dirty removal that would empty a frame as before, and removes the frame once discarded', () => {
+    const doc = createDocumentService({ file })
+    doc.apply({ kind: 'addPanel', record: { ...record('cv', 'canvas'), canvasId: 'c1' }, at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+    doc.apply({ kind: 'addPanel', record: record('x'), at: { to: 'canvas', canvasId: 'c1', nodeId: 'n1', stackId: 'sn1', rect: rect(0, 0, 400, 300) } })
+    doc.apply({ kind: 'addFrame', canvasId: 'c1', frame: { id: 'f1', title: 'Besoin', state: 'active', collapsed: false, at: { x: 0, y: 0 } } })
+    doc.apply({ kind: 'setNodeFrame', canvasId: 'c1', nodeId: 'n1', frameId: 'f1' })
+    doc.guardRemovals((removing, discard) => {
+      if (removing.has('x') && !discard.has('x')) throw new RpcError('dirty', 'x is busy')
+    })
+    const before = doc.get()
+    expect(doc.submit(op('c1', 1, { kind: 'removePanels', ids: ['x'] }))).toMatchObject({ status: 'failed', error: { code: 'dirty' } })
+    expect(doc.get()).toBe(before)
+    expect(doc.submit(op('c1', 2, { kind: 'removePanels', ids: ['x'], discard: ['x'] }))).toMatchObject({ status: 'applied' })
+    expect(doc.get().canvases.c1.frames).toBeUndefined()
     doc.dispose()
   })
 
