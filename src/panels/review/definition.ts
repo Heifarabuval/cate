@@ -11,6 +11,7 @@ import {
   type ReviewFields,
   type ReviewOp,
   type ReviewOpenRequest,
+  type ReviewPullRequest,
   type ReviewSnapshot,
 } from './contract/types'
 
@@ -19,12 +20,24 @@ function fields(repoPath: string, request: ReviewOpenRequest | undefined, pr?: P
   return value as unknown as JsonObject
 }
 
-/** The options' pull request, or null without one; a bad reference is refused. */
+/** The options' pull request, or null without one. Text and parsed refs pass the same check, before any record. */
 function requestedPullRequest(options: ReviewCreateOptions): PullRequestRef | null {
-  if (options.pr === undefined) return null
-  const ref = typeof options.pr === 'string' ? parsePullRequestRef(options.pr) : options.pr
+  const pr: unknown = options.pr
+  if (pr === undefined) return null
+  const parsed = pr as Partial<PullRequestRef> | null
+  const text = typeof pr === 'string' ? pr
+    : parsed && typeof parsed === 'object' && (parsed.repository === null || typeof parsed.repository === 'string') && typeof parsed.number === 'number'
+      ? `${parsed.repository ?? ''}#${parsed.number}`
+      : null
+  const ref = text === null ? null : parsePullRequestRef(text)
   if (!ref) throw new RpcError('rejected', 'Expected owner/repo#N or N')
   return ref
+}
+
+/** What a review panel answers to: its reference, and `#N` too once it is known to be in the workspace origin. */
+function panelKeys(pr: ReviewPullRequest): string[] {
+  const own = prKey(pr)
+  return pr.origin ? [own, prKey({ repository: null, number: pr.number })] : [own]
 }
 
 export default definePanel({
@@ -47,7 +60,7 @@ export default definePanel({
       const key = prKey(pr)
       const open = Object.values(kit.document().panels).find((panel) => {
         const other = panel.type === 'review' ? reviewPullRequest(panel.fields) : null
-        return other !== null && prKey(other) === key
+        return other !== null && panelKeys(other).includes(key)
       })
       if (open) return open.id
       return kit.add(kit.record('review', {
