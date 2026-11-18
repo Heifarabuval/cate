@@ -19,6 +19,11 @@ const SHOTS = [
 // Runs in the page: every text element with its color, effective background and ratio.
 function measure() {
 	const parse = (css) => {
+		const srgb = css.match(/color\(srgb ([^)]+)\)/) // color-mix() results
+		if (srgb) {
+			const [r, g, b, a = 1] = srgb[1].split(/[ /]+/).filter(Boolean).map(Number)
+			return [r * 255, g * 255, b * 255, a]
+		}
 		const m = css.match(/rgba?\(([^)]+)\)/)
 		if (!m) return [0, 0, 0, 0]
 		const [r, g, b, a = 1] = m[1].split(/[ ,/]+/).filter(Boolean).map(Number)
@@ -75,9 +80,13 @@ for (const [themeName, themeId] of Object.entries(THEMES)) {
 		// Answer button enabled too: a second pass with text typed in the free answer.
 		report[`${themeName}/${shot.name}`] = await page.evaluate(measure)
 		if (shot.scene === 'question') {
+			const card = page.locator('textarea').locator('..')
 			await page.screenshot({ path: `${out}/${prefix}-${themeName}-${shot.name}-repos.png`, fullPage: true })
+			await card.screenshot({ path: `${out}/apres-bouton-${themeName}-${shot.name}-desactive.png` })
 			await page.locator('textarea').fill('Une réponse libre')
+			await page.waitForTimeout(500) // past the button's color transition
 			report[`${themeName}/${shot.name}+texte`] = await page.evaluate(measure)
+			await card.screenshot({ path: `${out}/apres-bouton-${themeName}-${shot.name}-actif.png` })
 		}
 		await page.screenshot({ path: `${out}/${prefix}-${themeName}-${shot.name}.png`, fullPage: true })
 		await page.close()

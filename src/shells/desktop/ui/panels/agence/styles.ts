@@ -4,15 +4,16 @@
 // Button's own variants are not (primary is white on the accent, danger is
 // muted), so the panel's actions state their colors with `!` over a variant.
 
-/** The action to take (Envoyer, Répondre, Demander le rebase): accent tint, primary text. */
+/** Disabled, for every action: neutral border and fill, no tint, text still readable. */
+const OFF = 'disabled:!border-subtle disabled:!bg-surface-3 disabled:!text-secondary disabled:!opacity-100'
+
+/** The action to take (Envoyer, Répondre, Demander le rebase): accent tint and border, primary text. */
 export const ACTION =
-  'shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/15 !text-primary hover:!bg-agent/25 ' +
-  'disabled:!border-transparent disabled:!bg-transparent disabled:!text-secondary disabled:!opacity-100'
+  `shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary enabled:hover:!bg-agent/35 ${OFF}`
 
 /** A destructive action (Abandonner, Merger quand même): danger tint, primary text. */
 export const ACTION_DANGER =
-  'shrink-0 whitespace-nowrap font-medium !border-danger !bg-danger-tint !text-primary hover:!bg-danger-tint ' +
-  'disabled:!border-transparent disabled:!bg-transparent disabled:!text-secondary disabled:!opacity-100'
+  `shrink-0 whitespace-nowrap font-medium !border-danger !bg-danger-tint !text-primary ${OFF}`
 
 /** Any other button (Modifier, Retour, Relancer): readable text, no emphasis. */
 export const ACTION_PLAIN = 'shrink-0 whitespace-nowrap !text-primary'

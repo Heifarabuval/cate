@@ -61,3 +61,19 @@ it('keeps the shared actions on readable text', () => {
     expect(body, id).toMatch(/text-primary/)
   }
 })
+
+it('tells an enabled action from a disabled one by fill and border, not by text alone', () => {
+  const off = styles.match(/const OFF =\s*'([^']*)'/)?.[1] ?? ''
+  expect(off).toMatch(/disabled:!bg-surface-\d/)
+  expect(off).toMatch(/disabled:!border-subtle/)
+  expect(off).toMatch(/disabled:!text-secondary/)
+  for (const id of ['ACTION', 'ACTION_DANGER']) {
+    const body = styles.slice(styles.indexOf(`export const ${id}`), styles.indexOf('\n\n', styles.indexOf(`export const ${id}`)))
+    expect(body, id).toMatch(/\$\{OFF\}/)
+    expect(body, id).toMatch(/(^|\s)!bg-(agent|danger)/)
+    expect(body, id).toMatch(/(^|\s)!border-(agent|danger)/)
+  }
+  // Every disabled-able action of the family goes through the shared constants.
+  const own = sources.filter(({ name }) => name !== 'styles.ts').map(({ text }) => text).join('\n')
+  expect(own).not.toMatch(/variant="(primary|danger)"/)
+})
