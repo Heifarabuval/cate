@@ -222,7 +222,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
       toRuntime.onFrame((frame) => { if (!toDevice.closed) toDevice.send(frame) })
       toDevice.onClose(() => toRuntime.close())
       toRuntime.onClose(() => toDevice.close())
-    })().catch(() => {})
+    })().catch((error: Error) => console.warn('stand-in relay %s failed: %s', id, error.message))
 
     return {
       runtimeId,
