@@ -2,6 +2,7 @@
 // directory is resolved through the workspace path scope first.
 
 import { createPatchHistory, type PatchHistory } from './patchHistory'
+import { cloneNodeModules } from './nodeModules'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -960,6 +961,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       if (createBranch) args.push('-b', branch, targetPath, baseRef ?? 'HEAD')
       else args.push(targetPath, branch)
       await git.raw(args)
+      await cloneNodeModules(await dir(cwd), targetPath)
       deps.addCheckout(targetPath)
       return { path: targetPath, branch }
     },
