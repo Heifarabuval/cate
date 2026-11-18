@@ -112,6 +112,43 @@ check_tools() {
 	else
 		bad "outils développeur : lancer xcode-select --install, attendre la fin, puis relancer"
 	fi
+	# Checked before any build: 20 minutes of work must not end on a folder we cannot write.
+	a=$APPS
+	while [ ! -d "$a" ] && [ "$a" != / ]; do a=$(dirname "$a"); done
+	if [ -w "$a" ]; then
+		ok "dossier d'installation $APPS"
+	else
+		bad "dossier d'installation $APPS non inscriptible : relancer avec CATE_APPS_DIR=~/Applications"
+	fi
+}
+
+# A cut between the two moves of install_staged leaves Cate.app.old and no Cate.app.
+restore_old() {
+	if [ ! -d "$APP" ] && [ -d "$APP.old" ]; then
+		mv "$APP.old" "$APP" && log "restored $APP from $APP.old (an install was cut)"
+	fi
+}
+
+# The lock is taken by mkdir. A dead owner, or a lock without pid older than 15
+# minutes, is moved aside with one atomic rename: of two runs, only one wins it.
+acquire_lock() {
+	mkdir "$LOCK" 2> /dev/null && return 0
+	pid=$(cat "$LOCK/pid" 2> /dev/null || true)
+	if [ -n "$pid" ]; then
+		if kill -0 "$pid" 2> /dev/null; then return 1; fi
+	elif [ -z "$(find "$LOCK" -maxdepth 0 -mmin +15 2> /dev/null)" ]; then
+		return 1
+	fi
+	tomb="$LOCK.stale.$$"
+	mv "$LOCK" "$tomb" 2> /dev/null || return 1
+	# Not the lock we judged (a run took it meanwhile): put it back.
+	if [ "$(cat "$tomb/pid" 2> /dev/null || true)" != "$pid" ] ||
+		{ [ -z "$pid" ] && [ -z "$(find "$tomb" -maxdepth 0 -mmin +15 2> /dev/null)" ]; }; then
+		mv "$tomb" "$LOCK" 2> /dev/null || true
+		return 1
+	fi
+	rm -rf "$tomb"
+	mkdir "$LOCK" 2> /dev/null
 }
 
 prereq() {
@@ -131,8 +168,38 @@ prereq() {
 	[ "$BAD" = 0 ]
 }
 
+refuse_dir() {
+	echo "dossier de build refusé : ${DIR:-vide} ($1). Attendu : un clone de $REPO nommé cate-build, sous $HOME. Rien n'a été touché." >&2
+	exit 6
+}
+
+# The one gate before any rm -rf, git checkout or git clean on the build folder:
+# absolute, no "..", strictly under HOME, named cate-build, not a symlink, and
+# if it is a git repository its origin is exactly REPO.
+validate_dir() {
+	d=$DIR
+	case $d in "~") d=$HOME ;; "~/"*) d="$HOME/${d#"~/"}" ;; esac
+	while [ "${d%/}" != "$d" ]; do d=${d%/}; done
+	h=$HOME
+	while [ "${h%/}" != "$h" ]; do h=${h%/}; done
+	case $d in /*) ;; *) refuse_dir "chemin non absolu" ;; esac
+	case "$d/" in */../* | */./*) refuse_dir "chemin avec . ou .." ;; esac
+	case $d in "$h"/*) ;; *) refuse_dir "pas strictement sous HOME" ;; esac
+	[ "${d##*/}" = cate-build ] || refuse_dir "le nom doit être cate-build"
+	[ ! -L "$d" ] || refuse_dir "lien symbolique"
+	if [ -e "$d/.git" ]; then
+		# xcode-select first: git without the developer tools opens the installer window.
+		if xcode-select -p > /dev/null 2>&1 && command -v git > /dev/null 2>&1; then
+			origin=$(git -C "$d" config --get remote.origin.url 2> /dev/null || true)
+			[ "$origin" = "$REPO" ] || refuse_dir "origin du dépôt : ${origin:-aucun}"
+		elif [ "$MODE" = purge ]; then
+			refuse_dir "origine non vérifiable sans git et les outils développeur"
+		fi # else check_tools stops the run before anything is touched
+	fi
+	DIR=$d
+}
+
 purge() {
-	case $DIR in "" | / | "$HOME") echo "dossier de build refusé : $DIR" >&2; exit 1 ;; esac
 	rm -rf "$DIR" "$DIR.staged" "$DIR.installed" "$DIR.failed" "$DIR.notified" "$DIR.lock"
 	echo "dossier de build supprimé : $DIR"
 }
@@ -227,8 +294,11 @@ install_staged() {
 	if [ -d "$APP" ] && ! mv "$APP" "$APP.old"; then install_failed "cannot move $APP aside"; fi
 	if ! mv "$STAGED" "$APP"; then
 		rm -rf "$APP"
-		if [ -d "$APP.old" ]; then mv "$APP.old" "$APP" || true; fi
-		install_failed "cannot move the new app into $APPS, old app restored"
+		if [ -d "$APP.old" ]; then
+			mv "$APP.old" "$APP" || true
+			install_failed "cannot move the new app into $APPS, old app restored"
+		fi
+		install_failed "cannot move the new app into $APPS (there was no old app)"
 	fi
 	xattr -dr com.apple.quarantine "$APP" 2> /dev/null || true
 	printf '%s\n' "$staged" > "$DIR.installed"
@@ -263,6 +333,11 @@ main() {
 	BREW_PREFIXES=${CATE_BREW_PREFIXES:-/opt/homebrew /usr/local}
 	export GIT_TERMINAL_PROMPT=0
 
+	# A value starting with "-" would be read by git as an option.
+	case $REPO in -*) echo "dépôt invalide (commence par -)" >&2; exit 64 ;; esac
+	case $BRANCH in -*) echo "branche invalide (commence par -)" >&2; exit 64 ;; esac
+	validate_dir
+
 	case $MODE in
 		prereq) if prereq; then exit 0; fi; exit 5 ;;
 		purge) purge; exit 0 ;;
@@ -270,17 +345,15 @@ main() {
 
 	mkdir -p "$(dirname "$LOG")" "$(dirname "$DIR")"
 	if [ -t 1 ]; then echo "journal : $LOG"; fi
+	# Over 1 MB: the previous log is kept as .1, a new one starts.
+	if [ -f "$LOG" ] && [ "$(($(wc -c < "$LOG")))" -gt 1048576 ]; then mv -f "$LOG" "$LOG.1"; fi
 	exec >> "$LOG" 2>&1
 
-	if ! mkdir "$LOCK" 2> /dev/null; then
-		pid=$(cat "$LOCK/pid" 2> /dev/null || true)
-		if [ -z "$pid" ] || kill -0 "$pid" 2> /dev/null; then log "already running"; exit 0; fi
-		rm -rf "$LOCK" # its owner died
-		mkdir "$LOCK" 2> /dev/null || { log "already running"; exit 0; }
-	fi
+	acquire_lock || { log "already running"; exit 0; }
 	echo $$ > "$LOCK/pid"
 	trap 'rm -rf "$LOCK"' EXIT
 	trap 'exit 1' HUP INT TERM
+	restore_old
 
 	BAD=0
 	check_tools
@@ -293,8 +366,13 @@ main() {
 		git clone -q "$REPO" "$DIR" || { log "clone impossible (connexion ?)"; exit 1; }
 	fi
 	cd "$DIR"
-	git fetch -q origin "$BRANCH" || log "fetch impossible (connexion ?), état connu conservé"
-	SHA=$(git rev-parse "origin/$BRANCH" 2> /dev/null) || { log "origin/$BRANCH introuvable"; exit 1; }
+	# BRANCH may be a branch, a tag or a commit: FETCH_HEAD, not origin/<ref>.
+	if git fetch -q origin "$BRANCH"; then
+		SHA=$(git rev-parse "FETCH_HEAD^{commit}" 2> /dev/null) || { log "$BRANCH introuvable"; exit 1; }
+	else
+		log "fetch impossible (connexion ?), état connu conservé"
+		SHA=$(git rev-parse "origin/$BRANCH" 2> /dev/null) || { log "$BRANCH inconnu hors ligne"; exit 0; }
+	fi
 	installed=$(cat "$DIR.installed" 2> /dev/null || true)
 	staged=$(cat "$DIR.staged/sha" 2> /dev/null || true)
 	failed=$(cat "$DIR.failed" 2> /dev/null || true)
