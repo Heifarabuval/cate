@@ -13,6 +13,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -30,7 +31,7 @@ const SHA2 = "b".repeat(40);
 const ENGINES = '{\\n  "engines": {\\n    "node": ">=22.16 <23"\\n  }\\n}\\n'; // as printf reads it
 const LONG_DASH = String.fromCharCode(0x2014);
 const BASIC =
-  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find".split(
+  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find cmp".split(
     " ",
   );
 
@@ -217,7 +218,10 @@ case "$1" in
   config) cat "$dir/.git/origin" 2>/dev/null || echo https://github.com/Heifarabuval/cate.git ;;
   fetch) [ "\${FAKE_FETCH_FAIL:-0}" = 0 ] || exit 1 ;;
   rev-parse) echo "\${FAKE_SHA:-${SHA}}" ;;
-  show) printf '${ENGINES}' ;;
+  show) case "$2" in
+      *:scripts/cate-fork-update.sh) cat "\${FAKE_SELF:-$SRC_SCRIPTS/cate-fork-update.sh}" ;;
+      *) printf '${ENGINES}' ;;
+    esac ;;
   ls-remote) [ "\${FAKE_NO_NET:-0}" = 0 ] || exit 128 ;;
 esac`,
       );
@@ -236,7 +240,8 @@ esac`,
       );
       fake(
         "curl",
-        `out=""; prev=""; url=""; for a; do [ "$prev" != "-o" ] || out=$a; prev=$a; url=$a; done
+        `[ "\${FAKE_CURL_FAIL:-0}" = 0 ] || exit 22
+out=""; prev=""; url=""; for a; do [ "$prev" != "-o" ] || out=$a; prev=$a; url=$a; done
 cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
       );
     });
@@ -336,20 +341,93 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(count(/^xattr@.*com\.apple\.quarantine/)).toBe(1);
       });
 
-      it("keeps the installed app and notifies once when the build fails", () => {
+      it("keeps the installed app, retries a failed build 3 times, then notifies once and stops", () => {
         nvm("22.22.2");
         mkdirSync(path.join(apps, "Cate.app"));
         writeFileSync(path.join(apps, "Cate.app/id"), "old");
         const before = tree(apps);
-        expect(run(UPDATE, [], { FAKE_NPM_FAIL: "1" }).code).toBe(1);
+        for (let i = 0; i < 3; i++)
+          expect(run(UPDATE, [], { FAKE_NPM_FAIL: "1" }).code).toBe(1);
         expect(run(UPDATE, [], { FAKE_NPM_FAIL: "1" }).code).toBe(0);
         expect(tree(apps)).toEqual(before);
-        expect(count(/^npm@.* ci /)).toBe(1); // the same commit is not retried
+        expect(count(/^npm@.* ci /)).toBe(3); // a 4th run does not build again
         expect(count(/^osascript@/)).toBe(1);
+        expect(log()).toMatch(/failed 3 times.*--force/);
         expect(existsSync(`${build}.staged`)).toBe(false);
         expect(existsSync(`${build}.lock`)).toBe(false); // lock released after a failure
         expect(run(UPDATE, ["--force"], { FAKE_NPM_FAIL: "1" }).code).toBe(1);
-        expect(count(/^npm@.* ci /)).toBe(2);
+        expect(count(/^npm@.* ci /)).toBe(4);
+      });
+
+      it("installs on the next run when the first build failed once (network cut)", () => {
+        nvm("22.22.2");
+        expect(run(UPDATE, [], { FAKE_NPM_FAIL: "1" }).code).toBe(1);
+        expect(existsSync(path.join(apps, "Cate.app"))).toBe(false);
+        expect(run(UPDATE).code).toBe(0);
+        expect(
+          readFileSync(path.join(apps, "Cate.app/Contents/id"), "utf8"),
+        ).toBe("new\n");
+        expect(existsSync(`${build}.failed`)).toBe(false);
+        expect(count(/^osascript@.*/)).toBe(1); // only "installé", no failure notice
+      });
+
+      it("restores the old app and notifies once when the new one cannot be moved in", () => {
+        nvm("22.22.2");
+        const realMv = which("mv");
+        fake(
+          "mv",
+          `case "$1" in *.staged/Cate.app) [ "\${FAKE_MV_FAIL:-0}" = 0 ] || exit 1 ;; esac\nexec "${realMv}" "$@"`,
+        );
+        mkdirSync(path.join(apps, "Cate.app"));
+        writeFileSync(path.join(apps, "Cate.app/id"), "old");
+        expect(run(UPDATE, [], { FAKE_MV_FAIL: "1" }).code).toBe(1);
+        expect(readFileSync(path.join(apps, "Cate.app/id"), "utf8")).toBe(
+          "old",
+        );
+        expect(existsSync(path.join(apps, "Cate.app.old"))).toBe(false);
+        expect(log()).toMatch(/old app restored/);
+        expect(run(UPDATE, [], { FAKE_MV_FAIL: "1" }).code).toBe(1);
+        expect(count(/^osascript@/)).toBe(1);
+        rmSync(path.join(apps, "Cate.app"), { recursive: true });
+        expect(run(UPDATE, [], { FAKE_MV_FAIL: "1" }).code).toBe(1);
+        expect(log()).toMatch(/there was no old app/);
+        expect(existsSync(path.join(apps, "Cate.app"))).toBe(false);
+        expect(run(UPDATE).code).toBe(0); // the staged build is installed later
+        expect(
+          readFileSync(path.join(apps, "Cate.app/Contents/id"), "utf8"),
+        ).toBe("new\n");
+        expect(count(/^npm@.* ci /)).toBe(1);
+      });
+
+      it("refreshes its own copy in ~/.local/bin from the built commit", () => {
+        nvm("22.22.2");
+        expect(run(INSTALL).code).toBe(0);
+        const self = path.join(home, ".local/bin/cate-fork-update");
+        const next = path.join(root, "next.sh");
+        write(next, `${readFileSync(UPDATE, "utf8")}# v2\n`);
+        expect(run(UPDATE, [], { FAKE_SHA: SHA2, FAKE_SELF: next }).code).toBe(0);
+        expect(readFileSync(self, "utf8")).toBe(readFileSync(next, "utf8"));
+        expect(statSync(self).mode & 0o777).toBe(0o755);
+        expect(log()).toMatch(/cate-fork-update refreshed/);
+        // A broken or empty copy is never installed.
+        write(next, "if then\n");
+        run(UPDATE, [], { FAKE_SHA: SHA2, FAKE_SELF: next });
+        write(next, "");
+        run(UPDATE, [], { FAKE_SHA: SHA2, FAKE_SELF: next });
+        expect(readFileSync(self, "utf8")).toMatch(/# v2\n$/);
+        expect(readFileSync(UPDATE, "utf8")).not.toMatch(/# v2\n$/); // never the running copy
+      });
+
+      it("refuses to run when HOME is empty, / or not an absolute folder", () => {
+        const outside = path.join(root, "x/cate-build");
+        const keep = path.join(outside, "keep.txt");
+        write(keep, "keep");
+        for (const h of ["", "/", "//", "relative", path.join(root, "missing")]) {
+          const r = run(UPDATE, ["--purge"], { HOME: h, CATE_BUILD_DIR: outside });
+          expect([h, r.code]).toEqual([h, 1]);
+          expect(r.out).toMatch(/HOME/);
+        }
+        expect(existsSync(keep)).toBe(true);
       });
 
       it("refuses to stage a hardened-runtime build, and survives a failed packaging step", () => {
@@ -409,6 +487,16 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(existsSync(path.join(home, "alt/cate-build.installed"))).toBe(
           true,
         );
+      });
+
+      it("reads the last conf line even without a final newline", () => {
+        nvm("22.22.2");
+        write(
+          path.join(home, ".config/cate-fork-update.conf"),
+          "# hand edited\nCATE_FORK_BRANCH=dev",
+        );
+        expect(run(UPDATE).code).toBe(0);
+        expect(called()).toContain(`git@${fakes} fetch -q origin dev`);
       });
 
       it("builds a pinned tag or commit from FETCH_HEAD, and refuses a ref that looks like an option", () => {
@@ -601,13 +689,18 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
           `<string>${home}/Library/Logs/cate-fork-update.log</string>`,
         );
         expect(p).toContain("<key>StartInterval</key><integer>600</integer>");
-        expect(p).toContain("<key>RunAtLoad</key><true/>");
+        // No run at load: the agent's first run comes 10 minutes after the
+        // foreground build started, and waits on its lock instead of racing it.
+        expect(p).not.toContain("RunAtLoad");
         expect(p).not.toContain("~");
         expect(p).not.toContain(os.homedir());
         expect(called().filter((l) => /^launchctl@/.test(l))).toEqual([
           `launchctl@${fakes} bootout gui/${uid()}/com.cate.fork-update`,
           `launchctl@${fakes} bootstrap gui/${uid()} ${plist()}`,
         ]);
+        // Loaded before the long build: a Terminal closed meanwhile still leaves the agent.
+        const order = called().filter((l) => /^launchctl@.* bootstrap |^npm@.* ci /.test(l));
+        expect(order.map((l) => l.split("@")[0])).toEqual(["launchctl", "npm"]);
         expect(
           readFileSync(path.join(apps, "Cate.app/Contents/id"), "utf8"),
         ).toBe("new\n");
@@ -671,6 +764,27 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(called()).toContain(`git@${fakes} fetch -q origin v1.2.0`);
         expect(run(INSTALL, ["--branche"]).code).toBe(64);
         expect(run(INSTALL, ["--branche", "--x"]).code).toBe(64);
+      });
+
+      it("keeps the agent loaded when the first build fails, and says it retries", () => {
+        nvm("22.22.2");
+        const r = run(INSTALL, [], { FAKE_NPM_FAIL: "1" });
+        expect(r.code).toBe(1);
+        expect(r.out).toMatch(/première construction a échoué/);
+        expect(r.out).toMatch(/réessaie.*--force/);
+        expect(existsSync(plist())).toBe(true);
+        expect(count(/^launchctl@.* bootstrap /)).toBe(1);
+        expect(existsSync(path.join(apps, "Cate.app"))).toBe(false);
+      });
+
+      it("stops before writing anything when the download fails", () => {
+        nvm("22.22.2");
+        const r = run(INSTALL, [], { FAKE_CURL_FAIL: "1" }, readFileSync(INSTALL, "utf8"));
+        expect(r.code).toBe(1);
+        expect(r.out).toMatch(/téléchargement impossible/);
+        expect(existsSync(path.join(home, ".local"))).toBe(false);
+        expect(existsSync(path.join(home, "Library"))).toBe(false);
+        expect(count(/^launchctl@|^git@|^npm@/)).toBe(0);
       });
 
       it("--sans-launchd writes no agent and loads nothing", () => {
