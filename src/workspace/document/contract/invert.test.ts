@@ -110,6 +110,198 @@ describe('invertOp', () => {
   })
 })
 
+// sample() plus, on canvas-cv: frame f1 holding n1 and n2, f2 holding nothing.
+// f1 is waiting, collapsed, with its own `at`, so a restore that resets them shows.
+function framed(): Doc {
+  const at = { x: -20, y: -60 }
+  const result = applyOp(sample(), {
+    kind: 'batch',
+    changes: [
+      { kind: 'addFrame', canvasId: 'canvas-cv', frame: { id: 'f1', title: 'Besoin', state: 'waiting', collapsed: true, at } },
+      { kind: 'addFrame', canvasId: 'canvas-cv', frame: { id: 'f2', title: 'Vide', state: 'active', collapsed: false, at } },
+      { kind: 'setNodeFrame', canvasId: 'canvas-cv', nodeId: 'n1', frameId: 'f1' },
+      { kind: 'setNodeFrame', canvasId: 'canvas-cv', nodeId: 'n2', frameId: 'f1' },
+    ],
+  })
+  if (result.error) throw new Error(result.error.message)
+  return result.doc
+}
+
+describe('invertOp with frames (A001)', () => {
+  it('builds the framed sample', () => {
+    const doc = framed()
+    expect(doc.canvases['canvas-cv'].frames?.f1?.state).toBe('waiting')
+    expect(doc.canvases['canvas-cv'].nodes.n2.frameId).toBe('f1')
+  })
+
+  it('undoes closing a member whose node goes: the node is back in its frame', () => {
+    roundTrip(framed(), { kind: 'removePanels', ids: ['z'] })
+  })
+
+  it('undoes closing the last members: the frame comes back before its memberships', () => {
+    const doc = framed()
+    const after = applyOp(doc, { kind: 'removePanels', ids: ['x', 'y', 'z'] }).doc
+    expect(after.canvases['canvas-cv'].frames?.f1).toBeUndefined()
+    const inverse = roundTrip(doc, { kind: 'removePanels', ids: ['x', 'y', 'z'] })
+    const frameAt = inverse.findIndex((c) => c.kind === 'addFrame')
+    const firstMember = inverse.findIndex((c) => c.kind === 'setNodeFrame')
+    expect(frameAt).toBeGreaterThanOrEqual(0)
+    expect(frameAt).toBeLessThan(firstMember)
+  })
+
+  it('undoes removing the canvas panel: its frames, empty ones too, and memberships come back', () => {
+    roundTrip(framed(), { kind: 'removePanels', ids: ['cv'] })
+  })
+})
+
+const kinds = (changes: DocChange[]) => changes.map((c) => c.kind)
+
+describe('invertOp, the four frame ops (A013)', () => {
+  const CV = 'canvas-cv'
+  const f3 = { id: 'f3', title: 'Neuf', state: 'active', collapsed: false, at: { x: 5, y: 5 } } as const
+
+  it('undoes addFrame with removeFrame', () => {
+    expect(roundTrip(framed(), { kind: 'addFrame', canvasId: CV, frame: f3 })).toEqual([{ kind: 'removeFrame', id: 'f3' }])
+  })
+
+  it('undoes updateFrame to the old values, only the keys it set', () => {
+    const inverse = roundTrip(framed(), { kind: 'updateFrame', id: 'f1', patch: { title: 'T', state: 'done', collapsed: false, at: { x: 1, y: 2 } } })
+    expect(inverse).toEqual([{ kind: 'updateFrame', id: 'f1', patch: { title: 'Besoin', state: 'waiting', collapsed: true, at: { x: -20, y: -60 } } }])
+    expect(roundTrip(framed(), { kind: 'updateFrame', id: 'f1', patch: { state: 'blocked' } })).toEqual([{ kind: 'updateFrame', id: 'f1', patch: { state: 'waiting' } }])
+  })
+
+  it('undoes removeFrame with addFrame then one setNodeFrame per former member', () => {
+    expect(kinds(roundTrip(framed(), { kind: 'removeFrame', id: 'f1' }))).toEqual(['addFrame', 'setNodeFrame', 'setNodeFrame'])
+    expect(kinds(roundTrip(framed(), { kind: 'removeFrame', id: 'f2' }))).toEqual(['addFrame'])
+  })
+
+  it('undoes setNodeFrame to the old frame, or to none', () => {
+    const doc = framed()
+    expect(roundTrip(doc, { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: 'f2' })).toEqual([{ kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: 'f1' }])
+    expect(roundTrip(doc, { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: null })).toEqual([{ kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: 'f1' }])
+    const loose = applyOp(doc, { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: null }).doc
+    expect(roundTrip(loose, { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: 'f2' })).toEqual([{ kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: null }])
+  })
+
+  it('undoes a move of a frame (node rects and anchor) in one step', () => {
+    const inverse = roundTrip(framed(), {
+      kind: 'batch',
+      changes: [
+        { kind: 'setNodeRects', canvasId: CV, rects: [{ nodeId: 'n1', rect: rect(50, 50, 400, 300) }, { nodeId: 'n2', rect: rect(550, 50, 300, 200) }] },
+        { kind: 'updateFrame', id: 'f1', patch: { at: { x: 30, y: -10 } } },
+      ],
+    } as unknown as DocChange)
+    expect(kinds(inverse)).toEqual(['updateFrame', 'setNodeRects'])
+  })
+
+  it('undoes a placePanel that takes the only member of a node out: the node is back in its frame', () => {
+    roundTrip(framed(), { kind: 'placePanel', id: 'z', at: tab('s2') })
+    roundTrip(framed(), { kind: 'placePanel', id: 'x', at: tab('s2') })
+  })
+
+  it('restores the frame only after the canvas panel it lives on, and each membership on the node the restore gave back', () => {
+    const inverse = roundTrip(framed(), { kind: 'removePanels', ids: ['cv'] })
+    const last = (kind: string) => inverse.map((c) => c.kind).lastIndexOf(kind as DocChange['kind'])
+    expect(last('addPanel')).toBeLessThan(inverse.map((c) => c.kind).indexOf('addFrame'))
+    expect(last('addFrame')).toBeLessThan(inverse.map((c) => c.kind).indexOf('setNodeFrame'))
+    expect(inverse.filter((c) => c.kind === 'addFrame')).toHaveLength(2)
+  })
+
+  it('puts no setNodeFrame for a tab closed in a node that stays', () => {
+    expect(kinds(roundTrip(framed(), { kind: 'removePanels', ids: ['y'] }))).toEqual(['addPanel'])
+  })
+
+  it('redo: the inverse of the undo brings the op back, with the frame gone again', () => {
+    const cases: DocChange[] = [
+      { kind: 'removePanels', ids: ['x', 'y', 'z'] },
+      { kind: 'removePanels', ids: ['z'] },
+      { kind: 'removePanels', ids: ['cv'] },
+      { kind: 'removeFrame', id: 'f1' },
+      { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: 'f2' },
+      { kind: 'addFrame', canvasId: CV, frame: f3 }
+    ]
+    for (const change of cases) {
+      const before = framed()
+      const after = applyOp(before, change)
+      expect(after.error).toBeUndefined()
+      const undo = invertOp(before, change, newId)
+      const undone = applyOp(after.doc, { kind: 'batch', changes: undo })
+      expect(undone.error).toBeUndefined()
+      expect(undone.doc).toEqual(before)
+      const redo = invertOp(after.doc, { kind: 'batch', changes: undo }, newId)
+      const redone = applyOp(undone.doc, { kind: 'batch', changes: redo })
+      expect(redone.error, JSON.stringify(change)).toBeUndefined()
+      expect(redone.doc, JSON.stringify(change)).toEqual(after.doc)
+    }
+  })
+})
+
+describe('applicable with frames, after a concurrent edit (A013)', () => {
+  const CV = 'canvas-cv'
+  const g = { id: 'g', title: 'Autre', state: 'active', collapsed: false, at: { x: 0, y: 0 } } as const
+  const send = (doc: Doc, change: DocChange) => {
+    const result = applyOp(doc, change)
+    expect(result.error).toBeUndefined()
+    return result.doc
+  }
+
+  it('undoes removeFrame but leaves a node someone put in another frame since', () => {
+    const before = send(framed(), { kind: 'addFrame', canvasId: CV, frame: g })
+    const change: DocChange = { kind: 'removeFrame', id: 'f1' }
+    const after = send(before, change)
+    const inverse = invertOp(before, change, newId)
+    const later = send(after, { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n2', frameId: 'g' })
+    const kept = applicable(later, inverse, after)
+    expect(kinds(kept)).toEqual(['addFrame', 'setNodeFrame'])
+    const undone = applyOp(later, { kind: 'batch', changes: kept }).doc
+    expect(undone.canvases[CV].nodes.n1.frameId).toBe('f1')
+    expect(undone.canvases[CV].nodes.n2.frameId).toBe('g')
+    expect(undone.canvases[CV].frames?.f1).toEqual(before.canvases[CV].frames?.f1)
+  })
+
+  it('undoes the closing of the last members: all of it when nothing changed, nothing when the canvas went', () => {
+    const before = framed()
+    const change: DocChange = { kind: 'removePanels', ids: ['x', 'y', 'z'] }
+    const after = send(before, change)
+    const inverse = invertOp(before, change, newId)
+    expect(applicable(after, inverse, after)).toEqual(inverse)
+    const gone = send(after, { kind: 'removePanels', ids: ['cv'] })
+    expect(applicable(gone, inverse, after)).toEqual([])
+  })
+
+  it('does not replace a frame someone created under the same id since', () => {
+    const before = framed()
+    const change: DocChange = { kind: 'removePanels', ids: ['x', 'y', 'z'] }
+    const after = send(before, change)
+    const inverse = invertOp(before, change, newId)
+    const later = send(after, { kind: 'addFrame', canvasId: CV, frame: { ...g, id: 'f1' } })
+    const kept = applicable(later, inverse, after)
+    expect(kinds(kept)).not.toContain('addFrame')
+    const undone = applyOp(later, { kind: 'batch', changes: kept }).doc
+    expect(undone.canvases[CV].frames?.f1?.title).toBe('Autre')
+  })
+
+  it('undoes updateFrame but keeps a key someone changed since', () => {
+    const before = framed()
+    const change: DocChange = { kind: 'updateFrame', id: 'f1', patch: { title: 'T', state: 'done' } }
+    const after = send(before, change)
+    const inverse = invertOp(before, change, newId)
+    const later = send(after, { kind: 'updateFrame', id: 'f1', patch: { title: 'B' } })
+    const undone = applyOp(later, { kind: 'batch', changes: applicable(later, inverse, after) }).doc
+    expect(undone.canvases[CV].frames?.f1).toMatchObject({ title: 'B', state: 'waiting' })
+  })
+
+  it('does not put a node back in its frame when someone moved it since', () => {
+    const before = framed()
+    const change: DocChange = { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: 'f2' }
+    const after = send(before, change)
+    const inverse = invertOp(before, change, newId)
+    const later = send(after, { kind: 'setNodeFrame', canvasId: CV, nodeId: 'n1', frameId: null })
+    expect(applicable(later, inverse, after)).toEqual([])
+    expect(applicable(after, inverse, after)).toEqual(inverse)
+  })
+})
+
 describe('applicable', () => {
   it('skips the parts of an inverse that are gone by the time it is sent', () => {
     const before = sample()
