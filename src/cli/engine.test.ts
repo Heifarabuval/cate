@@ -383,12 +383,14 @@ describe('runCli', () => {
     const usage = deps({ call: async () => [
       { panelId: 'aaaaaaaa-1111', title: 'Impl', agentId: 'claude-code', model: 'claude-sonnet-4-5', inputTokens: 1200, outputTokens: 80, costUsd: 7.083 },
       { panelId: 'bbbbbbbb-2222', title: 'Other', agentId: 'cursor', model: null, inputTokens: null, outputTokens: null, costUsd: null },
+      { panelId: 'cccccccc-3333', title: 'Bad', agentId: 'codex', model: null, inputTokens: null, outputTokens: null, costUsd: null, error: 'boom' },
     ] })
     await runCli(['agent', 'usage'], CATE_API, usage.d)
     expect(usage.out[0].split('\n')).toEqual([
       'ID        TITLE  MODEL              INPUT  OUTPUT  COST',
       'aaaaaaaa  Impl   claude-sonnet-4-5  1200   80      $7.08',
       'bbbbbbbb  Other  -                  -      -       -',
+      'cccccccc  Bad    -                  -      -       error',
     ])
   })
 

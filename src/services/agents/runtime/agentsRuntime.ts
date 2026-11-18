@@ -112,7 +112,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   })().catch((error: unknown) => { usageLoading = undefined; throw error })
   const usage: AgentUsageService = {
     summary: async (input) => (await loadUsage()).summary(input),
-    session: async (locator) => (await loadUsage()).session(locator),
+    sessions: async (requests) => (await loadUsage()).sessions(requests),
     refreshRates: async () => (await loadUsage()).refreshRates(),
     limits: async (refresh) => (await loadUsage()).limits(refresh),
   }

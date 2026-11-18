@@ -16,7 +16,7 @@ it('keeps the latest source title after rename, close and restart, including con
   const terminals: AgentTerminals = {
     state: () => null, panelIds: () => [], onChange: () => () => {},
     send: async () => ({ ok: true }), interrupt: async () => ({ ok: true }),
-    conversation: async () => null, conversationStamp: async () => null,
+    conversation: async () => null, conversationStamp: async () => null, sessionIds: () => [],
     onStep: () => () => {}, onConversationReset: () => () => {}, onTurnEnd: () => () => {}, dispose() {},
   }
   const deps: AgentsCoreDeps = {

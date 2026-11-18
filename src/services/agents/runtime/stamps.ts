@@ -17,6 +17,9 @@ interface StampState {
   /** Dedup key of the last emitted stamp. */
   key?: string | null
   latest?: AgentSessionLocator
+  /** Every session id the hooks named since the agent started, oldest first
+   *  (a /clear starts another session; usage sums them all). */
+  sessions: string[]
   /** Ingest counter: an async cwd lookup drops its result when a newer event
    *  (or a clear) landed while it was in flight. */
   seq: number
@@ -35,6 +38,9 @@ export interface ResumeStamps {
   clear(terminalId: string): void
   /** The session the terminal's hooks last named, stamped or not. */
   latest(terminalId: string): AgentSessionLocator | undefined
+  /** The sessions the terminal's agent ran since it started; empty once it
+   *  exited (`clear`), so a relaunch counts from nothing. */
+  sessions(terminalId: string): string[]
   drop(terminalId: string): void
 }
 
@@ -44,7 +50,7 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
   const stateFor = (terminalId: string): StampState => {
     let st = states.get(terminalId)
     if (!st) {
-      st = { seq: 0 }
+      st = { seq: 0, sessions: [] }
       states.set(terminalId, st)
     }
     return st
@@ -89,6 +95,7 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
         && (st.latest.agentId !== event.agentId || st.latest.sessionId !== event.sessionId)) return
       st.seq++
       const { agentId, sessionId } = event
+      if (!st.sessions.includes(sessionId)) st.sessions.push(sessionId)
       const identity = { agentId, sessionId, ...(event.cwd ? { cwd: event.cwd } : {}),
         ...(event.transcriptPath ? { transcriptPath: event.transcriptPath } : {}),
         ...(event.leafId !== undefined ? { leafId: event.leafId } : {}) }
@@ -118,7 +125,12 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
       const st = stateFor(terminalId)
       st.seq++
       st.latest = undefined
+      st.sessions = []
       emit(terminalId, null)
+    },
+
+    sessions(terminalId) {
+      return [...(states.get(terminalId)?.sessions ?? [])]
     },
 
     latest(terminalId) {

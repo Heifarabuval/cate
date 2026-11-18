@@ -10,7 +10,7 @@ import path from 'node:path'
 import { RpcError } from '@kernel/rpc/contract'
 import type { Logger } from '@kernel/log/contract'
 import { writeJsonAtomic } from '@kernel/state/node'
-import { AGENTS, type AgentId, type AgentSessionLocator, type AgentSessionUsage, type UsageAgentLimits, type UsageAgentStatus, type UsageLimitsReport, type UsageModelPriceOverride, type UsagePricing, type UsageSummary, type UsageSummaryInput } from '../../contract'
+import { AGENTS, type AgentId, type AgentSessionsRequest, type AgentSessionUsageResult, type UsageAgentLimits, type UsageAgentStatus, type UsageLimitsReport, type UsageModelPriceOverride, type UsagePricing, type UsageSummary, type UsageSummaryInput } from '../../contract'
 import type { AgentSessionStores, AgentUsageRecord, AgentUsageScope, AgentUsageSource } from '../sessions/types'
 import { UsageAggregator } from './aggregation'
 import { createOverrideRateTable, parseRateTable, type RateTable } from './pricing'
@@ -54,8 +54,8 @@ export interface AgentUsageDeps {
 
 export interface AgentUsageService {
   summary(input: UsageSummaryInput): Promise<UsageSummary>
-  /** One session's usage since it began; null when its agent records none. */
-  session(session: AgentSessionLocator): Promise<AgentSessionUsage | null>
+  /** Usage of each request's sessions, read together; same order. */
+  sessions(requests: AgentSessionsRequest[]): Promise<AgentSessionUsageResult[]>
   refreshRates(): Promise<UsagePricing>
   limits(refresh: boolean): Promise<UsageLimitsReport>
 }
@@ -287,45 +287,73 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
     return running
   }
 
-  /** The session's records: its own files when the store names them, else the
-   *  store's recent transcripts. */
-  async function sessionRecords(session: AgentSessionLocator): Promise<AgentUsageRecord[]> {
-    const store = deps.stores[session.agentId]
-    const { source } = store.usage
-    const named = source.kind === 'transcripts' && store.files ? await store.files({ session, homeDir: deps.homeDir }) : null
-    if (source.kind === 'transcripts' && named) {
+  /** The panels' usage over the sessions each ran. Every panel shares one
+   *  read: one rate load, each file parsed once, one search per agent that
+   *  cannot name a session's files, one cache write. Responses count once
+   *  (the CLI's own `dedupeKey`, which repeats in a resumed or cleared
+   *  session's files); a request that fails answers its own error. */
+  async function sessions(requests: AgentSessionsRequest[]): Promise<AgentSessionUsageResult[]> {
+    await loadCache()
+    const startedAt = now()
+    const contains = workspaceScope(deps.root)
+    const walked = { live: new Set<string>(), roots: [] as string[] }
+    const scope: AgentUsageScope = { sinceMs: startedAt - SESSION_SEARCH_MS, untilMs: startedAt, contains }
+    const searches = new Map<AgentId, Promise<AgentUsageRecord[]>>()
+    /** What an agent that cannot name its files recorded in the workspace lately. */
+    const searched = (agent: AgentId): Promise<AgentUsageRecord[]> => {
+      let found = searches.get(agent)
+      if (!found) {
+        found = scanAgent(agent, deps.stores[agent].usage.source, scope, walked)
+          .then(async ({ records }) => (await Promise.all(records.map(async (record) => record.cwd !== null && await contains(record.cwd)))).flatMap((inside, i) => (inside ? [records[i]] : [])))
+        searches.set(agent, found)
+      }
+      return found
+    }
+    async function recordsOf({ agentId, sessionIds, cwd }: AgentSessionsRequest): Promise<AgentUsageRecord[]> {
+      if (sessionIds.length === 0) return []
+      const store = deps.stores[agentId]
+      const { source } = store.usage
+      if (source.kind !== 'transcripts' || !store.files) {
+        const ids = new Set(sessionIds)
+        return (await searched(agentId)).filter((record) => ids.has(record.sessionId))
+      }
+      // A session's files hold its own responses and the history a resume copied in.
+      const files = new Set<string>()
+      for (const sessionId of sessionIds) for (const file of await store.files({ session: { agentId, sessionId, cwd }, homeDir: deps.homeDir })) files.add(file)
       const records: AgentUsageRecord[] = []
-      for (const file of named) {
+      for (const file of files) {
         const stats = await fs.stat(file).catch(() => null)
-        if (stats) records.push(...await transcriptRecords(session.agentId, source, { path: file, size: stats.size, mtimeMs: stats.mtimeMs }))
+        if (stats) records.push(...await transcriptRecords(agentId, source, { path: file, size: stats.size, mtimeMs: stats.mtimeMs }))
       }
       return records
     }
-    const scope: AgentUsageScope = { sinceMs: now() - SESSION_SEARCH_MS, untilMs: now(), contains: async () => true }
-    return (await scanAgent(session.agentId, source, scope, { live: new Set(), roots: [] })).records
-  }
-
-  async function session(locator: AgentSessionLocator): Promise<AgentSessionUsage | null> {
-    await loadCache()
-    const [, records] = await Promise.all([ensureRates(false), sessionRecords(locator)])
+    const [, read] = await Promise.all([
+      ensureRates(false),
+      Promise.all(requests.map((request) => recordsOf(request).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) })))),
+    ])
+    if (pruneScanCache(cache, { livePaths: walked.live, walkedRoots: walked.roots, windowStartMs: scope.sinceMs, retentionCutoffMs: startedAt - CACHE_RETENTION_MS }) > 0) cacheDirty = true
     await saveCache()
-    const aggregator = new UsageAggregator({ timeZone: 'UTC', sinceDay: '0000-01-01', untilDay: '9999-12-31', rates, priceOverrides: createOverrideRateTable(deps.priceOverrides()) })
-    for (const record of records) if (record.sessionId === locator.sessionId) aggregator.add(locator.agentId, record)
-    const buckets = aggregator.finish()
-    if (buckets.length === 0) return null
-    const tokens = new Map<string, number>()
-    let inputTokens = 0
-    let outputTokens = 0
-    let costUsd: number | null = 0
-    for (const { model, totals, costUsd: cost, unpricedRecords } of buckets) {
-      const input = totals.uncachedInputTokens + totals.cachedInputTokens + totals.cacheCreationTokens
-      inputTokens += input
-      outputTokens += totals.outputTokens
-      tokens.set(model, (tokens.get(model) ?? 0) + input + totals.outputTokens)
-      costUsd = unpricedRecords > 0 || costUsd === null ? null : costUsd + cost
-    }
-    const [model] = [...tokens].sort((a, b) => b[1] - a[1])[0]
-    return { model, inputTokens, outputTokens, costUsd }
+    const overrides = createOverrideRateTable(deps.priceOverrides())
+    return read.map((records, i): AgentSessionUsageResult => {
+      if ('error' in records) return records
+      const aggregator = new UsageAggregator({ timeZone: 'UTC', sinceDay: '0000-01-01', untilDay: '9999-12-31', rates, priceOverrides: overrides })
+      for (const record of records) aggregator.add(requests[i].agentId, record)
+      const buckets = aggregator.finish()
+      if (buckets.length === 0) return null
+      const tokens = new Map<string, number>()
+      let inputTokens = 0
+      let outputTokens = 0
+      let costUsd: number | null = 0
+      for (const { model, totals, costUsd: cost, unpricedRecords } of buckets) {
+        const input = totals.uncachedInputTokens + totals.cachedInputTokens + totals.cacheCreationTokens
+        inputTokens += input
+        outputTokens += totals.outputTokens
+        tokens.set(model, (tokens.get(model) ?? 0) + input + totals.outputTokens)
+        costUsd = unpricedRecords > 0 || costUsd === null ? null : costUsd + cost
+      }
+      const [model] = [...tokens].sort((a, b) => b[1] - a[1])[0]
+      return { model, inputTokens, outputTokens, costUsd }
+    })
   }
 
   // --- Limits ---
@@ -356,7 +384,7 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
 
   return {
     summary,
-    session,
+    sessions,
     async refreshRates() {
       await ensureRates(true)
       return pricing()

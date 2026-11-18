@@ -53,6 +53,7 @@ beforeEach(() => {
     interrupt: async () => ({ ok: true }),
     conversation: async () => null,
     conversationStamp: async () => null,
+    sessionIds: () => [],
     onStep: () => () => {},
     onConversationReset: () => () => {},
     onTurnEnd: () => () => {},

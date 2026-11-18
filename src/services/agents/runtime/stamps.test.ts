@@ -175,6 +175,33 @@ describe('emit mechanics', () => {
   })
 })
 
+describe('the sessions an agent ran since it started (usage)', () => {
+  it('keeps every session id once, across a /clear rotation and a late event of an older one', () => {
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'id-1', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-1', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-end', 'id-1', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'id-2', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-2', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-end', 'id-2', '/w'))
+    expect(stampsUnderTest.sessions(tid)).toEqual(['id-1', 'id-2'])
+  })
+
+  it('starts again from nothing when the agent exits and another one starts', () => {
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-1', '/w'))
+    stampsUnderTest.clear(tid)
+    expect(stampsUnderTest.sessions(tid)).toEqual([])
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'id-2', '/w'))
+    expect(stampsUnderTest.sessions(tid)).toEqual(['id-2'])
+  })
+
+  it('is per terminal, and forgotten with it', () => {
+    stampsUnderTest.ingest(ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
+    stampsUnderTest.ingest(ev(`${tid}-b`, 'codex', 'turn-start', 'id-2', '/w'))
+    expect(stampsUnderTest.sessions(tid)).toEqual(['id-1'])
+    stampsUnderTest.drop(tid)
+    expect(stampsUnderTest.sessions(tid)).toEqual([])
+  })
+})
 
 it('keeps Pi tree position in the live locator, without persisting it in the shell resume stamp', () => {
   const event = { ...ev(tid, 'pi', 'turn-end', 'pi-session', '/repo'), transcriptPath: '/custom/pi/session.jsonl', leafId: 'leaf-a' }

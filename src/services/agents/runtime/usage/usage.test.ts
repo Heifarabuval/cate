@@ -1,7 +1,9 @@
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { writeJsonAtomic } from '@kernel/state/node'
+import type { AgentId } from '../../contract'
 import { AGENT_SESSION_STORES } from '../sessions'
 import type { AgentUsageLineParser } from '../sessions/types'
 import { UsageAggregator } from './aggregation'
@@ -10,6 +12,12 @@ import { lookupRate, parseRateTable, priceUsage } from './pricing'
 import { decodeScanCache, encodeScanCache, type ScanCache } from './scanCache'
 import { readTranscript } from './transcripts'
 import { createAgentUsage } from './usage'
+
+// Counts the writes; each one still happens.
+vi.mock('@kernel/state/node', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@kernel/state/node')>()
+  return { ...original, writeJsonAtomic: vi.fn(original.writeJsonAtomic) }
+})
 
 const RATES = {
   'claude-sonnet-4-5': { input_cost_per_token: 3e-6, output_cost_per_token: 15e-6, cache_read_input_token_cost: 0.3e-6, cache_creation_input_token_cost: 3.75e-6 },
@@ -216,6 +224,7 @@ describe('session usage', () => {
     root: '/proj', dataDir: data, homeDir: home, stores: AGENT_SESSION_STORES, env: () => ({}),
     priceOverrides: () => ({}), fetchRates: async () => RATES, now: () => Date.parse('2026-10-11T00:00:00Z'),
   })
+  const one = async (agentId: AgentId, sessionIds: string[]) => (await service().sessions([{ agentId, sessionIds, cwd: '/proj' }]))[0]
   const at = '2026-10-10T12:00:00Z'
   /** A line of session `session`, whatever the message id. */
   const line = (session: string, id: string, usage: Record<string, number>) => claudeLine(id, at, '/proj', usage).replace(`"s-${id}"`, `"${session}"`)
@@ -226,25 +235,81 @@ describe('session usage', () => {
     // The other session's file must not count.
     writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 500 })}\n${line('s-a', 'a2', { input_tokens: 200, output_tokens: 20 })}\n`)
     writeFileSync(path.join(dir, 's-b.jsonl'), `${line('s-b', 'b1', { input_tokens: 9000, output_tokens: 900 })}\n`)
-    const usage = await service().session({ agentId: 'claude-code', sessionId: 's-a', cwd: '/proj' })
+    const usage = await one('claude-code', ['s-a'])
     expect(usage).toMatchObject({ model: 'claude-sonnet-4-5', inputTokens: 1700, outputTokens: 120 })
-    expect(usage?.costUsd).toBeCloseTo(1200 * 3e-6 + 500 * 0.3e-6 + 120 * 15e-6)
+    expect((usage as { costUsd: number }).costUsd).toBeCloseTo(1200 * 3e-6 + 500 * 0.3e-6 + 120 * 15e-6)
+  })
+
+  it('counts a resumed session\'s copied history, and a /clear\'s earlier sessions, each response once', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    const tokens = { input_tokens: 100, output_tokens: 10 }
+    writeFileSync(path.join(dir, 's-old.jsonl'), `${line('s-old', 'o1', tokens)}\n`)
+    // The resumed session's file copies o1 under its original session id.
+    writeFileSync(path.join(dir, 's-new.jsonl'), `${line('s-old', 'o1', tokens)}\n${line('s-new', 'n1', tokens)}\n`)
+    expect(await one('claude-code', ['s-new'])).toMatchObject({ inputTokens: 200, outputTokens: 20 })
+    // The panel ran s-old, then s-new: o1 is in both files and counts once.
+    expect(await one('claude-code', ['s-old', 's-new'])).toMatchObject({ inputTokens: 200, outputTokens: 20 })
+  })
+
+  it('totals two panels of the same agent in the same folder apart, with one cache write', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 100, output_tokens: 10 })}\n`)
+    writeFileSync(path.join(dir, 's-b.jsonl'), `${line('s-b', 'b1', { input_tokens: 900, output_tokens: 90 })}\n`)
+    vi.mocked(writeJsonAtomic).mockClear()
+    const results = await service().sessions([
+      { agentId: 'claude-code', sessionIds: ['s-a'], cwd: '/proj' },
+      { agentId: 'claude-code', sessionIds: ['s-b'], cwd: '/proj' },
+      { agentId: 'claude-code', sessionIds: [], cwd: '/proj' },
+    ])
+    expect(results).toMatchObject([{ inputTokens: 100, outputTokens: 10 }, { inputTokens: 900, outputTokens: 90 }, null])
+    expect(vi.mocked(writeJsonAtomic).mock.calls.filter(([file]) => String(file).endsWith('scan-cache.json'))).toHaveLength(1)
+  })
+
+  it('answers an error for the request that failed, not for the call', async () => {
+    const usage = createAgentUsage({
+      root: '/proj', dataDir: data, homeDir: home, env: () => ({}), priceOverrides: () => ({}), fetchRates: async () => RATES,
+      stores: { ...AGENT_SESSION_STORES, 'claude-code': { ...AGENT_SESSION_STORES['claude-code'], files: async () => { throw new Error('boom') } } },
+    })
+    expect(await usage.sessions([{ agentId: 'claude-code', sessionIds: ['s-a'], cwd: '/proj' }, { agentId: 'cursor', sessionIds: ['c'], cwd: '/proj' }]))
+      .toEqual([{ error: 'boom' }, null])
   })
 
   it('has no cost for a model without a price, and no usage for an unknown session', async () => {
     const dir = path.join(home, '.claude', 'projects', '-proj')
     mkdirSync(dir, { recursive: true })
     writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 10, output_tokens: 1 }).replace('claude-sonnet-4-5', 'mystery')}\n`)
-    expect(await service().session({ agentId: 'claude-code', sessionId: 's-a', cwd: '/proj' })).toMatchObject({ model: 'mystery', inputTokens: 10, outputTokens: 1, costUsd: null })
-    expect(await service().session({ agentId: 'claude-code', sessionId: 's-none', cwd: '/proj' })).toBeNull()
+    expect(await one('claude-code', ['s-a'])).toMatchObject({ model: 'mystery', inputTokens: 10, outputTokens: 1, costUsd: null })
+    expect(await one('claude-code', ['s-none'])).toBeNull()
   })
 
-  it('finds a session of an agent that does not name its files, and none for an agent without token counts', async () => {
+  it('reads another CLI\'s session the same way, and none for an agent without token counts', async () => {
     const grok = path.join(home, '.grok', 'sessions', encodeURIComponent('/proj'), 'g1')
     mkdirSync(grok, { recursive: true })
     writeFileSync(path.join(grok, 'updates.jsonl'), `${JSON.stringify({ timestamp: Date.parse(at) / 1000, params: { sessionId: 'g1', update: { sessionUpdate: 'turn_completed', prompt_id: 'p', usage: { inputTokens: 40, outputTokens: 4, costUsdTicks: 1e8 } } } })}\n`)
-    expect(await service().session({ agentId: 'grok', sessionId: 'g1', cwd: '/proj' })).toMatchObject({ inputTokens: 40, outputTokens: 4, costUsd: 0.01 })
-    expect(await service().session({ agentId: 'cursor', sessionId: 'c1', cwd: '/proj' })).toBeNull()
+    expect(await one('grok', ['g1'])).toMatchObject({ inputTokens: 40, outputTokens: 4, costUsd: 0.01 })
+    expect(await one('cursor', ['c1'])).toBeNull()
+  })
+
+  it('searches a store that lists no files only in the workspace, and prunes the cache on the way', async () => {
+    const message = (cwd: string) => JSON.stringify({ role: 'assistant', modelID: 'gpt-4.1', cost: 0, path: { cwd }, tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: Date.parse(at), completed: Date.parse(at) } })
+    const db = path.join(home, '.local', 'share', 'opencode', 'opencode.db')
+    mkdirSync(path.dirname(db), { recursive: true })
+    const { DatabaseSync } = await import('node:sqlite')
+    const sqlite = new DatabaseSync(db)
+    sqlite.exec('CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)')
+    sqlite.exec(`INSERT INTO message VALUES ('m1', 'oc-here', ${Date.parse(at)}, ${Date.parse(at)}, '${message('/proj')}')`)
+    sqlite.exec(`INSERT INTO message VALUES ('m2', 'oc-there', ${Date.parse(at)}, ${Date.parse(at)}, '${message('/other')}')`)
+    sqlite.close()
+    expect(await one('opencode', ['oc-here'])).toMatchObject({ inputTokens: 100, outputTokens: 10 })
+    // A session id of another project is not this workspace's.
+    expect(await one('opencode', ['oc-there'])).toBeNull()
+    // An entry past retention goes with the next call, whichever path it takes.
+    const stale: ScanCache = new Map([['/gone.jsonl', { size: 1, mtimeMs: 0, agent: 'claude-code', records: [], tailRecords: [], position: { offset: 0, guardLength: 0, guardHash: 0, state: undefined } }]])
+    writeFileSync(path.join(data, 'scan-cache.json'), JSON.stringify(encodeScanCache(stale)))
+    await one('claude-code', ['s-none'])
+    expect(JSON.stringify(JSON.parse(readFileSync(path.join(data, 'scan-cache.json'), 'utf8')))).not.toContain('/gone.jsonl')
   })
 })
 

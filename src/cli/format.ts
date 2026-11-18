@@ -99,7 +99,7 @@ function agentUsage(value: unknown): string {
   const dash = (v: unknown) => (v === null || v === undefined ? '-' : String(v))
   return table(['ID', 'TITLE', 'MODEL', 'INPUT', 'OUTPUT', 'COST'], value.map((item) => {
     const run = asObject(item) ?? {}
-    return [shortId(text(run.panelId) || '?'), text(run.title), dash(run.model), dash(run.inputTokens), dash(run.outputTokens), typeof run.costUsd === 'number' ? `$${run.costUsd.toFixed(2)}` : '-']
+    return [shortId(text(run.panelId) || '?'), text(run.title), dash(run.model), dash(run.inputTokens), dash(run.outputTokens), run.error ? 'error' : typeof run.costUsd === 'number' ? `$${run.costUsd.toFixed(2)}` : '-']
   }))
 }
 
