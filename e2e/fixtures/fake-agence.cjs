@@ -1,4 +1,4 @@
-/* global process, require, __dirname */
+/* global process, require, __dirname, URL, URLSearchParams */
 /* eslint-disable @typescript-eslint/no-require-imports */
 // `agence` stand-in for the agence panel's e2e: only `agence watch
 // --token-stdin`, the regisseur the panel starts. It serves the form POSTs of
