@@ -46,5 +46,5 @@ docs/superpowers/
 /docs/performance/*.json
 /docs/performance/*.md
 
-# vitest cache
+# vitest cache and local JSON reports
 .vitest/
