@@ -3,7 +3,7 @@
 
 Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
-la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « toi ».
+la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
   agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents règle le plafond d'agents en plein tour (défaut 8)
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
@@ -69,18 +69,25 @@ RUN = _run
 OWNER_HUMAIN = 'heifara'
 
 
+def _propre(v):
+	"""Nom d'humain : une ligne, sans caractère de contrôle, espaces réduits, 40 caractères au plus.
+	Le gitconfig agence.nom est commun aux worktrees (un agent peut l'écrire) et le nom part dans les notify."""
+	return ' '.join(re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', v).split())[:40].strip()
+
+
 def nom_source():
-	"""(nom de l'humain, source), relu à chaque appel : AGENCE_NOM > gitconfig agence.nom > premier mot de user.name > « toi ».
-	Par _run, pas RUN : c'est de la configuration, pas une commande que les tests simulent."""
-	v = os.environ.get('AGENCE_NOM', '').strip()
+	"""(nom de l'humain, source), relu à chaque appel : AGENCE_NOM > gitconfig agence.nom > premier mot de user.name > « L'humain ».
+	Une valeur vide après nettoyage passe à la source suivante. Par _run, pas RUN : c'est de la configuration,
+	pas une commande que les tests simulent."""
+	v = _propre(os.environ.get('AGENCE_NOM', ''))
 	if v:
 		return v, 'AGENCE_NOM'
 	for key in ('agence.nom', 'user.name'):
 		code, out, _ = _run(['git', 'config', '--get', key], timeout=5)
-		mots = out.split() if code == 0 else []
-		if mots:
-			return (out.strip() if key == 'agence.nom' else mots[0]), f'git {key}'
-	return 'toi', 'défaut'
+		v = _propre(out if key == 'agence.nom' else (_propre(out).split() or [''])[0]) if code == 0 else ''
+		if v:
+			return v, f'git {key}'
+	return "L'humain", 'défaut'
 
 
 def nom():
@@ -1674,7 +1681,7 @@ def parser():
 	add.add_argument('title')
 	add.add_argument('--kind', default='task', choices=KINDS)
 	add.add_argument('--ref')
-	add.add_argument('--owner', default='agent', choices=('agent', 'humain', OWNER_HUMAIN), metavar='{agent,humain}', help="humain : la ligne attend l'humain (agence nom)")
+	add.add_argument('--owner', default='agent', choices=('agent', 'humain'), help="humain : la ligne attend l'humain (agence nom)")
 	add.add_argument('--blocking', action='store_true')
 	add.add_argument('--unblocks')
 	add.add_argument('--panel', action='append')

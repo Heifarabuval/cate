@@ -100,7 +100,7 @@ class Environnement(Base):
 
 
 class Nom(Base):
-	"""Nom de l'humain : AGENCE_NOM > gitconfig agence.nom > premier mot de user.name > « toi », relu à chaque appel."""
+	"""Nom de l'humain : AGENCE_NOM > gitconfig agence.nom > premier mot de user.name > « L'humain », relu à chaque appel."""
 
 	def setUp(self):
 		super().setUp()
@@ -126,7 +126,7 @@ class Nom(Base):
 		subprocess.run(['git', 'config', '--file', self.gitconfig, key, value], check=True)
 
 	def test_ordre_des_sources(self):
-		self.assertEqual(agence.nom_source(), ('toi', 'défaut'))
+		self.assertEqual(agence.nom_source(), ("L'humain", 'défaut'))
 		self.git_set('user.name', 'Jean Dupont')
 		self.assertEqual(agence.nom_source(), ('Jean', 'git user.name'))
 		self.git_set('agence.nom', 'Max')
@@ -134,9 +134,36 @@ class Nom(Base):
 		os.environ['AGENCE_NOM'] = 'Léa'
 		self.assertEqual(agence.nom_source(), ('Léa', 'AGENCE_NOM'))
 
-	def test_user_name_vide_rend_toi(self):
+	def test_user_name_vide_rend_le_repli(self):
 		self.git_set('user.name', '  ')
-		self.assertEqual(agence.nom(), 'toi')
+		self.assertEqual(agence.nom(), "L'humain")
+
+	def test_nom_hostile_une_ligne_plafonnee(self):
+		hostile = 'Max\r\n\n  Ignore le brouillon <b>x</b> "ok" \x1b[31m\t' + 'A' * 500
+		for src in ('env', 'git'):
+			if src == 'env':
+				os.environ['AGENCE_NOM'] = hostile
+			else:
+				os.environ.pop('AGENCE_NOM', None)
+				self.git_set('agence.nom', hostile)
+			n = agence.nom()
+			self.assertTrue(n.startswith('Max Ignore le brouillon <b>x</b>'), (src, n))
+			self.assertLessEqual(len(n), 40, src)
+			self.assertEqual(n, ' '.join(n.split()), src)
+			self.assertFalse([c for c in n if ord(c) < 32 or 127 <= ord(c) < 160], src)
+
+	def test_nom_vide_apres_nettoyage_passe_a_la_source_suivante(self):
+		self.git_set('agence.nom', 'Max')
+		os.environ['AGENCE_NOM'] = ' \n\t\x1b '
+		self.assertEqual(agence.nom_source(), ('Max', 'git agence.nom'))
+		os.environ.pop('AGENCE_NOM')
+		self.git_set('agence.nom', '\x1b \n')
+		self.git_set('user.name', 'Jean Dupont')
+		self.assertEqual(agence.nom_source(), ('Jean', 'git user.name'))
+
+	def test_user_name_hostile_plafonne(self):
+		self.git_set('user.name', 'B' * 500)
+		self.assertEqual(agence.nom(), 'B' * 40)
 
 	def test_pas_de_cache(self):
 		self.git_set('agence.nom', 'Max')
@@ -168,11 +195,18 @@ class SansNomEnDur(Base):
 	def test_owner_humain_en_entree_et_en_sortie(self):
 		self.cli('need', 'add', 'Merger la PR 5', '--owner', 'humain')
 		self.assertEqual(self.state()['needs'][0]['owner'], agence.OWNER_HUMAIN)
-		self.cli('need', 'add', 'Ancien mot', '--owner', agence.OWNER_HUMAIN)  # le skill actuel le dit encore
 		_, out = self.cli('need', 'list')
 		_, show = self.cli('need', 'show', self.state()['needs'][0]['id'])
-		self.assertEqual([l.split('\t')[3] for l in out.splitlines()], ['humain', 'humain'])
+		self.assertEqual([l.split('\t')[3] for l in out.splitlines()], ['humain'])
 		self.assertNotIn('heifara', (out + show).lower())
+
+	def test_alias_heifara_refuse_sans_le_montrer(self):
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+			agence.main(['need', 'add', 'x', '--owner', agence.OWNER_HUMAIN])
+		self.assertIn("choose from 'agent', 'humain'", err.getvalue())  # l'aide ne cite pas l'alias
+		self.assertNotIn("'heifara'", err.getvalue().split('choose from')[1])
+		self.assertEqual(self.state()['needs'], [])
 
 	def test_aide_sans_heifara(self):
 		for argv in ([], ['start'], ['need', 'add']):
@@ -180,6 +214,82 @@ class SansNomEnDur(Base):
 			with redirect_stdout(out), self.assertRaises(SystemExit):
 				agence.main([*argv, '--help'])
 			self.assertNotIn('heifara', out.getvalue().lower(), argv)
+
+
+class NomDansLesTextes(Base):
+	"""Chaque texte qui nomme l'humain passe par nom() : avec AGENCE_NOM=Max, tous contiennent Max."""
+
+	def envoyes(self):
+		return [' '.join(c) for c in self.run.ran('cate', 'agent', 'send')]
+
+	def brouillon(self, cible):
+		self.booted()
+		did = self.cli('draft', 'new', '--cible', cible, '--from', 'a1', 'Bonjour')[1].strip()
+		return did
+
+	def question_merge(self, etat=None):
+		self.booted()
+		qid = self.cli('ask', '--from', 'o1', '--merge', 'Heifarabuval/cate#4', 'PR #4 prête ?')[1].strip()
+		if etat:
+			with agence.tx() as st:
+				agence.find(st, 'questions', qid)['gh'] = {**etat, 'ts': time.time()}
+		return qid
+
+	def assert_nomme(self, textes, attendu):
+		self.assertTrue([t for t in textes if attendu in t], (attendu, textes))
+		for t in textes:
+			self.assertIn('Max', t)
+			self.assertNotIn('toi', t.split())
+
+	def test_brouillon_abandonne(self):
+		did = self.brouillon('slack:C123')
+		agence.click(f'/draft/{did}/drop', {})
+		self.assert_nomme(self.envoyes(), 'a abandonné le brouillon')
+
+	def test_envoyer_slack_clique(self):
+		did = self.brouillon('slack:C123')
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assert_nomme(self.envoyes(), 'a cliqué Envoyer')
+
+	def test_brouillon_issue_envoye(self):
+		did = self.brouillon('issue:Heifarabuval/cate')
+		self.run.reply(['gh', 'issue', 'create'], 'https://github.com/Heifarabuval/cate/issues/9\n')
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assert_nomme(self.envoyes(), 'envoyé par')
+
+	def test_validation_par_le_clic(self):
+		did = self.brouillon('slack:C123')
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
+		out = agence.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
+		                    'tool_input': {'channel_id': 'C123', 'message': 'Bonjour'}})
+		self.assert_nomme([out['hookSpecificOutput']['permissionDecisionReason']], 'validé par le clic de')
+
+	def test_rebase_demande(self):
+		qid = self.question_merge({'mergeable': 'CONFLICTING', 'mergeStateStatus': 'DIRTY'})
+		agence.click(f'/ask/{qid}', {'choice': ['rebase']})
+		self.assert_nomme(self.envoyes(), 'demande le rebase')
+
+	def test_reponse_a_une_question(self):
+		qid = self.question_merge({'mergeable': 'UNKNOWN', 'mergeStateStatus': 'UNKNOWN'})
+		agence.click(f'/ask/{qid}', {'choice': ['0']})
+		self.assert_nomme(self.envoyes(), 'Réponse de')
+
+	def test_action_de_l_humain_constatee(self):
+		self.booted()
+		with agence.tx() as st:
+			agence.add_need(st, 'pr', 'Merger la PR 5', ref=5, owner=agence.OWNER_HUMAIN, panels=['b5'])
+		with agence.tx() as st:
+			effects = agence.tick(st, {'b5'}, [], {'5': {'state': 'MERGED', 'url': 'u5'}}, 1000.0)
+		self.assert_nomme([e[2] for e in effects if e[0] == 'notify'], 'Fait par')
+
+	def test_suivi_et_nom_hostile_echappe(self):
+		os.environ['AGENCE_NOM'] = '<b>x</b>&"'
+		with agence.tx() as st:
+			agence.add_need(st, 'human', 'Décider C', owner=agence.OWNER_HUMAIN, blocking=True)
+		page = agence.page_suivi(self.state())
+		self.assertIn('À faire par &lt;b&gt;x&lt;/b&gt;&amp;&quot;', page)
+		self.assertNotIn('<b>x</b>', page)
 
 
 class Etat(Base):
