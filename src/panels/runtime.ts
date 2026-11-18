@@ -107,6 +107,7 @@ const review: PanelRuntime<'root' | 'repository' | 'agents'> = (services) => {
       watchStatus: (cwd, listener) => monitors.subscribe(cwd, listener),
       refreshStatus: (cwd) => monitors.kick(cwd),
     },
+    github: services.repository.github,
     agents: {
       onChanges: (listener) => agents.onChanges(listener),
       cachedChanges: (cwd) => agents.cachedChanges(cwd),
