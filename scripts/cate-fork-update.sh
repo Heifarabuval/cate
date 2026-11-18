@@ -45,6 +45,7 @@ load_conf() {
 		case $k in CATE_FORK_REPO | CATE_FORK_BRANCH | CATE_BUILD_DIR | CATE_APPS_DIR) ;; *) continue ;; esac
 		v=${v#\"}
 		v=${v%\"}
+		# shellcheck disable=SC2088  # a literal "~/" typed in the config is matched on purpose
 		case $v in "~/"*) v="$HOME/${v#"~/"}" ;; esac
 		eval "[ -n \"\${$k:-}\" ] || $k=\$v"
 	done < "$CONF"
@@ -178,6 +179,7 @@ refuse_dir() {
 # if it is a git repository its origin is exactly REPO.
 validate_dir() {
 	d=$DIR
+	# shellcheck disable=SC2088  # a literal "~" typed in the config is matched on purpose
 	case $d in "~") d=$HOME ;; "~/"*) d="$HOME/${d#"~/"}" ;; esac
 	while [ "${d%/}" != "$d" ]; do d=${d%/}; done
 	h=$HOME
@@ -212,6 +214,7 @@ build() {
 	export PATH
 	npm ci --no-audit --no-fund || return 1
 	npm run runtime:tarball || return 1
+	# shellcheck disable=SC3045  # ulimit -n works in the macOS /bin/sh; failure is ignored
 	ulimit -n 65536 2> /dev/null || true
 	# Ad hoc signature, no notarization; CATE_SELF_UPDATE=0 keeps upstream releases out.
 	# No hardened runtime: with an ad hoc signature its library validation refuses
