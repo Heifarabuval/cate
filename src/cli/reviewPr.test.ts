@@ -18,6 +18,9 @@ import { ReviewSession, reviewDefinition as definition, type ReviewRepository, t
 import type { ReviewSnapshot } from '@panels/review/contract'
 import type { ReviewGithub } from '@panels/review/session'
 
+// macOS arm64 uniquement (le régisseur est un processus POSIX)
+const itPosix = it.skipIf(process.platform === 'win32')
+
 const view = {
   number: 8, url: 'https://github.com/org/repo/pull/8', title: 'Fix login', author: { login: 'ana' }, body: 'Body',
   state: 'OPEN', isDraft: false, headRefName: 'fix', baseRefName: 'main', isCrossRepository: false,
@@ -139,7 +142,7 @@ describe('cate panel create review --pr', () => {
     expect(reviews()).toHaveLength(2)
   })
 
-  it('reads the pull request through gh, once the panel is attached', async () => {
+  itPosix('reads the pull request through gh, once the panel is attached', async () => {
     const { create, attach } = setup()
     const { panelId } = await create('--pr', 'org/repo#8')
     const pr = await attach(panelId!)
@@ -157,7 +160,7 @@ describe('cate panel create review --pr', () => {
     await expect(import('node:fs').then((fs) => fs.existsSync(ghLog))).resolves.toBe(false)
   })
 
-  it('takes a bare number for the workspace origin, and asks for owner/repo#N without one', async () => {
+  itPosix('takes a bare number for the workspace origin, and asks for owner/repo#N without one', async () => {
     const { create, reviews, attach } = setup()
     const withOrigin = await create('--pr', '8')
     expect(withOrigin.code).toBe(0)

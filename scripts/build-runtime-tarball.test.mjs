@@ -4,6 +4,9 @@ import path from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { AGENCE_REQUIRED, agenceFiles, stageAgence } from './agence-files.mjs'
 
+// macOS arm64 uniquement (le régisseur est un processus POSIX)
+const itPosix = it.skipIf(process.platform === 'win32')
+
 let dir
 afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true })
@@ -34,7 +37,7 @@ it('ships the launcher and the CLI, not tests, fixtures or bytecode', () => {
   expect(agenceFiles(checkout())).toEqual(['agence', 'agence.py'])
 })
 
-it('stages agence/ into the install with the launcher executable', () => {
+itPosix('stages agence/ into the install with the launcher executable', () => {
   const source = checkout()
   const stage = path.join(dir, 'stage')
   mkdirSync(stage)
