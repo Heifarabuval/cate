@@ -1,13 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 
 const app = vi.hoisted(() => {
   const { EventEmitter: Emitter } = require('node:events') as typeof import('node:events')
-  return Object.assign(new Emitter(), { quit: vi.fn() })
+  return Object.assign(new Emitter(), { quit: vi.fn(), exit: vi.fn() })
 })
 vi.mock('electron', () => ({ app, dialog: { showMessageBox: vi.fn() } }))
 
-import { createQuitController, decideQuitPrompt } from './lifecycle'
+import { formatLogMessage, installLogSink } from '@kernel/log/contract'
+import { createQuitController, decideQuitPrompt, QUIT_CLEANUP_TIMEOUT_MS, QUIT_EXIT_TIMEOUT_MS } from './lifecycle'
 import { createAutoUpdater } from './updater/autoUpdater'
 
 const quitAttempt = () => {
@@ -30,9 +31,64 @@ describe('decideQuitPrompt', () => {
 })
 
 describe('quit controller', () => {
+  let journal: string[] = []
   beforeEach(() => {
     app.removeAllListeners()
     app.quit.mockClear()
+    app.exit.mockClear()
+    journal = []
+    installLogSink((record) => { if (record.scope === 'lifecycle') journal.push(`${record.level} ${formatLogMessage(record.message, record.args)}`) })
+  })
+  afterEach(() => {
+    installLogSink(null)
+    vi.useRealTimers()
+  })
+
+  it('quits after a named delay when cleanup never returns, and logs each step', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const beforeExit = vi.fn(() => new Promise<void>(() => {}))
+    const quit = createQuitController({ warnBeforeQuit: () => false, blockers: () => [], parentWindow: () => undefined, beforeExit })
+    quit.install()
+    quitAttempt()
+    await vi.advanceTimersByTimeAsync(QUIT_CLEANUP_TIMEOUT_MS - 1)
+    expect(app.quit).not.toHaveBeenCalled()
+    // A second Cmd+Q while the first is pending is ignored, but says so.
+    quitAttempt()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(quit.committed()).toBe(true)
+    expect(app.quit).toHaveBeenCalledOnce()
+    expect(journal).toEqual([
+      'info quit requested (warn=false, blockers=0)',
+      'info quit cleanup started',
+      'info quit already in progress, ignored',
+      `warn quit cleanup timed out after ${QUIT_CLEANUP_TIMEOUT_MS} ms, quitting anyway`,
+      'info quit committed',
+    ])
+  })
+
+  it('logs the confirmation and its answer', async () => {
+    const showMessageBox = vi.fn(async () => ({ response: 1 }))
+    const quit = createQuitController({ warnBeforeQuit: () => true, blockers: () => [], parentWindow: () => undefined, beforeExit: async () => {}, showMessageBox })
+    quit.install()
+    quitAttempt()
+    await flush()
+    expect(journal).toEqual([
+      'info quit requested (warn=true, blockers=0)',
+      'info quit confirmation shown: Quit Cate?',
+      'info quit cancelled by the user',
+    ])
+  })
+
+  it('exits the process when a committed quit does not finish in time', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const quit = createQuitController({ warnBeforeQuit: () => false, blockers: () => [], parentWindow: () => undefined, beforeExit: async () => {} })
+    quit.install()
+    quitAttempt()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(app.quit).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(QUIT_EXIT_TIMEOUT_MS)
+    expect(app.exit).toHaveBeenCalledWith(0)
+    expect(journal.at(-1)).toBe(`warn quit still pending after ${QUIT_EXIT_TIMEOUT_MS} ms, exiting`)
   })
 
   it('cleans up, then commits the quit', async () => {
