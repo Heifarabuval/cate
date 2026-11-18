@@ -1,0 +1,18 @@
+#!/bin/sh
+# agence : CLI d'orchestration livrée avec le runtime Cate.
+# Sur macOS, /usr/bin/python3 est un shim qui ouvre l'installation des Command
+# Line Tools : on ne le lance jamais. On exécute le python3 testé, pas un autre.
+py=
+if [ "$(uname)" = Darwin ]; then
+	dev=$(xcode-select -p 2>/dev/null) && [ -x "$dev/usr/bin/python3" ] && py=$dev/usr/bin/python3
+	for p in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+		[ -n "$py" ] || { [ -x "$p" ] && py=$p; }
+	done
+else
+	py=$(command -v python3)
+fi
+if [ -z "$py" ]; then
+	echo "agence : python3 requis (xcode-select --install)" >&2
+	exit 2
+fi
+exec "$py" "$(dirname "$0")/agence.py" "$@"
