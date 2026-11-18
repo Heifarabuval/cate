@@ -56,6 +56,16 @@ describe('frame selectors', () => {
     expect(frameOfPanel(doc, 'nope')).toBeUndefined()
   })
 
+  it('frameOfPanel and findFrame never return a prototype member for an orphan frameId', () => {
+    const doc = sample()
+    for (const frameId of ['toString', 'constructor', '__proto__']) {
+      const canvas = doc.canvases['canvas-cv']
+      const orphan = { ...doc, canvases: { 'canvas-cv': { ...canvas, nodes: { ...canvas.nodes, n3: { ...canvas.nodes.n3, frameId } } } } }
+      expect(frameOfPanel(orphan, 'r'), frameId).toBeUndefined()
+      expect(findFrame(orphan, frameId), frameId).toBeUndefined()
+    }
+  })
+
   it('framePanels lists the tabs of every member node, node by node, and none for an empty or unknown frame', () => {
     const doc = sample()
     expect(framePanels(doc, 'f1')).toEqual(['x', 't', 'e'])

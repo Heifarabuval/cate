@@ -3,7 +3,7 @@ import { rect } from '@workspace/canvas/contract'
 import { applyOp } from './apply'
 import type { DocChange } from './ops'
 import { allStacks, canvasOf, canvasPanelOf, documentOrder, dockTargetOf, panelsInWindow, panelsOnCanvas, stacksIn, windowOf } from './selectors'
-import { createDocument, type WorkspaceDocument } from './schema'
+import { createDocument, MAX_FRAME_TITLE, MAX_FRAMES_PER_CANVAS, type WorkspaceDocument } from './schema'
 import { DOCUMENT_FILE_VERSION, parseDocument, validateDocument } from './serialize'
 
 const R = rect(0, 0, 400, 300)
@@ -102,7 +102,15 @@ const broken: [string, (raw: Raw) => void][] = [
 ['unknown key on a frame', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { color: 'red' }) }],
 ['frame filed under the wrong key', (raw) => { raw.canvases.c1.frames!.f9 = frame('f1') }],
 ['frame id used on two canvases', (raw) => { raw.canvases.c2.frames!.f1 = frame('f1') }],
-['frames that is not an object', (raw) => { raw.canvases.c1.frames = [] as unknown as Record<string, unknown> }]
+['frames that is not an object', (raw) => { raw.canvases.c1.frames = [] as unknown as Record<string, unknown> }],
+['frames left empty', (raw) => { raw.canvases.c1.frames = {}; delete raw.canvases.c1.nodes.n1.frameId }],
+['frameId named like an Object.prototype member', (raw) => { raw.canvases.c1.nodes.n1.frameId = 'toString' }],
+['frameId constructor', (raw) => { raw.canvases.c1.nodes.n1.frameId = 'constructor' }],
+['frameId __proto__', (raw) => { raw.canvases.c1.nodes.n1.frameId = '__proto__' }],
+['title over the limit', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { title: 'x'.repeat(MAX_FRAME_TITLE + 1) }) }],
+['more frames than a canvas may hold', (raw) => {
+for (let i = 0; i <= MAX_FRAMES_PER_CANVAS; i++) raw.canvases.c1.frames![`g${i}`] = frame(`g${i}`)
+}]
 ]
 for (const [name, edit] of broken) {
 expect(parseDocument(file(framed(edit))).ok, name).toBe(false)

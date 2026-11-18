@@ -4,7 +4,7 @@ import { applyOp } from './apply'
 import type { DockNode } from './dock'
 import type { DocChange, DockRef, FramePatch, OpErrorCode, PlaceTarget } from './ops'
 import { placementOf } from './placement'
-import { createDocument, MAIN_WINDOW, type CanvasFrame, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
+import { createDocument, MAIN_WINDOW, MAX_FRAME_TITLE, MAX_FRAMES_PER_CANVAS, type CanvasFrame, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 import { validateDocument } from './serialize'
 
 type Doc = WorkspaceDocument
@@ -324,6 +324,24 @@ describe('frames', () => {
       fails(doc, addFrame('f2', { title: '' }), 'rejected')
       fails(doc, addFrame('f2', { state: 'paused' as never }), 'rejected')
       fails(doc, addFrame('f2', { at: { x: 1 } as never }), 'rejected')
+    })
+
+    it('rejects a title over the limit, on add and on update, and a canvas over its frame limit', () => {
+      const long = 'x'.repeat(MAX_FRAME_TITLE + 1)
+      fails(withCanvas(), addFrame('f1', { title: long }), 'rejected')
+      const doc = ok(withCanvas(), addFrame('f1', { title: 'x'.repeat(MAX_FRAME_TITLE) }))
+      fails(doc, update('f1', { title: long }), 'rejected')
+      const full = ok(withCanvas(), ...Array.from({ length: MAX_FRAMES_PER_CANVAS }, (_, i) => addFrame(`g${i}`)))
+      expect(Object.keys(frames(full)!)).toHaveLength(MAX_FRAMES_PER_CANVAS)
+      fails(full, addFrame('one-more'), 'rejected')
+    })
+
+    it('does not mistake a prototype member for a frame or a node', () => {
+      const doc = ok(withCanvas(), addFrame('f1'))
+      fails(doc, setFrame('n1', 'toString'), 'gone')
+      fails(doc, setFrame('constructor', 'f1'), 'gone')
+      fails(doc, update('__proto__', { title: 'x' }), 'gone')
+      fails(doc, { kind: 'removeFrame', id: 'hasOwnProperty' }, 'gone')
     })
   })
 

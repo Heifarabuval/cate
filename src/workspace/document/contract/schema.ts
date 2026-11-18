@@ -50,6 +50,11 @@ export interface DocWindow {
   dock: DockNode | null
 }
 
+/** Longest frame title, in characters. */
+export const MAX_FRAME_TITLE = 120
+/** Most frames one canvas holds. */
+export const MAX_FRAMES_PER_CANVAS = 200
+
 /** The four states of a frame: in progress, waiting for the user, blocked, done. */
 export const FRAME_STATES = ['active', 'waiting', 'blocked', 'done'] as const
 export type FrameState = (typeof FRAME_STATES)[number]

@@ -2,7 +2,7 @@
 // or any other format is rejected, never repaired or migrated.
 
 import { dockPanels, findStack, visitDock, type DockNode } from './dock'
-import { MAIN_WINDOW, type WorkspaceDocument } from './schema'
+import { MAIN_WINDOW, MAX_FRAMES_PER_CANVAS, type WorkspaceDocument } from './schema'
 import { checkDock, checkFrame, checkRecord, checkRelation, checkWorktree, isId, isObject, isRect } from './validate'
 
 export const DOCUMENT_FILE_VERSION = 1
@@ -91,6 +91,10 @@ export function validateDocument(value: unknown): string | null {
     if (!isObject(canvas) || canvas.id !== id || !isObject(canvas.nodes)) return `canvas ${id} is malformed`
     if (!canvasPanels.has(id)) return `canvas ${id} has no canvas panel`
     if (canvas.frames !== undefined && !isObject(canvas.frames)) return `canvas ${id} frames is not an object`
+    // A canvas without a frame has no `frames` key: apply never writes `{}`.
+    const frameCount = Object.keys(canvas.frames ?? {}).length
+    if (canvas.frames !== undefined && frameCount === 0) return `canvas ${id} has an empty frames object`
+    if (frameCount > MAX_FRAMES_PER_CANVAS) return `canvas ${id} has more than ${MAX_FRAMES_PER_CANVAS} frames`
     for (const [frameId, frame] of Object.entries(canvas.frames ?? {})) {
       const problem = checkFrame(frame)
       if (problem) return `frame ${frameId}: ${problem}`
@@ -100,7 +104,7 @@ export function validateDocument(value: unknown): string | null {
     }
     for (const [nodeId, node] of Object.entries(canvas.nodes)) {
       if (!isObject(node) || node.id !== nodeId || !isRect(node.rect) || !node.dock) return `node ${nodeId} is malformed`
-      if (node.frameId !== undefined && (!isId(node.frameId) || !canvas.frames?.[node.frameId])) {
+      if (node.frameId !== undefined && (!isId(node.frameId) || !Object.hasOwn(canvas.frames ?? {}, node.frameId))) {
         return `node ${nodeId} names a frame that is not on its canvas`
       }
       if (seenNodes.has(nodeId)) return `node id ${nodeId} is used twice`

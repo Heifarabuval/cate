@@ -24,6 +24,7 @@ import { docIndex, dockOf, isCanvasDock, placementOf, sameDockRef } from './plac
 import { canvasPanelOf } from './selectors'
 import {
   MAIN_WINDOW,
+  MAX_FRAMES_PER_CANVAS,
   type DocWindow,
   type PanelId,
   type PanelRecord,
@@ -379,11 +380,19 @@ function canvasOfFrame(doc: Doc, id: FrameId): CanvasModel {
   return doc.canvases[canvasId]
 }
 
+/** `record[key]` when it is the record's own entry: an id like `toString` is not one. */
+function own<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined
+}
+
 function addFrame(doc: Doc, change: Extract<DocChange, { kind: 'addFrame' }>): Doc {
-  const canvas = doc.canvases[change.canvasId]
+  const canvas = own(doc.canvases, change.canvasId)
   if (!canvas) gone(`canvas ${change.canvasId}`)
   const { frame } = change
   if (docIndex(doc).frames.has(frame.id)) rejected(`frame id ${frame.id} is in use`)
+  if (Object.keys(canvas.frames ?? {}).length >= MAX_FRAMES_PER_CANVAS) {
+    rejected(`canvas ${canvas.id} already has ${MAX_FRAMES_PER_CANVAS} frames`)
+  }
   return withFrames(doc, canvas, { ...canvas.frames, [frame.id]: { ...frame, at: { ...frame.at } } })
 }
 
@@ -411,9 +420,9 @@ function removeFrame(doc: Doc, id: FrameId): Doc {
 }
 
 function setNodeFrame(doc: Doc, change: Extract<DocChange, { kind: 'setNodeFrame' }>): Doc {
-  const canvas = doc.canvases[change.canvasId]
+  const canvas = own(doc.canvases, change.canvasId)
   if (!canvas) gone(`canvas ${change.canvasId}`)
-  const node = canvas.nodes[change.nodeId]
+  const node = own(canvas.nodes, change.nodeId)
   if (!node) gone(`node ${change.nodeId}`)
   const { frameId } = change
   if (frameId !== null) {
