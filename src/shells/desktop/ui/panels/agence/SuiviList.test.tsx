@@ -237,6 +237,45 @@ it('fades in a line that moves to another section, and none on the first display
   render(suivi({ fait: [moving] }))
   expect(host.querySelector('li')!.className).toMatch(/animate-sidebar-view-in/)
   expect(host.querySelector('li')!.className).toMatch(/motion-reduce:animate-none/)
+})
+
+it('does not cut the fade when the list renders again meanwhile', () => {
+  const moving = row('m1', { title: 'PR à merger' })
+  render(suivi({ aFaire: [moving] }))
   render(suivi({ fait: [moving] }))
-  expect(host.querySelector('li')!.className).not.toMatch(/animate-sidebar-view-in/)
+  render({ ...suivi({ fait: [moving] }), agentsActive: 3 })
+  render({ ...suivi({ fait: [moving] }), agentsActive: 4 })
+  expect(host.querySelector('li')!.className).toMatch(/animate-sidebar-view-in/)
+})
+
+it('lets the rebase be asked again a few seconds after it was taken', async () => {
+  vi.useFakeTimers()
+  try {
+    onRebase.mockResolvedValue(null)
+    render(suivi({ aFaire: [row('q2', { kind: 'human', action: { type: 'question', questionId: 'q2', rebase: true } })] }))
+    const rebase = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Demander le rebase')!
+    await act(async () => { rebase().click() })
+    expect(rebase().getAttribute('aria-disabled')).toBe('true')
+    await act(async () => { rebase().click() })
+    expect(onRebase).toHaveBeenCalledTimes(1)
+    await act(async () => { vi.advanceTimersByTime(3000) })
+    expect(rebase().hasAttribute('aria-disabled')).toBe(false)
+    expect(rebase().querySelector('svg.lucide-check')).toBeNull()
+    await act(async () => { rebase().click() })
+    expect(onRebase).toHaveBeenCalledTimes(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('offers « Répondre » again when the line asks another question', async () => {
+  const reply = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre' && b.hasAttribute('aria-expanded'))!
+  render(suivi({ aFaire: [questionRow] }), { q1: questionView })
+  act(() => reply().click())
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => /^Suivi/.test(b.textContent ?? ''))!.click() })
+  expect(reply().getAttribute('aria-disabled')).toBe('true')
+  const next = row('n8', { kind: 'human', title: 'Quel nom ?', action: { type: 'question', questionId: 'q2', rebase: false } })
+  render(suivi({ aFaire: [next] }), { q2: { ...questionView, id: 'q2' } })
+  expect(reply().hasAttribute('aria-disabled')).toBe(false)
+  expect(reply().querySelector('svg.lucide-check')).toBeNull()
 })

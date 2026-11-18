@@ -1,4 +1,4 @@
-import { useRef, useState, type ButtonHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes } from 'react'
 import { Check } from 'lucide-react'
 import { buttonClassName, Spinner } from '../../kernel/interaction'
 
@@ -15,6 +15,9 @@ const FEEDBACK = [
 /** A row that arrives (new, or moved to another section) fades in, 200 ms. */
 export const ROW_ENTER = 'animate-sidebar-view-in motion-reduce:animate-none'
 
+/** How long the check stays on a button before it is ready again. */
+const DONE_MS = 2500
+
 /** The one lock of a group of actions: one runs at a time, a second click on
  *  anything in the group is ignored. `run` tells the buttons which one is
  *  `active`, and keeps the refusal in `error` for the group to show in place. */
@@ -25,6 +28,8 @@ export function useAction() {
   const [active, setActive] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(timer.current), [])
 
   /** `task` resolves to the refusal text, `null` when the action was taken, or
    *  `undefined` when the person backed out (nothing sent). Resolves to true when taken. */
@@ -32,12 +37,16 @@ export function useAction() {
     if (lock.current) return false
     lock.current = true
     setActive(key)
+    clearTimeout(timer.current)
     setDone(null)
     setError(null)
     try {
       const refused = await task()
       if (refused) setError(refused)
-      else if (refused === null) setDone(key)
+      else if (refused === null) {
+        setDone(key)
+        timer.current = setTimeout(() => setDone(null), DONE_MS)
+      }
       return refused === null
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -51,7 +60,7 @@ export function useAction() {
   return {
     run,
     active,
-    /** The action `key` was taken (until the next run). */
+    /** The action `key` was taken (for a few seconds, or until the next run). */
     done,
     error,
     /** Another action of the group is running: this one waits, natively disabled
@@ -77,12 +86,25 @@ export function ActionButton({ busy = false, done = false, bare = false, classNa
     onClick: busy || done ? undefined : onClick,
     className: `${bare ? '' : `${buttonClassName('secondary', 'sm')} `}${FEEDBACK} ${className}`,
   }
+  // The indicator has its own room, kept at rest, busy and done: the button never changes width.
   const content = (
     <>
-      {busy && <Spinner size={11} />}
-      {done && <Check size={11} aria-hidden="true" className="shrink-0" />}
+      {bare
+        ? busy && <Spinner size={11} />
+        : (
+          <span data-testid="action-slot" aria-hidden="true" className="inline-flex h-[11px] w-[11px] shrink-0 items-center justify-center">
+            {busy && <Spinner size={11} />}
+            {done && <Check size={11} />}
+          </span>
+        )}
       {children}
     </>
   )
-  return <button type="button" {...shared} className={`!text-primary ${shared.className}`}>{content}</button>
+  // The result is spoken from beside the button, so the button keeps its name.
+  return (
+    <>
+      <button type="button" {...shared} className={`!text-primary ${shared.className}`}>{content}</button>
+      <span aria-live="polite" className="sr-only">{busy ? 'En cours' : done ? 'Fait' : ''}</span>
+    </>
+  )
 }

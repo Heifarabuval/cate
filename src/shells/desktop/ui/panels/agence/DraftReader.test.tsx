@@ -127,3 +127,17 @@ it('keeps its buttons on one line without shrinking (FR-007)', () => {
   expect(host.querySelector('[data-testid="draft-actions"]')!.className).toMatch(/\bshrink-0\b/)
   for (const b of host.querySelectorAll('button')) expect(b.className).toMatch(/\bwhitespace-nowrap\b/)
 })
+
+it('says Modifier was taken, then is ready again', async () => {
+  vi.useFakeTimers()
+  try {
+    render(draft())
+    await click('Modifier')
+    expect(button('Modifier')!.querySelector('svg.lucide-check')).not.toBeNull()
+    expect(button('Modifier')!.getAttribute('aria-disabled')).toBe('true')
+    await act(async () => { vi.advanceTimersByTime(3000) })
+    expect(button('Modifier')!.hasAttribute('aria-disabled')).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
