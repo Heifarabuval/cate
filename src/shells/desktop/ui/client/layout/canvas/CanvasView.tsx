@@ -33,16 +33,17 @@ interface NodeSlotProps {
   canvasId: string
   canvasPanelId: string
   nodeId: NodeId
+  isHidden: boolean
 }
 
 // Reads its own focus flag so a focus change re-renders two nodes, not all.
-const NodeSlot = React.memo(function NodeSlot({ workspaceId, canvasId, canvasPanelId, nodeId }: NodeSlotProps) {
+const NodeSlot = React.memo(function NodeSlot({ workspaceId, canvasId, canvasPanelId, nodeId, isHidden }: NodeSlotProps) {
   const exists = useCanvasView((s) => !!s.nodes[nodeId])
   const isFocused = useCanvasView((s) => focusedNodeId(s) === nodeId)
   if (!exists) return null
   return (
     <NodeErrorBoundary nodeId={nodeId}>
-      <CanvasNode workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} nodeId={nodeId} isFocused={isFocused} />
+      <CanvasNode workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} nodeId={nodeId} isFocused={isFocused} isHidden={isHidden} />
     </NodeErrorBoundary>
   )
 })
@@ -60,7 +61,7 @@ function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store }: CanvasView
       <FrameLayer workspaceId={workspaceId} canvasId={canvasId} />
       <PanelConnectionLayer workspaceId={workspaceId} />
       {staged.map((nodeId) => (
-        <NodeSlot key={nodeId} workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} nodeId={nodeId} />
+        <NodeSlot key={nodeId} workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} nodeId={nodeId} isHidden={hidden.has(nodeId)} />
       ))}
     </>
   )

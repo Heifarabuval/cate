@@ -66,11 +66,11 @@ function open(doc: WorkspaceDocument): CanvasViewStore {
   return canvasViewFor('ws', 'c1')!
 }
 
-function render(store: CanvasViewStore, nodeIds: string[]) {
+function render(store: CanvasViewStore, nodeIds: string[], hidden: ReadonlySet<string> = new Set()) {
   act(() => root.render(
     <CanvasViewProvider store={store}>
       {nodeIds.map((id) => (
-        <CanvasNode key={id} workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" nodeId={id} isFocused={focusedNodeId(store.getState()) === id} />
+        <CanvasNode key={id} workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" nodeId={id} isFocused={focusedNodeId(store.getState()) === id} isHidden={hidden.has(id)} />
       ))}
     </CanvasViewProvider>,
   ))
@@ -129,6 +129,19 @@ describe('CanvasNode', () => {
     expect(container.querySelector('[data-resize-frame-for="n1"]')).toBeNull()
     act(() => drag.set({ dragging: false, sourceNodeId: null }))
     expect(container.querySelector('[data-panel-connection-handles-for="n1"]')).not.toBeNull()
+  })
+
+  it('keeps a hidden node (kept mounted in a collapsed frame) mounted but invisible and inert', () => {
+    const store = open(twoNodes())
+    act(() => store.getState().focusNode('n1'))
+    render(store, ['n1'], new Set(['n1']))
+    const node = container.querySelector<HTMLElement>('[data-node-id="n1"]')!
+    expect(node.style.visibility).toBe('hidden')
+    expect(node.style.pointerEvents).toBe('none')
+    expect(node.getAttribute('aria-hidden')).toBe('true')
+    expect(node.querySelector('[data-panel-surface]')).not.toBeNull()
+    expect(container.querySelector('[data-glow-for="n1"]')).toBeNull()
+    expect(container.querySelector('[data-panel-connection-handles-for="n1"]')).toBeNull()
   })
 
   it('a tab bar press on a single node drags the node', () => {

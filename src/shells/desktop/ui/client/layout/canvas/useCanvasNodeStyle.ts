@@ -21,7 +21,8 @@ interface StyleArgs {
   isFocused: boolean
   isSelected: boolean
   isHovered: boolean
-  isWholeNodeDragSource: boolean
+  /** A drag source or a hidden member of a collapsed frame: mounted, unseen. */
+  concealed: boolean
   /** The active tab's worktree colour; null when untagged or with one worktree. */
   worktreeColor?: string | null
   /** The node's worktree is hovered or is the lens target. */
@@ -31,7 +32,7 @@ interface StyleArgs {
 }
 
 export function useCanvasNodeStyle(args: StyleArgs) {
-  const { node, isFocused, isSelected, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim } = args
+  const { node, isFocused, isSelected, isHovered, concealed, worktreeColor, worktreeHighlight, worktreeDim } = args
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     if (!node) return { display: 'none' }
@@ -61,16 +62,16 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       opacity: worktreeDim ? baseOpacity * 0.5 : baseOpacity,
       // A webview guest can stay painted through an opacity:0 ancestor;
       // visibility reliably hides it while the drag ghost stands in.
-      visibility: isWholeNodeDragSource ? 'hidden' : undefined,
-      pointerEvents: exiting || isWholeNodeDragSource ? 'none' : undefined,
+      visibility: concealed ? 'hidden' : undefined,
+      pointerEvents: exiting || concealed ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, isHovered, isWholeNodeDragSource, worktreeDim])
+  }, [node, isHovered, concealed, worktreeDim])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null
     if (!(isFocused || isSelected || worktreeHighlight)) return null
-    if (isWholeNodeDragSource) return null
+    if (concealed) return null
     const entering = node.animationState === 'entering'
     const exiting = node.animationState === 'exiting'
     return {
@@ -92,7 +93,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       opacity: entering || exiting ? 0 : 1,
       transition: 'transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, box-shadow 200ms ease',
     }
-  }, [node, isFocused, isSelected, isWholeNodeDragSource, worktreeHighlight, worktreeColor])
+  }, [node, isFocused, isSelected, concealed, worktreeHighlight, worktreeColor])
 
   return { containerStyle, glowStyle }
 }

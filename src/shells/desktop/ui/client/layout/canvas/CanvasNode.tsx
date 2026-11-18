@@ -98,9 +98,11 @@ interface CanvasNodeProps {
   canvasPanelId: string
   nodeId: NodeId
   isFocused: boolean
+  /** Kept mounted while its collapsed frame hides it: invisible and inert. */
+  isHidden?: boolean
 }
 
-function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }: CanvasNodeProps): React.ReactElement | null {
+function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused, isHidden = false }: CanvasNodeProps): React.ReactElement | null {
   ensureStyles()
   const store = useCanvasViewStore()
   const topOverlayTarget = useCanvasTopOverlayTarget()
@@ -109,7 +111,9 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const node = useCanvasView((s) => s.nodes[nodeId], sameNodeView)
   const isSelected = useCanvasView((s) => isNodeSelected(s, nodeId))
   const isDragging = useIsDragging()
-  const isWholeNodeDragSource = useIsDragSource(nodeId)
+  // The drag ghost stands in for a drag source; a collapsed frame hides a
+  // kept-mounted member. Both stay mounted, invisible and inert.
+  const concealed = useIsDragSource(nodeId) || isHidden
   const { NodeDock } = canvasSlots()
 
   // A file or panel drag over an unfocused node: the dim overlay lets it
@@ -368,7 +372,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
     isFocused,
     isSelected,
     isHovered,
-    isWholeNodeDragSource,
+    concealed,
     worktreeColor: worktreeTint,
     worktreeHighlight,
     worktreeDim,
@@ -402,6 +406,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
         data-node-id={nodeId}
         data-active-panel-id={activePanelId ?? undefined}
         data-node-active={isFocused ? 'true' : 'false'}
+        aria-hidden={isHidden || undefined}
         style={containerStyle}
         onClick={handleClick}
         // A right press inside a panel must not start a canvas pan.
@@ -521,13 +526,13 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
               dock={node.dock}
               onTabBarMouseDown={rootIsStack ? handleTabBarMouseDown : undefined}
               trailingControls={rootIsStack ? controls : undefined}
-              dropDisabled={isWholeNodeDragSource}
+              dropDisabled={concealed}
             />
           </div>
         </div>
       </div>
 
-      {!isWholeNodeDragSource && isFocused && activePanelId && canConnect && (
+      {!concealed && isFocused && activePanelId && canConnect && (
         <div
           data-panel-connection-handles-for={nodeId}
           style={{
@@ -546,7 +551,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
 
       {/* The resize band overhangs the border into the gutter, so it is a
           sibling of the clipped node box, positioned and stacked with it. */}
-      {!isWholeNodeDragSource && (
+      {!concealed && (
         <div
           aria-hidden
           data-resize-frame-for={nodeId}
