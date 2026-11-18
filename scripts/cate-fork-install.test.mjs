@@ -3,7 +3,7 @@
 // ditto and xattr first in PATH. The fakes record their calls; nothing real runs:
 // no launchctl, no build, no /Applications. The PATH holds only the fakes and
 // symlinks to the basic utilities, so a real git or node on the machine is never seen.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -14,6 +14,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -29,7 +30,7 @@ const SHA2 = "b".repeat(40);
 const ENGINES = '{\\n  "engines": {\\n    "node": ">=22.16 <23"\\n  }\\n}\\n'; // as printf reads it
 const LONG_DASH = String.fromCharCode(0x2014);
 const BASIC =
-  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp".split(
+  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find".split(
     " ",
   );
 
@@ -97,29 +98,69 @@ fi`,
     const nvm = (v) =>
       addNode(path.join(home, ".nvm/versions/node", `v${v}`, "bin"), `v${v}`);
 
+    const envFor = (env) => ({
+      HOME: home,
+      PATH: `${fakes}${path.delimiter}${path.join(root, "base")}`,
+      CALLS: calls,
+      CATE_BUILD_DIR: build,
+      CATE_APPS_DIR: apps,
+      CATE_BREW_PREFIXES: path.join(root, "brew"),
+      CATE_FORK_RAW_URL: "https://raw.example.test/scripts",
+      SRC_SCRIPTS: SCRIPTS,
+      ...env,
+    });
     const run = (script, args = [], env = {}, input) => {
       assertSandbox(home);
       const r = spawnSync(
         "/bin/sh",
         input === undefined ? [script, ...args] : ["-s", "--", ...args],
-        {
-          env: {
-            HOME: home,
-            PATH: `${fakes}${path.delimiter}${path.join(root, "base")}`,
-            CALLS: calls,
-            CATE_BUILD_DIR: build,
-            CATE_APPS_DIR: apps,
-            CATE_BREW_PREFIXES: path.join(root, "brew"),
-            CATE_FORK_RAW_URL: "https://raw.example.test/scripts",
-            SRC_SCRIPTS: SCRIPTS,
-            ...env,
-          },
-          cwd: root,
-          input,
-          encoding: "utf8",
-        },
+        { env: envFor(env), cwd: root, input, encoding: "utf8" },
       );
       return { code: r.status, out: r.stdout + r.stderr };
+    };
+    const runAsync = (script, args = [], env = {}) => {
+      assertSandbox(home);
+      return new Promise((resolve) => {
+        const child = spawn("/bin/sh", [script, ...args], {
+          env: envFor(env),
+          cwd: root,
+        });
+        child.on("close", (code) => resolve(code));
+      });
+    };
+    // A real repository (fake PATH git delegates to it when REAL_GIT is set).
+    const realGit = (() => {
+      try {
+        const g = which("git");
+        return spawnSync(g, ["--version"]).status === 0 ? g : null;
+      } catch {
+        return null;
+      }
+    })();
+    const makeRepo = (dir, origin) => {
+      mkdirSync(dir, { recursive: true });
+      const g = (...a) =>
+        spawnSync(
+          realGit,
+          [
+            "-C",
+            dir,
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            ...a,
+          ],
+          { env: { HOME: home, PATH: process.env.PATH } },
+        );
+      g("init", "-q");
+      g("remote", "add", "origin", origin);
+      writeFileSync(path.join(dir, ".gitignore"), ".env\n");
+      g("add", ".gitignore");
+      g("commit", "-q", "-m", "init");
+      writeFileSync(path.join(dir, ".env"), "SECRET=1\n");
     };
     const log = () => {
       const f = path.join(home, "Library/Logs/cate-fork-update.log");
@@ -168,8 +209,12 @@ fi`,
       );
       fake(
         "git",
-        `case "$1" in
-  clone) for last; do :; done; mkdir -p "$last/.git"; printf '${ENGINES}' > "$last/package.json" ;;
+        `[ -z "\${REAL_GIT:-}" ] || exec "$REAL_GIT" "$@"
+dir=""
+case "$1" in -C) dir=$2; shift 2 ;; esac
+case "$1" in
+  clone) url=$3; for last; do :; done; mkdir -p "$last/.git"; echo "$url" > "$last/.git/origin"; printf '${ENGINES}' > "$last/package.json" ;;
+  config) cat "$dir/.git/origin" 2>/dev/null || echo https://github.com/Heifarabuval/cate.git ;;
   fetch) [ "\${FAKE_FETCH_FAIL:-0}" = 0 ] || exit 1 ;;
   rev-parse) echo "\${FAKE_SHA:-${SHA}}" ;;
   show) printf '${ENGINES}' ;;
@@ -354,15 +399,187 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         nvm("22.22.2");
         write(
           path.join(home, ".config/cate-fork-update.conf"),
-          "CATE_FORK_REPO=https://example.test/fork.git\nCATE_FORK_BRANCH=dev\nCATE_BUILD_DIR=~/elsewhere\n# comment\nPATH=/evil\n",
+          "CATE_FORK_REPO=https://example.test/fork.git\nCATE_FORK_BRANCH=dev\nCATE_BUILD_DIR=~/alt/cate-build\n# comment\nPATH=/evil\n",
         );
         expect(run(UPDATE, [], { CATE_BUILD_DIR: "" }).code).toBe(0);
         expect(called()).toContain(
-          `git@${fakes} clone -q https://example.test/fork.git ${home}/elsewhere`,
+          `git@${fakes} clone -q https://example.test/fork.git ${home}/alt/cate-build`,
         );
         expect(called()).toContain(`git@${fakes} fetch -q origin dev`);
-        expect(existsSync(path.join(home, "elsewhere.installed"))).toBe(true);
+        expect(existsSync(path.join(home, "alt/cate-build.installed"))).toBe(
+          true,
+        );
       });
+
+      it("builds a pinned tag or commit from FETCH_HEAD, and refuses a ref that looks like an option", () => {
+        nvm("22.22.2");
+        expect(run(UPDATE, [], { CATE_FORK_BRANCH: "v1.2.0" }).code).toBe(0);
+        expect(called()).toContain(`git@${fakes} fetch -q origin v1.2.0`);
+        expect(called().some((l) => /rev-parse FETCH_HEAD/.test(l))).toBe(true);
+        writeFileSync(calls, "");
+        expect(
+          run(UPDATE, [], { CATE_FORK_BRANCH: "--upload-pack=x" }).code,
+        ).toBe(64);
+        expect(
+          run(UPDATE, [], { CATE_FORK_REPO: "--upload-pack=x" }).code,
+        ).toBe(64);
+        expect(count(/^git@/)).toBe(0);
+      });
+
+      it("restores the old app when a cut left Cate.app.old and no Cate.app", () => {
+        mkdirSync(path.join(apps, "Cate.app.old"));
+        writeFileSync(path.join(apps, "Cate.app.old/id"), "old");
+        run(UPDATE); // no Node: stops after the restore
+        expect(readFileSync(path.join(apps, "Cate.app/id"), "utf8")).toBe(
+          "old",
+        );
+        expect(existsSync(path.join(apps, "Cate.app.old"))).toBe(false);
+        expect(log()).toMatch(/restored/);
+      });
+
+      it("stops before building when the install folder is not writable", (ctx) => {
+        if (process.getuid?.() === 0) return ctx.skip();
+        nvm("22.22.2");
+        chmodSync(apps, 0o555);
+        try {
+          const r = run(UPDATE);
+          expect(r.code).toBe(5);
+          expect(log()).toMatch(
+            /non inscriptible.*CATE_APPS_DIR=~\/Applications/,
+          );
+          expect(count(/^npm@/)).toBe(0);
+          expect(run(UPDATE, ["--prereq"]).out).toMatch(
+            /MANQUE dossier d'installation/,
+          );
+        } finally {
+          chmodSync(apps, 0o755);
+        }
+      });
+
+      it("takes over a lock without pid only after 15 minutes", () => {
+        nvm("22.22.2");
+        mkdirSync(`${build}.lock`, { recursive: true });
+        expect(run(UPDATE).code).toBe(0);
+        expect(log()).toMatch(/already running/);
+        const old = new Date(Date.now() - 20 * 60 * 1000);
+        utimesSync(`${build}.lock`, old, old);
+        expect(run(UPDATE).code).toBe(0);
+        expect(count(/^npm@.* ci /)).toBe(1);
+      });
+
+      it("lets one of two concurrent runs win a dead lock", async () => {
+        nvm("22.22.2");
+        write(`${build}.lock/pid`, "2147483646\n");
+        await Promise.all([runAsync(UPDATE), runAsync(UPDATE)]);
+        expect(count(/^npm@.* ci /)).toBe(1);
+        expect(readFileSync(`${build}.installed`, "utf8").trim()).toBe(SHA);
+      });
+
+      it("rotates a log over 1 MB", () => {
+        nvm("22.22.2");
+        write(
+          path.join(home, "Library/Logs/cate-fork-update.log"),
+          "x".repeat(1100000),
+        );
+        run(UPDATE);
+        expect(
+          readFileSync(
+            path.join(home, "Library/Logs/cate-fork-update.log.1"),
+            "utf8",
+          ).length,
+        ).toBe(1100000);
+        expect(log().length).toBeLessThan(100000);
+      });
+    });
+
+    describe("build folder safety", () => {
+      const sentinel = (dir) => {
+        write(path.join(dir, "keep.txt"), "keep");
+        return path.join(dir, "keep.txt");
+      };
+
+      it("refuses every folder that is not a clone named cate-build under HOME", () => {
+        const other = path.join(home, "other");
+        const link = path.join(home, ".local/share/cate-build");
+        const keeps = [
+          sentinel(home),
+          sentinel(path.join(home, "Documents")),
+          sentinel(other),
+        ];
+        mkdirSync(path.dirname(link), { recursive: true });
+        symlinkSync(other, link);
+        const cases = [
+          home,
+          `${home}/`,
+          "~",
+          "~/",
+          "~/Documents",
+          `${home}/Documents/cate-build/..`,
+          `${home}/x/../cate-build`,
+          "cate-build",
+          link,
+          "/Users",
+          "/Applications",
+          "/",
+        ];
+        for (const value of cases) {
+          for (const mode of ["--purge", "--prereq"]) {
+            // /Users, /Applications and / are only probed in read-only mode.
+            if (mode === "--purge" && /^\/(Users|Applications)?$/.test(value))
+              continue;
+            const r = run(UPDATE, [mode], { CATE_BUILD_DIR: value });
+            expect([value, mode, r.code]).toEqual([value, mode, 6]);
+            expect(r.out).toMatch(/dossier de build refusé/);
+          }
+        }
+        for (const k of keeps) expect(existsSync(k)).toBe(true);
+        expect(count(/^git@/)).toBe(0);
+      });
+
+      it("takes an empty value as the default folder, and purges only that", () => {
+        const keep = sentinel(home);
+        sentinel(build);
+        expect(run(UPDATE, ["--purge"], { CATE_BUILD_DIR: "" }).code).toBe(0);
+        expect(existsSync(build)).toBe(false);
+        expect(existsSync(keep)).toBe(true);
+      });
+
+      it("never purges HOME through uninstall, even with CATE_BUILD_DIR=~/ in the conf", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        const keep = sentinel(home);
+        write(
+          path.join(home, ".config/cate-fork-update.conf"),
+          "CATE_BUILD_DIR=~/\n",
+        );
+        const r = run(UNINSTALL, ["--purge"], { CATE_BUILD_DIR: "" });
+        expect(r.code).toBe(1);
+        expect(r.out).toMatch(/dossier de build refusé/);
+        expect(existsSync(keep)).toBe(true);
+        expect(existsSync(path.join(home, ".nvm"))).toBe(true);
+        expect(
+          existsSync(
+            path.join(home, "Library/LaunchAgents/com.cate.fork-update.plist"),
+          ),
+        ).toBe(false); // the agent is still removed
+      });
+
+      it.skipIf(!realGit)(
+        "refuses a real repository whose origin is another one, and its ignored files survive",
+        () => {
+          nvm("22.22.2");
+          makeRepo(build, "https://example.test/mine.git");
+          const env = { REAL_GIT: realGit };
+          for (const args of [[], ["--purge"], ["--force"]]) {
+            const r = run(UPDATE, args, env);
+            expect(r.code).toBe(6);
+            expect(r.out + log()).toMatch(/origin/);
+          }
+          expect(existsSync(path.join(build, ".env"))).toBe(true);
+          expect(count(/^git@.* (clean|checkout)/)).toBe(0);
+          expect(count(/^npm@/)).toBe(0);
+        },
+      );
     });
 
     describe("install and uninstall", () => {
@@ -436,6 +653,26 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(count(/^launchctl@|^git@|^npm@/)).toBe(0);
       });
 
+      it("--branche pins the branch, tag or commit for the agent and the first build", () => {
+        nvm("22.22.2");
+        write(
+          path.join(home, ".config/cate-fork-update.conf"),
+          "CATE_FORK_REPO=https://github.com/Heifarabuval/cate.git\n",
+        );
+        expect(run(INSTALL, ["--branche", "v1.2.0"]).code).toBe(0);
+        const conf = readFileSync(
+          path.join(home, ".config/cate-fork-update.conf"),
+          "utf8",
+        );
+        expect(conf).toContain("CATE_FORK_BRANCH=v1.2.0");
+        expect(conf).toContain(
+          "CATE_FORK_REPO=https://github.com/Heifarabuval/cate.git",
+        );
+        expect(called()).toContain(`git@${fakes} fetch -q origin v1.2.0`);
+        expect(run(INSTALL, ["--branche"]).code).toBe(64);
+        expect(run(INSTALL, ["--branche", "--x"]).code).toBe(64);
+      });
+
       it("--sans-launchd writes no agent and loads nothing", () => {
         nvm("22.22.2");
         expect(run(INSTALL, ["--sans-launchd"]).code).toBe(0);
@@ -466,7 +703,7 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(run(INSTALL, [], {}, text).code).toBe(0);
         expect(
           called().some((l) =>
-            /^curl@.* -fsSL -o .*cate-fork-update\.sh https:\/\/raw\.example\.test\/scripts\/cate-fork-update\.sh$/.test(
+            /^curl@.* --proto =https --tlsv1\.2 -fsSL -o .*cate-fork-update\.sh https:\/\/raw\.example\.test\/scripts\/cate-fork-update\.sh$/.test(
               l,
             ),
           ),

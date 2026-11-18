@@ -8,7 +8,7 @@ set -eu
 LABEL=com.cate.fork-update
 
 main() {
-	PURGE=0
+	PURGE=0 rc=0
 	for a in "$@"; do
 		case $a in
 			--purge) PURGE=1 ;;
@@ -31,13 +31,19 @@ main() {
 
 	# The build folder is read from the script's own settings, before the script goes.
 	if [ "$PURGE" = 1 ]; then
-		if [ -x "$BIN" ]; then "$BIN" --purge; else echo "script absent : dossier de build non supprimé"; fi
+		# The script checks the folder (named cate-build under HOME, origin = the configured repo) before any rm.
+		if [ -x "$BIN" ]; then
+			"$BIN" --purge || { rc=1; echo "dossier de build conservé"; }
+		else
+			echo "script absent : dossier de build non supprimé"
+		fi
 	fi
 	if [ -f "$BIN" ]; then
 		rm -f "$BIN"
 		echo "script retiré : $BIN"
 	fi
 	echo "laissé : l'application installée, le journal, ~/.config/cate-fork-update.conf"
+	exit "$rc"
 }
 
 main "$@"

@@ -49,20 +49,40 @@ write_conf() {
 	[ -n "${CATE_FORK_REPO:-}${CATE_FORK_BRANCH:-}${CATE_BUILD_DIR:-}${CATE_APPS_DIR:-}" ] || return 0
 	conf="$HOME/.config/cate-fork-update.conf"
 	mkdir -p "$HOME/.config"
-	for k in CATE_FORK_REPO CATE_FORK_BRANCH CATE_BUILD_DIR CATE_APPS_DIR; do
-		eval "v=\${$k:-}"
-		[ -z "$v" ] || printf '%s=%s\n' "$k" "$v"
-	done > "$conf.new"
+	# Keys given now replace their line; the other lines of an existing file stay.
+	{
+		if [ -f "$conf" ]; then
+			pat=""
+			for k in CATE_FORK_REPO CATE_FORK_BRANCH CATE_BUILD_DIR CATE_APPS_DIR; do
+				eval "v=\${$k:-}"
+				[ -z "$v" ] || pat="$pat -e ^$k="
+			done
+			# shellcheck disable=SC2086
+			grep -v $pat "$conf" || true
+		fi
+		for k in CATE_FORK_REPO CATE_FORK_BRANCH CATE_BUILD_DIR CATE_APPS_DIR; do
+			eval "v=\${$k:-}"
+			[ -z "$v" ] || printf '%s=%s\n' "$k" "$v"
+		done
+	} > "$conf.new"
 	mv -f "$conf.new" "$conf"
 }
 
 main() {
 	SANS_LAUNCHD=0
-	for a in "$@"; do
-		case $a in
+	while [ $# -gt 0 ]; do
+		case $1 in
 			--sans-launchd) SANS_LAUNCHD=1 ;;
-			*) die "option inconnue : $a" 64 ;;
+			--branche)
+				[ $# -ge 2 ] || die "--branche demande un nom de branche, de tag ou de commit" 64
+				case $2 in -*) die "branche invalide : $2" 64 ;; esac
+				CATE_FORK_BRANCH=$2
+				export CATE_FORK_BRANCH
+				shift
+				;;
+			*) die "option inconnue : $1" 64 ;;
 		esac
+		shift
 	done
 	[ "$(uname -s)" = Darwin ] || die "macOS uniquement" 2
 	[ -n "${HOME:-}" ] && [ -d "$HOME" ] || die "HOME introuvable"
@@ -91,7 +111,7 @@ main() {
 	else
 		TMP=$(mktemp -d)
 		trap 'rm -rf "$TMP"' EXIT
-		curl -fsSL -o "$TMP/cate-fork-update.sh" "$RAW/cate-fork-update.sh" || die "téléchargement impossible : $RAW/cate-fork-update.sh (connexion ?)"
+		curl --proto '=https' --tlsv1.2 -fsSL -o "$TMP/cate-fork-update.sh" "$RAW/cate-fork-update.sh" || die "téléchargement impossible : $RAW/cate-fork-update.sh (connexion ?)"
 		SRC="$TMP/cate-fork-update.sh"
 	fi
 
