@@ -1874,19 +1874,29 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   `model` (most tokens), `inputTokens` (cached included), `outputTokens`,
   `costUsd` (null when a response has no price; every field null for an agent
   without token counts, or an `error` for a panel whose read failed), and
-  `sessionIds`. The resume stamps (`stamps.ts`) keep, per terminal, every
-  session id its hooks named since the agent started: a `/clear` adds one,
-  the agent exiting (`clear`) empties the list, closing the terminal drops
-  it; the panel's `sessionOf` session joins it. One call asks
+  `sessionIds`, and `truncated` when older sessions were dropped (the cost
+  is then a floor). The resume stamps (`stamps.ts`) keep, per terminal, the
+  last `MAX_USAGE_SESSIONS` (50) sessions its hooks named since the agent
+  started, each with the checkout it ran in: a `/clear` adds one, the agent
+  exiting (`clear`) empties the list, closing the terminal drops it; the
+  panel's `sessionOf` session joins it. The list is stored in the panel's
+  entry of `agents/stamps.json` (`sessions`, `truncated`; an entry without
+  them reads as none; a `sessionId` of '' is a cleared stamp whose agent runs
+  on, nothing to resume) and given back to a restored terminal whose restore
+  launch resumes the agent; an agent started afresh begins from nothing. One
+  call asks
   `AgentUsageService.sessions` for all panels at once: one rate load, each
-  file parsed once through the scan cache, at most one cache write, the
+  file parsed once through the scan cache, at most one cache write (calls
+  run one at a time, so an overlapping one finds the files cached), the
   cache pruned as `summary` does. A store that lists a session's files
   (`files`) is read from them, the history a resume copied in included; one
   that cannot (a database) is searched over the last 7 days, bounded to the
   workspace's folders and to the listed session ids. A response counts once,
-  by the CLI's own `dedupeKey` (Claude: `message.id:requestId`). Not counted:
-  a CLI's sub-agent transcripts (Claude Code writes them to separate files),
-  and sessions run before a runtime restart that no longer show in the panel.
+  by the CLI's own `dedupeKey` (Claude: `message.id:requestId`; Codex and
+  OpenCode have none). Limits: a CLI's sub-agent transcripts (Claude Code
+  writes them to separate files) are not counted; a resumed session counts
+  the history copied into its file, from before the panel's launch; the
+  timeout answers the caller without cancelling the read.
 - **terminal agents** (`terminal.ts`): plug into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).
