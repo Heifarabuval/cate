@@ -97,7 +97,8 @@ export function FrameTitleBar({ workspaceId, canvasId, frameId, title, state, pa
         data-frame-state={state}
         className="inline-flex shrink-0 items-center gap-1 text-primary transition-colors motion-reduce:transition-none"
       >
-        <Icon size={12} aria-hidden style={{ color: accent }} />
+        {/* The state's colour pulled toward the text colour keeps the icon at 3:1 in both themes. */}
+        <Icon size={12} aria-hidden style={{ color: `color-mix(in srgb, ${accent} 45%, var(--text-primary))` }} />
         {label}
       </span>
       <span data-frame-title title={title} className="min-w-0 flex-1 truncate font-medium text-primary">
