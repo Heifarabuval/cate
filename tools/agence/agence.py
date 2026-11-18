@@ -141,7 +141,8 @@ def draft_path(did):
 
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
-	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True}
+	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
+	        'orphanVus': {}, 'orphanGardes': []}
 
 
 def plafond(st):
@@ -334,6 +335,8 @@ def action_attendue(st, n):
 		return f"à traiter dans le panneau {st['titles'].get(n.get('blockedPanel')) or ''}".strip() + (f" : {perm['commande']}" if perm.get('commande') else '')
 	if n.get('worktree'):
 		return 'garder ou supprimer le worktree'
+	if n.get('orphan'):
+		return 'fermer ou garder le panneau'
 	if n['kind'] == 'draft':
 		return 'lire et envoyer le brouillon'
 	if n['kind'] == 'human' and (n['ref'] or '').startswith('q'):
@@ -815,6 +818,30 @@ def click(path, form):
 				note(n, f"worktree {wt['path']} gardé", 'clic')
 				close_need(st, nid, 'dropped')
 		return 303, '/'
+	m = re.match(r'^/orphan/(n\d+)/(close|keep)$', path)
+	if m:
+		nid, action = m.groups()
+		n = find(load(), 'needs', nid)
+		o = n.get('orphan')
+		if n['status'] != 'open' or not o:
+			return 409, "Cette proposition n'est plus attendue."
+		if action == 'close':  # sans --discard : Cate refuse un panneau qui perdrait du travail, et le besoin reste ouvert
+			try:
+				cate('panel', 'close', o['panel'])
+			except Refus as err:
+				return 409, f'Fermeture refusée par Cate : {err}'
+		with tx() as st:
+			n = find(st, 'needs', nid)
+			if n['status'] != 'open':
+				return 409, "Cette proposition n'est plus attendue."
+			if action == 'close':
+				note(n, f"panneau {o['panel']} fermé", 'clic')
+				close_need(st, nid, 'done', f"panneau fermé : {o['panel']}")
+			else:
+				note(n, f"panneau {o['panel']} gardé", 'clic')
+				close_need(st, nid, 'dropped')
+				st['orphanGardes'].append(o['panel'])
+		return 303, '/'
 	m = re.match(r'^/ask/(q\d+)$', path)
 	if m:
 		qid = m.group(1)
@@ -1018,6 +1045,8 @@ def need_line(st, n):
 		           + f'<a class="btn go" href="/draft/{e(did)}">Lire et envoyer</a>')
 	elif n['status'] == 'open' and n.get('worktree'):
 		actions = btn(f"/wt/{n['id']}/keep", 'Garder') + btn(f"/wt/{n['id']}/remove", 'Supprimer', 'no')
+	elif n['status'] == 'open' and n.get('orphan'):
+		actions = btn(f"/orphan/{n['id']}/keep", 'Garder') + btn(f"/orphan/{n['id']}/close", 'Fermer', 'no')
 	elif n['status'] == 'open' and n['kind'] == 'human' and (n['ref'] or '').startswith('q'):
 		actions = f'<a class="btn go" href="/ask/{e(n["ref"])}">Répondre</a>'
 		q = next((x for x in st['questions'] if x['id'] == n['ref']), None)
@@ -1304,9 +1333,28 @@ def set_perm(n, panel, text):
 		n['permAnswered'] = n['permNonConfirmee'] = None
 
 
-def tick(st, live, agents, gh, now, screens=None):
+def orphelins(st, rows, agents):
+	"""Panneaux sans agent que l'humain voudra peut-être fermer : {panneau: (titre, motif)}. Deux critères : un terminal
+	titré « #n<chiffres> » absent de cate agent list ; un terminal, navigateur ou canvas relié par trigger depuis
+	l'orchestrateur, sans agent en plein tour. Jamais : panneau du projet ou d'un besoin ouvert, gardé, éditeur, terminal qui appelle."""
+	par_id = {a['panelId']: a for a in agents}
+	lies = {r.get('toPanelId') for r in (rows.get(st['panels'].get('orchestrator')) or {}).get('relations', []) if r.get('kind') == 'trigger'}
+	found = {}
+	for p, r in rows.items():
+		if r.get('caller') or p in st['orphanGardes'] or protege(st, p, None):
+			continue
+		titre = r.get('title') or ''
+		if r.get('type') == 'terminal' and p not in par_id and re.match(r'^#n\d+ ', titre):
+			found[p] = (titre, 'sans-agent')
+		elif p in lies and r.get('type') in ('terminal', 'browser', 'canvas') and par_id.get(p, {}).get('state') != 'running':
+			found[p] = (titre, 'non-rattache')
+	return found
+
+
+def tick(st, live, agents, gh, now, screens=None, panneaux=None):
 	"""Un tour du régisseur : met l'état à jour, rend les effets ('close', panneau, besoin) et ('notify', panneau, texte).
-	screens : écran lu de chaque agent bloqué ({panneau: texte}), pour afficher sa demande."""
+	screens : écran lu de chaque agent bloqué ({panneau: texte}), pour afficher sa demande.
+	panneaux : lignes de cate panel list par id ; sans elles, pas de balayage des orphelins."""
 	screens = screens or {}
 	orch = st['panels'].get('orchestrator')
 	effects = []
@@ -1383,6 +1431,18 @@ def tick(st, live, agents, gh, now, screens=None):
 		if n['budgetMin'] and now - n.get('createdTs', now) > n['budgetMin'] * 60:
 			n['overBudget'] = True
 			once(f"budget:{n['id']}", orch, f"Budget de {n['budgetMin']} min dépassé : {n['title']} ({n['id']}).")
+	if panneaux is not None:  # un orphelin n'est proposé qu'au 2e tour ; l'offre se clôt si le panneau meurt ou n'en est plus un
+		candidats = orphelins(st, panneaux, agents)
+		st['orphanVus'] = {p: st['orphanVus'].get(p, 0) + 1 for p in candidats}
+		st['orphanGardes'] = [p for p in st['orphanGardes'] if p in panneaux]
+		for n in st['needs']:
+			if n['status'] == 'open' and n.get('orphan') and n['orphan']['panel'] not in candidats:
+				close_need(st, n['id'], 'dropped')
+		for p, (titre, motif) in candidats.items():
+			if st['orphanVus'][p] >= 2:
+				n, neuf = add_need(st, 'human', f'Fermer le panneau « {titre} » (sans agent) ?', ref=f'orphan:{p}', owner=OWNER_HUMAIN)
+				if neuf:
+					n['orphan'] = {'panel': p, 'title': titre, 'motif': motif}
 	for n in st['needs']:  # une notification par ligne qui attend, un rappel, puis rien ; le réglage se relit à chaque tour
 		if not attend(n):
 			n.pop('notifTs', None)  # la ligne repart de zéro si elle attend de nouveau
@@ -1641,7 +1701,7 @@ def un_tour():
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
 		merge_apply(st, merges)
-		effects = tick(st, set(rows), agents, gh, time.time(), screens)
+		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows)
 		apply(st, effects)
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
