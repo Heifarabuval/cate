@@ -46,7 +46,13 @@ From then on it is an agent panel like any other.
 ```bash
 cate agent start --model sonnet --effort low --title "#n3 verifier" "$(cat BRIEF.md)"
 cate agent start --effort high "Fix the flaky login test"
+cate agent start --agent gemini --model gemini-3-pro --relation verify --title "#n12 reviewer" "$(cat BRIEF.md)"
 ```
+
+Gemini (`gemini`) takes `--model`, not `--effort`. Its hooks live in the
+repo's `.gemini/settings.json` and run only in a folder Gemini trusts; its
+permission prompts show the panel as waiting. It quits on a second Ctrl-C, so
+`cate agent interrupt` sends one.
 
 Both go to the agent CLI at launch, and each works without the other. `--model` is free text
 (the CLI's own model id or alias; Claude Code, Codex, Cursor and OpenCode
@@ -116,7 +122,7 @@ Limits, to read the figure with:
 - A resumed session counts the history copied into its file, so resuming an
   old session counts what was spent before the agent started in the panel.
 - A response is counted once by the CLI's own key. Claude has one
-  (`message.id:requestId`); Codex and OpenCode do not, so a response a resume
+  (`message.id:requestId`), Gemini its message id; Codex and OpenCode do not, so a response a resume
   copied twice is not proven to count once for them.
 - A session the runtime lost track of (a `/clear` nothing followed before a
   restart, a stamp whose panel moved to another checkout) is not counted.
