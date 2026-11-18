@@ -3,12 +3,14 @@ import { focusPanel, revealPanel } from '@client/host'
 import type { AgenceOp, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
 import QuestionCard from './QuestionCard'
+import { ACTION, LINK } from './styles'
 
 const SECTIONS = [
-  { key: 'bloquant', title: 'Bloquant', tone: 'text-danger' },
-  { key: 'aFaire', title: 'À faire par Heifara', tone: 'text-warning' },
-  { key: 'fait', title: 'Fait', tone: 'text-secondary' },
-  { key: 'reste', title: 'Reste à faire', tone: 'text-secondary' },
+  // `dot` tells the section by a marker: the status colors are too pale as text on a light theme.
+  { key: 'bloquant', title: 'Bloquant', dot: 'bg-danger' },
+  { key: 'aFaire', title: 'À faire par Heifara', dot: 'bg-warning' },
+  { key: 'fait', title: 'Fait', dot: 'bg-surface-6' },
+  { key: 'reste', title: 'Reste à faire', dot: 'bg-surface-6' },
 ] as const
 
 const EVIDENCE = 'preuve : '
@@ -21,7 +23,7 @@ function Link({ href, onOpenUrl, children }: { href: string; onOpenUrl: OpenUrl;
     <a
       href={href}
       onClick={(event) => { event.preventDefault(); onOpenUrl(href) }}
-      className="text-agent underline decoration-agent/30 hover:decoration-agent"
+      className={LINK}
     >
       {children}
     </a>
@@ -38,7 +40,7 @@ function PanelLink({ workspaceId, link }: { workspaceId: string; link: NeedRow['
     <button
       type="button"
       onClick={() => { void revealPanel(workspaceId, link.panelId).then(() => focusPanel(workspaceId, link.panelId)) }}
-      className="max-w-full truncate align-bottom text-agent underline decoration-agent/30 hover:decoration-agent"
+      className={`max-w-full truncate align-bottom ${LINK}`}
     >
       {link.title}
     </button>
@@ -93,8 +95,8 @@ function Row({ row, workspaceId, questions, send, compact, onRead, onRebase, onO
         {action?.type === 'draft' && (
           <span data-testid="need-actions" className="flex shrink-0 items-center gap-1.5">
             {action.inFlight
-              ? <span className="whitespace-nowrap text-[11px] text-muted">En cours d&apos;envoi</span>
-              : <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => onRead(action.draftId)}>Lire et envoyer</Button>}
+              ? <span className="whitespace-nowrap text-[11px] text-secondary">En cours d&apos;envoi</span>
+              : <Button size="sm" className={ACTION} onClick={() => onRead(action.draftId)}>Lire et envoyer</Button>}
           </span>
         )}
         {action?.type === 'question' && (action.rebase || question) && (
@@ -102,20 +104,19 @@ function Row({ row, workspaceId, questions, send, compact, onRead, onRebase, onO
             {action.rebase && (
               <Button
                 size="sm"
-                variant="primary"
-                className="shrink-0 whitespace-nowrap"
+                className={ACTION}
                 onClick={() => onRebase(action.questionId)}
                 {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
               >
                 {compact ? 'Rebase' : 'Demander le rebase'}
               </Button>
             )}
-            {question && <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</Button>}
+            {question && <Button size="sm" className={ACTION} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</Button>}
           </span>
         )}
       </div>
       {row.meta.length > 0 && (
-        <div className="mt-0.5 break-words text-[11px] text-muted">
+        <div className="mt-0.5 break-words text-[11px] text-secondary">
           {row.meta.map((item, index) => (
             <Fragment key={`${item}-${index}`}>
               {index > 0 && ' · '}
@@ -134,14 +135,17 @@ export default function SuiviList({ workspaceId, suivi, questions, send, compact
     <div className="flex flex-col gap-3 p-3">
       <header>
         <h1 className="truncate text-[15px] font-semibold text-primary">{suivi.repo}</h1>
-        <div className="text-[11px] text-muted">Agents actifs : {suivi.agentsActive}</div>
+        <div className="text-[11px] text-secondary">Agents actifs : {suivi.agentsActive}</div>
       </header>
-      {suivi.error && <InlineNotice tone="warning">{suivi.error}</InlineNotice>}
-      {SECTIONS.map(({ key, title, tone }) => (
+      {suivi.error && <InlineNotice tone="warning" className="!text-primary">{suivi.error}</InlineNotice>}
+      {SECTIONS.map(({ key, title, dot }) => (
         <section key={key} className="rounded-lg border border-subtle bg-surface-2">
-          <h2 className={`px-3 py-1.5 text-[12px] font-semibold border-b border-subtle ${tone}`}>{`${title} (${suivi.sections[key].length})`}</h2>
+          <h2 className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-primary border-b border-subtle">
+            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+            {`${title} (${suivi.sections[key].length})`}
+          </h2>
           {suivi.sections[key].length === 0
-            ? <div className="px-3 py-2 text-[12px] text-muted">Rien.</div>
+            ? <div className="px-3 py-2 text-[12px] text-secondary">Rien.</div>
             : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
         </section>
       ))}

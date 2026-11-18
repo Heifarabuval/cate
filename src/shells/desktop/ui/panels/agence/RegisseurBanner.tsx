@@ -18,7 +18,7 @@ export default function RegisseurBanner({ regisseur, onRestart }: { regisseur: R
   return (
     <div data-testid="regisseur-banner" className="flex flex-col gap-1.5 p-3 pb-0">
       {notices.map((notice) => (
-        <InlineNotice key={notice.text} tone={notice.tone}>
+        <InlineNotice key={notice.text} tone={notice.tone} className="!text-primary">
           <div className="flex items-start gap-2">
             <span className="min-w-0 flex-1 break-words">{notice.text}</span>
             {notice.restart && <Button size="sm" className="shrink-0 whitespace-nowrap" onClick={onRestart}>Relancer le régisseur</Button>}

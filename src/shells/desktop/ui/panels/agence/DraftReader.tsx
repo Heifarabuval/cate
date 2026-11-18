@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { AgenceOp, AgenceOpResult, DraftView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
 import { MarkdownPreview } from '../editor/MarkdownPreview'
+import { ACTION, ACTION_DANGER } from './styles'
 
 const KINDS: Record<DraftView['kind'], string> = {
   issue: 'Issue', pr: 'Pull request', comment: 'Commentaire', slack: 'Message Slack', mail: 'Mail',
@@ -59,18 +60,18 @@ export default function DraftReader({ workspaceId, panelId, draft, send, onBack 
         <Button size="sm" variant="ghost" className="shrink-0 whitespace-nowrap" onClick={onBack}>Retour</Button>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-[14px] font-semibold text-primary" title={draft.titre ?? undefined}>{draft.titre ?? KINDS[draft.kind]}</h1>
-          <div className="truncate text-[11px] text-muted">{KINDS[draft.kind]} · {draft.cible} · {draft.statut === 'envoyer' ? "En cours d'envoi" : draft.statut}</div>
+          <div className="truncate text-[11px] text-secondary">{KINDS[draft.kind]} · {draft.cible} · {draft.statut === 'envoyer' ? "En cours d'envoi" : draft.statut}</div>
         </div>
       </div>
       <div className="relative min-h-[200px] flex-1 overflow-hidden rounded-lg border border-subtle bg-surface-2">
         <MarkdownPreview content={draft.texte} workspaceId={workspaceId} panelId={panelId} filePath={`${draft.id}.md`} noImages />
       </div>
-      {error && <InlineNotice tone="error">{error}</InlineNotice>}
+      {error && <InlineNotice tone="error" className="!text-primary">{error}</InlineNotice>}
       {open && (
         <div data-testid="draft-actions" className="flex shrink-0 items-center justify-end gap-1.5">
           <Button size="sm" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void run({ kind: 'draft.edit', draftId: draft.id }, false)}>Modifier</Button>
-          <Button size="sm" variant="danger" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void run({ kind: 'draft.drop', draftId: draft.id }, true)}>Abandonner</Button>
-          <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void run({ kind: 'draft.send', draftId: draft.id, hash: draft.hash }, true)}>Envoyer</Button>
+          <Button size="sm" className={ACTION_DANGER} disabled={pending} onClick={() => void run({ kind: 'draft.drop', draftId: draft.id }, true)}>Abandonner</Button>
+          <Button size="sm" className={ACTION} disabled={pending} onClick={() => void run({ kind: 'draft.send', draftId: draft.id, hash: draft.hash }, true)}>Envoyer</Button>
         </div>
       )}
     </div>
