@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown as CaretDown, ChevronRight as CaretRight, Ellipsis as DotsThree, GitCompareArrows, GitCommitHorizontal, Info, Search, X } from 'lucide-react'
-import { LoadingState, Pagination } from '../../kernel/interaction'
+import { LoadingState } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useDocument } from '../../client/document'
 import { agentDisplayName, type AgentId } from '@services/agents/contract'
 import type { PanelRecord } from '@workspace/document/contract'
-import type { AgentChangesFilterPatch, RecordedDiffPage, RecordedFileSummary, ReviewDisplay, ReviewSnapshot } from '@panels/review/contract'
+import type { AgentChangesFilterPatch, RecordedFileSummary, ReviewSnapshot } from '@panels/review/contract'
 import { revealPanel } from '@client/host'
 import { PanelTitle, usePanelTitles } from '../../client/host'
 import { pickReviewTerminal } from './parts/pickTerminal'
@@ -13,7 +13,7 @@ import { ReviewToolbar } from './ReviewToolbar'
 import { ReviewFilters } from './ReviewFilters'
 import { ReviewAgentButton, ReviewFileFilter, ReviewStats, ToolbarButton } from './ReviewControls'
 import { agentLogo } from '../../services/agents'
-import { GitDiff } from '../../workspace/repository'
+import { DiffPageBody } from './DiffPageBody'
 import { recordedGroupKey, useAgentPicker, useReviewView, type ReviewSend } from './useReview'
 
 
@@ -171,13 +171,17 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
               <span className="text-[10px] tabular-nums text-diff-add">+{file.additions}</span><span className="text-[10px] tabular-nums text-diff-del">−{file.deletions}</span>
               {file.coverage === 'fragment' && <span title="Reported edit fragment; full-file context and line numbers are unavailable." className="text-muted"><Info size={12} /></span>}
             </div>
-            {expanded.has(key) && <RecordedFileBody
+            {expanded.has(key) && <DiffPageBody
               key={key}
-              send={send}
-              file={file}
+              loadKey={key}
+              load={(page) => send({ kind: 'recordedDiff', recordId: file.recordId, path: file.path, page })}
               display={display}
               page={view.pageFor(key)}
               setPage={(page) => view.setPage(key, page)}
+              numbered={file.coverage === 'patch'}
+              loading="Loading recorded diff…"
+              failure="Could not load this recorded edit."
+              notice={file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}
             />}
           </section>
           })}
@@ -185,42 +189,5 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
       })}
 
     </div>
-  </div>
-}
-
-/** Mounted only after the reader opens a file; fetch one bounded diff page. */
-function RecordedFileBody({ send, file, display, page, setPage }: {
-  send: ReviewSend
-  file: RecordedFileSummary
-  display: ReviewDisplay
-  page: number
-  setPage(page: number): void
-}) {
-  const root = useRef<HTMLDivElement>(null)
-  const [body, setBody] = useState<RecordedDiffPage | null>(null)
-  const [failed, setFailed] = useState(false)
-  const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    let live = true
-    setBody(null)
-    setFailed(false)
-    send({ kind: 'recordedDiff', recordId: file.recordId, path: file.path, page }).then(
-      (result) => { if (live) setBody(result as RecordedDiffPage) },
-      () => { if (live) setFailed(true) },
-    )
-    return () => { live = false }
-  }, [send, page, attempt, file.recordId, file.path])
-  return <div ref={root} className="w-full min-w-0 font-mono text-[11px] leading-[1.45]">
-    {failed ? <div role="alert" className="px-3 py-2 font-sans text-red-400">Could not load this recorded edit. <button type="button" className="underline" onClick={() => setAttempt((value) => value + 1)}>Retry</button></div>
-      : !body ? <p role="status" className="px-3 py-3 font-sans text-xs text-muted">Loading recorded diff…</p>
-      : <>
-        {file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}
-        <div data-review-diff-scroll className="w-full min-w-0 overflow-x-auto">
-          <div className={display.wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}>
-            <GitDiff hunks={body.hunks} {...display} numbered={file.coverage === 'patch'} />
-          </div>
-        </div>
-        <Pagination label="diff page" page={body.page} pageCount={body.pageCount} onChange={(next) => { setPage(next); root.current?.scrollIntoView?.({ block: 'start' }) }} />
-      </>}
   </div>
 }
