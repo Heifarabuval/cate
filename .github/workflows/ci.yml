@@ -83,7 +83,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # ubuntu-24.04, not ubuntu-latest: 26.04 no longer ships Python 3.9.
+        os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
