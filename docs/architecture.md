@@ -2646,7 +2646,9 @@ shell, with `--json` when it parses results.
     dialer with Noise and pairing; each connection is a pipe handed to the
     renderer), the device files behind `DeviceStore` and the device key,
     cross-window drags and the drag ghost, a WebGL context budget for
-    terminals, the `CATE_PERF` profiler, and the declaration of the client
+    terminals, the `CATE_PERF` profiler, a memory line in `main.log`
+    every 5 minutes (footprint, JS heap, webContents, debuggers, sockets),
+    and the declaration of the client
     features (12.2).
   - **preload**: the desktop IPC for the above only (`window.cateDesktop`,
     typed by `DesktopApi` in `shells/desktop/contract`). No workspace work

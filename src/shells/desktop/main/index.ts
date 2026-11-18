@@ -29,6 +29,7 @@ import { createDeviceFiles } from './deviceFiles'
 import { deviceStoreOf, registerDeviceIpc } from './deviceIpc'
 import { configureUserData, featureFlags, IS_E2E, revealWindow } from './env'
 import { createQuitController } from './lifecycle'
+import { startMemoryLog } from './memoryLog'
 import { createAppMenu } from './menu'
 import { registerNatives } from './natives'
 import { createOpenRequests } from './openRequests'
@@ -397,6 +398,7 @@ app.whenReady().then(() => {
   registerTransportIpc({ host, partitions })
   registerMachineIpc(machines, installs)
   const perf = startPerfMonitor(featureFlags.perf())
+  startMemoryLog()
   appIpc = registerAppIpc({
     registry,
     factory,
