@@ -18,7 +18,8 @@ export type SocketAcquire =
     server: net.Server
     endpoint: string
     /** Stops holding connections and returns those accepted since the bind
-     *  (a retrying client), for whoever serves the socket now. */
+     *  (a retrying client) and still open, for whoever serves the socket
+     *  now. `serveLocal` (transports) calls it. */
     takeEarly(): net.Socket[]
   }
   | { kind: 'running'; endpoint: string }
@@ -176,7 +177,10 @@ interface Bound {
 function tryListen(endpoint: string): Promise<Bound | null> {
   const server = net.createServer()
   const early: net.Socket[] = []
-  const hold = (socket: net.Socket) => { early.push(socket) }
+  const hold = (socket: net.Socket) => {
+    early.push(socket)
+    socket.once('close', () => { if (early.includes(socket)) early.splice(early.indexOf(socket), 1) })
+  }
   server.on('connection', hold)
   const takeEarly = () => {
     server.off('connection', hold)

@@ -14,6 +14,41 @@ import { dialLocal } from '@runtime/transports/node'
 import { RUNTIME_VERSION, runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
 
+// Holds a start between binding its socket and serving it, where a client
+// that retries can connect before anyone serves the socket.
+const gate = vi.hoisted(() => ({ wait: Promise.resolve() }))
+vi.mock('@runtime/data/runtime', async (importActual) => {
+  const actual = await importActual<typeof import('@runtime/data/runtime')>()
+  return {
+    ...actual,
+    overlappingRuntime: async (...args: Parameters<typeof actual.overlappingRuntime>) => {
+      await gate.wait
+      return actual.overlappingRuntime(...args)
+    },
+  }
+})
+
+/** Closes the gate; the returned function opens it. */
+function holdStarts(): () => void {
+  let open!: () => void
+  gate.wait = new Promise<void>((resolve) => { open = resolve })
+  return open
+}
+
+/** A client that connects to `endpoint` now and says hello once served. */
+async function connectEarly(endpoint: string) {
+  await vi.waitFor(async () => expect(await socketAnswers(endpoint, 200)).toBe(true), { timeout: 2_000, interval: 20 })
+  const client = new RpcClient({
+    version: RUNTIME_VERSION,
+    identity: { client: { clientId: 'early', device: { name: 'laptop', publicKey: 'fp' }, features: [] } },
+  })
+  const ready = client.attach(framePortOver(await dialLocal(endpoint), 'stream'))
+  ready.catch(() => {})
+  // Let the daemon accept it while the start is still held.
+  await new Promise((r) => setTimeout(r, 100))
+  return { client, ready }
+}
+
 // Short paths: a Unix socket path must fit in ~104 bytes.
 let tmp: string
 let home: string
@@ -30,6 +65,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  gate.wait = Promise.resolve()
   for (const d of daemons.splice(0)) await d.stop({ kind: 'signal' })
   installLogSink(null)
   fs.rmSync(tmp, { recursive: true, force: true })
@@ -205,6 +241,32 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     const result = await serving
     if (result.kind === 'serving') await result.daemon.stop({ kind: 'signal' })
   }, 15_000)
+
+  it('serves a connection made between the bind and serving, once it serves', async () => {
+    const open = holdStarts()
+    const serving = start()
+    const endpoint = path.join(home, '.cate', 'workspaces', await runtimeIdFor(root), 'runtime.sock')
+    const { client, ready } = await connectEarly(endpoint)
+    open()
+    expect((await serving).kind).toBe('serving')
+    await ready
+    expect((await createCapabilityProxy(client, runtimeCapability).info()).root).toBe(fs.realpathSync(root))
+    client.close()
+  })
+
+  it('refuses a nested workspace to a connection made before the refusal', async () => {
+    expect((await start()).kind).toBe('serving')
+    const inner = path.join(root, 'sub')
+    fs.mkdirSync(inner)
+    const open = holdStarts()
+    const nested = serveWorkspace({ root: inner, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+    const endpoint = path.join(home, '.cate', 'workspaces', await runtimeIdFor(inner), 'runtime.sock')
+    const { client, ready } = await connectEarly(endpoint)
+    open()
+    expect((await nested).kind).toBe('nested')
+    await expect(ready).rejects.toThrow(/already running/)
+    client.close()
+  })
 
   it('a stuck shutdown step does not lose the last document change', async () => {
     const lifecycle = createLifecycleBus()
