@@ -8,6 +8,12 @@ on:
   merge_group:
     types: [checks_requested]
 
+# A new push to a pull request cancels the run of the commit it replaces, so
+# superseded runs do not hold the macOS runners. Runs on main are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
