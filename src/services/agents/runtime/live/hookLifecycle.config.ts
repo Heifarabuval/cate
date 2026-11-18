@@ -3,7 +3,7 @@ import type { AgentHookEventKind, AgentId } from '../../contract'
 /** Native commands used only to drive the real CLI fixtures. Production
  * observes confirmed lifecycle events; it never interprets typed commands. */
 export const CONVERSATION_RESET_COMMANDS: Record<AgentId, string> = {
-  'claude-code': '/clear', codex: '/clear', cursor: '/new-chat', grok: '/clear',
+  antigravity: '/clear', 'claude-code': '/clear', codex: '/clear', cursor: '/new-chat', grok: '/clear',
   opencode: '/new', pi: '/new', kiro: '/clear',
 }
 
@@ -15,7 +15,7 @@ export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'stored-edit
   before_agent_start: 'turn-start', agent_settled: 'turn-end', ui_prompt_start: 'permission-wait', ui_prompt_end: 'turn-resume', tool_execution_end: 'turn-resume',
   SessionStart: 'session-start', sessionStart: 'session-start',
   'session.created': 'session-start',
-  UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start',
+  UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start', PreInvocation: 'turn-start',
   PermissionRequest: 'permission-check', Notification: 'permission-wait',
   'permission.asked': 'permission-wait',
   PreToolUse: 'turn-resume', PostToolUse: 'turn-resume', PostToolUseFailure: 'turn-resume',
@@ -38,6 +38,14 @@ export const PI_MANUAL_COMPACTION_CASES = [
 /** Every injected native event must be exercised by a real installed CLI.
  * Adding a production hook without a scenario fails the coverage unit test. */
 export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
+  // agy talks only to Google's backend with a signed-in account: no fake
+  // provider reaches it, so these cases cannot run in CI (configureHookCli).
+  antigravity: {
+    edit: ['SessionStart', 'PreInvocation', 'PostToolUse', 'Stop'],
+    interrupt: ['Stop'],
+    resume: ['SessionStart', 'PreInvocation', 'Stop'],
+    'session-reset': ['SessionStart'],
+  },
   'claude-code': {
     edit: ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'],
     interrupt: [], // Cate tails the real CLI transcript's interrupt marker.

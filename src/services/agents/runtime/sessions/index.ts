@@ -1,5 +1,6 @@
 import type { AgentSessionStores } from './types'
 import { piSessionStore } from './pi'
+import { antigravitySessionStore } from './antigravity'
 import { claudeSessionStore } from './claude'
 import { codexSessionStore } from './codex'
 import { cursorSessionStore } from './cursor'
@@ -9,6 +10,7 @@ import { openCodeSessionStore } from './opencode'
 
 /** CLI-specific session persistence behind one exhaustive runtime lookup. */
 export const AGENT_SESSION_STORES: AgentSessionStores = {
+  antigravity: antigravitySessionStore,
   'claude-code': claudeSessionStore,
   codex: codexSessionStore,
   cursor: cursorSessionStore,

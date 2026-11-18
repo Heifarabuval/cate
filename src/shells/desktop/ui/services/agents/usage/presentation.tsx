@@ -12,6 +12,7 @@ export const AGENT_COLORS: Record<AgentId, string> = {
   opencode: '#5b9cf5',
   kiro: '#9046ff',
   pi: '#e8a33d',
+  antigravity: '#4285f4',
   cursor: 'var(--text-secondary)',
 }
 

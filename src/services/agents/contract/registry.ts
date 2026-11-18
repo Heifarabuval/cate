@@ -18,6 +18,7 @@ import type { SkillTargetId } from '@workspace/skills/contract'
 import { AGENT_HOOK_SPECS } from './hooks'
 
 export type AgentId =
+  | 'antigravity'
   | 'claude-code'
   | 'codex'
   | 'cursor'
@@ -173,6 +174,32 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     promptGuidance: null,
     // ~/.cursor/skills-cursor is cursor's internal built-ins dir; never written.
     skills: folderSkills('cursor', ['.cursor', 'skills']),
+  },
+  // Google's Antigravity CLI (agy 1.5.6, read from `agy --help` and the guide
+  // it embeds; the successor of Gemini CLI for personal Google accounts).
+  antigravity: {
+    id: 'antigravity',
+    displayName: 'Antigravity',
+    command: 'agy',
+    // --conversation takes the conversation id the hooks report. The resume
+    // path is not verified live, so the id is stamped from the first turn.
+    resume: { args: (sid) => ['--conversation', sid], fromSessionStart: false },
+    sessionStore: '.gemini/antigravity-cli/brain',
+    // -i, not a positional prompt: agy has subcommands (`agy models`, `agy mcp`).
+    promptArgs: (prompt) => ['--prompt-interactive', prompt],
+    startArgs: [],
+    launchOptions: {
+      model: (m) => ['--model', m],
+      effort: { values: ['low', 'medium', 'high', 'xhigh', 'max'], args: (e) => ['--effort', e] },
+    },
+    // The TUI reads "esc to cancel".
+    interruptKeys: ['escape'],
+    matchProcess: (n) => n === 'agy',
+    // PreInvocation can inject context only as agy's own injectSteps JSON,
+    // which no prompt-context channel of Cate's bridge speaks.
+    promptContextHook: null,
+    promptGuidance: null,
+    skills: folderSkills('antigravity', ['.agents', 'skills']),
   },
   // xAI's Grok Build. The npm launcher execs a versioned binary out of
   // ~/.grok/bin, so the versioned spelling shows up alongside the plain one.

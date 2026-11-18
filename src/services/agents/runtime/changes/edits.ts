@@ -126,7 +126,8 @@ export function filesFromTool(cwd: string, toolName: string, inputValue: unknown
     const diff = string(change.diff)
     return [fileFromHunks(filePath, diff ? parseReviewPatch(diff) : [], diff ? 'patch' : 'unavailable', diff)]
   })
-  const filePath = toolPath(input.file_path ?? input.filePath ?? input.path ?? output.filePath)
+  // agy (Antigravity) spells it TargetFile.
+  const filePath = toolPath(input.file_path ?? input.filePath ?? input.path ?? input.TargetFile ?? output.filePath)
   if (!filePath || !/edit|write|patch|replace|create|delete|remove|move|str_replace/i.test(toolName)) return []
   if (typeof input.content === 'string' && (output.type === 'create' || typeof output.originalFile === 'string')) {
     const patch = createTwoFilesPatch(`a/${filePath}`, `b/${filePath}`, string(output.originalFile) ?? '', input.content, undefined, undefined, { timeout: 100 })

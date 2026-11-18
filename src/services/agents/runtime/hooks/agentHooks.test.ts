@@ -106,7 +106,7 @@ describe('agentHooks capability', () => {
     expect(reader).toHaveBeenCalledWith(cwd, { env: undefined })
     expect(states.find((state) => state.agentId === 'codex')?.approvalDetection).toEqual(detection)
     expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'opencode', 'pi'])
-    expect(states.filter((state) => state.approvalDetection?.source === 'unavailable').map((state) => state.agentId).sort()).toEqual(['cursor', 'kiro'])
+    expect(states.filter((state) => state.approvalDetection?.source === 'unavailable').map((state) => state.agentId).sort()).toEqual(['antigravity', 'cursor', 'kiro'])
   })
 
   test('inspection without approvals never runs a CLI to read its config', async () => {

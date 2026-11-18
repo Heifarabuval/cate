@@ -2,6 +2,8 @@
 // total, so a new agent is a compile error until it has a logo.
 
 import type { AgentId } from '@services/agents/contract'
+// A plain arc drawn for Cate (not Google's artwork).
+import antigravityLogo from './logos/antigravity.svg?url'
 import claudeLogo from './logos/claude.svg?url'
 import codexLogo from './logos/codex.svg?url'
 import cursorLogo from './logos/cursor.svg?url'
@@ -12,6 +14,7 @@ import piLogo from './logos/pi.svg?url'
 import opencodeLogo from './logos/opencode.svg?url'
 
 const AGENT_LOGOS: Record<AgentId, string> = {
+  antigravity: antigravityLogo,
   'claude-code': claudeLogo,
   codex: codexLogo,
   cursor: cursorLogo,

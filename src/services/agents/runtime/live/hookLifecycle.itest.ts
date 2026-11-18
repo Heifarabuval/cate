@@ -35,6 +35,7 @@ function relocatedStore(agentId: AgentId, env: Record<string, string>): [string,
     // Cursor writes its transcript from what its own service streams, which
     // the fake provider does not: its reader is pinned by unit fixtures.
     case 'cursor': return ['.cursor/projects', path.join(env.CURSOR_DATA_DIR, 'projects')]
+    case 'antigravity': return null
     case 'grok': return ['.grok/sessions', path.join(env.GROK_HOME, 'sessions')]
     // Kiro V3 keeps them under KIRO_HOME; earlier versions under HOME.
     case 'kiro': return ['.kiro/sessions', existsSync(path.join(env.KIRO_HOME, 'sessions')) ? path.join(env.KIRO_HOME, 'sessions') : path.join(env.HOME, '.kiro', 'sessions')]
@@ -104,6 +105,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const edit = {
           'claude-code': { name: 'Write', arguments: { file_path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           codex: { name: 'apply_patch', arguments: '*** Begin Patch\n*** Add File: created.txt\n+after\n*** End Patch' },
+          antigravity: { name: 'write_to_file', arguments: { TargetFile: path.join(cwd, 'created.txt'), CodeContent: 'after\n' } },
           grok: { name: 'write', arguments: { file_path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           pi: { name: 'write', arguments: { path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           opencode: { name: 'write', arguments: { filePath: path.join(cwd, 'created.txt'), content: 'after\n' } },
@@ -116,6 +118,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const shell = {
           'claude-code': { name: 'Bash', arguments: { command, description: 'Lifecycle fixture command' } },
           codex: { name: 'exec_command', arguments: { cmd: command, sandbox_permissions: 'require_escalated', justification: 'Run the disposable lifecycle fixture command?' } },
+          antigravity: { name: 'run_command', arguments: { CommandLine: command } },
           grok: { name: 'run_terminal_command', arguments: { command, description: 'Lifecycle fixture command' } },
           pi: { name: 'bash', arguments: { command } },
           opencode: { name: 'bash', arguments: { command, description: 'Lifecycle fixture command' } },

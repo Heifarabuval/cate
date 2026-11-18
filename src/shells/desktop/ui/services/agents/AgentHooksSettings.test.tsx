@@ -100,7 +100,7 @@ describe('agent activity controls', () => {
   it('renders compact activity controls without repeating agent names or logos', async () => {
     inspectHooks.mockResolvedValue([])
     await render(<HookHarness workspaceId="ws" />, install())
-    expect(host.querySelectorAll('select')).toHaveLength(7)
+    expect(host.querySelectorAll('select')).toHaveLength(8)
     expect(host.querySelectorAll('img')).toHaveLength(0)
     expect(host.querySelector('[data-agent-hook-id="kiro"]')?.textContent).not.toContain('Kiro')
   })

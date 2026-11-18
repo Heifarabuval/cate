@@ -102,7 +102,7 @@ function firstChange<T>(before: readonly T[], after: readonly T[], same: (a: T, 
 /** Input fields that say what a tool call worked on, in the spellings the
  *  CLIs use; the first one present is the step's subject. */
 const SUBJECT_FIELDS = [
-  'command', 'cmd', 'file_path', 'filePath', 'path', 'target_file', 'pattern', 'query', 'url', 'description', 'prompt',
+  'command', 'cmd', 'CommandLine', 'file_path', 'filePath', 'path', 'target_file', 'TargetFile', 'AbsolutePath', 'pattern', 'query', 'url', 'description', 'prompt',
 ] as const
 const MAX_SUBJECT = 160
 

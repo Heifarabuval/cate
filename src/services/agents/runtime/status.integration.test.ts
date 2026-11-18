@@ -51,6 +51,12 @@ const fixtures: AgentLifecycleFixture[] = [
     turnEnd: { type: 'session.status', sessionID: SESSION, status: { type: 'idle' } },
   },
   {
+    agentId: 'antigravity',
+    sessionStart: { hookEventName: 'SessionStart', conversationId: SESSION },
+    turnStart: { hookEventName: 'PreInvocation', conversationId: SESSION, invocationNum: 0 },
+    turnEnd: { hookEventName: 'Stop', conversationId: SESSION, terminationReason: 'NO_TOOL_CALL', fullyIdle: true },
+  },
+  {
     agentId: 'kiro',
     sessionStart: { hook_event_name: 'agentSpawn', session_id: SESSION },
     turnStart: { hook_event_name: 'userPromptSubmit', session_id: SESSION },
@@ -241,7 +247,7 @@ describe('coding-agent hook status integration', () => {
   it.each(fixtures)('$agentId ignores a different session ending mid-turn', (fixture) => {
     emit(fixture.agentId, fixture.turnStart)
     emit(fixture.agentId, {
-      ...fixture.turnEnd, session_id: 'previous', sessionId: 'previous', sessionID: 'previous',
+      ...fixture.turnEnd, session_id: 'previous', sessionId: 'previous', sessionID: 'previous', conversationId: 'previous',
     })
     expect(state()).toBe('running')
     expect(attention).toEqual([])
