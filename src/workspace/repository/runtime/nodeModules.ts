@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 
 const execFileP = promisify(execFile)
 const LOCKFILES = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']
-const CLONE_TIMEOUT_MS = 120_000
+const CLONE_TIMEOUT_MS = 60_000
 
 const exists = (p: string) => fsp.stat(p).then(() => true, () => false)
 
