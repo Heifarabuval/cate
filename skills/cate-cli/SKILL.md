@@ -89,6 +89,11 @@ cate panel current
 cate panel clear             # back to the automatic choice
 ```
 
+`cate panel current` prints the selected panel, or your own panel when you
+selected none, so it is never empty in a Cate terminal (`--json` gives the full
+id). To always get your own panel, read the row with `"caller": true` in
+`cate panel list --json`.
+
 A command refuses a selected panel of the wrong type instead of acting on
 another one. If the selected panel was closed, select another.
 `terminal type`, `terminal press` and every `review` command never guess:

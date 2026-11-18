@@ -52,3 +52,29 @@ describe('panel list caller', () => {
     expect(rows.every((r) => r.caller === false)).toBe(true)
   })
 })
+
+describe('panel current', () => {
+  const current = (h: ReturnType<typeof setup>['handlers'], c: ApiHandlerContext) => h['target.current']({}, c)
+
+  it('is the calling panel when nothing is selected', () => {
+    const { handlers, ctx } = setup()
+    expect(current(handlers, ctx('term-a'))).toEqual({ panelId: 'term-a' })
+  })
+
+  it('keeps the selection of cate panel set', () => {
+    const { handlers, ctx } = setup()
+    expect(current(handlers, ctx('term-a', 'term-b'))).toEqual({ panelId: 'term-b' })
+  })
+
+  it('drops a selection whose panel was closed and falls back to the caller', () => {
+    const { handlers, ctx } = setup()
+    const c = ctx('term-a', 'gone')
+    expect(current(handlers, c)).toEqual({ panelId: 'term-a' })
+    expect(c.sticky.get()).toBeUndefined()
+  })
+
+  it('is null only for a caller outside a panel with nothing selected', () => {
+    const { handlers, ctx } = setup()
+    expect(current(handlers, ctx())).toEqual({ panelId: null })
+  })
+})

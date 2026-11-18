@@ -79,7 +79,7 @@ export const panelApi = defineCateApi(
     'target.current': {
       access: 'read',
       handler: 'service',
-      summary: 'Print the selected panel',
+      summary: 'Print the selected panel (the calling panel when none is selected)',
       format: 'panelTarget',
       cli: { command: ['panel', 'current'] },
     },

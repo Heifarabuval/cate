@@ -2560,6 +2560,9 @@ Everything outside the UI that drives Cate goes through one router.
   how far down that list it goes: `explicit`, `sticky` (terminal input and
   review stop at the caller's sticky target) or `auto`. Timeouts come from
   the spec; the CLI reads them from the spec too.
+  `cate panel list` marks the calling panel (`caller`, the panel the token
+  names) and `cate panel current` prints the sticky target, or the calling
+  panel when none is selected.
 - **Callers and how they reach it**:
   - the `cate` CLI in a terminal: over the local socket (`CATE_SOCKET`),
     authenticated by `CATE_TOKEN`, a per-PTY token that also names the calling
