@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { runInNewContext } from 'node:vm'
 import { expect, it } from 'vitest'
 import { describeThrown } from './describeThrown'
 
@@ -14,6 +15,13 @@ it('keeps errors, messages and empty values', () => {
   expect(describeThrown(error)).toBe(error)
   expect(describeThrown('boom')).toBe('boom')
   expect(describeThrown(undefined)).toBeUndefined()
+})
+
+it('keeps an error from another realm with its message', () => {
+  const foreign = runInNewContext('new TypeError("boom")')
+  expect(foreign instanceof Error).toBe(false)
+  expect(describeThrown(foreign)).toBe('TypeError: boom')
+  expect(describeThrown({ name: 'Error', message: 'x', token: 'user content' })).toBe('Error: x')
 })
 
 it('never returns the content of another object', () => {

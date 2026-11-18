@@ -14,10 +14,11 @@ export const QUIT_CLEANUP_TIMEOUT_MS = 5_000
 export const QUIT_EXIT_TIMEOUT_MS = 10_000
 
 /** Resolves when `work` settles or after `ms`, whichever comes first; true on timeout. */
-function settleWithin(work: Promise<void>, ms: number): Promise<boolean> {
+function settleWithin(work: () => Promise<void>, ms: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), ms) })
-  const done = work.then(() => false, (error) => {
+  // The executor runs `work` at once and turns a synchronous throw into a rejection.
+  const done = new Promise<void>((resolve) => resolve(work())).then(() => false, (error) => {
     log.warn('quit cleanup failed: %O', error)
     return false
   })
@@ -59,8 +60,8 @@ export function createQuitController(deps: QuitDeps): QuitController {
   let committed = false
   let finishing = false
   let updateRestart = false
-  // Set while a quit's confirmation is open: Cmd+Q again answers it with Quit.
-  let confirmByQuit: (() => void) | null = null
+  // Set while a quit's confirmation is open: what another quit request does meanwhile.
+  let onSecondQuit: (() => void) | null = null
   const show = deps.showMessageBox ?? ((parent, options) => (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)))
 
   const finish = async (action: () => void, warn: boolean): Promise<boolean> => {
@@ -78,10 +79,13 @@ export function createQuitController(deps: QuitDeps): QuitController {
         log.info('quit confirmation shown: %s', prompt.message)
         const response = await new Promise<number>((resolve, reject) => {
           // A confirmation that never shows or never answers must not hold every later Cmd+Q.
-          if (warn) confirmByQuit = () => {
-            log.info('quit confirmed by a second Cmd+Q')
-            resolve(0)
-          }
+          // Only "Quit Cate?" is answered by a second quit; a task dialog needs an explicit choice.
+          onSecondQuit = blockers.length === 0
+            ? () => {
+                log.info('quit confirmed by a second Cmd+Q')
+                resolve(0)
+              }
+            : () => log.info('second quit ignored: the tasks dialog needs an explicit answer')
           show(deps.parentWindow(), {
             type: 'warning',
             message: prompt.message,
@@ -91,7 +95,7 @@ export function createQuitController(deps: QuitDeps): QuitController {
             cancelId: 1,
             noLink: true,
           }).then(({ response }) => resolve(response), reject)
-        }).finally(() => { confirmByQuit = null })
+        }).finally(() => { onSecondQuit = null })
         if (response !== 0) {
           log.info('quit cancelled by the user')
           return false
@@ -99,7 +103,7 @@ export function createQuitController(deps: QuitDeps): QuitController {
       }
       log.info('quit cleanup started')
       // A cleanup that never returns (a flush stuck in swap) must not keep the app open.
-      if (await settleWithin(deps.beforeExit(), QUIT_CLEANUP_TIMEOUT_MS)) {
+      if (await settleWithin(deps.beforeExit, QUIT_CLEANUP_TIMEOUT_MS)) {
         log.warn('quit cleanup timed out after %d ms, quitting anyway', QUIT_CLEANUP_TIMEOUT_MS)
       }
       committed = true
@@ -115,7 +119,7 @@ export function createQuitController(deps: QuitDeps): QuitController {
     app.on('before-quit', (event) => {
       if (committed) return
       event.preventDefault()
-      if (confirmByQuit) return confirmByQuit()
+      if (onSecondQuit) return onSecondQuit()
       void finish(() => {
         app.quit()
         // Closing windows waits on their renderers; a hung one would hold the quit forever.

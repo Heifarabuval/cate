@@ -102,6 +102,37 @@ describe('quit controller', () => {
     ])
   })
 
+  it('a second Cmd+Q leaves the in-progress tasks dialog open and says so', async () => {
+    const showMessageBox = vi.fn(() => new Promise<{ response: number }>(() => {}))
+    const beforeExit = vi.fn(async () => {})
+    const quit = createQuitController({ warnBeforeQuit: () => true, blockers: () => ['Importing 3 files'], parentWindow: () => undefined, beforeExit, showMessageBox })
+    quit.install()
+    quitAttempt()
+    await flush()
+    quitAttempt()
+    await flush()
+    expect(showMessageBox).toHaveBeenCalledOnce()
+    expect(beforeExit).not.toHaveBeenCalled()
+    expect(quit.committed()).toBe(false)
+    expect(app.quit).not.toHaveBeenCalled()
+    expect(journal).toEqual([
+      'info quit requested (warn=true, blockers=1)',
+      'info quit confirmation shown: Importing 3 files is still in progress. Quit anyway?',
+      'info second quit ignored: the tasks dialog needs an explicit answer',
+    ])
+  })
+
+  it('quits anyway when beforeExit throws before returning a promise', async () => {
+    const beforeExit = vi.fn((): Promise<void> => { throw new Error('sync boom') })
+    const quit = createQuitController({ warnBeforeQuit: () => false, blockers: () => [], parentWindow: () => undefined, beforeExit })
+    quit.install()
+    quitAttempt()
+    await flush()
+    expect(quit.committed()).toBe(true)
+    expect(app.quit).toHaveBeenCalledOnce()
+    expect(journal[2]).toMatch(/^warn quit cleanup failed: /)
+  })
+
   it('exits the process when a committed quit does not finish in time', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const quit = createQuitController({ warnBeforeQuit: () => false, blockers: () => [], parentWindow: () => undefined, beforeExit: async () => {} })

@@ -2742,7 +2742,10 @@ client-local work (a file drop still importing). Quit is bounded and logged
 in `main.log` under `[lifecycle]`: the cleanup (device files, browser storage,
 proxies, Sentry) gets 5 s before the app quits without it, and a committed quit
 still running 10 s later (a hung renderer holding its window) exits the process.
-While the quit confirmation is open, Cmd+Q again answers it with Quit.
+While the "Quit Cate?" confirmation is open, any further quit request (Cmd+Q,
+Dock > Quit, closing the last window) answers it with Quit. The "task still in
+progress" dialog is never answered that way: a second quit request is logged
+and ignored, and the dialog stays until the user chooses.
 
 ## 16. Persistence
 
