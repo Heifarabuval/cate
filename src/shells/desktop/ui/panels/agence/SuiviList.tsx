@@ -1,7 +1,8 @@
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { focusPanel, revealPanel } from '@client/host'
 import type { AgenceOp, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
+import { ActionButton, ROW_ENTER, useAction } from './action'
 import QuestionCard from './QuestionCard'
 import { ACTION, LINK } from './styles'
 
@@ -73,8 +74,8 @@ function Mention({ item, row, workspaceId, onOpenUrl }: { item: string; row: Nee
 
 interface RowActions {
   onRead(draftId: string): void
-  /** « Demander le rebase » on a merge greyed by a conflict. */
-  onRebase(questionId: string): void
+  /** « Demander le rebase » on a merge greyed by a conflict: the refusal's text, or null when taken. */
+  onRebase(questionId: string): Promise<string | null>
   /** A link of the follow-up (#N of a PR or an issue, evidence URL). */
   onOpenUrl: OpenUrl
   /** Open questions by id: a question line offers « Répondre » while its card exists. */
@@ -84,12 +85,15 @@ interface RowActions {
   compact?: boolean
 }
 
-function Row({ row, workspaceId, questions, send, compact, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string } & RowActions) {
+function Row({ row, workspaceId, questions, send, compact, enter, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string; enter: boolean } & RowActions) {
   const action = row.action
   const [answering, setAnswering] = useState(false)
+  // The answer was taken: Répondre says so until the follow-up moves the line.
+  const [answered, setAnswered] = useState(false)
+  const rebase = useAction()
   const question = action?.type === 'question' ? questions[action.questionId] : undefined
   return (
-    <li className="px-3 py-2 border-t border-subtle first:border-t-0">
+    <li className={`px-3 py-2 border-t border-subtle first:border-t-0 ${enter ? ROW_ENTER : ''}`}>
       <div className="flex items-start gap-2">
         <span data-testid="need-title" className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary" title={row.title}>{row.title}</span>
         {action?.type === 'draft' && (
@@ -102,16 +106,17 @@ function Row({ row, workspaceId, questions, send, compact, onRead, onRebase, onO
         {action?.type === 'question' && (action.rebase || question) && (
           <span data-testid="need-actions" className="flex shrink-0 items-center gap-1.5">
             {action.rebase && (
-              <Button
-                size="sm"
+              <ActionButton
                 className={ACTION}
-                onClick={() => onRebase(action.questionId)}
+                busy={rebase.active === 'rebase'}
+                done={rebase.done === 'rebase'}
+                onClick={() => void rebase.run('rebase', () => onRebase(action.questionId))}
                 {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
               >
                 {compact ? 'Rebase' : 'Demander le rebase'}
-              </Button>
+              </ActionButton>
             )}
-            {question && <Button size="sm" className={ACTION} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</Button>}
+            {question && <ActionButton className={ACTION} done={answered} disabled={rebase.active !== null} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</ActionButton>}
           </span>
         )}
       </div>
@@ -125,12 +130,19 @@ function Row({ row, workspaceId, questions, send, compact, onRead, onRebase, onO
           ))}
         </div>
       )}
-      {answering && question && <QuestionCard question={question} send={send} compact={compact} onDone={() => setAnswering(false)} />}
+      {rebase.error && <InlineNotice tone="error" className="mt-1 !text-primary">{rebase.error}</InlineNotice>}
+      {answering && question && <QuestionCard question={question} send={send} compact={compact} onDone={() => { setAnswering(false); setAnswered(true) }} />}
     </li>
   )
 }
 
 export default function SuiviList({ workspaceId, suivi, questions, send, compact, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
+  // A line is new to its section when it was not there at the last render: it fades in
+  // (a line that changes section arrives in the next one, not nowhere). Not on first display.
+  const seen = useRef<Set<string> | null>(null)
+  const here = SECTIONS.flatMap(({ key }) => suivi.sections[key].map((row) => `${key}/${row.id}`))
+  const previous = seen.current
+  useEffect(() => { seen.current = new Set(here) })
   return (
     <div className="flex flex-col gap-3 p-3">
       <header>
@@ -146,7 +158,7 @@ export default function SuiviList({ workspaceId, suivi, questions, send, compact
           </h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-secondary">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} enter={previous !== null && !previous.has(`${key}/${row.id}`)} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
         </section>
       ))}
     </div>

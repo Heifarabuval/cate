@@ -157,7 +157,10 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                   send={send}
                   compact={compact}
                   onRead={setReading}
-                  onRebase={(questionId) => void run({ kind: 'answer', questionId, choice: 'rebase' })}
+                  onRebase={async (questionId) => {
+                    const result = await send({ kind: 'answer', questionId, choice: 'rebase' }) as AgenceOpResult
+                    return result.ok ? null : (result.message ?? result.error)
+                  }}
                   onOpenUrl={(url) => { openUrlBeside(workspaceId, panelId, url) }}
                 />
               )

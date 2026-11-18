@@ -100,7 +100,7 @@ it('sends once on a double click: the buttons wait for the answer', async () => 
   render(draft())
   await act(async () => { button('Envoyer')!.click(); button('Envoyer')!.click() })
   expect(send).toHaveBeenCalledTimes(1)
-  expect(button('Envoyer')!.disabled).toBe(true)
+  expect(button('Envoyer')!.getAttribute('aria-disabled')).toBe('true')
   expect(button('Abandonner')!.disabled).toBe(true)
   await act(async () => answer({ ok: true }))
   expect(send).toHaveBeenCalledTimes(1)

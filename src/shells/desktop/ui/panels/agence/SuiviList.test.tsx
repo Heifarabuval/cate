@@ -207,3 +207,36 @@ it('shows a closed panel by its last known title followed by « fermé », not c
   expect(host_.revealPanel).not.toHaveBeenCalled()
   expect(host.textContent!.toLowerCase()).not.toContain('introuvable')
 })
+
+it('waits on « Demander le rebase » before the answer, then says it was taken', async () => {
+  let answer!: (refusal: string | null) => void
+  onRebase.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+  render(suivi({ aFaire: [row('q2', { kind: 'human', action: { type: 'question', questionId: 'q2', rebase: true } })] }))
+  const rebase = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Demander le rebase')!
+  await act(async () => { rebase().click(); rebase().click() })
+  expect(onRebase).toHaveBeenCalledTimes(1)
+  expect(rebase().getAttribute('aria-busy')).toBe('true')
+  await act(async () => answer(null))
+  expect(rebase().hasAttribute('aria-busy')).toBe(false)
+  expect(rebase().getAttribute('aria-disabled')).toBe('true')
+  expect(rebase().querySelector('svg.lucide-check')).not.toBeNull()
+})
+
+it('shows a refused rebase on the line, ready to try again', async () => {
+  onRebase.mockResolvedValueOnce('PR introuvable.')
+  render(suivi({ aFaire: [row('q2', { kind: 'human', action: { type: 'question', questionId: 'q2', rebase: true } })] }))
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Demander le rebase')!.click() })
+  expect(host.querySelector('[role="alert"]')!.textContent).toBe('PR introuvable.')
+  expect([...host.querySelectorAll('button')].find((b) => b.textContent === 'Demander le rebase')!.hasAttribute('aria-disabled')).toBe(false)
+})
+
+it('fades in a line that moves to another section, and none on the first display', () => {
+  const moving = row('m1', { title: 'PR à merger' })
+  render(suivi({ aFaire: [moving] }))
+  expect(host.querySelector('li')!.className).not.toMatch(/animate-sidebar-view-in/)
+  render(suivi({ fait: [moving] }))
+  expect(host.querySelector('li')!.className).toMatch(/animate-sidebar-view-in/)
+  expect(host.querySelector('li')!.className).toMatch(/motion-reduce:animate-none/)
+  render(suivi({ fait: [moving] }))
+  expect(host.querySelector('li')!.className).not.toMatch(/animate-sidebar-view-in/)
+})

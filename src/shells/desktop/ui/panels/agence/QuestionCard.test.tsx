@@ -195,7 +195,7 @@ it('opens one dialog when Merger quand même is clicked twice before the first a
   render(mergeQuestion({ locks: ['conflit avec la base'], rebase: true }))
   await act(async () => { button(/^Merger quand même \(rebase\)/)!.click(); button(/^Merger quand même \(rebase\)/)!.click() })
   expect(ui.confirm).toHaveBeenCalledTimes(1)
-  expect(button(/^Merger quand même \(rebase\)/)!.disabled).toBe(true)
+  expect(button(/^Merger quand même \(rebase\)/)!.getAttribute('aria-disabled')).toBe('true')
   await act(async () => decide(true))
   expect(send).toHaveBeenCalledTimes(1)
   expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 0, force: true })
