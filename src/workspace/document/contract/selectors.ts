@@ -31,7 +31,8 @@ export function panelsInWindow(doc: Doc, windowId: WindowId): PanelId[] {
 /** A frame, wherever its canvas is. */
 export function findFrame(doc: Doc, frameId: FrameId): CanvasFrame | undefined {
   const canvasId = docIndex(doc).frames.get(frameId)
-  return canvasId === undefined ? undefined : doc.canvases[canvasId].frames?.[frameId]
+  const frames = canvasId === undefined ? undefined : doc.canvases[canvasId].frames
+  return frames && Object.hasOwn(frames, frameId) ? frames[frameId] : undefined
 }
 
 /** The frame holding a panel's node, never read from the panel's type. */
@@ -40,7 +41,7 @@ export function frameOfPanel(doc: Doc, panelId: PanelId): CanvasFrame | undefine
   if (!dock || !isCanvasDock(dock)) return undefined
   const canvas = doc.canvases[dock.canvasId]
   const frameId = canvas.nodes[dock.nodeId].frameId
-  return frameId === undefined ? undefined : canvas.frames?.[frameId]
+  return frameId === undefined || !canvas.frames || !Object.hasOwn(canvas.frames, frameId) ? undefined : canvas.frames[frameId]
 }
 
 /** The panels of a frame: the tabs of each member node, node by node. */
