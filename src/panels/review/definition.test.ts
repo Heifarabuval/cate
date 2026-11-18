@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isRpcError } from '@kernel/rpc/contract'
 import { createPanelKit, type PanelKit } from '@panels/framework/contract'
 import type { PanelRecord, WorkspaceDocument } from '@workspace/document/contract'
+import type { PullRequestRef } from '@workspace/repository/contract'
 import reviewDefinition from './definition'
 import type { ReviewCreateOptions } from './contract/types'
 
@@ -20,7 +21,9 @@ function harness() {
     },
   })
   const create = (options: ReviewCreateOptions) => reviewDefinition.create!(options, kit)
-  return { create, added }
+  /** A review panel already in the document, id p0. */
+  const seed = (fields: PanelRecord['fields']) => { panels.p0 = { id: 'p0', type: 'review', title: 'PR', fields } }
+  return { create, added, seed }
 }
 
 const prOf = (record: PanelRecord | undefined) => (record?.fields as { pr?: unknown } | undefined)?.pr
@@ -89,20 +92,57 @@ describe('review definition with a pull request', () => {
     const first = create({ pr: '8' })
 
     expect(create({ pr: '#8' })).toBe(first)
-    expect(create({ pr: 'org/repo#8' })).not.toBe(first)
+    expect(added).toHaveLength(1)
+  })
+
+  it('finds a panel the session resolved from the origin by its bare number and by its full reference', () => {
+    const { create, added, seed } = harness()
+    seed({ repoPath: '', pr: { repository: 'org/repo', number: 8, origin: true } })
+
+    expect(create({ pr: '8' })).toBe('p0')
+    expect(create({ pr: '#8' })).toBe('p0')
+    expect(create({ pr: 'org/repo#8' })).toBe('p0')
+    expect(added).toHaveLength(0)
+    expect(create({ pr: 'other/repo#8' })).not.toBe('p0')
+    expect(create({ pr: '9' })).not.toBe('p0')
     expect(added).toHaveLength(2)
+  })
+
+  it('cannot tell a bare number from a full reference until the session knows the origin', () => {
+    const { create, added, seed } = harness()
+    seed({ repoPath: '', pr: { repository: 'org/repo', number: 8 } })
+
+    expect(create({ pr: '8' })).not.toBe('p0')
+    expect(added).toHaveLength(1)
   })
 
   it('refuses an invalid reference and adds no panel', () => {
     const { create, added } = harness()
+    const invalid: ReviewCreateOptions['pr'][] = [
+      'abc', '0', '-1', 'a/b#', '', '-x', '../..#8', 'org/repo\n#8', `${'a'.repeat(5000)}/repo#8`, '#-1', '8.5',
+      { repository: '../..', number: 8 },
+      { repository: '-x/repo', number: 8 },
+      { repository: 'org/repo\n', number: 8 },
+      { repository: `${'a'.repeat(5000)}/repo`, number: 8 },
+      { repository: 'org/repo', number: -1 },
+      { repository: 'org/repo', number: 1.5 },
+      { repository: null, number: 0 },
+      { repository: 5, number: 8 } as unknown as PullRequestRef,
+    ]
 
-    for (const pr of ['abc', '0', '-1', 'a/b#', '']) {
+    for (const pr of invalid) {
       let error: unknown
       try { create({ pr }) } catch (e) { error = e }
-      expect(isRpcError(error, 'rejected'), pr).toBe(true)
+      expect(isRpcError(error, 'rejected'), JSON.stringify(pr)).toBe(true)
       expect((error as Error).message).toBe('Expected owner/repo#N or N')
     }
     expect(added).toHaveLength(0)
+  })
+
+  it('takes a parsed reference as GitHub spells it, lowercased', () => {
+    const { create, added } = harness()
+    create({ pr: { repository: 'Org/Repo', number: 8 } })
+    expect(prOf(added[0])).toEqual({ repository: 'org/repo', number: 8 })
   })
 
   it('does not take an agent review for a pull request', () => {

@@ -55,7 +55,13 @@ export interface ReviewFields {
   repoPath: string
   request?: ReviewOpenRequest
   /** Present: the panel reviews this pull request, fixed at creation. Absent: recorded agent edits. */
-  pr?: PullRequestRef
+  pr?: ReviewPullRequest
+}
+
+/** A review panel's pull request. `origin`: the session found `repository` is the workspace origin, so a bare `N`
+ *  means this pull request too. */
+export interface ReviewPullRequest extends PullRequestRef {
+  origin?: boolean
 }
 
 /** One recorded file of the current selection, without its hunks (fetched
@@ -166,10 +172,14 @@ export function reviewRepoPath(fields: { [key: string]: unknown }): string {
 }
 
 /** The record's pull request, or null for a panel of recorded agent edits. */
-export function reviewPullRequest(fields: { [key: string]: unknown }): PullRequestRef | null {
-  const pr = fields.pr as Partial<PullRequestRef> | null | undefined
+export function reviewPullRequest(fields: { [key: string]: unknown }): ReviewPullRequest | null {
+  const pr = fields.pr as Partial<ReviewPullRequest> | null | undefined
   if (!pr || typeof pr !== 'object' || !Number.isSafeInteger(pr.number)) return null
-  return { repository: typeof pr.repository === 'string' ? pr.repository : null, number: pr.number as number }
+  return {
+    repository: typeof pr.repository === 'string' ? pr.repository : null,
+    number: pr.number as number,
+    ...(pr.origin === true ? { origin: true } : {}),
+  }
 }
 
 /** A review of `repoPath`'s checkout (default: the bound worktree, else the
