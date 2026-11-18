@@ -24,6 +24,24 @@ Relancer la ligne est sans risque : même résultat, pas de doublon. Si un agent
 
 `--sans-launchd` installe le script sans le planifier : `sh cate-fork-install.sh --sans-launchd`.
 
+## Ce que ça signifie
+
+La mise à jour construit et installe automatiquement ce qui est sur la branche configurée du dépôt, toutes les 10 minutes, sans clic, avec les droits de l'utilisateur. Quiconque peut écrire sur cette branche peut donc faire exécuter du code sur le Mac : il faut faire confiance au propriétaire de la branche.
+
+Pour ne suivre qu'une version choisie, épingler une branche stable, un tag ou un commit : `sh cate-fork-install.sh --branche v1.2.0` (ou `CATE_FORK_BRANCH=v1.2.0` dans le fichier de réglages). L'agent n'installe alors que cette référence.
+
+## Ce que l'installation ne fait pas
+
+- les gardes d'envoi, la CLI `agence` et `agence.nom` (lots suivants) ;
+- les skills et les hooks Claude ;
+- la connexion `gh`.
+
+Après une installation, le daemon du workspace garde l'ancien runtime jusqu'à sa mise à jour par l'app (cate#26 mergé : automatique quand le workspace est inactif).
+
+## Garde-fous
+
+Le dossier de build est refusé, sans rien toucher, s'il n'est pas un chemin absolu nommé `cate-build` strictement sous `HOME`, s'il est un lien symbolique, ou si c'est un dépôt git dont l'`origin` n'est pas exactement `CATE_FORK_REPO`. Le dossier d'installation doit être inscriptible avant toute construction : sinon, `CATE_APPS_DIR=~/Applications`.
+
 ## Réglages
 
 Variables d'environnement, ou lignes `CLE=valeur` dans `~/.config/cate-fork-update.conf` (l'environnement prime) :
