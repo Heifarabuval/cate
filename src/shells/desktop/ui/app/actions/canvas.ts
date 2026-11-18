@@ -4,6 +4,7 @@
 // actions: Space for the hand tool, Cmd+A, Escape, Delete and Enter.
 
 import { defineActions, storedShortcut } from '@kernel/interaction/contract'
+import { clientUi } from '@kernel/interaction'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { closePanel, focusPanel, registerActions, type ActionBinding, type ActionContext } from '@client/host'
@@ -12,12 +13,14 @@ import {
   activeNodePanelId,
   canvasViewFor,
   focusedNodeId,
+  frameActionTarget,
   requestCanvasToolbarAction,
+  setCollapsedChange,
   useCanvasUi,
   type CanvasToolbarAction,
   type CanvasViewStore,
 } from '../../client/layout/canvas'
-import { canvasPanelOf } from '@workspace/document/contract'
+import { canvasPanelOf, type CanvasFrame, type DocChange } from '@workspace/document/contract'
 import { useUIStore } from '../state/uiStore'
 import { registerKeyHandler, type KeyContext } from './useShortcuts'
 
@@ -53,6 +56,11 @@ export const CANVAS_ACTIONS = defineActions({
   openWorktreeMenu: { title: 'Parallel Worktrees', key: key('w', { command: true, option: true }), keys: { noRepeat: true } },
   toggleCanvasToolbar: { title: 'Expand / Collapse Canvas Toolbar', key: key('b', { command: true, option: true }), keys: { noRepeat: true } },
   toggleKeepAwake: { title: 'Toggle Keep Awake', key: key('k', { command: true, option: true }), keys: { noRepeat: true } },
+  // On the frame under the pointer, else the frame of the selected node.
+  'frame.collapse': { title: 'Collapse Frame' },
+  'frame.expand': { title: 'Expand Frame' },
+  'frame.rename': { title: 'Rename Frame…' },
+  'frame.dissolve': { title: 'Dissolve Frame (Keep Panels)' },
 })
 
 interface ActiveCanvas {
@@ -123,6 +131,47 @@ async function toggleKeepAwake(workspaceId: string | null): Promise<void> {
 
 const setTool = (tool: 'select' | 'hand') => () => useCanvasUi.getState().setActiveTool(tool)
 
+/** The frame a frame action acts on, on the active canvas: under the pointer,
+ *  else the frame of the focused or selected node. */
+function frameTarget(canvas: ActiveCanvas): { frame: CanvasFrame } | null {
+  const model = documentStoreFor(canvas.workspaceId)?.getSnapshot().canvases[canvas.canvasId]
+  const state = canvas.store.getState()
+  const frameId = frameActionTarget(canvas.workspaceId, canvas.canvasId, model, focusedNodeId(state) ?? state.selection.at(-1) ?? null)
+  const frame = frameId ? model?.frames?.[frameId] : undefined
+  return frame ? { frame } : null
+}
+
+/** A frame action: offered when a frame is targeted (and `when` agrees). */
+function onFrame(run: (canvas: ActiveCanvas, frame: CanvasFrame) => void | Promise<void>, when: (frame: CanvasFrame) => boolean = () => true): ActionBinding {
+  const target = (context?: ActionContext) => {
+    const canvas = activeCanvas(context)
+    const found = canvas && frameTarget(canvas)
+    return canvas && found && when(found.frame) ? { canvas, frame: found.frame } : null
+  }
+  return {
+    run: (context) => {
+      const found = target(context)
+      if (found) return run(found.canvas, found.frame)
+    },
+    enabled: (context) => !!target(context),
+  }
+}
+
+const collapseChange = (canvas: ActiveCanvas, frame: CanvasFrame, collapsed: boolean): DocChange | null => {
+  const model = documentStoreFor(canvas.workspaceId)?.getSnapshot().canvases[canvas.canvasId]
+  return model ? setCollapsedChange(model, frame.id, collapsed) : null
+}
+
+const proposeOn = (canvas: ActiveCanvas, change: DocChange | null) => {
+  if (change) documentStoreFor(canvas.workspaceId)?.propose(change)
+}
+
+async function renameFrame(canvas: ActiveCanvas, frame: CanvasFrame): Promise<void> {
+  const answer = await clientUi().promptText?.({ message: 'Frame title', initial: frame.title })
+  const title = answer?.trim()
+  if (title && title !== frame.title) proposeOn(canvas, { kind: 'updateFrame', id: frame.id, patch: { title } })
+}
+
 export function canvasActionBindings(): { [K in keyof typeof CANVAS_ACTIONS]: ActionBinding } {
   return {
     zoomIn: onCanvas(({ store }) => { const s = store.getState(); s.animateZoomTo(s.zoomLevel + ZOOM_STEP) }),
@@ -156,6 +205,11 @@ export function canvasActionBindings(): { [K in keyof typeof CANVAS_ACTIONS]: Ac
       run: ({ workspaceId }) => toggleKeepAwake(workspaceId),
       enabled: ({ workspaceId }) => !!workspaceId && !!tryRuntimeFor(workspaceId)?.power,
     },
+    'frame.collapse': onFrame((canvas, frame) => proposeOn(canvas, collapseChange(canvas, frame, true)), (frame) => !frame.collapsed),
+    'frame.expand': onFrame((canvas, frame) => proposeOn(canvas, collapseChange(canvas, frame, false)), (frame) => frame.collapsed),
+    'frame.rename': onFrame(renameFrame),
+    // Nothing is closed, so nothing to confirm: the panels stay, only the frame goes.
+    'frame.dissolve': onFrame((canvas, frame) => proposeOn(canvas, { kind: 'removeFrame', id: frame.id })),
   }
 }
 
