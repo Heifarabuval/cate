@@ -1054,8 +1054,10 @@ fails to compile when a registered capability is missing.
   Updating stops the runtime's terminals and agents.
 - Every client runs the same flow, in the client core
   (`client/connections` `RuntimeUpdates`); each shell only draws it. An older
-  release, or another build of the same release when both builds are known
-  (the client's and the runtime's handshake `build`), is updated immediately
+  release, or, for a shell that opts in (`followBuild`: the desktop, except
+  against a development runtime bundle; not the iOS app, whose build ships
+  apart), another build of the same release when both builds are known (the
+  client's and the runtime's handshake `build`), is updated immediately
   when this is its only compatible client and
   no work runs, even when the protocol is compatible. A runtime still on
   another build after its update is not retried. Thus upgrading a desktop
@@ -1068,8 +1070,9 @@ fails to compile when a registered capability is missing.
   and again before committing the restart. A compatible shared runtime remains
   usable at its current release; it is not covered or forced to update. A sole
   client's busy runtime asks before stopping work. Incompatibility always
-  blocks use and asks when an idle update cannot run. Compatible runtimes ahead
-  of the client stay usable and are never downgraded.
+  blocks use and asks when an idle update cannot run. A runtime of a newer
+  release than the client stays usable and is never downgraded; within one
+  release, the client's build wins, even over a newer build of the runtime.
   The core exposes the required update separately from the running update;
   release comparison alone never decides workspace availability. Every shell
   uses the core's availability rule. When confirmation is required, the workspace shows both

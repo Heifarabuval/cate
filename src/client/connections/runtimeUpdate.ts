@@ -75,6 +75,10 @@ export interface RuntimeUpdatesDeps {
   /** This client's version and build: what the runtime is updated to. */
   version: string
   build?: string
+  /** The shell's choice: also update a runtime of this release but another
+   *  build. Off for a development bundle and for a client whose build ships
+   *  apart from the runtimes it meets (the iOS app). */
+  followBuild?: boolean
 }
 
 /** Resolves true once `done(state)` holds, false after `ms`. */
@@ -147,7 +151,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   const tried = new Set<WorkspaceConnection>()
   const watched = new Map<WorkspaceConnection, () => void>()
   const check = (connection: WorkspaceConnection): void => {
-    const candidateOf = () => updateCandidate(connection.state, deps.version, connection.rpc.remote?.build, deps.build)
+    const candidateOf = () => updateCandidate(connection.state, deps.version, connection.rpc.remote?.build, deps.followBuild ? deps.build : undefined)
     const mismatch = candidateOf()
     if (!mismatch) {
       setRequired(connection, null)

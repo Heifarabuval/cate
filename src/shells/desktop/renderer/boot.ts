@@ -142,6 +142,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     transports,
     version: info.version,
     build: RUNTIME_BUILD,
+    followBuild: !info.runtimeBundleOverride,
     panels: PANEL_DEFINITIONS,
     capabilities: RUNTIME_CAPABILITIES,
   })

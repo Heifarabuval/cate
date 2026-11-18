@@ -19,6 +19,8 @@ export interface DesktopAppInfo {
   platform: string
   arch: string
   isPackaged: boolean
+  /** Running against a development runtime bundle (`CATE_RUNTIME_BUNDLE`). */
+  runtimeBundleOverride: boolean
   e2e: boolean
   /** The features to send in `hello` (12.2). */
   features: ClientFeature[]

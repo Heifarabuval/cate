@@ -17,6 +17,7 @@ import { clientSettingsTable, type ClientSettings } from '../settings'
 import { machineKey, RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
 import { createMachineProvisioner, dialMachine, listSshHosts, listWslDistros, NotInstalledError, startAskpass, startLocalRuntime, type SshPrompting } from '@runtime/daemon/desktop'
 import { isRuntimeInstalled } from '@runtime/daemon/node'
+import { runtimeBundleOverride } from './runtimeBundle'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
 import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, type UpdateStatus } from '../contract'
@@ -196,7 +197,7 @@ const installs = createInstallProgress((event) => registry.broadcast(C.installPr
 // (and retries the install after a failure).
 let runtimeInstall: Promise<string> | null = null
 const ensureRuntime = (): Promise<string> => {
-  if (process.env.CATE_RUNTIME_BUNDLE) return Promise.resolve('')
+  if (runtimeBundleOverride(process.env)) return Promise.resolve('')
   runtimeInstall ??= installBundledRuntime({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -410,6 +411,7 @@ app.whenReady().then(() => {
       platform: process.platform,
       arch: process.arch,
       isPackaged: app.isPackaged,
+      runtimeBundleOverride: runtimeBundleOverride(process.env),
       e2e: IS_E2E,
       features,
       device: { name: os.hostname().replace(/\.local$/, ''), publicKey: device.devicePublicKey() },
