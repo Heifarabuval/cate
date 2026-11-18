@@ -43,9 +43,10 @@ beforeEach(() => {
   ghLog = path.join(dir, 'gh.log')
   mkdirSync(bin)
   // The fake gh: records its arguments, answers the pull request view, and an empty file list.
-  writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}
-require('node:fs').appendFileSync(${JSON.stringify(ghLog)}, process.argv.slice(2).join(' ') + '\\n')
-process.stdout.write(JSON.stringify(process.argv[2] === 'api' ? [] : ${JSON.stringify(view)}))
+  // Shell builtins only: a Node script would boot a whole Node per call, seconds on a loaded machine.
+  writeFileSync(path.join(bin, 'gh'), `#!/bin/sh
+printf '%s\\n' "$*" >> '${ghLog}'
+if [ "$1" = api ]; then printf '[]'; else printf '%s' '${JSON.stringify(view)}'; fi
 `)
   chmodSync(path.join(bin, 'gh'), 0o755)
   host = createGithubHost({ env: () => ({ ...process.env, PATH: bin }) })
@@ -118,7 +119,14 @@ function setup() {
     )
     sessions.push(session)
     await session.start()
-    return () => (session.snapshot() as unknown as ReviewSnapshot).pr!
+    const pr = () => (session.snapshot() as unknown as ReviewSnapshot).pr!
+    /** Resolves on the session's own changes once `ready` holds; the test's timeout bounds it, not a short poll deadline. */
+    const until = (ready: (state: ReturnType<typeof pr>) => boolean) => new Promise<ReturnType<typeof pr>>((resolve) => {
+      const off = session.attach({ snapshot: () => {}, change: () => check(), gone: () => {} })
+      const check = () => { const state = pr(); if (state && ready(state)) { off(); resolve(state) } }
+      check()
+    })
+    return until
   }
   return { cli, create, reviews, attach }
 }
@@ -146,7 +154,7 @@ describe('cate panel create review --pr', () => {
     const { create, attach } = setup()
     const { panelId } = await create('--pr', 'org/repo#8')
     const pr = await attach(panelId!)
-    await expect.poll(() => pr().data?.title).toBe('Fix login')
+    expect((await pr((state) => !state.loading)).data?.title).toBe('Fix login')
   })
 
   it.each([
@@ -165,13 +173,13 @@ describe('cate panel create review --pr', () => {
     const withOrigin = await create('--pr', '8')
     expect(withOrigin.code).toBe(0)
     const resolved = await attach(withOrigin.panelId!)
-    await expect.poll(() => resolved().data?.title).toBe('Fix login')
+    expect((await resolved((state) => !state.loading)).data?.title).toBe('Fix login')
 
     origin = null
     const without = await create('--pr', '9')
     expect(without.code).toBe(0)
     const pr = await attach(without.panelId!)
-    await expect.poll(() => pr().error?.message ?? '').toContain('Use owner/repo#N')
+    expect((await pr((state) => !state.loading)).error?.message).toContain('Use owner/repo#N')
     expect(reviews()).toHaveLength(2)
   })
 })
