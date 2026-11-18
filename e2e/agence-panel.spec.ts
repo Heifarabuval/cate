@@ -89,8 +89,9 @@ async function resize(nodeId: string, width: number, height = 640): Promise<void
   await expect.poll(() => root$().evaluate((el) => Math.round(el.getBoundingClientRect().width)).catch(() => 0)).toBeGreaterThan(0)
 }
 
-/** The panel's root element. */
-const root$ = () => page.getByTestId('agence-root')
+/** The panel's root element (the column's grandparent). */
+// xpath: the root has no role, name or data attribute yet; a data-testid there comes after the merge of PR 37.
+const root$ = () => page.getByTestId('suivi-column').locator('xpath=../..')
 
 const snapshot = (panelId: string) => page.evaluate((id) => window.__cateE2E!.sessionSnapshot(id), panelId) as Promise<Snapshot>
 const sendOp = (panelId: string, op: unknown) => page.evaluate(({ id, op }) => window.__cateE2E!.sessionOp(id, op), { id: panelId, op }) as Promise<{ ok: boolean; error?: string; message?: string }>
