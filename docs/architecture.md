@@ -478,7 +478,9 @@ the pieces that make it reachable and secure.
   runtime whose key is lost (`secrets.json` deleted) gets a new network id,
   and devices pair again.
 - **Install.** One layout everywhere: `~/.cate/runtime/<build>/` holds the
-  daemon and its module chunks, its Node, ripgrep, the `cate` CLI, bundled skills and native
+  daemon and its module chunks, its Node, ripgrep, the `cate` CLI, bundled skills, the
+  `agence` CLI (`agence/`: a POSIX launcher and `agence.py`, from `tools/agence/`
+  in the checkout, not shipped on Windows) and native
   addons; `<build>` is the build id (section 7.10), which the tarball
   carries in its `BUILD` file. An install is complete once its `.ok` marker
   is written, last. An install is never replaced in place, and a daemon
@@ -1543,6 +1545,14 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   inherited CLI credentials, so agent shell snapshots cannot replay an expired
   token or a deleted install path. Exit revokes the token and removes the
   launcher; a replacement PTY of the same panel owns its refreshed launcher.
+  An `agence` launcher sits beside `cate` in that folder, written at every
+  spawn the same way; it holds no token and runs the install's
+  `agence/agence` by absolute path (the CLI reads `CATE_SOCKET` and `CATE_TOKEN`
+  from the terminal's environment). Run from a bare `CATE_RUNTIME_BUNDLE`, the
+  daemon points it at the checkout's `tools/agence/agence`. The launcher
+  picks a python3 without ever starting macOS's `/usr/bin/python3` shim
+  (which opens the Command Line Tools installer) and exits 2 when there is
+  none.
 - **Links**: `process.links` gives the links on a row of the headless
   screen (web URLs, and paths that name an existing file, resolved against
   the PTY's cwd), so every client finds the same ones. A view names the row
@@ -2111,7 +2121,7 @@ or a file.
 
 Two services reach panel types for this: `PanelServices.cliEnv(panelId)`
 gives a process a panel starts outside a PTY the `cate` CLI environment
-(`CATE_SOCKET`, a token in the panel's name, `cate` on `PATH`) and a lease that
+(`CATE_SOCKET`, a token in the panel's name, `cate` and `agence` on `PATH`) and a lease that
 revokes the token; `PanelServices.trust` lets such a type ask workspace trust
 first and react to its changes. Both are composed from the workspace's token
 issuer and trust (`runtime/daemon/compose/cliEnv.ts`).
