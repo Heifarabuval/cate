@@ -1,10 +1,12 @@
-// The desktop answer to `ClientUi.promptText`: a one-line dialog, mounted on
-// demand over the window and gone when answered. The native message box has no
-// text field, so this is drawn here, with theme tokens only.
+// The desktop answer to `ClientUi.promptText`: a one-line dialog on the shared
+// `Modal` (focus trap, focus returned on close, Escape through the dialog
+// layers), shown on demand like `pickSavePath`. The native message box has no
+// text field.
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Check, X } from 'lucide-react'
+import { Pencil } from 'lucide-react'
+import { Modal, btn, inputCls } from '../../../../kernel/interaction'
 
 interface PromptProps {
   message: string
@@ -12,49 +14,31 @@ interface PromptProps {
   onDone: (value: string | null) => void
 }
 
-function TextPrompt({ message, initial, onDone }: PromptProps): React.ReactElement {
+function TextPrompt({ message, initial, onDone }: PromptProps): JSX.Element {
   const [value, setValue] = useState(initial)
   return (
-    <div
-      role="dialog"
-      aria-label={message}
-      className="fixed inset-0 flex items-start justify-center pt-[20vh]"
-      style={{ zIndex: 100000, background: 'var(--canvas-backdrop-scrim)' }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onDone(null)
-      }}
-    >
+    <Modal onClose={() => onDone(null)} width={360} icon={<Pencil size={16} />} title={message} bodyClassName="px-5 py-4">
       <form
-        className="flex w-[360px] flex-col gap-3 rounded-lg border border-strong p-4"
-        style={{ background: 'var(--surface-2)' }}
+        className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault()
           onDone(value)
         }}
       >
-        <label className="flex flex-col gap-1 text-xs text-primary">
-          {message}
-          <input
-            autoFocus
-            value={value}
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => setValue(e.target.value)}
-            className="rounded border border-strong px-2 py-1 text-sm text-primary"
-            style={{ background: 'var(--surface-1)' }}
-          />
-        </label>
+        <input
+          autoFocus
+          aria-label={message}
+          value={value}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setValue(e.target.value)}
+          className={inputCls}
+        />
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => onDone(null)} className="inline-flex items-center gap-1 rounded border border-strong px-2 py-1 text-xs text-primary" style={{ background: 'transparent' }}>
-            <X size={12} aria-hidden />
-            Annuler
-          </button>
-          <button type="submit" className="inline-flex items-center gap-1 rounded border border-strong px-2 py-1 text-xs text-primary" style={{ background: 'var(--surface-3)' }}>
-            <Check size={12} aria-hidden />
-            Valider
-          </button>
+          <button type="button" onClick={() => onDone(null)} className={btn.ghost}>Cancel</button>
+          <button type="submit" className={btn.primary}>Save</button>
         </div>
       </form>
-    </div>
+    </Modal>
   )
 }
 
@@ -64,10 +48,12 @@ export function promptText(request: { message: string; initial: string }): Promi
     const host = document.createElement('div')
     document.body.appendChild(host)
     const root = createRoot(host)
+    let settled = false
     const onDone = (value: string | null) => {
-      root.unmount()
-      host.remove()
+      if (settled) return
+      settled = true
       resolve(value)
+      queueMicrotask(() => { root.unmount(); host.remove() })
     }
     root.render(<TextPrompt {...request} onDone={onDone} />)
   })
