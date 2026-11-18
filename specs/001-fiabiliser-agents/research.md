@@ -23,10 +23,10 @@ Chaque décision cite sa preuve. Source des chiffres : rapports de vérification
 ## R3. Balayage des panneaux orphelins
 
 - **Décision** : le régisseur détecte, à chaque tour, les orphelins et ouvre pour chacun un besoin `human` (`ref = orphan:<panelId>`, champ `orphan = {panel, title}`), sur le modèle exact de l'offre « Supprimer le worktree » (`agence.py:791-815`, `1017-1018`, `1468-1477`). Routes `/orphan/<besoin>/close` et `/orphan/<besoin>/keep`. Un clic Fermer lance `cate panel close <id>` sans `--discard`.
-- **Orphelin** : (1) terminal absent de `cate agent list` dont le titre suit la convention `#n<chiffres> <rôle>` [critère à confirmer, question q270] ; (2) panneau relié par une relation `trigger` depuis l'orchestrateur (`cate panel list --json`, champ `relations`, vu le 2026-11-18) et qui n'est dans aucun besoin ni protégé. Dans les deux cas : vu orphelin sur 2 tours consécutifs (état `orphanVus`), jamais si son agent est `running`.
+- **Orphelin** : (1) terminal absent de `cate agent list` dont le titre suit la convention `#n<chiffres> <rôle>` (confirmé par l'humain, besoin n271) ; (2) panneau relié par une relation `trigger` depuis l'orchestrateur (`cate panel list --json`, champ `relations`, vu le 2026-11-18) et qui n'est dans aucun besoin ni protégé. Dans les deux cas : vu orphelin sur 2 tours consécutifs (état `orphanVus`), jamais si son agent est `running`.
 - **Exclus** : `protege()` (panneaux du projet et panneaux d'un autre besoin ouvert, `agence.py:1423`), le panneau qui appelle, tout type autre que `terminal`, `browser`, `canvas` pour le critère 2 (un éditeur n'est jamais proposé : ses modifications non enregistrées seraient perdues).
 - **Garder** : le besoin se clôt `dropped` et le panneau entre dans `orphanGardes` : il n'est plus proposé tant qu'il vit.
-- **Panneau agence (TS)** : `src/panels/agence/contract/suivi.ts:71-80` ne donne un bouton qu'aux brouillons et aux questions ; l'offre de worktree n'en a pas non plus. Le plan suit ce précédent : boutons sur la page du régisseur seulement [à confirmer, question q272].
+- **Panneau agence (TS)** : `src/panels/agence/contract/suivi.ts:71-80` ne donne un bouton qu'aux brouillons et aux questions ; l'offre de worktree n'en a pas non plus. Le plan suit ce précédent : boutons sur la page du régisseur seulement (confirmé par l'humain, besoin n273).
 - **Alternatives** : commande `agence sweep` à la demande : rejetée, l'issue veut le suivi qui liste. Fermeture automatique : exclue (principe : rien ne se ferme sans clic, rapport B).
 
 ## R4. Cloner `node_modules`
@@ -50,7 +50,6 @@ Chaque décision cite sa preuve. Source des chiffres : rapports de vérification
 - **Limite dite** : les appels MCP Playwright ne passent pas par `Bash` : non couverts (67 appels le 2026-11-18, rapport A).
 - **Alternatives** : variable d'environnement posée aux agents : aucune n'existe (`CATE_TOKEN` est posé dans tout terminal Cate, rapport A) ; le dossier `.cate/worktrees/` est le seul critère disponible.
 
-## Questions ouvertes
+## Questions
 
-- Q1 (q270) : critère d'un terminal orphelin.
-- Q2 (q272) : boutons du balayage sur la page du régisseur seule ou aussi dans le panneau agence.
+Deux questions posées à l'humain, deux réponses (voir `spec.md`, Clarifications) : critère d'un terminal orphelin (n271), boutons sur la page du régisseur seulement (n273). Aucune question ouverte.
