@@ -3,7 +3,7 @@
 
 import { isFiniteRect, type Point, type Rect } from '@workspace/canvas/contract'
 import type { DockNode } from './dock'
-import type { DocChange, PanelPatch, PlaceTarget, RelationPatch } from './ops'
+import type { DocChange, FramePatch, PanelPatch, PlaceTarget, RelationPatch } from './ops'
 import {
   FRAME_STATES,
   isPanelType,
@@ -85,6 +85,17 @@ export function checkFrame(v: unknown): Problem {
   if (!isPoint(v.at)) return 'frame at is not a point'
   const known = ['id', 'title', 'state', 'collapsed', 'at']
   if (Object.keys(v).some((key) => !known.includes(key))) return 'frame has unknown keys'
+  return null
+}
+
+function checkFramePatch(v: unknown): Problem {
+  if (!isObject(v)) return 'patch is not an object'
+  const p = v as FramePatch
+  if (!optional(p.title, isTitle)) return 'patch title is empty or on several lines'
+  if (!optional(p.state, isFrameState)) return 'unknown frame state'
+  if (!optional(p.collapsed, (x) => typeof x === 'boolean')) return 'patch collapsed is not a boolean'
+  if (!optional(p.at, isPoint)) return 'patch at is not a point'
+  if (Object.keys(v).some((key) => !['title', 'state', 'collapsed', 'at'].includes(key))) return 'patch has unknown keys'
   return null
 }
 
@@ -200,6 +211,11 @@ export function checkChange(v: unknown): Problem {
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'
     case 'setWorktree': return checkWorktree(c.worktree)
     case 'removeWorktree': return isId(c.id) ? null : 'no worktree id'
+    case 'addFrame': return isId(c.canvasId) ? checkFrame(c.frame) : 'no canvas id'
+    case 'updateFrame': return isId(c.id) ? checkFramePatch(c.patch) : 'no frame id'
+    case 'removeFrame': return isId(c.id) ? null : 'no frame id'
+    case 'setNodeFrame':
+      return isId(c.canvasId) && isId(c.nodeId) && (c.frameId === null || isId(c.frameId)) ? null : 'bad node frame'
     default: return `unknown change ${String((c as { kind?: unknown }).kind)}`
   }
 }

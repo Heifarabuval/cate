@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { rect } from '@workspace/canvas/contract'
 import { applyOp } from './apply'
 import type { DockNode } from './dock'
-import type { DocChange, DockRef, OpErrorCode, PlaceTarget } from './ops'
+import type { DocChange, DockRef, FramePatch, OpErrorCode, PlaceTarget } from './ops'
 import { placementOf } from './placement'
-import { createDocument, MAIN_WINDOW, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
+import { createDocument, MAIN_WINDOW, type CanvasFrame, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 import { validateDocument } from './serialize'
 
 type Doc = WorkspaceDocument
@@ -283,6 +283,185 @@ describe('removePanels', () => {
   it('fails with gone when any id is missing', () => {
     fails(threeTabs(), { kind: 'removePanels', ids: ['a', 'nope'] }, 'gone')
     fails(threeTabs(), { kind: 'removePanels', ids: [] }, 'rejected')
+  })
+})
+
+describe('frames', () => {
+  const CV = 'canvas-cv'
+  const nodeOf = { canvasId: CV, nodeId: 'n1' }
+  const frame = (id: string, extra: Partial<CanvasFrame> = {}): CanvasFrame =>
+    ({ id, title: id, state: 'active', collapsed: false, at: { x: 0, y: -40 }, ...extra })
+  const addFrame = (id: string, extra: Partial<CanvasFrame> = {}, canvasId = CV): DocChange =>
+    ({ kind: 'addFrame', canvasId, frame: frame(id, extra) })
+  const setFrame = (nodeId: string, frameId: string | null, canvasId = CV): DocChange =>
+    ({ kind: 'setNodeFrame', canvasId, nodeId, frameId })
+  const update = (id: string, patch: FramePatch): DocChange => ({ kind: 'updateFrame', id, patch })
+  const frames = (doc: Doc, canvasId = CV) => doc.canvases[canvasId].frames
+  const frameOf = (doc: Doc, nodeId: string) => doc.canvases[CV].nodes[nodeId].frameId
+
+  /** withCanvas() plus a second canvas `canvas-cv2` with node m1 [u]. */
+  function twoCanvases(): Doc {
+    return ok(withCanvas(), add('cv2', tab('s1'), 'canvas'), add('u', node('canvas-cv2', 'm1')))
+  }
+
+  describe('addFrame', () => {
+    it('adds a frame to a canvas, which has none until then', () => {
+      const before = withCanvas()
+      expect(frames(before)).toBeUndefined()
+      const doc = ok(before, addFrame('f1'), addFrame('f2', { state: 'waiting', collapsed: true }))
+      expect(frames(doc)).toEqual({ f1: frame('f1'), f2: frame('f2', { state: 'waiting', collapsed: true }) })
+      expect(doc.canvases[CV].nodes).toBe(before.canvases[CV].nodes)
+    })
+
+    it('fails with gone for a missing canvas', () => {
+      fails(withCanvas(), addFrame('f1', {}, 'nope'), 'gone')
+    })
+
+    it('rejects an id in use, on this canvas or on another, and a malformed frame', () => {
+      const doc = ok(twoCanvases(), addFrame('f1'))
+      fails(doc, addFrame('f1'), 'rejected')
+      fails(doc, addFrame('f1', {}, 'canvas-cv2'), 'rejected')
+      fails(doc, addFrame('f2', { title: '' }), 'rejected')
+      fails(doc, addFrame('f2', { state: 'paused' as never }), 'rejected')
+      fails(doc, addFrame('f2', { at: { x: 1 } as never }), 'rejected')
+    })
+  })
+
+  describe('setNodeFrame', () => {
+    it('puts a node in a frame, moves it to another and takes it out', () => {
+      let doc = ok(withCanvas(), addFrame('f1'), addFrame('f2'), setFrame('n1', 'f1'))
+      expect(frameOf(doc, 'n1')).toBe('f1')
+      expect(frameOf(doc, 'n2')).toBeUndefined()
+      doc = ok(doc, setFrame('n1', 'f2'))
+      expect(frameOf(doc, 'n1')).toBe('f2')
+      doc = ok(doc, setFrame('n1', null))
+      expect('frameId' in doc.canvases[CV].nodes.n1).toBe(false)
+      expect(Object.keys(frames(doc)!)).toEqual(['f1', 'f2'])
+    })
+
+    it('takes the whole tab stack of the node, whatever the panel types', () => {
+      let doc = ok(withCanvas(), add('t', tab('stack-n1', undefined, nodeOf), 'browser'), add('r', tab('stack-n1', undefined, nodeOf), 'review'))
+      doc = ok(doc, addFrame('f1'), setFrame('n1', 'f1'))
+      expect(frameOf(doc, 'n1')).toBe('f1')
+      expect(doc.canvases[CV].nodes.n1.dock).toEqual(stack('stack-n1', 'x', 't', 'r'))
+    })
+
+    it('fails with gone for a missing canvas, node or frame', () => {
+      const doc = ok(withCanvas(), addFrame('f1'))
+      fails(doc, setFrame('n1', 'f1', 'nope'), 'gone')
+      fails(doc, setFrame('nope', 'f1'), 'gone')
+      fails(doc, setFrame('n1', 'nope'), 'gone')
+    })
+
+    it('rejects a frame of another canvas', () => {
+      const doc = ok(twoCanvases(), addFrame('g1', {}, 'canvas-cv2'))
+      fails(doc, setFrame('n1', 'g1'), 'rejected')
+    })
+  })
+
+  describe('updateFrame', () => {
+    const base = () => ok(withCanvas(), addFrame('f1'))
+
+    it('changes the title, the state, the collapsed flag and the position', () => {
+      const doc = ok(base(), update('f1', { title: 'Autre' }), update('f1', { state: 'blocked' }),
+        update('f1', { collapsed: true, at: { x: 10, y: 20 } }))
+      expect(frames(doc)!.f1).toEqual(frame('f1', { title: 'Autre', state: 'blocked', collapsed: true, at: { x: 10, y: 20 } }))
+    })
+
+    it('last write wins, key by key', () => {
+      const doc = ok(base(), update('f1', { title: 'A', state: 'done' }), update('f1', { title: 'B' }))
+      expect(frames(doc)!.f1).toMatchObject({ title: 'B', state: 'done' })
+    })
+
+    it('fails with gone for a missing frame', () => {
+      fails(base(), update('nope', { title: 'A' }), 'gone')
+    })
+
+    it('rejects an unknown state, an empty title, a bad position and an unknown key', () => {
+      const doc = base()
+      fails(doc, update('f1', { state: 'paused' as never }), 'rejected')
+      fails(doc, update('f1', { title: ' ' }), 'rejected')
+      fails(doc, update('f1', { at: { x: Number.NaN, y: 0 } }), 'rejected')
+      fails(doc, update('f1', { color: 'red' } as never), 'rejected')
+    })
+  })
+
+  describe('removeFrame', () => {
+    it('dissolves the frame: members stay, panels untouched', () => {
+      const framed = ok(withCanvas(), addFrame('f1'), setFrame('n1', 'f1'), setFrame('n2', 'f1'))
+      const doc = ok(framed, { kind: 'removeFrame', id: 'f1' })
+      expect(doc.canvases[CV]).toEqual({ id: CV, nodes: withCanvas().canvases[CV].nodes })
+      expect(doc.panels).toBe(framed.panels)
+      expect(doc.windows).toBe(framed.windows)
+    })
+
+    it('keeps the other frames, and fails with gone for a missing one', () => {
+      const doc = ok(withCanvas(), addFrame('f1'), addFrame('f2'), setFrame('n1', 'f2'), { kind: 'removeFrame', id: 'f1' })
+      expect(Object.keys(frames(doc)!)).toEqual(['f2'])
+      expect(frameOf(doc, 'n1')).toBe('f2')
+      fails(doc, { kind: 'removeFrame', id: 'f1' }, 'gone')
+    })
+  })
+
+  describe('a frame at the end of its life', () => {
+    const framed = () => ok(withCanvas(), addFrame('f1'), addFrame('f2'), setFrame('n1', 'f1'), setFrame('n2', 'f1'))
+
+    it('removePanels of the last member removes the frame in the same op', () => {
+      const doc = ok(framed(), { kind: 'removePanels', ids: ['x', 'y'] })
+      expect(doc.canvases[CV]).toEqual({ id: CV, nodes: {}, frames: { f2: frame('f2') } })
+    })
+
+    it('drops the frames key when the last frame goes', () => {
+      const doc = ok(withCanvas(), addFrame('f1'), setFrame('n1', 'f1'), { kind: 'removePanels', ids: ['x'] })
+      expect('frames' in doc.canvases[CV]).toBe(false)
+    })
+
+    it('keeps the frame while a member is left, or a tab of a member node', () => {
+      let doc = ok(framed(), { kind: 'removePanels', ids: ['x'] })
+      expect(Object.keys(frames(doc)!)).toEqual(['f1', 'f2'])
+      doc = ok(withCanvas(), add('t', tab('stack-n1', undefined, nodeOf)), addFrame('f1'), setFrame('n1', 'f1'),
+        { kind: 'removePanels', ids: ['x'] })
+      expect(frameOf(doc, 'n1')).toBe('f1')
+    })
+
+    it('takes a window closing the same way', () => {
+      let doc = ok(withCanvas(), add('cvw', win('w1', 'sw'), 'canvas'), add('p', node('canvas-cvw', 'k1')),
+        { kind: 'addFrame', canvasId: 'canvas-cvw', frame: frame('fw') }, setFrame('k1', 'fw', 'canvas-cvw'))
+      doc = ok(doc, { kind: 'closeWindow', windowId: 'w1' })
+      expect(doc.canvases['canvas-cvw']).toBeUndefined()
+      expect(doc.canvases[CV]).toBeDefined()
+    })
+
+    it('setNodeFrame null of the last member keeps the frame', () => {
+      const doc = ok(framed(), setFrame('n1', null), setFrame('n2', null))
+      expect(Object.keys(frames(doc)!)).toEqual(['f1', 'f2'])
+    })
+
+    it('a frame never filled is kept when an unrelated panel goes', () => {
+      const doc = ok(framed(), { kind: 'removePanels', ids: ['x', 'y'] }, add('z', node(CV, 'n3')), { kind: 'removePanels', ids: ['z'] })
+      expect(frames(doc)).toEqual({ f2: frame('f2') })
+    })
+
+    it('moving the only member of a node out never removes the frame', () => {
+      const doc = ok(framed(), place('x', tab('s1')))
+      expect(doc.canvases[CV].nodes.n1).toBeUndefined()
+      expect(Object.keys(frames(doc)!)).toEqual(['f1', 'f2'])
+    })
+
+    it('replacing a canvas panel is refused while its canvas holds a frame, empty or not', () => {
+      const doc = ok(ok(createDocument(), add('cv', tab('s1'), 'canvas')), addFrame('f1'))
+      fails(doc, { kind: 'replacePanel', record: record('cv', 'surface') }, 'rejected')
+      const dissolved = ok(doc, { kind: 'removeFrame', id: 'f1' }, { kind: 'replacePanel', record: record('cv', 'surface') })
+      expect(dissolved.canvases[CV]).toBeUndefined()
+    })
+
+    it('removing the canvas panel removes its canvas and its frames, and only those', () => {
+      const doc = ok(twoCanvases(), addFrame('f1'), addFrame('g1', {}, 'canvas-cv2'), setFrame('n1', 'f1'),
+        { kind: 'removePanels', ids: ['cv'] })
+      expect(doc.canvases[CV]).toBeUndefined()
+      expect(frames(doc, 'canvas-cv2')).toEqual({ g1: frame('g1') })
+      fails(doc, addFrame('f1', {}, CV), 'gone')
+    })
   })
 })
 

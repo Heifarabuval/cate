@@ -5,8 +5,11 @@
 import type { Point, Rect } from '@workspace/canvas/contract'
 import type { DockNodeId, SplitSide } from './dock'
 import type {
+  CanvasFrame,
   CanvasId,
   ClientId,
+  FrameId,
+  FrameState,
   Json,
   NodeId,
   PanelId,
@@ -73,6 +76,13 @@ export interface RelationPatch {
   waypoint?: Point | null
 }
 
+export interface FramePatch {
+  title?: string
+  state?: FrameState
+  collapsed?: boolean
+  at?: Point
+}
+
 export type DocChange =
   | { kind: 'addPanel'; record: PanelRecord; at: PlaceTarget }
   /** Same id and placement, new type and fields (a surface becoming the
@@ -93,6 +103,15 @@ export type DocChange =
   | { kind: 'removeRelation'; id: RelationId }
   | { kind: 'setWorktree'; worktree: WorktreeMeta }
   | { kind: 'removeWorktree'; id: WorktreeId }
+  /** Frame ids are unique in the whole document. */
+  | { kind: 'addFrame'; canvasId: CanvasId; frame: CanvasFrame }
+  /** Merged key by key. */
+  | { kind: 'updateFrame'; id: FrameId; patch: FramePatch }
+  /** Dissolves: the frame and its members' `frameId` go, no panel does. */
+  | { kind: 'removeFrame'; id: FrameId }
+  /** Puts a node (with its whole tab stack) in a frame of its canvas, or
+   *  takes it out when null. Never removes a frame. */
+  | { kind: 'setNodeFrame'; canvasId: CanvasId; nodeId: NodeId; frameId: FrameId | null }
 
 export interface DocBatch {
   kind: 'batch'

@@ -3,7 +3,7 @@
 import { dockPanels, dockStacks, type DockStack } from './dock'
 import type { DockRef, PlaceTarget } from './ops'
 import { docIndex, dockOf, isCanvasDock, placementOf } from './placement'
-import type { CanvasId, PanelId, PanelRecord, WindowId, WorkspaceDocument } from './schema'
+import type { CanvasFrame, CanvasId, FrameId, PanelId, PanelRecord, WindowId, WorkspaceDocument } from './schema'
 
 type Doc = WorkspaceDocument
 
@@ -26,6 +26,28 @@ export function panelsInWindow(doc: Doc, windowId: WindowId): PanelId[] {
     if (canvasId) out.push(...panelsOnCanvas(doc, canvasId))
   }
   return out
+}
+
+/** A frame, wherever its canvas is. */
+export function findFrame(doc: Doc, frameId: FrameId): CanvasFrame | undefined {
+  const canvasId = docIndex(doc).frames.get(frameId)
+  return canvasId === undefined ? undefined : doc.canvases[canvasId].frames?.[frameId]
+}
+
+/** The frame holding a panel's node, never read from the panel's type. */
+export function frameOfPanel(doc: Doc, panelId: PanelId): CanvasFrame | undefined {
+  const dock = placementOf(doc, panelId)?.dock
+  if (!dock || !isCanvasDock(dock)) return undefined
+  const canvas = doc.canvases[dock.canvasId]
+  const frameId = canvas.nodes[dock.nodeId].frameId
+  return frameId === undefined ? undefined : canvas.frames?.[frameId]
+}
+
+/** The panels of a frame: the tabs of each member node, node by node. */
+export function framePanels(doc: Doc, frameId: FrameId): PanelId[] {
+  const canvas = doc.canvases[docIndex(doc).frames.get(frameId) ?? '']
+  if (!canvas) return []
+  return Object.values(canvas.nodes).filter((node) => node.frameId === frameId).flatMap((node) => dockPanels(node.dock))
 }
 
 /** The canvas panel showing a canvas. */

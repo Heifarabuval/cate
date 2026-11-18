@@ -2,7 +2,7 @@
 // are shared with the input, and a failed op returns the input unchanged.
 // The runtime and every client mirror run this same function.
 
-import type { CanvasModel, CanvasNode } from './schema'
+import type { CanvasFrame, CanvasModel, CanvasNode, FrameId } from './schema'
 import {
   dockPanels,
   findDockNode,
@@ -81,6 +81,10 @@ function applyOne(doc: Doc, change: DocChange): Doc {
       const { [change.id]: _removed, ...worktrees } = doc.worktrees
       return { ...doc, worktrees }
     }
+    case 'addFrame': return addFrame(doc, change)
+    case 'updateFrame': return updateFrame(doc, change)
+    case 'removeFrame': return removeFrame(doc, change.id)
+    case 'setNodeFrame': return setNodeFrame(doc, change)
   }
 }
 
@@ -222,7 +226,8 @@ function replacePanel(doc: Doc, record: PanelRecord): Doc {
   if (old.canvasId !== undefined) {
     const canvasId = old.canvasId
     if (record.canvasId === canvasId) return next
-    if (Object.keys(doc.canvases[canvasId].nodes).length > 0) rejected('only an empty canvas panel can be replaced')
+    const canvas = doc.canvases[canvasId]
+    if (Object.keys(canvas.nodes).length > 0 || canvas.frames) rejected('only an empty canvas panel can be replaced')
     const { [canvasId]: _removed, ...canvases } = next.canvases
     next = { ...next, canvases }
   }
@@ -284,6 +289,7 @@ function removePanels(doc: Doc, ids: readonly PanelId[]): Doc {
     const placement = placementOf(next, id)
     if (placement) next = unplace(next, id).doc
   }
+  next = dropEmptiedFrames(doc, next)
   const panels = { ...next.panels }
   for (const id of removed) delete panels[id]
   const relations = Object.values(next.relations).some((r) => removed.has(r.fromPanelId) || removed.has(r.toPanelId))
@@ -353,6 +359,94 @@ function closeWindow(doc: Doc, windowId: string): Doc {
   if (!window) gone(`window ${windowId}`)
   if (windowId === MAIN_WINDOW) rejected('the main window cannot be closed')
   return removePanels(doc, dockPanels(window.dock))
+}
+
+// --- Frames ----------------------------------------------------------------------
+//
+// A frame lives on its canvas and a node names it; a canvas without a frame
+// has no `frames` key. Only a removal that empties a frame removes it.
+
+/** `canvas` with these frames: the key goes when none is left. */
+function withFrames(doc: Doc, canvas: CanvasModel, frames: Record<FrameId, CanvasFrame>, nodes = canvas.nodes): Doc {
+  const { frames: _old, ...rest } = canvas
+  const next: CanvasModel = Object.keys(frames).length > 0 ? { ...rest, nodes, frames } : { ...rest, nodes }
+  return { ...doc, canvases: { ...doc.canvases, [canvas.id]: next } }
+}
+
+function canvasOfFrame(doc: Doc, id: FrameId): CanvasModel {
+  const canvasId = docIndex(doc).frames.get(id)
+  if (canvasId === undefined) gone(`frame ${id}`)
+  return doc.canvases[canvasId]
+}
+
+function addFrame(doc: Doc, change: Extract<DocChange, { kind: 'addFrame' }>): Doc {
+  const canvas = doc.canvases[change.canvasId]
+  if (!canvas) gone(`canvas ${change.canvasId}`)
+  const { frame } = change
+  if (docIndex(doc).frames.has(frame.id)) rejected(`frame id ${frame.id} is in use`)
+  return withFrames(doc, canvas, { ...canvas.frames, [frame.id]: { ...frame, at: { ...frame.at } } })
+}
+
+function updateFrame(doc: Doc, change: Extract<DocChange, { kind: 'updateFrame' }>): Doc {
+  const canvas = canvasOfFrame(doc, change.id)
+  const frame: CanvasFrame = { ...canvas.frames![change.id] }
+  const { title, state, collapsed, at } = change.patch
+  if (title !== undefined) frame.title = title
+  if (state !== undefined) frame.state = state
+  if (collapsed !== undefined) frame.collapsed = collapsed
+  if (at !== undefined) frame.at = { ...at }
+  return withFrames(doc, canvas, { ...canvas.frames, [frame.id]: frame })
+}
+
+function removeFrame(doc: Doc, id: FrameId): Doc {
+  const canvas = canvasOfFrame(doc, id)
+  const { [id]: _removed, ...frames } = canvas.frames!
+  const nodes = { ...canvas.nodes }
+  for (const node of Object.values(nodes)) {
+    if (node.frameId !== id) continue
+    const { frameId: _frameId, ...rest } = node
+    nodes[node.id] = rest
+  }
+  return withFrames(doc, canvas, frames, nodes)
+}
+
+function setNodeFrame(doc: Doc, change: Extract<DocChange, { kind: 'setNodeFrame' }>): Doc {
+  const canvas = doc.canvases[change.canvasId]
+  if (!canvas) gone(`canvas ${change.canvasId}`)
+  const node = canvas.nodes[change.nodeId]
+  if (!node) gone(`node ${change.nodeId}`)
+  const { frameId } = change
+  if (frameId !== null) {
+    const owner = docIndex(doc).frames.get(frameId)
+    if (owner === undefined) gone(`frame ${frameId}`)
+    if (owner !== canvas.id) rejected(`frame ${frameId} is on another canvas`)
+  }
+  let next: CanvasNode
+  if (frameId === null) {
+    if (node.frameId === undefined) return doc
+    const { frameId: _frameId, ...rest } = node
+    next = rest
+  } else {
+    if (node.frameId === frameId) return doc
+    next = { ...node, frameId }
+  }
+  return { ...doc, canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes: { ...canvas.nodes, [node.id]: next } } } }
+}
+
+/** Frames that had a member node in `before` and have none in `after` go, in
+ *  the removal that emptied them. A frame never filled stays. */
+function dropEmptiedFrames(before: Doc, after: Doc): Doc {
+  const members = (canvas: CanvasModel) => new Set(Object.values(canvas.nodes).map((node) => node.frameId))
+  let next = after
+  for (const canvas of Object.values(after.canvases)) {
+    const was = before.canvases[canvas.id]
+    if (!canvas.frames || !was) continue
+    const had = members(was)
+    const has = members(canvas)
+    const kept = Object.entries(canvas.frames).filter(([id]) => has.has(id) || !had.has(id))
+    if (kept.length < Object.keys(canvas.frames).length) next = withFrames(next, canvas, Object.fromEntries(kept))
+  }
+  return next
 }
 
 // --- Relations -------------------------------------------------------------------
