@@ -11,7 +11,7 @@ import type {
   PullRequestDetails,
   PullRequestErrorKind,
   PullRequestFile,
-  PullRequestRef
+  PullRequestRef,
 } from '@workspace/repository/contract'
 import type { PanelCreateOptions } from '@panels/framework/contract'
 
