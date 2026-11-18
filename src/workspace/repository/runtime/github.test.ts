@@ -226,6 +226,52 @@ describe.each(reads)('%s', (method, args, maxBuffer, timeout, stdout, parsed) =>
   })
 })
 
+/** gh that never answers, like execFile it fails once its signal aborts. */
+function hangingGh() {
+  mocks.exec.mockImplementation((_cmd, _args, opts: { signal?: AbortSignal }, callback) => {
+    opts.signal?.addEventListener('abort', () => callback(Object.assign(new Error('The operation was aborted'), { name: 'AbortError', code: 'ABORT_ERR' })))
+  })
+}
+const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+it('hands the caller signal to gh, and an abort frees the slot for the next read', async () => {
+  hangingGh()
+  const gh = host()
+  const closing = new AbortController()
+  const held = [1, 2, 3].map((n) => gh.pullRequestFiles('org/repo', n, closing.signal).catch((e: unknown) => e))
+  const next = gh.pullRequestView('org/repo', 4)
+  await settle()
+  expect(mocks.exec).toHaveBeenCalledTimes(3)
+  expect(mocks.exec.mock.calls[0][2]).toMatchObject({ signal: closing.signal })
+
+  closing.abort()
+  await settle()
+
+  for (const failure of await Promise.all(held)) expect(failure).toBeInstanceOf(GhReadError)
+  expect(mocks.exec).toHaveBeenCalledTimes(4)
+  expect(mocks.exec.mock.calls[3][1].slice(0, 3)).toEqual(['pr', 'view', '4'])
+  void next.catch(() => {})
+})
+
+it('never runs gh for a read aborted while it waits for a slot, or aborted before it asks', async () => {
+  hangingGh()
+  const gh = host()
+  const others = new AbortController()
+  const held = [1, 2, 3].map((n) => gh.pullRequestView('org/repo', n, others.signal).catch(() => {}))
+  const closing = new AbortController()
+  const waiting = gh.pullRequestView('org/repo', 4, closing.signal)
+  await settle()
+
+  closing.abort()
+  await expect(waiting).rejects.toBeInstanceOf(GhReadError)
+  await expect(gh.pullRequestChecks('org/repo', 5, AbortSignal.abort())).rejects.toBeInstanceOf(GhReadError)
+  others.abort()
+  await Promise.all(held)
+  await settle()
+
+  expect(mocks.exec).toHaveBeenCalledTimes(3)
+})
+
 it('never runs more than 3 gh calls at once, resolves all 16 and survives failures', async () => {
   const held: Array<() => void> = []
   let active = 0
