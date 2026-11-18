@@ -26,6 +26,7 @@ import {
   type AgentId,
   type AgentSendResult,
   type AgentSession,
+  type AgentSessionRef,
   type AgentStep,
   type PanelAgentState,
   type TerminalResumeStamp,
@@ -72,7 +73,15 @@ export interface TerminalAgentsOptions {
 
 /** A stamp with the panel checkout it was taken in: a panel moved to another
  *  checkout does not resume it. */
-type StoredStamp = TerminalResumeStamp & { binding: string }
+type StoredStamp = TerminalResumeStamp & {
+  binding: string
+  /** The sessions its agent ran since it started, for usage; kept while it
+   *  can be resumed (an entry written before this has none). A `sessionId` of
+   *  '' is a stamp that was cleared (a /clear) while the agent runs on:
+   *  nothing to resume, only this list. */
+  sessions?: AgentSessionRef[]
+  truncated?: true
+}
 type StampsFile = Record<string, StoredStamp>
 
 const bindingOf = (record: PanelRecord | undefined): string =>
@@ -84,11 +93,19 @@ function normalizeStamps(parsed: unknown): StampsFile {
   for (const [panelId, value] of Object.entries(parsed as Record<string, unknown>)) {
     const stamp = value as Partial<StoredStamp> | null
     if (!stamp || !isAgentId(stamp.agentId) || typeof stamp.sessionId !== 'string' || typeof stamp.cwd !== 'string' || typeof stamp.binding !== 'string') continue
+    const sessions = (Array.isArray(stamp.sessions) ? stamp.sessions : []).flatMap((item): AgentSessionRef[] => {
+      const ref = item as Partial<AgentSessionRef> | null
+      return ref && typeof ref.sessionId === 'string' && ref.sessionId
+        ? [{ sessionId: ref.sessionId, ...(typeof ref.cwd === 'string' && ref.cwd ? { cwd: ref.cwd } : {}) }]
+        : []
+    })
     out[panelId] = {
       agentId: stamp.agentId,
       sessionId: stamp.sessionId,
       cwd: stamp.cwd,
       binding: stamp.binding,
+      ...(sessions.length > 0 ? { sessions } : {}),
+      ...(stamp.truncated === true ? { truncated: true as const } : {}),
     }
   }
   return out
@@ -253,9 +270,14 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     emit(terminalId, stamp) {
       const panelId = panelOf(terminalId)
       if (!panelId) return
+      const { sessions, truncated } = stamps.sessions(terminalId)
+      const ran = { ...(sessions.length > 0 ? { sessions } : {}), ...(truncated ? { truncated: true as const } : {}) }
       stampsFile.update((all) => {
-        const { [panelId]: _previous, ...rest } = all
-        return stamp ? { ...rest, [panelId]: { ...stamp, binding: bindingOf(document.panel(panelId)) } } : rest
+        const { [panelId]: previous, ...rest } = all
+        const binding = bindingOf(document.panel(panelId))
+        if (stamp) return { ...rest, [panelId]: { ...stamp, binding, ...ran } }
+        // A cleared stamp whose agent runs on (a /clear) keeps what it ran so far.
+        return previous && sessions.length > 0 ? { ...rest, [panelId]: { agentId: previous.agentId, sessionId: '', cwd: '', binding, ...ran } } : rest
       })
       changed(terminalId)
     },
@@ -309,6 +331,19 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
         return rest
       })
     }
+    // A restored panel whose agent resumes goes on with what it ran so far; an
+    // entry with nothing to resume (a /clear nothing followed) is stale.
+    const saved = spawn.panelId ? stampsFile.get()[spawn.panelId] : undefined
+    if (spawn.panelId && saved) {
+      if (!saved.sessionId) {
+        stampsFile.update((all) => {
+          const { [spawn.panelId!]: _stale, ...rest } = all
+          return rest
+        })
+      } else if (spawn.launch?.kind === TERMINAL_RESTORE_LAUNCH.kind && saved.binding === bindingOf(document.panel(spawn.panelId))) {
+        stamps.seed(spawn.terminalId, saved.sessions ?? [], saved.truncated === true)
+      }
+    }
     const launched = spawn.launch?.kind === AGENT_LAUNCH.start && isAgentId((spawn.launch.params as { agentId?: unknown })?.agentId)
       ? AGENT_DEFS[(spawn.launch.params as { agentId: AgentId }).agentId]
       : agentForLaunchCommand(spawn.executable)
@@ -343,7 +378,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   // unless the panel moved to another checkout since.
   offs.push(terminal.registerLaunchIntent(TERMINAL_RESTORE_LAUNCH.kind, (_params, { panelId }) => {
     const stamp = panelId ? stampsFile.get()[panelId] : undefined
-    if (!stamp || stamp.binding !== bindingOf(document.panel(panelId!))) return {}
+    if (!stamp?.sessionId || stamp.binding !== bindingOf(document.panel(panelId!))) return {}
     const command = resumeCommandForAgent(stamp.agentId, stamp.sessionId)
     return command ? { input: command } : {}
   }))
@@ -411,6 +446,14 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       hooks.noteAgentExited(scan.terminalId)
       processSessions.delete(scan.terminalId)
       stamps.clear(scan.terminalId)
+      // What the agent ran goes with it: the next one in the panel counts from nothing.
+      const panelId = panelOf(scan.terminalId)
+      if (panelId) {
+        stampsFile.update((all) => {
+          const { [panelId]: _ran, ...rest } = all
+          return rest
+        })
+      }
     }
     // One rule for every agent CLI: open from launch, not from its first
     // prompt's hook.
@@ -458,9 +501,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     return terminalId && terminals.has(terminalId) ? terminalId : null
   }
 
-  const sessionIds = (panelId: string): string[] => {
+  const sessionsOf = (panelId: string): { sessions: AgentSessionRef[]; truncated: boolean } => {
     const terminalId = liveTerminal(panelId)
-    return terminalId ? stamps.sessions(terminalId) : []
+    return terminalId ? stamps.sessions(terminalId) : { sessions: [], truncated: false }
   }
 
   const sessionOf = (panelId: string, terminalId: string | null): AgentSession | null => {
@@ -478,7 +521,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const identified = terminalId ? processSessions.get(terminalId) : null
     if (identified) return { ...identified, ...(worktreeId ? { worktreeId } : {}) }
     const stamp = stampsFile.get()[panelId]
-    return stamp
+    return stamp?.sessionId
       ? {
           agentId: stamp.agentId,
           sessionId: stamp.sessionId,
@@ -631,7 +674,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       return () => { changeListeners.delete(listener) }
     },
     terminalOf: liveTerminal,
-    sessionIds,
+    sessionsOf,
     onStep(listener) {
       stepListeners.add(listener)
       return () => { stepListeners.delete(listener) }

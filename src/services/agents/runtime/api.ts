@@ -133,23 +133,29 @@ export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter
 
     async usage({ targetPanelId }) {
       const states = targetPanelId ? [live(agents, targetPanelId)] : liveAgents(agents)
-      // Every session the panel's agent ran since it started (the one its
-      // state names too: a CLI that sent no hook yet, a restored panel).
-      const wanted = states.map(({ panelId, agentId, session }) => ({
-        panelId,
-        agentId,
-        sessionIds: [...new Set([...agents.terminals.sessionIds(panelId), ...(session ? [session.sessionId] : [])])],
-        cwd: session?.cwd ?? agents.root,
-      }))
-      const requests = wanted.flatMap(({ agentId, sessionIds, cwd }) => (agentId ? [{ agentId, sessionIds, cwd }] : []))
+      // Every session the panel's agent ran since it started, each with its own
+      // checkout; the one its state names too (a CLI that sent no hook yet).
+      const wanted = states.map(({ panelId, agentId, session }) => {
+        const { sessions: ran, truncated } = agents.terminals.sessionsOf(panelId)
+        const refs = session && !ran.some(({ sessionId }) => sessionId === session.sessionId) ? [...ran, { sessionId: session.sessionId, cwd: session.cwd }] : ran
+        return {
+          panelId,
+          agentId,
+          truncated,
+          sessions: refs.map(({ sessionId, cwd }) => ({ sessionId, cwd: cwd ?? session?.cwd ?? agents.root })),
+        }
+      })
+      const requests = wanted.flatMap(({ agentId, sessions }) => (agentId ? [{ agentId, sessions }] : []))
       // One read for all panels; its failure is each panel's error, not the call's.
       const results = await usage.sessions(requests).catch((): AgentSessionUsageResult[] => requests.map(() => ({ error: 'usage-unavailable' })))
       let next = 0
-      return wanted.map(({ panelId, agentId, sessionIds }) => ({
+      return wanted.map(({ panelId, agentId, sessions, truncated }) => ({
         panelId,
         title: agents.document.panel(panelId)?.title ?? '',
         agentId,
-        sessionIds,
+        sessionIds: sessions.map(({ sessionId }) => sessionId),
+        // The oldest sessions were dropped: the cost is a floor.
+        ...(truncated ? { truncated: true } : {}),
         model: null,
         inputTokens: null,
         outputTokens: null,

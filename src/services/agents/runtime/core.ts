@@ -17,6 +17,7 @@ import type {
   AgentHookAgentState,
   AgentHookConfig,
   AgentSendResult,
+  AgentSessionRef,
   AgentSession,
   AgentStep,
   PanelAgentState,
@@ -86,8 +87,9 @@ export interface AgentsBase {
 /** What the core asks of the terminal agents. */
 export interface AgentTerminals extends AgentPanelSource {
   /** The sessions the panel's agent ran since it started (a /clear starts
-   *  another); empty once the agent exited. */
-  sessionIds(panelId: string): string[]
+   *  another), kept across a runtime restart while the agent can be resumed;
+   *  empty once the agent exited. `truncated`: the oldest were dropped. */
+  sessionsOf(panelId: string): { sessions: AgentSessionRef[]; truncated: boolean }
   /** Submits a prompt as the user would, with files that go with it. */
   send(panelId: string, prompt: string, attachments?: readonly string[]): Promise<AgentSendResult>
   /** Stops the agent's turn as the person would (Esc, Ctrl-C). */

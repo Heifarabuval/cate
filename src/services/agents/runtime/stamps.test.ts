@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import type { AgentHookEvent, AgentHookEventKind, AgentId, TerminalResumeStamp } from '../contract'
-import { createResumeStamps, type ResumeStamps } from './stamps'
+import { createResumeStamps, MAX_USAGE_SESSIONS, type ResumeStamps } from './stamps'
 
 let nextCwd: string | null = '/runtime-cwd'
 let getCwdCalls = 0
@@ -183,23 +183,49 @@ describe('the sessions an agent ran since it started (usage)', () => {
     stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'id-2', '/w'))
     stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-2', '/w'))
     stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-end', 'id-2', '/w'))
-    expect(stampsUnderTest.sessions(tid)).toEqual(['id-1', 'id-2'])
+    expect(stampsUnderTest.sessions(tid)).toEqual({ sessions: [{ sessionId: 'id-1', cwd: '/w' }, { sessionId: 'id-2', cwd: '/w' }], truncated: false })
+  })
+
+  it('keeps the checkout each session ran in, not the last one\'s', () => {
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-1', '/w/a'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-2', '/w/b'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'id-3'))
+    expect(stampsUnderTest.sessions(tid).sessions).toEqual([{ sessionId: 'id-1', cwd: '/w/a' }, { sessionId: 'id-2', cwd: '/w/b' }, { sessionId: 'id-3' }])
   })
 
   it('starts again from nothing when the agent exits and another one starts', () => {
     stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-1', '/w'))
     stampsUnderTest.clear(tid)
-    expect(stampsUnderTest.sessions(tid)).toEqual([])
+    expect(stampsUnderTest.sessions(tid)).toEqual({ sessions: [], truncated: false })
     stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'id-2', '/w'))
-    expect(stampsUnderTest.sessions(tid)).toEqual(['id-2'])
+    expect(stampsUnderTest.sessions(tid).sessions).toEqual([{ sessionId: 'id-2', cwd: '/w' }])
   })
 
   it('is per terminal, and forgotten with it', () => {
     stampsUnderTest.ingest(ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
     stampsUnderTest.ingest(ev(`${tid}-b`, 'codex', 'turn-start', 'id-2', '/w'))
-    expect(stampsUnderTest.sessions(tid)).toEqual(['id-1'])
+    expect(stampsUnderTest.sessions(tid).sessions).toEqual([{ sessionId: 'id-1', cwd: '/w' }])
     stampsUnderTest.drop(tid)
-    expect(stampsUnderTest.sessions(tid)).toEqual([])
+    expect(stampsUnderTest.sessions(tid)).toEqual({ sessions: [], truncated: false })
+  })
+
+  it(`keeps the ${MAX_USAGE_SESSIONS} most recent sessions and says the rest were dropped`, () => {
+    for (let i = 1; i <= MAX_USAGE_SESSIONS; i++) stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', `id-${i}`, '/w'))
+    expect(stampsUnderTest.sessions(tid).truncated).toBe(false)
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'id-last', '/w'))
+    const { sessions, truncated } = stampsUnderTest.sessions(tid)
+    expect(truncated).toBe(true)
+    expect(sessions).toHaveLength(MAX_USAGE_SESSIONS)
+    expect(sessions[0].sessionId).toBe('id-2')
+    expect(sessions.at(-1)?.sessionId).toBe('id-last')
+    stampsUnderTest.clear(tid)
+    expect(stampsUnderTest.sessions(tid).truncated).toBe(false)
+  })
+
+  it('takes back a list a restored terminal was saved with, and adds to it', () => {
+    stampsUnderTest.seed(tid, [{ sessionId: 'old', cwd: '/w' }], true)
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'new', '/w'))
+    expect(stampsUnderTest.sessions(tid)).toEqual({ sessions: [{ sessionId: 'old', cwd: '/w' }, { sessionId: 'new', cwd: '/w' }], truncated: true })
   })
 })
 

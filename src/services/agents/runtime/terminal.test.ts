@@ -284,6 +284,70 @@ describe('terminal agents', () => {
     expect(await restore()).toEqual({})
   })
 
+  describe('the sessions an agent ran, for usage', () => {
+    const claude = (env: Record<string, string>, event: string, sessionId: string, extra: Record<string, unknown> = {}) =>
+      post(env, 'claude-code', { hook_event_name: event, session_id: sessionId, cwd: root, ...extra }, 4243)
+    const restart = async () => {
+      agentTerminals.dispose()
+      agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+      await terminal.spawn({ terminalId: 'pty-2', panelId: 'term', cwd: root, launch: { kind: TERMINAL_RESTORE_LAUNCH.kind } })
+    }
+    beforeEach(() => {
+      procTree.nameByPid.set(4242, 'claude')
+      procTree.nameByPid.set(4243, 'sh')
+      procTree.childrenByPid.set(4242, [4243])
+    })
+
+    it('survive a runtime restart while the agent can be resumed, a /clear included', async () => {
+      const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+      await claude(env, 'UserPromptSubmit', 's-1')
+      await claude(env, 'SessionEnd', 's-1', { reason: 'clear' })
+      await claude(env, 'SessionStart', 's-2')
+      await claude(env, 'UserPromptSubmit', 's-2')
+      const ran = { sessions: [{ sessionId: 's-1', cwd: root }, { sessionId: 's-2', cwd: root }], truncated: false }
+      expect(agentTerminals.sessionsOf('term')).toEqual(ran)
+      await restart()
+      expect(agentTerminals.sessionsOf('term')).toEqual(ran)
+    })
+
+    it('are not kept once the agent exited: the next agent in the panel starts from nothing', async () => {
+      const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+      await claude(env, 'UserPromptSubmit', 's-1')
+      procTree.nameByPid.set(4242, 'zsh')
+      terminal.scan('pty-1', 'term')
+      expect(agentTerminals.sessionsOf('term').sessions).toEqual([])
+      await restart()
+      expect(agentTerminals.sessionsOf('term').sessions).toEqual([])
+      expect(JSON.parse(fs.readFileSync(stampsFile, 'utf8')).term).toBeUndefined()
+    })
+
+    it('are not kept for an agent that cannot be resumed (a /clear nothing was asked after)', async () => {
+      const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+      await claude(env, 'UserPromptSubmit', 's-1')
+      await claude(env, 'SessionEnd', 's-1', { reason: 'clear' })
+      await restart()
+      expect(agentTerminals.sessionsOf('term').sessions).toEqual([])
+    })
+
+    it('are not given to an agent started afresh in a panel that still has a stamp', async () => {
+      const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+      await claude(env, 'UserPromptSubmit', 's-1')
+      agentTerminals.dispose()
+      agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+      await terminal.spawn({ terminalId: 'pty-2', panelId: 'term', cwd: root })
+      expect(agentTerminals.sessionsOf('term').sessions).toEqual([])
+    })
+
+    it('read back from an older file that has none', async () => {
+      agentTerminals.dispose()
+      fs.writeFileSync(stampsFile, JSON.stringify({ term: { agentId: 'codex', sessionId: 'sess-1', cwd: root, binding: JSON.stringify([null, null]) } }))
+      agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+      await terminal.spawn({ terminalId: 'pty-2', panelId: 'term', cwd: root, launch: { kind: TERMINAL_RESTORE_LAUNCH.kind } })
+      expect(agentTerminals.sessionsOf('term')).toEqual({ sessions: [], truncated: false })
+      expect(await terminal.intents.get(TERMINAL_RESTORE_LAUNCH.kind)!(undefined, { cwd: root, panelId: 'term' })).toEqual({ input: 'codex resume sess-1' })
+    })
+  })
+
   it('clears a finished command\'s resume stamp when its panel continues as a shell', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })

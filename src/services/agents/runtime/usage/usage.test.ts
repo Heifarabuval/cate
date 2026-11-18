@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeJsonAtomic } from '@kernel/state/node'
 import type { AgentId } from '../../contract'
 import { AGENT_SESSION_STORES } from '../sessions'
-import type { AgentUsageLineParser } from '../sessions/types'
+import type { AgentSessionContext, AgentUsageLineParser } from '../sessions/types'
 import { UsageAggregator } from './aggregation'
 import { limitsReport } from './limits'
 import { lookupRate, parseRateTable, priceUsage } from './pricing'
@@ -224,7 +224,7 @@ describe('session usage', () => {
     root: '/proj', dataDir: data, homeDir: home, stores: AGENT_SESSION_STORES, env: () => ({}),
     priceOverrides: () => ({}), fetchRates: async () => RATES, now: () => Date.parse('2026-10-11T00:00:00Z'),
   })
-  const one = async (agentId: AgentId, sessionIds: string[]) => (await service().sessions([{ agentId, sessionIds, cwd: '/proj' }]))[0]
+  const one = async (agentId: AgentId, sessionIds: string[]) => (await service().sessions([{ agentId, sessions: sessionIds.map((sessionId) => ({ sessionId, cwd: '/proj' })) }]))[0]
   const at = '2026-10-10T12:00:00Z'
   /** A line of session `session`, whatever the message id. */
   const line = (session: string, id: string, usage: Record<string, number>) => claudeLine(id, at, '/proj', usage).replace(`"s-${id}"`, `"${session}"`)
@@ -259,12 +259,35 @@ describe('session usage', () => {
     writeFileSync(path.join(dir, 's-b.jsonl'), `${line('s-b', 'b1', { input_tokens: 900, output_tokens: 90 })}\n`)
     vi.mocked(writeJsonAtomic).mockClear()
     const results = await service().sessions([
-      { agentId: 'claude-code', sessionIds: ['s-a'], cwd: '/proj' },
-      { agentId: 'claude-code', sessionIds: ['s-b'], cwd: '/proj' },
-      { agentId: 'claude-code', sessionIds: [], cwd: '/proj' },
+      { agentId: 'claude-code', sessions: [{ sessionId: 's-a', cwd: '/proj' }] },
+      { agentId: 'claude-code', sessions: [{ sessionId: 's-b', cwd: '/proj' }] },
+      { agentId: 'claude-code', sessions: [] },
     ])
     expect(results).toMatchObject([{ inputTokens: 100, outputTokens: 10 }, { inputTokens: 900, outputTokens: 90 }, null])
     expect(vi.mocked(writeJsonAtomic).mock.calls.filter(([file]) => String(file).endsWith('scan-cache.json'))).toHaveLength(1)
+  })
+
+  it('writes the cache once for two calls that overlap: the second waits for the first', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 100, output_tokens: 10 })}\n`)
+    vi.mocked(writeJsonAtomic).mockClear()
+    const usage = service()
+    const request = [{ agentId: 'claude-code' as const, sessions: [{ sessionId: 's-a', cwd: '/proj' }] }]
+    const both = await Promise.all([usage.sessions(request), usage.sessions(request)])
+    expect(both[1]).toEqual(both[0])
+    expect(both[0]).toMatchObject([{ inputTokens: 100, outputTokens: 10 }])
+    expect(vi.mocked(writeJsonAtomic).mock.calls.filter(([file]) => String(file).endsWith('scan-cache.json'))).toHaveLength(1)
+  })
+
+  it('finds each session\'s files with the checkout that session ran in', async () => {
+    const files = vi.fn(async (_context: AgentSessionContext) => [] as string[])
+    const usage = createAgentUsage({
+      root: '/proj', dataDir: data, homeDir: home, env: () => ({}), priceOverrides: () => ({}), fetchRates: async () => RATES,
+      stores: { ...AGENT_SESSION_STORES, 'claude-code': { ...AGENT_SESSION_STORES['claude-code'], files } },
+    })
+    await usage.sessions([{ agentId: 'claude-code', sessions: [{ sessionId: 's-old', cwd: '/proj/a' }, { sessionId: 's-new', cwd: '/proj/b' }] }])
+    expect(files.mock.calls.map(([context]) => [context.session.sessionId, context.session.cwd])).toEqual([['s-old', '/proj/a'], ['s-new', '/proj/b']])
   })
 
   it('answers an error for the request that failed, not for the call', async () => {
@@ -272,7 +295,7 @@ describe('session usage', () => {
       root: '/proj', dataDir: data, homeDir: home, env: () => ({}), priceOverrides: () => ({}), fetchRates: async () => RATES,
       stores: { ...AGENT_SESSION_STORES, 'claude-code': { ...AGENT_SESSION_STORES['claude-code'], files: async () => { throw new Error('boom') } } },
     })
-    expect(await usage.sessions([{ agentId: 'claude-code', sessionIds: ['s-a'], cwd: '/proj' }, { agentId: 'cursor', sessionIds: ['c'], cwd: '/proj' }]))
+    expect(await usage.sessions([{ agentId: 'claude-code', sessions: [{ sessionId: 's-a', cwd: '/proj' }] }, { agentId: 'cursor', sessions: [{ sessionId: 'c', cwd: '/proj' }] }]))
       .toEqual([{ error: 'boom' }, null])
   })
 
