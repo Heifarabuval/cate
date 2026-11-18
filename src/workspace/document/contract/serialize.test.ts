@@ -56,6 +56,60 @@ describe('document.json', () => {
   })
 })
 
+describe('document.json with frames', () => {
+type Raw = { canvases: Record<string, { frames?: Record<string, unknown>; nodes: Record<string, { frameId?: unknown }> }> }
+const frame = (id: string, extra: Record<string, unknown> = {}) =>
+({ id, title: 'Besoin', state: 'waiting', collapsed: false, at: { x: 0, y: -40 }, ...extra })
+
+/** sample() as plain JSON, with frame f1 on c1 holding n1, and f2 on c2 holding n2. */
+function framed(edit?: (raw: Raw) => void): unknown {
+const raw = JSON.parse(JSON.stringify(sample())) as Raw
+raw.canvases.c1.frames = { f1: frame('f1') }
+raw.canvases.c1.nodes.n1.frameId = 'f1'
+raw.canvases.c2.frames = { f2: frame('f2', { state: 'done', collapsed: true }) }
+raw.canvases.c2.nodes.n2.frameId = 'f2'
+edit?.(raw)
+return raw
+}
+
+it('keeps the file version at 1', () => {
+expect(DOCUMENT_FILE_VERSION).toBe(1)
+})
+
+it('reads a document without frames unchanged, byte for byte', () => {
+const text = file(sample())
+const parsed = parseDocument(text)
+expect(parsed.ok).toBe(true)
+expect(parsed.ok && file(parsed.doc)).toBe(text)
+})
+
+it('reads a valid document with frames, an empty frame and a collapsed one included', () => {
+expect(validateDocument(framed())).toBeNull()
+expect(parseDocument(file(framed((raw) => { raw.canvases.c1.frames!.f3 = frame('f3') }))).ok).toBe(true)
+})
+
+it('refuses a frame or a membership that breaks an invariant', () => {
+const broken: [string, (raw: Raw) => void][] = [
+['orphan frameId', (raw) => { raw.canvases.c1.nodes.n1.frameId = 'nope' }],
+['frameId of another canvas', (raw) => { raw.canvases.c1.nodes.n1.frameId = 'f2' }],
+['frameId that is not an id', (raw) => { raw.canvases.c1.nodes.n1.frameId = 3 }],
+['frameId on a canvas without frames', (raw) => { delete raw.canvases.c1.frames }],
+['unknown state', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { state: 'paused' }) }],
+['empty title', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { title: '' }) }],
+['title on two lines', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { title: 'a\nb' }) }],
+['collapsed that is not a boolean', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { collapsed: 'no' }) }],
+['at that is not a point', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { at: { x: 1 } }) }],
+['unknown key on a frame', (raw) => { raw.canvases.c1.frames!.f1 = frame('f1', { color: 'red' }) }],
+['frame filed under the wrong key', (raw) => { raw.canvases.c1.frames!.f9 = frame('f1') }],
+['frame id used on two canvases', (raw) => { raw.canvases.c2.frames!.f1 = frame('f1') }],
+['frames that is not an object', (raw) => { raw.canvases.c1.frames = [] as unknown as Record<string, unknown> }]
+]
+for (const [name, edit] of broken) {
+expect(parseDocument(file(framed(edit))).ok, name).toBe(false)
+}
+})
+})
+
 describe('selectors', () => {
   it('list panels by window and canvas, and find where a panel shows', () => {
     const doc = sample()

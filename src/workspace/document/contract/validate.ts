@@ -5,6 +5,7 @@ import { isFiniteRect, type Point, type Rect } from '@workspace/canvas/contract'
 import type { DockNode } from './dock'
 import type { DocChange, PanelPatch, PlaceTarget, RelationPatch } from './ops'
 import {
+  FRAME_STATES,
   isPanelType,
   RELATION_KINDS,
   RELATION_SIDES,
@@ -69,6 +70,21 @@ export function checkRelation(v: unknown): Problem {
   if (!optional(v.label, (x) => typeof x === 'string')) return 'relation label is not a string'
   if (!optional(v.fromSide, isSide) || !optional(v.toSide, isSide)) return 'unknown relation side'
   if (!optional(v.waypoint, isPoint)) return 'relation waypoint is not a point'
+  return null
+}
+
+const isFrameState = (v: unknown) => (FRAME_STATES as readonly unknown[]).includes(v)
+const isTitle = (v: unknown) => typeof v === 'string' && v.trim() !== '' && !/[\r\n]/.test(v)
+
+export function checkFrame(v: unknown): Problem {
+  if (!isObject(v)) return 'frame is not an object'
+  if (!isId(v.id)) return 'frame id is missing'
+  if (!isTitle(v.title)) return 'frame title is empty or on several lines'
+  if (!isFrameState(v.state)) return 'unknown frame state'
+  if (typeof v.collapsed !== 'boolean') return 'frame collapsed is not a boolean'
+  if (!isPoint(v.at)) return 'frame at is not a point'
+  const known = ['id', 'title', 'state', 'collapsed', 'at']
+  if (Object.keys(v).some((key) => !known.includes(key))) return 'frame has unknown keys'
   return null
 }
 
