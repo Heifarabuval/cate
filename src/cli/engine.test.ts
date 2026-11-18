@@ -29,6 +29,9 @@ describe('commands from specs', () => {
       'terminal read', 'terminal type', 'terminal press',
       'agent wait', 'agent start',
     ]))
+    for (const verb of ['create', 'add', 'remove', 'state', 'collapse', 'expand', 'delete', 'list']) {
+      expect(words).toContain(`panel group ${verb}`)
+    }
     // Every browser method is a command.
     expect(words).toEqual(expect.arrayContaining([
       'browser snapshot', 'browser click', 'browser fill', 'browser press', 'browser goto', 'browser drag', 'browser find',
@@ -46,6 +49,20 @@ describe('parseCommandLine', () => {
       .toEqual({ username: 'me', password: 'existing-secret' })
     expect(call(['browser', 'signup', '--user', 'me']).args).toEqual({ username: 'me' })
     expect(() => call(['browser', 'signup', '--user', 'me', '--password', ''])).toThrow()
+  })
+
+  it('parses the panel group commands', () => {
+    expect(call(['panel', 'group', 'create', '#n3 --done-when', '--json'])).toEqual({
+      method: 'cate.frame.create',
+      args: { title: '#n3 --done-when' },
+      json: true,
+    })
+    expect(call(['panel', 'group', 'create', 'un', 'titre', '--canvas', 'ab12']).args).toEqual({ title: 'un titre', canvas: 'ab12' })
+    expect(call(['panel', 'group', 'add', '7f3c', '1a2b']).args).toEqual({ frameId: '7f3c', panelId: '1a2b' })
+    expect(call(['panel', 'group', 'state', '7f3c', 'waiting']).args).toEqual({ frameId: '7f3c', state: 'waiting' })
+    expect(() => call(['panel', 'group', 'state', '7f3c', 'nope'])).toThrow(/active, waiting, blocked, done|active.*waiting/)
+    expect(call(['panel', 'group', 'list'])).toMatchObject({ method: 'cate.frame.list', args: {} })
+    expect(call(['panel', 'group', 'delete', '7f3c']).method).toBe('cate.frame.delete')
   })
 
   it('parses positionals, rest words and the session --panel target', () => {
@@ -210,6 +227,8 @@ describe('help', () => {
     expect(top).toMatch(/\n {2}version +Print the cate API version/)
     expect(top).toMatch(/\n {2}serve +Serve a workspace/)
     expect(top).toContain('Global flags:')
+    const group = helpText(commands, ['panel', 'group'])
+    for (const verb of ['create', 'add', 'remove', 'state', 'collapse', 'expand', 'delete', 'list']) expect(group).toContain(verb)
     const agent = helpText(commands, ['agent'])
     expect(agent).toMatch(/\n {2}read +Print an agent panel's conversation/)
     expect(agent).not.toContain('panel list')

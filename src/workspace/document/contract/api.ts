@@ -3,7 +3,7 @@
 // client state.
 
 import { bool, defineCateApi, defineCliArea, num, obj, oneOf, opt, panel, path, str } from '@kernel/api/contract'
-import { PANEL_TYPES, RELATION_KINDS } from './schema'
+import { FRAME_STATES, PANEL_TYPES, RELATION_KINDS } from './schema'
 
 /** The CLI permission area of these methods. */
 export const panelCliArea = defineCliArea({
@@ -11,12 +11,12 @@ export const panelCliArea = defineCliArea({
   read: {
     key: 'cliPanelReadEnabled',
     code: 'panel-read-disabled',
-    detail: '`cate panel list / current / set / clear`: enumerate the open panels, including each browser panel\'s url, and pick the caller\'s own target panel.',
+    detail: '`cate panel list / current / set / clear` and `cate panel group list`: enumerate the open panels, including each browser panel\'s url, and the groups, and pick the caller\'s own target panel.',
   },
   control: {
     key: 'cliPanelControlEnabled',
     code: 'panel-control-disabled',
-    detail: '`cate panel create / close / title / link / unlink`: add, close, rename and relate panels.',
+    detail: '`cate panel create / close / title / link / unlink` and `cate panel group create / add / remove / state / collapse / expand / delete`: add, close, rename and relate panels, and group them.',
   },
 })
 
@@ -108,6 +108,80 @@ export const canvasApi = defineCateApi(
       },
       format: 'createdPanel',
       cli: { command: ['panel', 'create'] },
+    },
+  },
+  { area: panelCliArea },
+)
+
+const frameArg = () => str.nonEmpty().pos('group').help('Group id or unique prefix, from cate panel group list')
+
+/** `cate.frame.*`: groups of canvas panels, shown as `cate panel group`. */
+export const frameApi = defineCateApi(
+  'frame',
+  {
+    create: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Create a group on the canvas of the calling panel',
+      args: {
+        title: str.nonEmpty().rest('title').help('The group\'s title'),
+        canvas: opt(panel()).flag('canvas', 'id').help('A canvas panel, when the caller is not on a canvas'),
+      },
+      cli: { command: ['panel', 'group', 'create'] },
+    },
+    add: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Put a panel (its whole tab stack) in a group, on the first free place',
+      args: {
+        frameId: frameArg(),
+        panelId: panel().pos('panel').help('Panel id or unique prefix, from cate panel list'),
+      },
+      cli: { command: ['panel', 'group', 'add'] },
+    },
+    state: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Set the state of a group',
+      args: {
+        frameId: frameArg(),
+        state: oneOf(...FRAME_STATES).pos('state').help(`The state: ${FRAME_STATES.join(', ')}`),
+      },
+      cli: { command: ['panel', 'group', 'state'] },
+    },
+    collapse: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Fold a group into its title bar',
+      args: { frameId: frameArg() },
+      cli: { command: ['panel', 'group', 'collapse'] },
+    },
+    expand: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Unfold a group',
+      args: { frameId: frameArg() },
+      cli: { command: ['panel', 'group', 'expand'] },
+    },
+    remove: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Take a panel out of its group',
+      args: { panelId: panel().pos().help('Panel id or unique prefix, from cate panel list') },
+      cli: { command: ['panel', 'group', 'remove'] },
+    },
+    delete: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Dissolve a group; its panels stay open',
+      args: { frameId: frameArg() },
+      cli: { command: ['panel', 'group', 'delete'] },
+    },
+    list: {
+      access: 'read',
+      handler: 'service',
+      summary: 'List the groups with their state and panels',
+      cli: { command: ['panel', 'group', 'list'] },
     },
   },
   { area: panelCliArea },
