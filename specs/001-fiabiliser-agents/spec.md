@@ -229,4 +229,4 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 - Hors périmètre : bloquer `cate agent start` au-delà du plafond, couvrir les appels MCP Playwright par un hook, une commande `agence resume`, changer le CI Windows, modifier `ci.yml`, fermer automatiquement un panneau sans clic.
 - Les récits 5 et 6 vivent hors du fork et se livrent par l'humain dans son `~/.claude` ; seule leur spécification est dans ce dépôt.
 - Les récits 1 à 3 se font dans `tools/agence/agence.py` et ses tests, par un seul implémenteur. Le récit 4 touche `src/workspace/repository/runtime/git.ts`. Les récits 5 et 6 touchent `~/.claude`. Ces trois lots n'ont aucun fichier commun.
-- Les issues du fork correspondantes sont numérotées après la création de cette spec ; la PR les cite par `Réf.`.
+- Issues du fork : récit 1 #50, récit 2 #51, récit 3 #52, récit 4 #53, récit 5 #54, récit 6 #55. Les PR d'implémentation écrivent `Closes #N` pour leur récit.
