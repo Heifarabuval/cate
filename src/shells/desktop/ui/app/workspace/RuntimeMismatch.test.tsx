@@ -95,6 +95,18 @@ describe('RuntimeMismatchCard', () => {
     expect(card()).toBeNull()
   })
 
+  it('names both builds, not a version to itself, when only the build differs', async () => {
+    const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.4' })
+    connection.rpc.remote.build = '2.0.4+aaaaaaaaaaaa'
+    await render(connection)
+    const text = card()?.textContent ?? ''
+    expect(text).toContain('Same version, another build.')
+    expect(text).toContain('aaaaaaaa')
+    expect(text).toContain('new')
+    expect(text).not.toContain('aaaaaaaaaaaa')
+    expect(text).toContain('Stops terminals and agents for everyone.')
+  })
+
   it('keeps a compatible newer workspace usable', async () => {
     const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.5' })
     await render(connection)

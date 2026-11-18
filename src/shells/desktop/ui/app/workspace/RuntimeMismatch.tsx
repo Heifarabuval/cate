@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AlertTriangle, ArrowRight, Folder, RefreshCw } from 'lucide-react'
 import { ModalCard, ProgressBar, btn, Spinner } from '../../kernel/interaction'
-import { runtimeMismatch, type RuntimeMismatch, type RuntimeUpdateRun, type WorkspaceConnection } from '@client/connections'
+import { runtimeMismatch, shortBuild, type RuntimeMismatch, type RuntimeUpdateRun, type WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
 import { runWindowAction } from '../actions/run'
@@ -86,6 +86,10 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
   const name = app.workspaces.get(connection.workspaceId)?.name ?? connection.workspaceId
   const icon = <AlertTriangle size={16} className="text-warning" />
   const updateApp = mismatch.update === 'app'
+  // Equal releases differ by build only: show the builds, never "2.0.4 to 2.0.4".
+  const sameRelease = !updateApp && !!mismatch.runtimeBuild
+  const from = updateApp ? version : sameRelease ? `${mismatch.runtimeVersion} (${shortBuild(mismatch.runtimeBuild)})` : mismatch.runtimeVersion
+  const to = updateApp ? mismatch.runtimeVersion : sameRelease ? `${version} (${shortBuild(mismatch.appBuild)})` : version
 
   const confirm = async () => {
     setError(null)
@@ -107,16 +111,16 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
           <div className="min-w-0 flex-1">
             <p className="break-words text-[13px] font-medium text-primary">{name}</p>
             <div className="mt-1 flex items-center gap-2 text-[11px]">
-              <span className="min-w-0 break-all font-mono text-muted"><span className="sr-only">Current version: </span>{updateApp ? version : mismatch.runtimeVersion}</span>
+              <span className="min-w-0 break-all font-mono text-muted"><span className="sr-only">Current version: </span>{from}</span>
               <ArrowRight size={12} className="shrink-0 text-muted" aria-hidden="true" />
-              <span className="min-w-0 break-all font-mono text-primary"><span className="sr-only">Update version: </span>{updateApp ? mismatch.runtimeVersion : version}</span>
+              <span className="min-w-0 break-all font-mono text-primary"><span className="sr-only">Update version: </span>{to}</span>
             </div>
           </div>
         </div>
 
         {updateApp ? <p className="text-[12px] leading-relaxed text-secondary">Update Cate to open this workspace.</p> : <div className="flex items-start gap-2.5 text-[12px] leading-relaxed text-secondary">
           <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-          <p>Stops terminals and agents for everyone.</p>
+          <p>{sameRelease && 'Same version, another build. '}Stops terminals and agents for everyone.</p>
         </div>}
 
         {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
