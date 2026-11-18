@@ -39,7 +39,11 @@ export function useAction() {
   const timer = useRef<ReturnType<typeof setTimeout>>()
   // A task that settles after the view is gone arms no timer and calls nothing back.
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false; clearTimeout(timer.current) }, [])
+  // Set on every mount: StrictMode mounts, unmounts and mounts again in dev.
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; clearTimeout(timer.current) }
+  }, [])
 
   /** `task` resolves to the refusal text, `null` when the action was taken, or
    *  `undefined` when the person backed out (nothing sent). Resolves to true when taken. */
@@ -69,8 +73,16 @@ export function useAction() {
     }
   }
 
+  /** Forget the last result (check and refusal): the group now concerns something else. */
+  const clear = () => {
+    clearTimeout(timer.current)
+    setDone(null)
+    setError(null)
+  }
+
   return {
     run,
+    clear,
     active,
     /** The action `key` was taken (for a few seconds, or until the next run). */
     done,

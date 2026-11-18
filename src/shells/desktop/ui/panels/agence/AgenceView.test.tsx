@@ -124,6 +124,16 @@ it('turns the terminal\'s own retry into the restart op, and shows a refusal', a
   expect(host.querySelector('[role="alert"]')!.textContent).toContain('orchestrator-failed')
 })
 
+it.each([
+  ['Relancer l\'orchestrateur', { orchestrator: 'exited' }],
+  ['Relancer le régisseur', { regisseur: { state: 'stopped', error: 'arrêté', settingsHint: null } }],
+] as const)('says « %s » refused as unavailable in words, never the raw code', async (label, patch) => {
+  send.mockResolvedValueOnce({ ok: false, error: 'unavailable' } as never)
+  render(snapshot(patch as Partial<AgenceSnapshot>))
+  await act(async () => { button(label)!.click() })
+  expect(host.querySelector('[role="alert"]')!.textContent).toBe('Régisseur indisponible.')
+})
+
 it('shows the CLI settings hint of the regisseur', () => {
   render(snapshot({ regisseur: { state: 'running', error: null, settingsHint: 'réglages CLI du workspace à activer dans Cate : panneaux' } }))
   expect(host.querySelector('[data-testid="regisseur-banner"]')!.textContent).toContain('réglages CLI du workspace à activer dans Cate : panneaux')

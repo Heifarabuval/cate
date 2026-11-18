@@ -93,6 +93,10 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
   // One lock per question, shared with its card: the rebase and an answer never run together.
   const act = useAction()
   const question = action?.type === 'question' ? questions[action.questionId] : undefined
+  // The line turns to another question: the last check and refusal were about the previous one.
+  const questionId = action?.type === 'question' ? action.questionId : null
+  const { clear } = act
+  useEffect(() => clear(), [questionId]) // eslint-disable-line react-hooks/exhaustive-deps -- `clear` is new each render
   return (
     <li className={`px-3 py-2 border-t border-subtle first:border-t-0 ${enter ? ROW_ENTER : ''}`}>
       <div className="flex items-start gap-2">

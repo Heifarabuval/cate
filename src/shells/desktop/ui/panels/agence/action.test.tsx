@@ -1,4 +1,4 @@
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgenceOp, AgenceOpResult, DraftView, QuestionView } from '@panels/agence/contract'
@@ -142,5 +142,35 @@ it('does nothing once its view is gone: no onBack, no timer, for a draft opened 
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     vi.useRealTimers()
+  }
+})
+
+it.each([
+  ['a success closes the draft', { ok: true } as AgenceOpResult],
+  ['a refusal shows in place', { ok: false, error: 'conflict', message: 'Texte refusé.' } as AgenceOpResult],
+])('under StrictMode (mounted, unmounted, mounted again), %s', async (_name, result) => {
+  send.mockResolvedValueOnce(result)
+  act(() => root.render(<StrictMode><DraftReader workspaceId="ws" panelId="p" draft={draft} send={send} onBack={onBack} /></StrictMode>))
+  await act(async () => { button('Envoyer').click() })
+  if (result.ok) expect(onBack).toHaveBeenCalledTimes(1)
+  else expect(host.querySelector('[role="alert"]')!.textContent).toBe('Texte refusé.')
+  expect(button('Envoyer').hasAttribute('aria-busy')).toBe(false)
+})
+
+it('under StrictMode, a thrown error shows in place', async () => {
+  send.mockRejectedValueOnce(new Error('réseau coupé'))
+  act(() => root.render(<StrictMode><DraftReader workspaceId="ws" panelId="p" draft={draft} send={send} onBack={onBack} /></StrictMode>))
+  await act(async () => { button('Envoyer').click() })
+  expect(host.querySelector('[role="alert"]')!.textContent).toBe('réseau coupé')
+})
+
+it('always renders the room of its indicator, never hidden, so the width holds in a real browser too', () => {
+  for (const state of [{}, { busy: true }, { done: true }]) {
+    act(() => root.render(<ActionButton {...state}>Go</ActionButton>))
+    const slot = button('Go').querySelector('[data-testid="action-slot"]')!
+    expect(slot).not.toBeNull()
+    expect(slot.className).toMatch(/\binline-flex\b/)
+    expect(slot.className).toMatch(/\bw-\[11px\]/)
+    expect(slot.className).not.toMatch(/\b(hidden|invisible|sr-only)\b/)
   }
 })

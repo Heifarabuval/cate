@@ -287,6 +287,24 @@ it('keeps the check on « Répondre » a few seconds, then it answers again for 
   }
 })
 
+it('drops the check on « Répondre » when the line turns to another question', async () => {
+  vi.useFakeTimers()
+  try {
+    const other = { ...questionRow, action: { type: 'question' as const, questionId: 'q9', rebase: false } }
+    const views = { q1: questionView, q9: { ...questionView, id: 'q9' } }
+    render(suivi({ aFaire: [questionRow] }), views)
+    const reply = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre' && b.hasAttribute('aria-expanded'))!
+    act(() => reply().click())
+    await act(async () => { [...host.querySelectorAll('button')].find((b) => /^Suivi/.test(b.textContent ?? ''))!.click() })
+    expect(reply().querySelector('svg.lucide-check')).not.toBeNull()
+    render(suivi({ aFaire: [other] }), views)
+    expect(reply().querySelector('svg.lucide-check')).toBeNull()
+    expect(reply().hasAttribute('aria-disabled')).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('has one lock per question: a card answer in flight blocks the line\'s rebase', async () => {
   const conflict = row('q2', { kind: 'human', title: 'Merger la 12 ?', action: { type: 'question', questionId: 'q2', rebase: true } })
   const merge: QuestionView = { ...questionView, id: 'q2', isMerge: true, locks: ['conflit avec la base'], rebase: true }
