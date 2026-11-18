@@ -5,7 +5,7 @@
 // offered a start.
 
 import type { ConnectionState } from './connection'
-import { runtimeMismatch, type RuntimeMismatch } from './runtimeUpdate'
+import { runtimeMismatch, shortBuild, type RuntimeMismatch } from './runtimeUpdate'
 
 /** "5 minutes ago", coarse. */
 export function relativeTime(then: number, now: number = Date.now()): string {
@@ -79,9 +79,10 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
         : { title: 'Not reachable', message: reason ? `${reason}.` : 'Its machine may be off or offline.', remedies: unreachable }
     }
     case 'connected':
-      return context.requiredUpdate
-        ? { title: 'Runtime update needed', message: `The workspace runs Cate ${state.runtimeVersion}. Update it to ${version} for this app's runtime fixes and features; that ends its terminals and running agents for everyone.`, remedies: ['updateRuntime'] }
-        : null
+      if (!context.requiredUpdate) return null
+      return context.requiredUpdate.runtimeBuild
+        ? { title: 'Runtime update needed', message: `The workspace runs another build of Cate ${state.runtimeVersion} (${shortBuild(context.requiredUpdate.runtimeBuild)}, this app: ${shortBuild(context.requiredUpdate.appBuild)}). Update it to this app's build; that ends its terminals and running agents for everyone.`, remedies: ['updateRuntime'] }
+        : { title: 'Runtime update needed', message: `The workspace runs Cate ${state.runtimeVersion}. Update it to ${version} for this app's runtime fixes and features; that ends its terminals and running agents for everyone.`, remedies: ['updateRuntime'] }
     case 'incompatible':
       return runtimeMismatch(state, version)?.update === 'app'
         ? { title: 'Update Cate', message: `The workspace runs Cate ${state.runtimeVersion}, newer than this app (${version}). Update Cate to use it.`, remedies: ['updateApp'] }

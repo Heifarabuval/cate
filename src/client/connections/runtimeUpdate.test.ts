@@ -7,14 +7,14 @@ import { RpcError } from '@kernel/rpc/contract'
 let updates: RuntimeUpdates | null = null
 afterEach(() => { updates?.dispose(); updates = null })
 
-function fakeConnection(state: ConnectionState, idle = true, shared = false) {
+function fakeConnection(state: ConnectionState, idle = true, shared = false, runtimeBuild: string | undefined = '2.0.4+b') {
   const listeners = new Set<() => void>()
   const update = vi.fn(async (params: { ifIdle?: boolean }) => {
     if (params.ifIdle && (shared || !idle)) throw new RpcError('dirty', 'the runtime is in use', { reason: shared ? 'shared' : 'busy' })
   })
   const connection = {
     clientId: 'self',
-    rpc: { remote: { epoch: 1, build: '2.0.4+b' } },
+    rpc: { remote: { epoch: 1, build: runtimeBuild } },
     state,
     subscribe: (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } },
     runtime: { runtime: { update, info: vi.fn(async () => ({ pid: 1, clients: [{ clientId: 'self' }, ...(shared ? [{ clientId: 'other' }] : [])] })), updateProgress: vi.fn(async () => null) } },
@@ -27,11 +27,12 @@ function fakeConnection(state: ConnectionState, idle = true, shared = false) {
   return connection
 }
 
-const start = (...all: ReturnType<typeof fakeConnection>[]) => {
+const startWith = (build: string | undefined, ...all: ReturnType<typeof fakeConnection>[]) => {
   const connections = { getSnapshot: () => all as unknown as WorkspaceConnection[], subscribe: () => () => {} } as unknown as WorkspaceConnections
-  updates = createRuntimeUpdates({ connections, version: '2.0.4', build: '2.0.4+b' })
+  updates = createRuntimeUpdates({ connections, version: '2.0.4', build })
   return updates
 }
+const start = (...all: ReturnType<typeof fakeConnection>[]) => startWith('2.0.4+b', ...all)
 const as = (c: ReturnType<typeof fakeConnection>) => c as unknown as WorkspaceConnection
 
 it('tells which side a mismatch updates: never a newer runtime back', () => {
@@ -122,6 +123,71 @@ it('leaves compatible newer runtimes usable and asks before interrupting a busy 
   await vi.waitFor(() => expect(runtimeUpdates.run(as(busy))).toEqual({ phase: 'restarting' }))
   busy.set({ kind: 'connected', runtimeVersion: '2.0.4' })
   await expect(confirmed).resolves.toBeNull()
+})
+
+const SAME = { kind: 'connected', runtimeVersion: '2.0.4' } as const
+
+it('updates a runtime of the same version but another build, idle, once', async () => {
+  const other = fakeConnection(SAME, true, false, '2.0.4+a')
+  const runtimeUpdates = start(other)
+  expect(other.runtime.runtime.update).toHaveBeenCalledTimes(1)
+  expect(other.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+b', ifIdle: true })
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(other))).toEqual({ phase: 'restarting' }))
+})
+
+it('leaves a runtime of the same build alone', () => {
+  const same = fakeConnection(SAME)
+  start(same)
+  expect(same.runtime.runtime.update).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['the app', undefined, '2.0.4+a'],
+  ['the runtime', '2.0.4+b', undefined],
+])('does not compare builds when %s does not know its own', (_who, appBuild, runtimeBuild) => {
+  const unknown = fakeConnection(SAME, true, false, runtimeBuild)
+  startWith(appBuild, unknown)
+  expect(unknown.runtime.runtime.update).not.toHaveBeenCalled()
+})
+
+it('never downgrades a newer runtime of another build', () => {
+  const newer = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.5' }, true, false, '2.0.5+z')
+  start(newer)
+  expect(newer.runtime.runtime.update).not.toHaveBeenCalled()
+})
+
+it('asks before stopping work of a sole client on another build, and carries both builds', async () => {
+  const busy = fakeConnection(SAME, false, false, '2.0.4+a')
+  const runtimeUpdates = start(busy)
+  await vi.waitFor(() => expect(runtimeUpdates.required(as(busy))).not.toBeNull())
+  expect(runtimeUpdates.required(as(busy))).toEqual({ update: 'runtime', runtimeVersion: '2.0.4', appVersion: '2.0.4', runtimeBuild: '2.0.4+a', appBuild: '2.0.4+b' })
+  expect(busy.runtime.runtime.update).toHaveBeenCalledTimes(1)
+})
+
+it('keeps a shared runtime of another build usable', async () => {
+  const shared = fakeConnection(SAME, true, true, '2.0.4+a')
+  const runtimeUpdates = start(shared)
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(shared))).toBeNull())
+  await vi.waitFor(() => expect(shared.runtime.runtime.info).toHaveBeenCalled())
+  expect(runtimeUpdates.required(as(shared))).toBeNull()
+  expect(shared.runtime.runtime.update).toHaveBeenCalledTimes(1)
+})
+
+it('does not loop when the build is still another one after the update', async () => {
+  const stuck = fakeConnection(SAME, true, false, '2.0.4+a')
+  const runtimeUpdates = start(stuck)
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(stuck))).toEqual({ phase: 'restarting' }))
+  stuck.set({ kind: 'offline', lastSeen: 1, retrying: true })
+  stuck.set(SAME)
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(stuck))).toBeNull())
+  stuck.set(SAME)
+  expect(stuck.runtime.runtime.update).toHaveBeenCalledTimes(1)
+  const asked = runtimeUpdates.update(as(stuck))
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(stuck))).toEqual({ phase: 'restarting' }))
+  stuck.set({ kind: 'offline', lastSeen: 1, retrying: true })
+  stuck.set(SAME)
+  await expect(asked).resolves.toContain('still does not run this build')
+  expect(stuck.runtime.runtime.update).toHaveBeenCalledTimes(2)
 })
 
 it.each(['offline', 'refused', 'closed'] as const)('does not report update success when reconnect ends %s', async (kind) => {

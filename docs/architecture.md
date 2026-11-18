@@ -1054,8 +1054,11 @@ fails to compile when a registered capability is missing.
   Updating stops the runtime's terminals and agents.
 - Every client runs the same flow, in the client core
   (`client/connections` `RuntimeUpdates`); each shell only draws it. An older
-  release is updated immediately when this is its only compatible client and
-  no work runs, even when the protocol is compatible. Thus upgrading a desktop
+  release, or another build of the same release when both builds are known
+  (the client's and the runtime's handshake `build`), is updated immediately
+  when this is its only compatible client and
+  no work runs, even when the protocol is compatible. A runtime still on
+  another build after its update is not retried. Thus upgrading a desktop
   app also updates its unshared workspace runtimes. This rule asks neither
   which shell the client uses nor how it connected: sharing here means another
   compatible client is connected, not a saved pairing or network setting.
