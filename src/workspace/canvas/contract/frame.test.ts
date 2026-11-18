@@ -14,10 +14,10 @@ const AT = { x: 100, y: 200 }
 const SIZE = { width: 400, height: 300 }
 
 /** Adds `count` nodes one by one, the way `cate panel group add` does. */
-function fill(count: number, at = AT, hand: Rect[] = []): Rect[] {
+function fill(count: number, at = AT, hand: Rect[] = [], frames: Rect[] = []): Rect[] {
   const members: Rect[] = []
   for (let i = 0; i < count; i++) {
-    const origin = frameSlot(members, [...members, ...hand], at, SIZE)
+    const origin = frameSlot(members, [...members, ...hand], at, SIZE, frames)
     members.push({ origin, size: SIZE })
   }
   return members
@@ -87,6 +87,17 @@ describe('frameSlot', () => {
     expect(frameSlot(all.slice(0, 5), all.slice(0, 5), AT, SIZE)).toEqual(all[5].origin)
     // `at` is ignored once there are members: the grid stays where the first one sits.
     expect(frameSlot(all.slice(0, 5), all.slice(0, 5), { x: 9000, y: 9000 }, SIZE)).toEqual(all[5].origin)
+  })
+
+  it('keeps the grown frame clear of the bounds of the other frames', () => {
+    const neighbours = [
+      frameBounds([], { x: AT.x, y: AT.y + 80 }, false),
+      frameBounds([rect(700, 300, 300, 200)], { x: 0, y: 0 }, false),
+    ]
+    const members = fill(8, AT, [], neighbours)
+    expect(noOverlap(members)).toBe(true)
+    const bounds = frameBounds(members, AT, false)
+    for (const other of neighbours) expect(rectsOverlap(bounds, other)).toBe(false)
   })
 
   it('skips a place held by a node of the canvas that is not a member', () => {

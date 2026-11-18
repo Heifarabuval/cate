@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { rect } from '@workspace/canvas/contract'
+import { frameBounds, rect, rectsOverlap } from '@workspace/canvas/contract'
 import { ApiRouter, ApiTokenRegistry } from '@kernel/api/runtime'
 import {
   MAIN_WINDOW,
@@ -360,5 +360,96 @@ describe('frame.list', () => {
     expect(await call('list')).toEqual([])
     settings.cliPanelReadEnabled = false
     await expect(call('list')).rejects.toMatchObject({ message: expect.stringContaining('panel-read-disabled') })
+  })
+})
+
+describe('frames never overlap', () => {
+  /** `count` more terminals, each on its own node far below the frames. */
+  const more = (document: DocumentService, count: number): string[] =>
+    Array.from({ length: count }, (_, i) => {
+      const id = `x${i}`
+      document.apply({
+        kind: 'addPanel',
+        record: { id, type: 'terminal', title: id, fields: {} },
+        at: onCanvas('c1', `n-${id}`, 3000 + i * 500),
+      })
+      return id
+    })
+
+  it('keeps three frames of 1, 3 and 8 panels, and their title bars, apart', async () => {
+    const { call, create, document, frames } = setup()
+    const ids = more(document, 12)
+    const [a, b, c] = [await create('un'), await create('trois'), await create('huit')]
+    const fill = async (frameId: string, panels: string[]) => {
+      for (const panelId of panels) await call('add', { frameId, panelId })
+    }
+    // Interleaved, the way two agents work at the same time.
+    await fill(a.frameId, ids.slice(0, 1))
+    await fill(b.frameId, ids.slice(1, 3))
+    await fill(c.frameId, ids.slice(4, 8))
+    await fill(b.frameId, ids.slice(3, 4))
+    await fill(c.frameId, ids.slice(8, 12))
+
+    const doc = document.get()
+    const bounds = frames().map((frame) => ({
+      title: frame.title,
+      rect: frameBounds(
+        Object.values(doc.canvases.c1.nodes).filter((node) => node.frameId === frame.id).map((node) => node.rect),
+        frame.at,
+        frame.collapsed,
+      ),
+    }))
+    expect([a, b, c].map((f) => framePanels(doc, f.frameId).length)).toEqual([1, 3, 8])
+    for (const [i, one] of bounds.entries()) {
+      for (const other of bounds.slice(i + 1)) expect(rectsOverlap(one.rect, other.rect), `${one.title} / ${other.title}`).toBe(false)
+    }
+    // A frame made afterwards starts clear of every frame, bars included.
+    const { frameId } = await create('quatre')
+    const bar = frames().find((frame) => frame.id === frameId)!
+    for (const other of bounds) expect(rectsOverlap(frameBounds([], bar.at, false), other.rect)).toBe(false)
+  })
+})
+
+describe('concurrent calls (R4)', () => {
+  it('gives 3 simultaneous adds 3 distinct places', async () => {
+    const { call, create, originOf } = setup()
+    const { frameId } = await create()
+    const added = await Promise.all(['panel-bbbb', 'panel-cccc', 'term-eeee'].map((panelId) => call('add', { frameId, panelId })))
+    expect(added.every((result) => (result as { moved: boolean }).moved)).toBe(true)
+    const origins = ['n-b', 'n-c', 'n-tab'].map((node) => originOf(node))
+    expect(new Set(origins.map((o) => `${o.x},${o.y}`)).size).toBe(3)
+  })
+
+  it('gives 3 simultaneous creates 3 distinct origins', async () => {
+    const { call, frames } = setup()
+    await Promise.all(['a', 'b', 'c'].map((title) => call('create', { title })))
+    expect(new Set(frames().map((frame) => `${frame.at.x},${frame.at.y}`)).size).toBe(3)
+  })
+})
+
+describe('frame.create --canvas', () => {
+  it('wins over the caller\'s canvas, with a canvas panel or a panel on a canvas', async () => {
+    const { call } = setup()
+    expect(await call('create', { title: 'a', canvas: 'cv2' })).toMatchObject({ canvasId: 'c2' })
+    expect(await call('create', { title: 'b', canvas: 'term-gggg' })).toMatchObject({ canvasId: 'c2' })
+    expect(await call('create', { title: 'c', canvas: 'cv' })).toMatchObject({ canvasId: 'c1' })
+  })
+
+  it('refuses a panel that is on no canvas', async () => {
+    const { call, frames } = setup()
+    await expect(call('create', { title: 'x', canvas: 'docked' })).rejects.toMatchObject({ code: 'rejected' })
+    expect(frames()).toEqual([])
+  })
+})
+
+describe('frame titles', () => {
+  it.each(['\x1b[31mred', 'a\tb', 'a\x7fb', 'a\u0085b', 'a‮b'])('refuses %j from the CLI and from an op', async (title) => {
+    const { call, create, document, frames } = setup()
+    await expect(call('create', { title })).rejects.toMatchObject({ code: 'rejected' })
+    const { frameId } = await create('ok')
+    const op = { opId: { clientId: 'x', counter: 1 } }
+    expect(document.submit({ ...op, kind: 'updateFrame', id: frameId, patch: { title } })).toMatchObject({ status: 'failed' })
+    expect(document.submit({ opId: { clientId: 'x', counter: 2 }, kind: 'addFrame', canvasId: 'c1', frame: { id: 'f9', title, state: 'active', collapsed: false, at: { x: 0, y: 0 } } })).toMatchObject({ status: 'failed' })
+    expect(frames().map((f) => f.title)).toEqual(['ok'])
   })
 })

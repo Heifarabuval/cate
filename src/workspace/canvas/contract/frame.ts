@@ -47,15 +47,22 @@ export function frameOrigin(memberRects: readonly Rect[]): Point | null {
 /**
  * The first free place for a node of `size` in a frame: cells of a grid of
  * `FRAME_COLUMNS` per row, row by row, that overlap none of `otherRects` (every
- * node of the canvas, members included). The grid starts where the members
- * start, or under the title bar at `at` for an empty frame, so a collapsed,
- * an empty and a late-filled frame give the same cells. Nothing moves.
+ * node of the canvas, members included) and whose grown frame overlaps none
+ * of `otherFrames` (the bounds of the canvas's other frames, bars included).
+ * The grid starts where the members start, or under the title bar at `at` for
+ * an empty frame, so a collapsed, an empty and a late-filled frame give the
+ * same cells. Nothing moves.
+ *
+ * ponytail: when another frame sits inside the span of the members, no cell
+ * keeps the whole frame clear of it; a second pass then only keeps the new
+ * node's own padded rect clear, so the search always ends.
  */
 export function frameSlot(
   memberRects: readonly Rect[],
   otherRects: readonly Rect[],
   at: Point,
   size: Size,
+  otherFrames: readonly Rect[] = [],
 ): Point {
   const members = boundingRect(memberRects)
   const anchor = snapToGrid(
@@ -63,12 +70,20 @@ export function frameSlot(
   )
   const stepX = snapScalar(size.width + CANVAS_GRID_SIZE, CANVAS_GRID_SIZE, true)
   const stepY = snapScalar(size.height + CANVAS_GRID_SIZE, CANVAS_GRID_SIZE, true)
-  const floor = Math.max(-Infinity, ...otherRects.map((r) => r.origin.y + r.size.height))
-  for (let row = 0; ; row++) {
-    const y = anchor.y + row * stepY
-    for (let column = 0; column < FRAME_COLUMNS; column++) {
-      const origin = { x: anchor.x + column * stepX, y }
-      if (y >= floor || !otherRects.some((r) => rectsOverlap(r, { origin, size }))) return origin
+  const floor = Math.max(-Infinity, ...[...otherRects, ...otherFrames].map((r) => r.origin.y + r.size.height))
+  for (const wholeFrame of [true, false]) {
+    for (let row = 0; ; row++) {
+      const y = anchor.y + row * stepY
+      for (let column = 0; column < FRAME_COLUMNS; column++) {
+        const origin = { x: anchor.x + column * stepX, y }
+        const node = { origin, size }
+        if (otherRects.some((r) => rectsOverlap(r, node))) continue
+        const grown = frameBounds(wholeFrame ? [...memberRects, node] : [node], at, false)
+        if (!otherFrames.some((r) => rectsOverlap(r, grown))) return origin
+      }
+      // Past this row even the padded node is below everything: nothing more to find.
+      if (y - FRAME_PADDING - FRAME_TITLE_HEIGHT >= floor) break
     }
   }
+  return anchor
 }

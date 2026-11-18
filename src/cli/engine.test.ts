@@ -267,6 +267,22 @@ describe('runCli', () => {
     expect(out).toEqual(['   ID        TYPE      TITLE\n*  12345678  terminal  zsh'])
   })
 
+  it('prints groups one per line, their panels indented, and JSON unchanged with --json', async () => {
+    const rows = [
+      { frameId: '7f3c9a12-0000', canvasId: 'c1', title: '#n3 cadrage', state: 'waiting', collapsed: false, panelIds: ['1a2b3c4d-9999', '5e6f7a8b-1111'] },
+      { frameId: 'aaaaaaaa-1111', canvasId: 'c1', title: 'fini', state: 'done', collapsed: true, panelIds: [] },
+    ]
+    const text = deps({ call: async () => rows })
+    expect(await runCli(['panel', 'group', 'list'], CATE_API, text.d)).toBe(0)
+    expect(text.out).toEqual(['7f3c9a12  waiting  2  #n3 cadrage\n  1a2b3c4d\n  5e6f7a8b\naaaaaaaa  done     0  fini'])
+    const json = deps({ call: async () => rows })
+    expect(await runCli(['panel', 'group', 'list', '--json'], CATE_API, json.d)).toBe(0)
+    expect(JSON.parse(json.out.join(''))).toEqual(rows)
+    const none = deps({ call: async () => [] })
+    expect(await runCli(['panel', 'group', 'list'], CATE_API, none.d)).toBe(0)
+    expect(none.out).toEqual(['(no groups)'])
+  })
+
   it('derives wait timeouts from the arguments', async () => {
     const callFn = vi.fn(async () => ({ agents: [], timedOut: true }))
     const { d, out } = deps({ call: callFn })

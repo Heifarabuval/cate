@@ -61,6 +61,22 @@ function panelList(value: unknown): string {
   }))
 }
 
+/** One line per group (id, state, panel count, title), its panels' ids indented under it. */
+function frameList(value: unknown): string {
+  if (!Array.isArray(value)) return generic(value)
+  if (value.length === 0) return '(no groups)'
+  const frames = value.map((item) => {
+    const frame = asObject(item) ?? {}
+    return { frame, panelIds: Array.isArray(frame.panelIds) ? frame.panelIds : [] }
+  })
+  const stateWidth = Math.max(...frames.map(({ frame }) => text(frame.state).length))
+  const countWidth = Math.max(...frames.map(({ panelIds }) => String(panelIds.length).length))
+  return frames.map(({ frame, panelIds }) => [
+    `${shortId(text(frame.frameId) || '?')}  ${text(frame.state).padEnd(stateWidth)}  ${String(panelIds.length).padEnd(countWidth)}  ${text(frame.title)}`,
+    ...panelIds.map((id) => `  ${shortId(text(id))}`),
+  ].join('\n')).join('\n')
+}
+
 /** An agent panel's prompts on their way, by state (`1 queued, 1 failed`). */
 function promptCounts(prompts: unknown): string {
   if (!Array.isArray(prompts)) return ''
@@ -176,6 +192,7 @@ function browserLog<T>(describe: (entries: T[]) => string) {
 
 const FORMATTERS: Record<string, (value: unknown) => string> = {
   panelList,
+  frameList,
   agentRuns,
   agentUsage,
   agentWait: (value) => {

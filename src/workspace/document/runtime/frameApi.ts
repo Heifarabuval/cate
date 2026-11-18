@@ -5,10 +5,11 @@
 
 import { randomUUID } from 'node:crypto'
 import {
-  FRAME_TITLE_HEIGHT,
   boundingRect,
+  frameBounds,
   frameOrigin,
   frameSlot,
+  rectsOverlap,
   snapToGrid,
   PLACEMENT_GAP,
   type Point,
@@ -27,6 +28,7 @@ import {
   type CanvasFrame,
   type CanvasId,
   type CanvasModel,
+  type FrameId,
   type PanelId,
   type WorkspaceDocument,
 } from '../contract'
@@ -77,9 +79,27 @@ function newFrameAt(doc: Doc, canvas: CanvasModel, caller: PanelId | undefined):
     : undefined
   const below = boundingRect(callerNode ? [callerNode.rect] : Object.values(canvas.nodes).map((node) => node.rect))
   let at = snapToGrid(below ? { x: below.origin.x, y: below.origin.y + below.size.height + PLACEMENT_GAP } : { x: 0, y: 0 })
-  const taken = Object.values(canvas.frames ?? {})
-  while (taken.some((frame) => frame.at.x === at.x && frame.at.y === at.y)) at = { x: at.x, y: at.y + 2 * FRAME_TITLE_HEIGHT }
-  return at
+  // Under whatever the bar would sit on: a frame as it is drawn now, or a node.
+  const obstacles = [...frameRects(canvas), ...Object.values(canvas.nodes).map((node) => node.rect)]
+  for (;;) {
+    const bar = frameBounds([], at, false)
+    const hit = obstacles.find((rect) => rectsOverlap(rect, bar))
+    if (!hit) return at
+    at = snapToGrid({ x: at.x, y: hit.origin.y + hit.size.height + PLACEMENT_GAP })
+  }
+}
+
+/** The rect each frame of the canvas takes now (the frame `skip` left out). */
+function frameRects(canvas: CanvasModel, skip?: FrameId): Rect[] {
+  return Object.values(canvas.frames ?? {})
+    .filter((frame) => frame.id !== skip)
+    .map((frame) =>
+      frameBounds(
+        Object.values(canvas.nodes).filter((node) => node.frameId === frame.id).map((node) => node.rect),
+        frame.at,
+        frame.collapsed,
+      ),
+    )
 }
 
 export function createFrameApiHandlers(document: Pick<DocumentService, 'get' | 'apply'>): CateServiceHandlers<typeof frameApi> {
@@ -123,7 +143,7 @@ export function createFrameApiHandlers(document: Pick<DocumentService, 'get' | '
 
       const others = Object.values(canvas.nodes).filter((other) => other.id !== node.id)
       const members: Rect[] = others.filter((other) => other.frameId === frame.id).map((other) => other.rect)
-      const origin = frameSlot(members, others.map((other) => other.rect), frame.at, node.rect.size)
+      const origin = frameSlot(members, others.map((other) => other.rect), frame.at, node.rect.size, frameRects(canvas, frame.id))
       document.apply({
         kind: 'batch',
         changes: [
