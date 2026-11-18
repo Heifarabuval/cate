@@ -18,9 +18,9 @@ Sortie : première ligne `oui` ou `non`, puis une raison par ligne.
 ```text
 non : 2 agents en plein tour (#n12 implémenteur, #n12 vérificateur)
 non : worktree n12-implementeur : 1 commit non poussé
-non : PR ouverte #31 test(ci)
-info : daemon à redémarrer (build 2.1.0-beta.15+337c78bd35a7, app 2.1.0-beta.15+91553d604add) : terminaux et agents arrêtés
 info : 1 agent en attente de saisie (#n13 vérificateur)
+info : PR ouverte #31 test(ci)
+info : daemon à redémarrer (build 2.1.0-beta.15+337c78bd35a7, app 2.1.0-beta.15+91553d604add) : terminaux et agents arrêtés
 ```
 
 Code de retour : 0 pour `oui`, 1 pour `non`, 2 hors terminal Cate (comme les autres sous-commandes). Source illisible : `non : <source> illisible (<erreur>)`. Lecture seule : aucune écriture de `state.json`, aucun appel `cate ... close`, `git push`, `git worktree remove`.

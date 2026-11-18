@@ -22,7 +22,7 @@ Un besoin ordinaire (`kind: 'human'`, `owner: OWNER_HUMAIN`) avec :
 |-------|--------|
 | `ref` | `orphan:<panelId>` (un seul besoin ouvert par panneau, `add_need` réutilise l'existant) |
 | `title` | `Fermer le panneau « <titre> » (sans agent) ?` |
-| `orphan` | `{panel, title, motif}` où `motif` vaut `sans-agent` ou `non-rattache` |
+| `orphan` | `{panel, title}` : le panneau et son titre `#n<chiffres> …` (pas de champ `motif`) |
 | `source` | absent |
 
 Transitions : `open` → `done` (Fermer, preuve `panneau fermé : <id>`), `open` → `dropped` (Garder, ou panneau disparu, ou panneau devenu protégé).
@@ -32,10 +32,10 @@ Transitions : `open` → `done` (Fermer, preuve `panneau fermé : <id>`), `open`
 | Champ | Type |
 |-------|------|
 | `oui` | booléen |
-| `raisons` | liste de textes (agents en plein tour, worktrees non poussés, PR ouvertes, daemon redémarre) |
+| `raisons` | liste de textes : `non` (agents en plein tour, worktrees sales ou non poussés, source illisible) et `info` (agents en attente de saisie, PR ouvertes, daemon à redémarrer) |
 | `illisibles` | liste de noms de sources (`cate`, `git`, `gh`, `daemon`) |
 
-`oui` vaut vrai seulement si `raisons` ne contient aucune cause bloquante et si `illisibles` est vide. Le redémarrage du daemon est une raison non bloquante.
+`oui` vaut vrai seulement si aucune cause bloquante (`non`) n'est relevée et si `illisibles` est vide. Les PR ouvertes, les agents en attente de saisie et le redémarrage du daemon sont des `info`, non bloquants.
 
 ## Récit 4 : aucune donnée
 

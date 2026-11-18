@@ -8,7 +8,7 @@ Aucune commande ci-dessous ne lance Playwright, Electron, l'app Cate ni `npm run
 npm run test:agence
 ```
 
-Attendu : 0 échec. Tests nouveaux : plafond à 4 et agents en attente comptés, `doctor --relance` (oui, agent en plein tour, worktree non poussé, PR ouverte, build différent, source illisible, lecture seule), balayage (orphelin sur 2 tours, protégés exclus, Fermer sans `--discard`, Garder).
+Attendu : 0 échec. Tests nouveaux : plafond à 4 et agents en attente comptés, `doctor --relance` (oui, agent en plein tour, worktree non poussé, PR ouverte (`info`, sans blocage), build différent, source illisible, lecture seule), balayage (orphelin sur 2 tours, protégés exclus, Fermer sans `--discard`, Garder).
 
 Vérification de l'aide : `python3 tools/agence/agence.py start --help` affiche « défaut 4 ».
 

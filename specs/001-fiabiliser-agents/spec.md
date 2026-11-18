@@ -60,7 +60,7 @@ L'humain, ou l'orchestrateur pour lui, lance `agence doctor --relance` et lit «
 1. **Given** aucun agent en plein tour, aucun worktree sale ou non poussé, aucune PR ouverte et un daemon au même build que l'app, **When** `agence doctor --relance`, **Then** la réponse est « oui ».
 2. **Given** 2 agents en plein tour, **When** `agence doctor --relance`, **Then** la réponse est « non » et nomme les 2 agents. Un agent en attente de saisie est cité sans bloquer.
 3. **Given** un worktree avec des modifications non commitées ou des commits non poussés, **When** la commande tourne, **Then** la réponse est « non » et nomme le worktree.
-4. **Given** une PR ouverte du projet, **When** la commande tourne, **Then** la réponse est « non » et cite la PR.
+4. **Given** une PR ouverte du projet, **When** la commande tourne, **Then** la réponse reste « oui » si rien d'autre ne bloque, et une ligne `info` cite la PR.
 5. **Given** un daemon dont le build diffère de celui que l'app installerait, **When** la commande tourne, **Then** la réponse dit que les terminaux et les agents s'arrêteront au redémarrage.
 6. **Given** l'une des sources illisibles (`cate`, `git` ou `gh` en échec), **When** la commande tourne, **Then** la réponse n'est jamais « oui » : elle dit laquelle n'a pas pu être lue.
 7. **Given** n'importe quel cas, **When** la commande se termine, **Then** aucun panneau, branche, fichier d'état ni processus n'a changé.
@@ -79,12 +79,11 @@ Après un plantage, Cate restaure des terminaux dont l'agent est mort. Le suivi 
 
 1. **Given** un terminal titré `#n<chiffres> <rôle>` dont l'agent n'existe plus, détecté sur deux tours du régisseur, **When** le suivi se met à jour, **Then** il apparaît avec Fermer et Garder.
    - **Given** un terminal sans agent dont le titre ne suit pas cette forme, **Then** il n'est jamais proposé.
-2. **Given** un panneau lancé par l'orchestrateur et jamais rattaché à un besoin, **When** le suivi se met à jour, **Then** il apparaît avec Fermer et Garder.
-3. **Given** l'orchestrateur, le régisseur, le suivi, un panneau rattaché à un besoin ouvert ou un éditeur non enregistré, **When** le balayage tourne, **Then** aucun n'est proposé.
-4. **Given** un orphelin proposé, **When** l'humain clique Fermer, **Then** le panneau est fermé sans `--discard` ; si la fermeture est refusée, la ligne le dit et le panneau reste.
-5. **Given** un orphelin proposé, **When** l'humain clique Garder, **Then** le panneau reste et n'est plus proposé.
-6. **Given** un agent qui vient d'être lancé et n'est pas encore dans la liste des agents, **When** le balayage tourne une seule fois, **Then** son terminal n'est pas proposé.
-7. **Given** le balayage, **When** il tourne, **Then** il ne ferme jamais un panneau sans le clic de l'humain.
+2. **Given** l'orchestrateur, le régisseur, le suivi, un panneau rattaché à un besoin ouvert ou un éditeur non enregistré, **When** le balayage tourne, **Then** aucun n'est proposé.
+3. **Given** un orphelin proposé, **When** l'humain clique Fermer, **Then** le panneau est fermé sans `--discard` ; si la fermeture est refusée, la ligne le dit et le panneau reste.
+4. **Given** un orphelin proposé, **When** l'humain clique Garder, **Then** le panneau reste et n'est plus proposé.
+5. **Given** un agent qui vient d'être lancé et n'est pas encore dans la liste des agents, **When** le balayage tourne une seule fois, **Then** son terminal n'est pas proposé.
+6. **Given** le balayage, **When** il tourne, **Then** il ne ferme jamais un panneau sans le clic de l'humain.
 
 ---
 
@@ -142,7 +141,7 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 ### Edge Cases
 
 - Récit 1 : `waitingForInput` sans `canReceivePrompt` (agent bloqué sur une permission) compte comme vivant. L'orchestrateur, le régisseur et un panneau `agence` ne comptent pas.
-- Récit 2 : un worktree sans upstream compte comme « non poussé ». Une PR ouverte d'un autre auteur du dépôt est citée mais décrite comme telle. `gh` absent rend « non », jamais « oui ».
+- Récit 2 : un worktree sans upstream compte comme « non poussé ». Une PR ouverte, quel qu'en soit l'auteur, est citée en `info` et ne bloque pas. `gh` absent rend « non », jamais « oui ».
 - Récit 3 : un terminal de l'humain sans titre de besoin ne doit jamais être proposé si le critère retenu est le titre. Un orphelin gardé ne revient pas au tour suivant. Un panneau déjà fermé entre le tour et le clic ne provoque pas d'erreur.
 - Récit 4 : lockfile absent des deux côtés, liens symboliques dans `node_modules`, racine elle-même en worktree, disque sans APFS (la copie échoue : aucun effet).
 - Récit 6 : le hook lit toute la commande, y compris un heredoc ou un message de commit : seule une commande qui lance réellement l'outil est bloquée. Les appels MCP Playwright ne sont pas couverts.
@@ -162,7 +161,7 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 **Récit 2 : relance**
 
 - **FR-006**: `agence doctor --relance` MUST répondre « oui » ou « non » en une première ligne, suivie des raisons.
-- **FR-007**: La réponse MUST être « non » dès qu'un agent est en plein tour (`running`), qu'un worktree du projet a des modifications non commitées ou des commits non poussés, ou qu'une PR du projet est ouverte. L'orchestrateur, le régisseur et le terminal qui appelle ne comptent pas. Les agents en attente de saisie sont cités comme information (ils s'arrêtent au redémarrage) et ne bloquent pas.
+- **FR-007**: La réponse MUST être « non » dès qu'un agent est en plein tour (`running`), qu'un worktree du projet a des modifications non commitées ou des commits non poussés. Une PR ouverte est citée en `info` et ne bloque pas. L'orchestrateur, le régisseur et le terminal qui appelle ne comptent pas. Les agents en attente de saisie sont cités comme information (ils s'arrêtent au redémarrage) et ne bloquent pas.
 - **FR-008**: La réponse MUST dire si le daemon redémarrerait (build du daemon du workspace différent du build installé le plus récent) et que ses terminaux et agents s'arrêteraient alors.
 - **FR-009**: Une source illisible MUST donner « non » avec le nom de la source, jamais « oui ».
 - **FR-010**: La commande MUST être en lecture seule.
@@ -170,7 +169,7 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 
 **Récit 3 : balayage**
 
-- **FR-012**: Le régisseur MUST détecter les panneaux orphelins : terminal titré `#n<chiffres> <rôle>` dont l'agent n'existe plus et panneau lancé par l'orchestrateur et jamais rattaché à un besoin.
+- **FR-012**: Le régisseur MUST détecter les panneaux orphelins : terminal titré `#n<chiffres> <rôle>` sans agent `running` ni `waitingForInput` (un agent `finished` compte comme absent).
 - **FR-013**: Un panneau MUST être vu orphelin sur deux tours consécutifs avant d'être proposé.
 - **FR-014**: Chaque orphelin proposé MUST apparaître au suivi avec **Fermer** et **Garder** sur la page du régisseur. Rien ne se ferme sans clic.
 - **FR-015**: Fermer MUST fermer sans `--discard`. Un refus MUST laisser le panneau et le dire sur la ligne.
@@ -202,7 +201,7 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 
 - **Agent vivant** : agent d'un projet en état `running` ou `waitingForInput`, hors orchestrateur et régisseur.
 - **Plafond** : nombre maximal d'agents vivants d'un projet, réglable par projet.
-- **Panneau orphelin** : panneau de l'espace de travail qui n'a plus ni agent ni besoin ouvert qui le justifie.
+- **Panneau orphelin** : terminal titré `#n<chiffres> <rôle>` sans agent `running` ni `waitingForInput`, et sans besoin ouvert qui le justifie.
 - **Besoin** : ligne de suivi d'`agence` à laquelle des panneaux sont rattachés.
 - **Verdict de relance** : oui ou non, avec la liste des raisons et des sources illisibles.
 - **Brief** : texte donné à un sous-agent, dont le gabarit vit dans le skill `orchestrateur`.
