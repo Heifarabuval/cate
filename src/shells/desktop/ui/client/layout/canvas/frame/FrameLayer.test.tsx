@@ -127,6 +127,17 @@ describe('FrameLayer title', () => {
     expect(count.querySelector('svg')).not.toBeNull()
   })
 
+  it('counts every tab of a member stack, not one per node', () => {
+    let doc = framed()
+    for (const id of ['pa2', 'pa3']) {
+      const result = applyOp(doc, { kind: 'addPanel', record: { id, type: 'terminal', title: id, fields: {} }, at: { to: 'stack', dock: { canvasId: 'c1', nodeId: 'a' }, stackId: 'stack-a' } })
+      if (result.error) throw new Error(result.error.message)
+      doc = result.doc
+    }
+    open(doc)
+    expect(container.querySelector<HTMLElement>('[data-frame-count]')!.textContent).toBe('4')
+  })
+
   it('turns animation off under prefers-reduced-motion', () => {
     open()
     expect(frameEl().className).toContain('motion-reduce:transition-none')
