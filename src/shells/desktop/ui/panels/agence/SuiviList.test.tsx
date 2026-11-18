@@ -163,7 +163,7 @@ it('names the rebase button briefly in a narrow column, the full name kept as ti
   expect(short.getAttribute('title')).toBe('Demander le rebase')
   // The card it opens is compact too.
   act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre')!.click())
-  expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Forcer')).toBe(true)
+  expect([...host.querySelectorAll('button')].some((b) => b.textContent?.startsWith('Merger quand même (rebase)'))).toBe(true)
 })
 
 it('offers no « Répondre » for a question the snapshot no longer holds (already answered)', () => {
