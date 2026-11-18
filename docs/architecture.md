@@ -1222,7 +1222,7 @@ runtime and in every client's mirror, so both apply ops the same way):
 interface WorkspaceDocument {
   panels: Record<PanelId, PanelRecord>      // type, title, worktreeId, type fields
   windows: Record<WindowId, DocWindow>      // 'main' always exists
-  canvases: Record<CanvasId, CanvasModel>   // nodes: rect, mini dock tree
+  canvases: Record<CanvasId, CanvasModel>   // nodes: rect, mini dock tree; frames (optional)
   relations: Record<RelationId, PanelRelation>
   worktrees: Record<WorktreeId, WorktreeMeta> // status: creating | ready | removing
 }
@@ -1238,6 +1238,16 @@ interface DocWindow {
   canvas panel (`addPanel`) and removed with it (`removePanels` removes the
   canvas and the panels on it; the view asks first). A canvas panel cannot
   be placed on a canvas.
+- A canvas can hold frames (`CanvasModel.frames`, absent when none). A node
+  names its frame with `frameId`, so a frame holds a node with its whole tab
+  stack and a panel is in one frame at most. Frame ids are unique in the
+  document, a `frameId` names a frame of the same canvas, and a frame's
+  geometry is derived from its member nodes (it stores only `at`, the corner
+  of its title bar, for when it is empty or collapsed). `removePanels` removes
+  a frame it empties; `setNodeFrame null`, `removeFrame` and `placePanel`
+  never do, and a canvas panel whose canvas holds a frame cannot be replaced.
+  Undoing a removal puts back the panels, then the frames, then each node's
+  `frameId`. A document without frames reads and writes exactly as before.
 - Viewport, zoom, active tab, maximize and selection are client state and
   not in the document (`docs/dock-rules.md`).
 - A detached window is shared: that it exists and its dock tree. Its bounds are not in the document; every window's bounds are
@@ -1252,6 +1262,7 @@ interface DocWindow {
 | Records | `addPanel(record, at)`, `replacePanel(record, discard?)` (a surface becoming the picked type: same id, the old session is disposed and the new one started), `updatePanel(id, patch)`, `removePanels(ids, discard?)` |
 | Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, stackId}`). `dock` is a window's dock or a canvas node's mini dock. Placing an already placed panel moves it. |
 | Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId, discard?)` (removes its panels; the view asks first) |
+| Frames | `addFrame(canvasId, frame)`, `updateFrame(id, patch)` (title, state, collapsed, at), `removeFrame(id)` (dissolves: no panel is removed), `setNodeFrame(canvasId, nodeId, frameId \| null)` |
 | Relations | `addRelation`, `updateRelation`, `removeRelation` |
 | Worktrees | `setWorktree(meta)`, `removeWorktree(id)` (metadata only; the repository service does the resource work and writes these) |
 
