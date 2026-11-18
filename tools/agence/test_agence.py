@@ -1397,8 +1397,8 @@ class Tour(Base):
 
 	def test_place_liberee_dans_la_file(self):
 		self.booted()
-		self.tick({'o1'}, self.rows(8))
-		self.assertTrue(self.places(self.tick({'o1'}, self.rows(7))))
+		self.tick({'o1'}, self.rows(4))
+		self.assertTrue(self.places(self.tick({'o1'}, self.rows(3))))
 
 	def test_plafond_compte_les_agents_en_plein_tour(self):
 		self.booted()
@@ -1406,25 +1406,27 @@ class Tour(Base):
 		st = self.state()
 		self.assertEqual((st['agentsActive'], st['agentsWaiting']), (3, 3))
 
-	def test_agent_en_attente_ne_bloque_pas_la_file(self):
+	def test_agent_en_attente_compte_dans_le_plafond(self):
 		self.booted()
-		self.assertFalse(self.places(self.tick({'o1'}, self.rows(5, waiting=4))))
-		self.assertFalse(self.places(self.tick({'o1'}, self.rows(5, waiting=4))))
+		self.assertFalse(self.places(self.tick({'o1'}, self.rows(2, waiting=2))))  # 4 sur 4
+		self.assertFalse(self.places(self.tick({'o1'}, self.rows(2, waiting=2))))
+		effects = self.places(self.tick({'o1'}, self.rows(2, waiting=1)))  # un agent en attente part
+		self.assertEqual([e[2] for e in effects], ['Une place est libre : 3 en cours sur 4.'])
 
 	def test_orchestrateur_et_regisseur_ne_comptent_pas(self):
 		self.booted()
-		self.tick({'o1', 'r1'}, self.rows(8, extra=('o1', 'r1')))
-		self.assertEqual(self.state()['agentsActive'], 8)
-		self.assertTrue(self.places(self.tick({'o1', 'r1'}, self.rows(7, extra=('o1', 'r1')))))
+		self.tick({'o1', 'r1'}, self.rows(4, extra=('o1', 'r1')))
+		self.assertEqual(self.state()['agentsActive'], 4)
+		self.assertTrue(self.places(self.tick({'o1', 'r1'}, self.rows(3, extra=('o1', 'r1')))))
 
 	def test_une_place_libre_une_fois_par_liberation(self):
 		self.booted()
-		self.tick({'o1'}, self.rows(8))
-		self.assertEqual(len(self.places(self.tick({'o1'}, self.rows(7)))), 1)
-		self.assertFalse(self.places(self.tick({'o1'}, self.rows(7))))
-		self.assertFalse(self.places(self.tick({'o1'}, self.rows(6))))
-		self.tick({'o1'}, self.rows(8))
-		self.assertEqual(len(self.places(self.tick({'o1'}, self.rows(7)))), 1)
+		self.tick({'o1'}, self.rows(4))
+		self.assertEqual(len(self.places(self.tick({'o1'}, self.rows(3)))), 1)
+		self.assertFalse(self.places(self.tick({'o1'}, self.rows(3))))
+		self.assertFalse(self.places(self.tick({'o1'}, self.rows(2))))
+		self.tick({'o1'}, self.rows(4))
+		self.assertEqual(len(self.places(self.tick({'o1'}, self.rows(3)))), 1)
 
 	def test_plafond_reglable(self):
 		self.booted()
@@ -1454,9 +1456,17 @@ class Tour(Base):
 		with open(path, 'w') as f:
 			json.dump(old, f)
 		self.booted()
-		self.assertEqual(agence.plafond(self.state()), 8)
-		self.tick({'o1'}, self.rows(8))
-		self.assertTrue(self.places(self.tick({'o1'}, self.rows(7))))
+		self.assertEqual(agence.plafond(self.state()), 4)
+		self.tick({'o1'}, self.rows(4))
+		self.assertTrue(self.places(self.tick({'o1'}, self.rows(3))))
+
+	def test_aide_du_plafond(self):
+		out = io.StringIO()
+		with redirect_stdout(out), self.assertRaises(SystemExit):
+			agence.main(['start', '--help'])
+		aide = ' '.join(out.getvalue().split())
+		self.assertIn('défaut 4', aide)
+		self.assertIn('en attente de saisie comptent', aide)
 
 	def test_suivi_dit_en_cours_et_en_attente(self):
 		self.booted()

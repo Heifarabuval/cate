@@ -5,7 +5,7 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents règle le plafond d'agents en plein tour (défaut 8)
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents règle le plafond d'agents vivants (défaut 4)
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
   agence need add|panel|done|drop|list   add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
@@ -37,7 +37,7 @@ import time
 import urllib.parse
 from datetime import datetime, timezone
 
-MAX_AGENTS = 8  # plafond par défaut d'agents en plein tour ; agence start --max-agents le change pour le projet
+MAX_AGENTS = 4  # plafond par défaut d'agents vivants (en plein tour ou en attente) ; agence start --max-agents le change pour le projet
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')  # ceux que cate agent start --effort déclare
 KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
@@ -1395,10 +1395,12 @@ def tick(st, live, agents, gh, now, screens=None):
 			effects.append(('toast', n['id'], (st['repo'], f"{prefixe}{n['id']} {n['title']} : {action_attendue(st, n)}")))
 	mine = [a for a in agents if a['panelId'] not in (orch, st['panels'].get('regisseur'))]
 	active = len([a for a in mine if a.get('state') == 'running'])
-	if st['agentsActive'] >= plafond(st) > active:
-		effects.append(('notify', orch, f'Une place est libre : {active} en cours sur {plafond(st)}.'))
+	waiting = len([a for a in mine if a.get('state') == 'waitingForInput'])
+	vivants = active + waiting
+	if st['agentsActive'] + st['agentsWaiting'] >= plafond(st) > vivants:
+		effects.append(('notify', orch, f'Une place est libre : {vivants} en cours sur {plafond(st)}.'))
 	st['agentsActive'] = active
-	st['agentsWaiting'] = len([a for a in mine if a.get('state') == 'waitingForInput'])
+	st['agentsWaiting'] = waiting
 	st['notified'] = sorted(notified)
 	return effects
 
@@ -1683,7 +1685,7 @@ def parser():
 	s.add_argument('--notify', action=argparse.BooleanOptionalAction, default=None,
 	               help="notification système quand une ligne attend l'humain (activée par défaut ; --no-notify la coupe pour ce projet, relue à chaque tour)")
 	s.add_argument('--max-agents', type=entier_positif, metavar='N',
-	               help=f"plafond d'agents en plein tour pour ce projet (défaut {MAX_AGENTS} ; les agents en attente de saisie, l'orchestrateur et le régisseur ne comptent pas)")
+	               help=f"plafond d'agents vivants pour ce projet (défaut {MAX_AGENTS} ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
 	s.set_defaults(fn=cmd_start)
 	b = sub.add_parser('boot')
 	b.add_argument('--from', dest='frm')
