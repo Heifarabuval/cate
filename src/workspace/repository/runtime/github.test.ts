@@ -103,8 +103,43 @@ it('fetches the PR base without changing the current branch', async () => {
   mocks.exec.mockImplementation((cmd, args, _opts, callback) => callback(null, { stdout: cmd === 'gh' ? JSON.stringify({ headRefName: 'feature', baseRefOid: baseOid }) : args[0] === 'remote' ? 'https://github.com/org/repo.git' : '' }))
   expect(await host().pullRequestContext('/project', 'org/repo', 42)).toEqual({ headRefName: 'feature', baseOid })
   expect(mocks.exec.mock.calls.map((call) => call[1])).toEqual([
-    ['remote', 'get-url', 'origin'], ['pr', 'view', '42', '--repo', 'org/repo', '--json', 'headRefName,baseRefOid'], ['fetch', 'origin', baseOid],
+    ['remote', 'get-url', 'origin'], ['pr', 'view', '42', '--repo', 'github.com/org/repo', '--json', 'headRefName,baseRefOid'], ['fetch', 'origin', baseOid],
   ])
+})
+
+it('forces github.com on every gh command the host can start', async () => {
+  const baseOid = 'a'.repeat(40)
+  mocks.exec.mockImplementation((cmd, args: string[], _opts, callback) => {
+    const out = cmd === 'git' ? 'https://github.com/org/repo.git'
+      : args[0] === '--version' ? 'gh version 2.96.0'
+      : args.includes('graphql') ? JSON.stringify(payload)
+      : args.includes('--jq') ? 'alice'
+      : args.includes('headRefName,baseRefOid') ? JSON.stringify({ headRefName: 'feature', baseRefOid: baseOid })
+      : args.includes('--paginate') ? '[]'
+      : args[0] === 'pr' ? '{}'
+      : 'token'
+    callback(null, { stdout: out })
+  })
+  const gh = host()
+  fakeLogin()
+  await gh.connection()
+  await gh.pullRequests(true)
+  await gh.token()
+  await gh.pullRequestContext('/project', 'org/repo', 42)
+  await gh.pullRequestView('org/repo', 42)
+  await gh.pullRequestChecks('org/repo', 42)
+  await gh.pullRequestFiles('org/repo', 42)
+  gh.startLogin(1)
+  gh.cancelLogin(1)
+  const sent: string[][] = [
+    ...mocks.exec.mock.calls.filter((call) => call[0] === 'gh').map((call) => call[1] as string[]),
+    ...mocks.spawn.mock.calls.filter((call) => call[0] === 'gh').map((call) => call[1] as string[]),
+  ]
+  expect(sent.length).toBeGreaterThanOrEqual(12)
+  // `gh --version` never reaches GitHub: every other command names the host.
+  const unpinned = sent.filter((args) => args[0] !== '--version' && !(args.includes('--hostname') && args[args.indexOf('--hostname') + 1] === 'github.com')
+    && !args.some((arg, i) => args[i - 1] === '--repo' && arg.startsWith('github.com/')))
+  expect(unpinned).toEqual([])
 })
 
 it('reads the active github.com account token and follows account changes', async () => {
@@ -133,9 +168,9 @@ it.each(['ENOENT', 'not logged in'])('allows anonymous requests when gh reports 
 
 const VIEW_FIELDS = 'number,url,title,author,body,state,isDraft,headRefName,baseRefName,isCrossRepository,headRepositoryOwner,commits,changedFiles,additions,deletions,statusCheckRollup,mergeable,mergeStateStatus'
 const reads = [
-  ['pullRequestView', ['pr', 'view', '42', '--repo', 'org/repo', '--json', VIEW_FIELDS], 4 * 1024 * 1024, 30_000, '{"number":42}', { number: 42 }],
-  ['pullRequestChecks', ['pr', 'view', '42', '--repo', 'org/repo', '--json', 'state,isDraft,statusCheckRollup,mergeable,mergeStateStatus'], 4 * 1024 * 1024, 30_000, '{"state":"OPEN"}', { state: 'OPEN' }],
-  ['pullRequestFiles', ['api', '--method', 'GET', '--paginate', 'repos/org/repo/pulls/42/files?per_page=100'], 32 * 1024 * 1024, 60_000, '[{"filename":"a"}]', [{ filename: 'a' }]],
+  ['pullRequestView', ['pr', 'view', '42', '--repo', 'github.com/org/repo', '--json', VIEW_FIELDS], 4 * 1024 * 1024, 30_000, '{"number":42}', { number: 42 }],
+  ['pullRequestChecks', ['pr', 'view', '42', '--repo', 'github.com/org/repo', '--json', 'state,isDraft,statusCheckRollup,mergeable,mergeStateStatus'], 4 * 1024 * 1024, 30_000, '{"state":"OPEN"}', { state: 'OPEN' }],
+  ['pullRequestFiles', ['api', '--hostname', 'github.com', '--method', 'GET', '--paginate', 'repos/org/repo/pulls/42/files?per_page=100'], 32 * 1024 * 1024, 60_000, '[{"filename":"a"}]', [{ filename: 'a' }]],
 ] as const
 
 describe.each(reads)('%s', (method, args, maxBuffer, timeout, stdout, parsed) => {
@@ -155,7 +190,7 @@ describe.each(reads)('%s', (method, args, maxBuffer, timeout, stdout, parsed) =>
     else expect(sent.slice(0, 2)).toEqual(['pr', 'view'])
   })
 
-  it.each(['org', 'a/b/c', 'a b/c', '/repo', 'org/', '', 'org/repo; rm -rf'])('refuses the repository %j without calling gh', async (repository) => {
+  it.each(['org', 'a/b/c', 'a b/c', '/repo', 'org/', '', 'org/repo; rm -rf', '../..', '..', '.', './.', 'org/..', '../repo', '-x/-y', 'org/-y', '-x/repo', '.org/repo', `${'a'.repeat(40)}/repo`, `org/${'r'.repeat(101)}`, 'org/repo\n'])('refuses the repository %j without calling gh', async (repository) => {
     await expect(host()[method](repository, 42)).rejects.toBeInstanceOf(GhReadError)
     expect(mocks.exec).not.toHaveBeenCalled()
   })
