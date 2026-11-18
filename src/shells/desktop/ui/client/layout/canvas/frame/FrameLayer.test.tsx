@@ -13,7 +13,7 @@ import { FrameLayer } from './FrameLayer'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const WS = 'ws-frames'
-const LABELS: Record<FrameState, string> = { active: 'en cours', waiting: "t'attend", blocked: 'bloqué', done: 'fait' }
+const LABELS: Record<FrameState, string> = { active: 'in progress', waiting: 'waiting on you', blocked: 'blocked', done: 'done' }
 const nodes = [
   { nodeId: 'a', panelId: 'pa', rect: rect(100, 200, 400, 300) },
   { nodeId: 'b', panelId: 'pb', rect: rect(600, 200, 400, 300) },

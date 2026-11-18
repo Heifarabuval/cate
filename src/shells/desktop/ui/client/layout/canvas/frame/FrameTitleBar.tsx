@@ -11,10 +11,10 @@ import { useCanvasViewStore } from '../context'
 import { setHoveredFrame } from './target'
 
 export const FRAME_STATE_VIEW: Record<FrameState, { label: string; Icon: LucideIcon; accent: string }> = {
-  active: { label: 'en cours', Icon: Loader, accent: 'var(--focus-blue)' },
-  waiting: { label: "t'attend", Icon: Hourglass, accent: 'var(--activity-orange)' },
-  blocked: { label: 'bloqué', Icon: OctagonAlert, accent: 'var(--git-deleted)' },
-  done: { label: 'fait', Icon: CircleCheck, accent: 'var(--activity-green)' }
+  active: { label: 'in progress', Icon: Loader, accent: 'var(--focus-blue)' },
+  waiting: { label: 'waiting on you', Icon: Hourglass, accent: 'var(--activity-orange)' },
+  blocked: { label: 'blocked', Icon: OctagonAlert, accent: 'var(--git-deleted)' },
+  done: { label: 'done', Icon: CircleCheck, accent: 'var(--activity-green)' }
 }
 
 /** Screen pixels a press must travel before it is a drag, not a click. */
@@ -106,7 +106,7 @@ export function FrameTitleBar({ workspaceId, canvasId, frameId, title, state, pa
       <span data-frame-title title={title} className="min-w-0 flex-1 truncate font-medium text-primary">
         {title}
       </span>
-      <span data-frame-count className="inline-flex shrink-0 items-center gap-1 text-secondary" aria-label={`${panelCount} panneaux`}>
+      <span data-frame-count className="inline-flex shrink-0 items-center gap-1 text-secondary" aria-label={`${panelCount} panels`}>
         <Layers size={12} aria-hidden />
         {panelCount}
       </span>
