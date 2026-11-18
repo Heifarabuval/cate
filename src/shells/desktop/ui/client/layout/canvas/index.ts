@@ -35,7 +35,7 @@ export {
 export { canvasViewFor, setCanvasAnimations, resetCanvasViews } from './registry'
 export { focusedNodeId, isGroupDragMember, isSelected, withLead } from './selection'
 export { setCollapsedChange } from './frame/frameChanges'
-export { frameActionTarget, setHoveredFrame } from './frame/target'
+export { frameActionTarget } from './frame/target'
 export { promptText } from './frame/promptText'
 import './frame/clientUi'
 export { ZOOM_MIN, ZOOM_MAX, ZOOM_DEFAULT, PAN_STEP, NODE_CORNER_RADIUS, clampZoom } from './constants'

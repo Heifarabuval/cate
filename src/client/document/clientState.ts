@@ -2,7 +2,7 @@
 // where its attention is. Held in memory, never sent to the runtime, except
 // the viewed and focused panel, which presence reports.
 
-import type { CanvasId, NodeId, PanelId, StackId, WindowId } from '@workspace/document/contract'
+import type { CanvasId, FrameId, NodeId, PanelId, StackId, WindowId } from '@workspace/document/contract'
 
 export interface Viewport {
   x: number
@@ -43,6 +43,8 @@ export interface ClientState {
    *  review files it collapsed), by panel and name. */
   panelViews: Readonly<Record<PanelId, Readonly<Record<string, unknown>>>>
   intents: readonly Intent[]
+  /** The frame whose title bar the pointer is over: frame actions act on it. */
+  hoveredFrame: { canvasId: CanvasId; frameId: FrameId } | null
 }
 
 export interface ClientStateStore {
@@ -62,6 +64,8 @@ export interface ClientStateStore {
   pushIntent(intent: Omit<Intent, 'id'>): number
   /** Removes and returns the panel's queued intents. */
   takeIntents(panelId: PanelId): Intent[]
+  /** Null: the pointer left the bar. */
+  setHoveredFrame(hovered: ClientState['hoveredFrame']): void
 }
 
 function withEntry<K extends string, V>(map: Readonly<Record<K, V>>, key: K, value: V | null): Record<K, V> {
@@ -80,6 +84,7 @@ export function createClientStateStore(): ClientStateStore {
     maximizedStacks: {},
     panelViews: {},
     intents: [],
+    hoveredFrame: null,
   }
   let livePanels: ReadonlySet<PanelId> | null = null
   const retainViews = (views: ClientState['panelViews']): ClientState['panelViews'] => {
@@ -146,6 +151,11 @@ export function createClientStateStore(): ClientStateStore {
       const taken = state.intents.filter((i) => i.panelId === panelId)
       if (taken.length > 0) update({ intents: state.intents.filter((i) => i.panelId !== panelId) })
       return taken
+    },
+    setHoveredFrame(hovered) {
+      const current = state.hoveredFrame
+      if (current?.canvasId === hovered?.canvasId && current?.frameId === hovered?.frameId) return
+      update({ hoveredFrame: hovered && { ...hovered } })
     },
   }
 }

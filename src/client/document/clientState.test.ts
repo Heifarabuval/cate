@@ -56,6 +56,19 @@ describe('client state', () => {
     expect(state.getSnapshot().maximizedStacks).toEqual({})
     expect(seen).toHaveBeenCalledTimes(2)
   })
+
+  it('holds the hovered frame bar, one at a time; null clears', () => {
+    const state = createClientStateStore()
+    const seen = vi.fn()
+    state.subscribe(seen)
+    expect(state.getSnapshot().hoveredFrame).toBeNull()
+    state.setHoveredFrame({ canvasId: 'c1', frameId: 'f1' })
+    state.setHoveredFrame({ canvasId: 'c1', frameId: 'f1' })
+    expect(state.getSnapshot().hoveredFrame).toEqual({ canvasId: 'c1', frameId: 'f1' })
+    state.setHoveredFrame(null)
+    expect(state.getSnapshot().hoveredFrame).toBeNull()
+    expect(seen).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('presence reporting', () => {

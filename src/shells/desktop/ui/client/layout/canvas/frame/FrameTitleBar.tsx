@@ -6,9 +6,8 @@ import React from 'react'
 import { Hourglass, Layers, Loader, OctagonAlert, CircleCheck, type LucideIcon } from 'lucide-react'
 import { frameOrigin, type Point } from '@workspace/canvas/contract'
 import type { DocChange, FrameId, FrameState } from '@workspace/document/contract'
-import { documentStoreFor } from '@client/document'
+import { clientStateFor, documentStoreFor } from '@client/document'
 import { useCanvasViewStore } from '../context'
-import { setHoveredFrame } from './target'
 
 export const FRAME_STATE_VIEW: Record<FrameState, { label: string; Icon: LucideIcon; accent: string }> = {
   active: { label: 'in progress', Icon: Loader, accent: 'var(--focus-blue)' },
@@ -89,8 +88,8 @@ export function FrameTitleBar({ workspaceId, canvasId, frameId, title, state, pa
     <div
       data-frame-bar
       onPointerDown={onPointerDown}
-      onPointerEnter={() => setHoveredFrame({ workspaceId, canvasId, frameId })}
-      onPointerLeave={() => setHoveredFrame(null)}
+      onPointerEnter={() => clientStateFor(workspaceId)?.setHoveredFrame({ canvasId, frameId })}
+      onPointerLeave={() => clientStateFor(workspaceId)?.setHoveredFrame(null)}
       onDoubleClick={onToggleCollapse}
       className="flex h-full w-full select-none items-center gap-2 px-2 text-xs"
       style={{ pointerEvents: 'auto', background: 'var(--surface-1)', borderRadius: 'inherit' }}

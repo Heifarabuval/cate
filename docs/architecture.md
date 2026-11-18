@@ -340,7 +340,7 @@ Every piece of state belongs to exactly one class.
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
 | **Device** | one client device | client settings, workspace list, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
-| **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
+| **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, the hovered frame bar, one-shot intents (reveal a line), mounted webviews | never |
 
 Rules:
 
