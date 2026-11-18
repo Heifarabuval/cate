@@ -13,6 +13,8 @@ export interface CliEnvDeps {
   launcherDir: string
   nodePath: string
   cliPath: string
+  /** The install's `agence` launcher, called by absolute path. */
+  agencePath: string
   socketPath: string
   mintToken(panelId: string): string
   revokeToken(token: string): void
@@ -39,11 +41,10 @@ export function createCliEnv(deps: CliEnvDeps): CliEnvRuntime {
   const live = new Set<string>()
   let written: Promise<void> | null = null
   const writeLauncher = (): Promise<void> => {
-    written ??= writeFileAtomic(
-      path.join(binDir, 'cate'),
-      `#!/bin/sh\nexec ${shQuote(deps.nodePath)} ${shQuote(deps.cliPath)} "$@"\n`,
-      { mode: 0o700 },
-    ).catch((error: unknown) => { written = null; throw error })
+    written ??= Promise.all([
+      writeFileAtomic(path.join(binDir, 'cate'), `#!/bin/sh\nexec ${shQuote(deps.nodePath)} ${shQuote(deps.cliPath)} "$@"\n`, { mode: 0o700 }),
+      writeFileAtomic(path.join(binDir, 'agence'), `#!/bin/sh\nexec ${shQuote(deps.agencePath)} "$@"\n`, { mode: 0o700 }),
+    ]).then(() => undefined).catch((error: unknown) => { written = null; throw error })
     return written
   }
 

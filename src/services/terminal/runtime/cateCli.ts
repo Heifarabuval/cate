@@ -19,6 +19,8 @@ export interface CateCliRuntimeDeps {
   launcherDir: string
   nodePath: string
   cliPath: string
+  /** The install's `agence` launcher, called by absolute path. */
+  agencePath: string
   socketPath: string
   mintToken: (panelId: string, terminalId: string) => string
   revokeToken: (token: string) => void
@@ -73,6 +75,10 @@ export function createCateCliRuntime(deps: CateCliRuntimeDeps): CateCliRuntime {
         await writeFileAtomic(path.join(binDir, 'cate'), launcher(deps, token, false), { mode: 0o700 })
         if (process.platform === 'win32') {
           await writeFileAtomic(path.join(binDir, 'cate.cmd'), launcher(deps, token, true), { mode: 0o600 })
+        } else {
+          // Written at every spawn, restores included: a hard-killed daemon
+          // leaves one that points at an install since pruned.
+          await writeFileAtomic(path.join(binDir, 'agence'), `#!/bin/sh\nexec ${shQuote(deps.agencePath)} "$@"\n`, { mode: 0o700 })
         }
       } catch (error) {
         if (token) deps.revokeToken(token)

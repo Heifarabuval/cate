@@ -89,6 +89,8 @@ export function installLayout(installDir: string, platform: string) {
     ripgrep: at('runtime', 'bin', `rg${exe}`),
     cateCli: at('cate', 'dist', 'cli.cjs'),
     cateBin: at('cate', 'bin'),
+    /** The `agence` launcher (POSIX shell; the CLI is not shipped on Windows). */
+    agence: at('agence', 'agence'),
     skills: at('skills'),
     nodeModules: at('node_modules'),
     marker: at(INSTALL_MARKER),
@@ -101,5 +103,15 @@ export function installDirFromExecPath(execPath: string, platform: string): stri
   const parts = execPath.split(/[\\/]+/)
   const sep = platform === 'win32' ? '\\' : '/'
   return parts.slice(0, -3).join(sep) || sep
+}
+
+/** The `agence` launcher a daemon runs. A daemon started from a bare bundle
+ *  (`CATE_RUNTIME_BUNDLE=<checkout>/dist-runtime/runtime.cjs`) has no install
+ *  around it: use the checkout's `tools/agence/agence`. */
+export function agenceLauncher(installDir: string, bundle: string | undefined, platform: string): string {
+  if (!bundle) return installLayout(installDir, platform).agence
+  const sep = platform === 'win32' ? '\\' : '/'
+  const checkout = bundle.split(/[\\/]+/).slice(0, -2).join(sep) || sep
+  return join(platform, checkout, 'tools', 'agence', 'agence')
 }
 

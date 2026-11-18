@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { buildVersion, checksumUrl, installDirFromExecPath, installLayout, isBuildId, parseDaemonArgv, releaseUrl, runtimeInstallDir, runtimeTarget, serveArgv } from './contract'
+import { agenceLauncher, buildVersion, checksumUrl, installDirFromExecPath, installLayout, isBuildId, parseDaemonArgv, releaseUrl, runtimeInstallDir, runtimeTarget, serveArgv } from './contract'
 
 it('round-trips the serve command line', () => {
   const args = { root: '/w', detach: true }
@@ -20,10 +20,19 @@ it('lays out an install the same way on every platform', () => {
   expect(posix.node).toBe('/home/u/.cate/runtime/2.1.0/runtime/bin/node')
   expect(posix.bundle).toBe('/home/u/.cate/runtime/2.1.0/runtime.cjs')
   expect(posix.cateBin).toBe('/home/u/.cate/runtime/2.1.0/cate/bin')
+  expect(posix.agence).toBe('/home/u/.cate/runtime/2.1.0/agence/agence')
+  expect(installLayout('/opt/cate-install', 'darwin').agence).toBe('/opt/cate-install/agence/agence')
   const win = installLayout(runtimeInstallDir('C:\\Users\\u\\.cate', '2.1.0', 'win32'), 'win32')
   expect(win.node).toBe('C:\\Users\\u\\.cate\\runtime\\2.1.0\\runtime\\bin\\node.exe')
   expect(installDirFromExecPath(posix.node, 'linux')).toBe('/home/u/.cate/runtime/2.1.0')
   expect(installDirFromExecPath(win.node, 'win32')).toBe('C:\\Users\\u\\.cate\\runtime\\2.1.0')
+})
+
+it('runs the agence launcher from the install, or from the checkout for a bare bundle', () => {
+  const install = '/home/u/.cate/runtime/2.1.0'
+  expect(agenceLauncher(install, undefined, 'linux')).toBe(`${install}/agence/agence`)
+  // `CATE_RUNTIME_BUNDLE=<checkout>/dist-runtime/runtime.cjs`: no install around the bundle.
+  expect(agenceLauncher('/nvm/versions/node', '/w/cate/dist-runtime/runtime.cjs', 'linux')).toBe('/w/cate/tools/agence/agence')
 })
 
 it('names release tarballs per target', () => {
