@@ -74,6 +74,27 @@ it('puts agence next to cate: private, absolute, tokenless, run with the lease e
   expect(ran.stdout.trim()).toBe(`agence ${lease.env.CATE_TOKEN} with spaces`)
 })
 
+it('writes agence again at every lease, like the terminal launcher', async () => {
+  const lease = await cliEnv.cliEnv('agence-1')
+  const launcher = path.join(lease.env.PATH.split(path.delimiter)[0], 'agence')
+  const text = fs.readFileSync(launcher, 'utf8')
+  fs.writeFileSync(launcher, 'stale')
+  await cliEnv.cliEnv('agence-1')
+  expect(fs.readFileSync(launcher, 'utf8')).toBe(text)
+  fs.rmSync(launcher)
+  await cliEnv.cliEnv('agence-1')
+  expect(fs.readFileSync(launcher, 'utf8')).toBe(text)
+})
+
+it('does not write agence on Windows, where it is not shipped', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { value: 'win32' })
+  try {
+    const lease = await cliEnv.cliEnv('agence-1')
+    expect(fs.existsSync(path.join(lease.env.PATH.split(path.delimiter)[0], 'agence'))).toBe(false)
+  } finally { Object.defineProperty(process, 'platform', platform) }
+})
+
 it('revokes the token at release, once', async () => {
   const lease = await cliEnv.cliEnv('agence-1')
   lease.revoke()

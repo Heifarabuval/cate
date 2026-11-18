@@ -41,16 +41,24 @@ export function createCliEnv(deps: CliEnvDeps): CliEnvRuntime {
   const live = new Set<string>()
   let written: Promise<void> | null = null
   const writeLauncher = (): Promise<void> => {
-    written ??= Promise.all([
-      writeFileAtomic(path.join(binDir, 'cate'), `#!/bin/sh\nexec ${shQuote(deps.nodePath)} ${shQuote(deps.cliPath)} "$@"\n`, { mode: 0o700 }),
-      writeFileAtomic(path.join(binDir, 'agence'), `#!/bin/sh\nexec ${shQuote(deps.agencePath)} "$@"\n`, { mode: 0o700 }),
-    ]).then(() => undefined).catch((error: unknown) => { written = null; throw error })
+    written ??= writeFileAtomic(
+      path.join(binDir, 'cate'),
+      `#!/bin/sh\nexec ${shQuote(deps.nodePath)} ${shQuote(deps.cliPath)} "$@"\n`,
+      { mode: 0o700 },
+    ).catch((error: unknown) => { written = null; throw error })
     return written
+  }
+  // At every lease, like the terminal launcher: a hard-killed daemon leaves
+  // one pointing at an install since pruned. Not shipped on Windows.
+  const writeAgence = async (): Promise<void> => {
+    if (process.platform === 'win32') return
+    await writeFileAtomic(path.join(binDir, 'agence'), `#!/bin/sh\nexec ${shQuote(deps.agencePath)} "$@"\n`, { mode: 0o700 })
   }
 
   return {
     async cliEnv(panelId) {
       await writeLauncher()
+      await writeAgence()
       const token = deps.mintToken(panelId)
       live.add(token)
       const base = Object.fromEntries(Object.entries(deps.baseEnv()).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
