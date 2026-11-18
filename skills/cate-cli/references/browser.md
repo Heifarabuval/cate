@@ -99,11 +99,13 @@ or click an option's id, never the combobox itself.
 
 Sites often repeat long menus and sidebars on every page before the content.
 Once you know the id of the part you want (usually `- main [id=N]`), print
-just that part with `cate browser snapshot <id>`; ids stay valid until the
-page navigates.
+just that part with `cate browser snapshot <id>`; ids stay valid while the
+element stays on the page.
 
-Ids stay the same for an element while the page keeps its document; after a
-navigation, use the ids of the new tree. A long tree (a big page after
+Ids stay the same for an element while the page keeps its document and shows
+the element; after a navigation, use the ids of the new tree. An element the
+page removed keeps its id for one more snapshot, then acting on it fails with
+`stale-browser-element`: snapshot again. A long tree (a big page after
 `goto`) prints its first part and saves the whole tree to a file whose path
 it prints: search that file instead of printing it.
 
