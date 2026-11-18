@@ -77,7 +77,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
     let refused: string | null = null
     try {
       const result = await send(op) as AgenceOpResult
-      if (!result.ok) refused = result.message ?? result.error
+      if (!result.ok) refused = refusalText(result, 'Action refusée.')
     } catch (error) {
       refused = error instanceof Error ? error.message : String(error)
     }
