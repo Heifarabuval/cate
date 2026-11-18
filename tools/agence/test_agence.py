@@ -9,6 +9,7 @@ import http.client
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -812,7 +813,6 @@ class MergeVerrou(Base):
 		qid = self.ask()
 		self.lie(ref='d1', unblocks='PR #4')
 		page = agence.page_ask(self.state(), qid)
-		self.assertIn('disabled', page)
 		self.assertIn('Mettre à jour le corps de la PR #4', page)
 		self.assertIn('Merger quand même', page)
 		self.assertIn('name="force"', page)
@@ -820,8 +820,33 @@ class MergeVerrou(Base):
 	def test_page_sans_verrou_inchangee(self):
 		qid = self.ask()
 		page = agence.page_ask(self.state(), qid)
-		self.assertNotIn('disabled', page)
+		self.assertIn('card reco', page)
 		self.assertNotIn('Merger quand même', page)
+
+	def test_page_verrouillee_remplace_l_option_par_le_bouton_de_meme_taille(self):
+		qid = self.ask()
+		self.lie(ref='d1', unblocks='PR #4')
+		page = agence.page_ask(self.state(), qid)
+		self.assertNotIn('card reco', page)  # plus de bordure verte de l'option sélectionnée
+		self.assertNotIn('Recommandé', page)
+		force = re.search(r'<button class="card[^"]*">[^<]*<b>Merger quand même \(rebase\)</b>', page)
+		self.assertTrue(force, 'bouton de même classe que les cartes')
+		self.assertLess(page.index('Mettre à jour le corps de la PR #4'), force.start())  # verrous au-dessus
+		self.assertLess(force.start(), page.index('name="libre"'))
+
+	def test_repondre_desactive_tant_que_le_champ_est_vide(self):
+		qid = self.ask()
+		page = agence.page_ask(self.state(), qid)
+		self.assertRegex(page, r'<button class="btn" disabled>Répondre</button>')
+		self.assertIn('oninput', page)
+
+	def test_post_sans_choix_ni_texte_message_utile_et_retour_a_la_question(self):
+		qid = self.ask()
+		for form in ({}, {'libre': ['  ']}):
+			code, msg = agence.click(f'/ask/{qid}', form)
+			self.assertEqual((code, msg), (400, 'Écris une réponse ou choisis une option.'))
+		self.assertIn(f'href="/ask/{qid}"', agence.page_erreur(f'/ask/{qid}', msg))
+		self.assertNotIn('/ask/', agence.page_erreur('/draft/d1/send', msg))
 
 	def test_ligne_de_suivi_donne_le_motif(self):
 		self.ask()
@@ -971,7 +996,7 @@ class MergeVerrou(Base):
 				st['questions'][0]['gh'] = g
 			page = agence.page_ask(self.state(), qid)
 			self.assertIn('état GitHub inconnu', page)
-			self.assertNotIn('disabled', page)
+			self.assertNotIn('Merger quand même', page)
 			self.assertIn('état GitHub inconnu', agence.page_suivi(self.state()))
 		self.assertEqual(agence.click(f'/ask/{qid}', {'choice': ['0']}), (303, '/'))
 		self.assertEqual(len(self.run.ran('gh', 'pr', 'merge')), 1)

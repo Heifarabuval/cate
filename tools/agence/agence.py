@@ -799,7 +799,7 @@ def click(path, form):
 			elif choice.isdigit() and int(choice) < len(q['options']):
 				answer = q['options'][int(choice)]['label']
 			else:
-				return 400, 'Choix manquant.'
+				return 400, 'Écris une réponse ou choisis une option.'
 			evidence = f'réponse : {answer}'
 			forced = None
 			if q['action'] and choice == '0' and not libre:
@@ -926,6 +926,7 @@ form{{display:inline}} .btn{{font:inherit;font-weight:600;border:1px solid #d1d9
 background:#f6f8fa;cursor:pointer;margin-left:6px}} .btn.go{{background:#1f883d;color:#fff;border-color:#1a7f37}}
 .btn.no{{color:#d1242f}} .card{{display:block;width:100%;text-align:left;margin:8px 0;padding:12px;border:1px solid #d1d9e0;
 border-radius:6px;background:#fff;cursor:pointer;font:inherit}} .card.reco{{border-color:#1f883d;box-shadow:0 0 0 1px #1f883d}}
+.card.no{{color:#d1242f;border-color:#d1242f}} .btn:disabled{{opacity:.5;cursor:not-allowed}}
 .card b{{display:block}} .box{{border:1px solid #d1d9e0;border-radius:6px;padding:16px;margin:12px 0}}
 textarea{{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid #d1d9e0;border-radius:6px}}
 a{{color:#0969da}}
@@ -1047,23 +1048,31 @@ def page_ask(st, qid):
 	else:
 		locks = merge_locks(st, q) if q['action'] else []
 		inconnu = '<p class="meta">état GitHub inconnu</p>' if q['action'] and not gh_frais(q) else ''
-		cards = inconnu + ''.join(
-			f'<form method="post" action="/ask/{qid}" style="display:block"><input type="hidden" name="token" value="{TOKEN}">'
-			f'<input type="hidden" name="choice" value="{i}"><button class="card{" reco" if i == 0 else ""}"'
-			f'{" disabled" if i == 0 and locks else ""}>'
-			f'<b>{e(o["label"])}{" (Recommandé)" if i == 0 else ""}</b><span class="meta">{e(o["detail"])}</span></button></form>'
-			for i, o in enumerate(q['options']))
-		if locks:
-			cards = ('<p class="meta">Merger grisé :</p><ul>' + ''.join(f'<li>{e(x)}</li>' for x in locks) + '</ul>' + cards
-			         + btn(f'/ask/{qid}', 'Merger quand même', 'no', choice='0', force='1'))
-			if merge_motif(q) == CONFLIT:
-				cards += btn(f'/ask/{qid}', 'Demander le rebase', 'go', choice='rebase')
+		FORCE = '<input type="hidden" name="force" value="1">'
+
+		def card(i, o):
+			# Merger verrouillé : le bouton « quand même » prend la place de l'option, mêmes dimensions, verrous au-dessus.
+			force = i == 0 and locks
+			reco = '' if force else ' reco' if i == 0 else ''
+			label = 'Merger quand même (rebase)' if force else o['label'] + (' (Recommandé)' if i == 0 else '')
+			return ((('<p class="meta">Merger grisé :</p><ul>' + ''.join(f'<li>{e(x)}</li>' for x in locks) + '</ul>') if force else '')
+			        + f'<form method="post" action="/ask/{qid}" style="display:block"><input type="hidden" name="token" value="{TOKEN}">'
+			        f'<input type="hidden" name="choice" value="{i}">{FORCE if force else ""}'
+			        f'<button class="card{" no" if force else reco}"><b>{e(label)}</b><span class="meta">{e(o["detail"])}</span></button></form>')
+		cards = inconnu + ''.join(card(i, o) for i, o in enumerate(q['options']))
+		if locks and merge_motif(q) == CONFLIT:
+			cards += btn(f'/ask/{qid}', 'Demander le rebase', 'go', choice='rebase')
 		cards += (f'<form method="post" action="/ask/{qid}" style="display:block"><input type="hidden" name="token" value="{TOKEN}">'
-		          '<textarea name="libre" rows="3" placeholder="Autre réponse"></textarea>'
-		          '<div style="text-align:right"><button class="btn">Répondre</button></div></form>')
+		          '<textarea name="libre" rows="3" placeholder="Autre réponse" oninput="this.form.querySelector(&quot;button&quot;).disabled=!this.value.trim()"></textarea>'
+		          '<div style="text-align:right"><button class="btn" disabled>Répondre</button></div></form>')
 	body = (f'<div class="sub"><a href="/">Suivi</a> · question de {e(st["titles"].get(q["agent"], q["agent"]))}</div>'
 	        f'<h1>{e(q["question"])}</h1>{cards}')
 	return layout('Question', body)
+
+
+def page_erreur(path, msg):
+	back = f'<a href="{e(path)}">Retour à la question</a> · ' if re.match(r'^/ask/q\d+$', path) else ''
+	return layout('Action', f'<p>{e(msg)}</p><p>{back}<a href="/">Suivi</a></p>')
 
 
 class Pages(http.server.BaseHTTPRequestHandler):
@@ -1113,7 +1122,7 @@ class Pages(http.server.BaseHTTPRequestHandler):
 			                 ctype='application/json')
 		if code == 303:
 			return self.send(303, '', msg)
-		self.send(code, layout('Action', f'<p>{e(msg)}</p><p><a href="/">Suivi</a></p>'))
+		self.send(code, page_erreur(urllib.parse.urlparse(self.path).path, msg))
 
 	def log_message(self, fmt, *args):
 		pass
