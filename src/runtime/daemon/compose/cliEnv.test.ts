@@ -8,6 +8,9 @@ import { ApiTokenRegistry } from '@kernel/api/runtime'
 import { createCateCliRuntime } from '@services/terminal/runtime'
 import { createCliEnv, type CliEnvRuntime } from './cliEnv'
 
+// macOS arm64 uniquement (le régisseur est un processus POSIX)
+const itPosix = it.skipIf(process.platform === 'win32')
+
 const execFileP = promisify(execFile)
 let dir: string
 let tokens: ApiTokenRegistry
@@ -46,7 +49,7 @@ async function run(env: Record<string, string>) {
   return JSON.parse(result.stdout.trim()) as { socket: string; token: string; args: string[] }
 }
 
-it('gives a process the socket, a token in the panel\'s name and `cate` on its PATH', async () => {
+itPosix('gives a process the socket, a token in the panel\'s name and `cate` on its PATH', async () => {
   const lease = await cliEnv.cliEnv('agence-1')
   expect(lease.env.CATE_SOCKET).toBe(path.join(dir, 'runtime.sock'))
   expect(tokens.resolve(lease.env.CATE_TOKEN)?.panelId).toBe('agence-1')
@@ -55,7 +58,7 @@ it('gives a process the socket, a token in the panel\'s name and `cate` on its P
   expect(await run(lease.env)).toEqual({ socket: lease.env.CATE_SOCKET, token: lease.env.CATE_TOKEN, args: ['with spaces'] })
 })
 
-it('writes no token on disk: the launcher reads the process env', async () => {
+itPosix('writes no token on disk: the launcher reads the process env', async () => {
   const lease = await cliEnv.cliEnv('agence-1')
   const bin = lease.env.PATH.split(path.delimiter)[0]
   const launcher = fs.readFileSync(path.join(bin, 'cate'), 'utf8')
@@ -63,7 +66,7 @@ it('writes no token on disk: the launcher reads the process env', async () => {
   expect(fs.statSync(path.join(bin, 'cate')).mode & 0o077).toBe(0)
 })
 
-it('puts agence next to cate: private, absolute, tokenless, run with the lease env', async () => {
+itPosix('puts agence next to cate: private, absolute, tokenless, run with the lease env', async () => {
   const lease = await cliEnv.cliEnv('agence-1')
   const bin = lease.env.PATH.split(path.delimiter)[0]
   const text = fs.readFileSync(path.join(bin, 'agence'), 'utf8')
@@ -74,7 +77,7 @@ it('puts agence next to cate: private, absolute, tokenless, run with the lease e
   expect(ran.stdout.trim()).toBe(`agence ${lease.env.CATE_TOKEN} with spaces`)
 })
 
-it('writes agence again at every lease, like the terminal launcher', async () => {
+itPosix('writes agence again at every lease, like the terminal launcher', async () => {
   const lease = await cliEnv.cliEnv('agence-1')
   const launcher = path.join(lease.env.PATH.split(path.delimiter)[0], 'agence')
   const text = fs.readFileSync(launcher, 'utf8')
@@ -102,7 +105,7 @@ it('revokes the token at release, once', async () => {
   expect(tokens.resolve(lease.env.CATE_TOKEN)).toBeUndefined()
 })
 
-it('keeps the orchestrator PTY\'s token and launcher when the same panel takes leases', async () => {
+itPosix('keeps the orchestrator PTY\'s token and launcher when the same panel takes leases', async () => {
   const terminalCli = createCateCliRuntime({
     launcherDir: launcherDir(),
     nodePath: process.execPath,
