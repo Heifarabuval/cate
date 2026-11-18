@@ -31,7 +31,7 @@ const SHA2 = "b".repeat(40);
 const ENGINES = '{\\n  "engines": {\\n    "node": ">=22.16 <23"\\n  }\\n}\\n'; // as printf reads it
 const LONG_DASH = String.fromCharCode(0x2014);
 const BASIC =
-  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find cmp".split(
+  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find cmp ps".split(
     " ",
   );
 
@@ -190,6 +190,14 @@ fi`,
       };
       walk(dir);
       return out.sort();
+    };
+
+    // A live process whose command line names cate-fork-update, like a real run.
+    const liveRun = (name = "cate-fork-update") => {
+      const script = path.join(root, name);
+      write(script, "sleep 60; :\n");
+      const child = spawn("/bin/sh", [script], { detached: true, stdio: "ignore" });
+      return { pid: child.pid, stop: () => process.kill(-child.pid, "SIGKILL") };
     };
 
     beforeEach(() => {
@@ -409,11 +417,19 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(readFileSync(self, "utf8")).toBe(readFileSync(next, "utf8"));
         expect(statSync(self).mode & 0o777).toBe(0o755);
         expect(log()).toMatch(/cate-fork-update refreshed/);
-        // A broken or empty copy is never installed.
+        // A broken, empty or crashing copy is never installed: the one in place
+        // must still be able to take the next fix.
         write(next, "if then\n");
         run(UPDATE, [], { FAKE_SHA: SHA2, FAKE_SELF: next });
         write(next, "");
         run(UPDATE, [], { FAKE_SHA: SHA2, FAKE_SELF: next });
+        write(
+          next,
+          readFileSync(UPDATE, "utf8").replace("set -eu\n", 'set -eu\n: "$NOT_SET_AT_START"\n'),
+        );
+        expect(spawnSync("/bin/sh", ["-n", next]).status).toBe(0); // parses, crashes at start
+        run(UPDATE, [], { FAKE_SHA: SHA2, FAKE_SELF: next });
+        expect(log()).toMatch(/self-test failed, kept the installed copy/);
         expect(readFileSync(self, "utf8")).toMatch(/# v2\n$/);
         expect(readFileSync(UPDATE, "utf8")).not.toMatch(/# v2\n$/); // never the running copy
       });
@@ -428,6 +444,14 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
           expect(r.out).toMatch(/HOME/);
         }
         expect(existsSync(keep)).toBe(true);
+        mkdirSync(path.join(root, "relative"));
+        for (const h of ["", "/", "relative", path.join(root, "missing")]) {
+          const r = run(INSTALL, [], { HOME: h });
+          expect([h, r.code]).toEqual([h, 1]);
+          expect(r.out).toMatch(/HOME/);
+        }
+        expect(readdirSync(path.join(root, "relative"))).toEqual([]);
+        expect(count(/^launchctl@|^git@|^npm@/)).toBe(0);
       });
 
       it("refuses to stage a hardened-runtime build, and survives a failed packaging step", () => {
@@ -454,13 +478,96 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
 
       it("waits on a live lock and replaces a dead one", () => {
         nvm("22.22.2");
-        write(`${build}.lock/pid`, `${process.pid}\n`);
-        expect(run(UPDATE).code).toBe(0);
-        expect(log()).toMatch(/already running/);
-        expect(count(/^git@/)).toBe(0);
+        const live = liveRun();
+        try {
+          write(`${build}.lock/pid`, `${live.pid}\n`);
+          expect(run(UPDATE).code).toBe(0);
+          expect(log()).toMatch(/already running/);
+          expect(count(/^git@/)).toBe(0);
+        } finally {
+          live.stop();
+        }
         writeFileSync(`${build}.lock/pid`, "2147483646\n");
         expect(run(UPDATE).code).toBe(0);
         expect(count(/^npm@.* ci /)).toBe(1);
+      });
+
+      it("takes over a lock whose pid was reused by another program after a power cut", () => {
+        nvm("22.22.2");
+        write(`${build}.lock/pid`, `${process.pid}\n`); // alive, but node, not this script
+        expect(run(UPDATE).code).toBe(0);
+        expect(log()).not.toMatch(/already running/);
+        expect(count(/^npm@.* ci /)).toBe(1);
+        const tail = liveRun("cate-fork-update.log"); // like tail -f on the log
+        try {
+          write(`${build}.lock/pid`, `${tail.pid}\n`);
+          expect(run(UPDATE, ["--force"]).code).toBe(0);
+          expect(count(/^npm@.* ci /)).toBe(2);
+        } finally {
+          tail.stop();
+        }
+      });
+
+      it("never purges under a running build, and purges once it is over", () => {
+        nvm("22.22.2");
+        run(UPDATE);
+        const live = liveRun();
+        try {
+          write(`${build}.lock/pid`, `${live.pid}\n`);
+          const r = run(UPDATE, ["--purge"]);
+          expect(r.code).toBe(1);
+          expect(r.out).toMatch(/construction en cours/);
+          expect(existsSync(path.join(build, ".git"))).toBe(true);
+          expect(existsSync(`${build}.installed`)).toBe(true);
+        } finally {
+          live.stop();
+        }
+        expect(run(UPDATE, ["--purge"]).code).toBe(0);
+        for (const s of ["", ".lock", ".installed"])
+          expect(existsSync(`${build}${s}`)).toBe(false);
+      });
+
+      it("keeps every state file outside the clone, even with a trailing slash", () => {
+        for (const dir of [`${build}/`, `${build}//`, "~/.local/share/cate-build/"]) {
+          rmSync(root + "/home/.local", { recursive: true, force: true });
+          const bin = path.join(home, ".nvm/versions/node/v22.22.2/bin");
+          nvm("22.22.2");
+          const probe = path.join(root, "probe.txt");
+          // npm ci runs in the clone while the lock is held: list both.
+          fake(
+            "npm",
+            `[ "$1" != ci ] || { ls -A > "${probe}"; [ ! -d "${build}.lock" ] || echo LOCK-HELD >> "${probe}"; }`,
+            bin,
+          );
+          expect([dir, run(UPDATE, [], { CATE_BUILD_DIR: dir }).code]).toEqual([dir, 0]);
+          const seen = readFileSync(probe, "utf8").split("\n");
+          expect(seen).toContain("LOCK-HELD");
+          for (const s of [".lock", ".staged", ".notified", ".installed", ".failed"]) {
+            expect([dir, s, seen.includes(s)]).toEqual([dir, s, false]);
+            expect(existsSync(path.join(build, s))).toBe(false);
+          }
+          expect(readFileSync(`${build}.installed`, "utf8").trim()).toBe(SHA);
+        }
+      });
+
+      it("--self-test exits 0 and touches nothing", () => {
+        const r = run(UPDATE, ["--self-test"]);
+        expect([r.code, r.out]).toEqual([0, ""]);
+        expect(readdirSync(home)).toEqual([]);
+        expect(count(/^git@|^npm@|^launchctl@|^osascript@/)).toBe(0);
+      });
+
+      it("refuses to run as root, in update and install", () => {
+        nvm("22.22.2");
+        const realId = which("id");
+        fake("id", `[ -z "\${FAKE_UID:-}" ] || { echo "$FAKE_UID"; exit 0; }\nexec "${realId}" "$@"`);
+        for (const s of [UPDATE, INSTALL]) {
+          const r = run(s, [], { FAKE_UID: "0" });
+          expect([s, r.code]).toEqual([s, 1]);
+          expect(r.out).toMatch(/root/);
+        }
+        expect(readdirSync(home)).toEqual([".nvm"]);
+        expect(count(/^git@|^npm@|^launchctl@/)).toBe(0);
       });
 
       it("stops under 5 GB free, outside macOS, and without developer tools", () => {

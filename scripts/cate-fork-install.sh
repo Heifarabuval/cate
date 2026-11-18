@@ -84,24 +84,7 @@ main() {
 		shift
 	done
 	[ "$(uname -s)" = Darwin ] || die "macOS uniquement" 2
-	[ -n "${HOME:-}" ] && [ -d "$HOME" ] || die "HOME introuvable"
-
-	AGENTS="$HOME/Library/LaunchAgents"
-	PLIST="$AGENTS/$LABEL.plist"
-	BIN_DIR="$HOME/.local/bin"
-	LOG="$HOME/Library/Logs/cate-fork-update.log"
 	RAW=${CATE_FORK_RAW_URL:-https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts}
-
-	# One agent only: another label already running cate-fork-update is left as it is.
-	for p in "$AGENTS"/*.plist; do
-		[ -f "$p" ] || continue
-		[ "$(basename "$p")" != "$LABEL.plist" ] || continue
-		if grep -q 'cate-fork-update' "$p"; then
-			echo "Un agent launchd lance déjà cate-fork-update : $p"
-			echo "Rien installé, aucun doublon créé."
-			exit 0
-		fi
-	done
 
 	# The update script next to this one, else downloaded (curl | sh has no checkout).
 	SRC=""
@@ -113,6 +96,26 @@ main() {
 		curl --proto '=https' --tlsv1.2 -fsSL -o "$TMP/cate-fork-update.sh" "$RAW/cate-fork-update.sh" || die "téléchargement impossible : $RAW/cate-fork-update.sh (connexion ?)"
 		SRC="$TMP/cate-fork-update.sh"
 	fi
+
+	# One gate for both scripts, before any path is built on HOME: absolute
+	# existing HOME, not root, valid settings and build folder.
+	sh "$SRC" --self-test || exit 1
+
+	AGENTS="$HOME/Library/LaunchAgents"
+	PLIST="$AGENTS/$LABEL.plist"
+	BIN_DIR="$HOME/.local/bin"
+	LOG="$HOME/Library/Logs/cate-fork-update.log"
+
+	# One agent only: another label already running cate-fork-update is left as it is.
+	for p in "$AGENTS"/*.plist; do
+		[ -f "$p" ] || continue
+		[ "$(basename "$p")" != "$LABEL.plist" ] || continue
+		if grep -q 'cate-fork-update' "$p"; then
+			echo "Un agent launchd lance déjà cate-fork-update : $p"
+			echo "Rien installé, aucun doublon créé."
+			exit 0
+		fi
+	done
 
 	if ! sh "$SRC" --prereq; then
 		echo "Installer ce qui manque (lignes MANQUE), puis recoller la même ligne."
