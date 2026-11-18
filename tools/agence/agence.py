@@ -1582,10 +1582,11 @@ def cmd_url(a):
 
 def version():
 	"""Le build du runtime qui livre cette CLI (`<install>/BUILD`), `dev` hors install."""
+	# Jamais d'echec a cause de BUILD : 200 octets au plus, decodage tolerant, % echappes pour argparse.
 	try:
-		with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, 'BUILD')) as f:
-			return f.read().strip() or 'dev'
-	except OSError:
+		with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, 'BUILD'), 'rb') as f:
+			return f.read(200).decode('utf-8', 'replace').strip().replace('%', '%%') or 'dev'
+	except (OSError, ValueError):
 		return 'dev'
 
 

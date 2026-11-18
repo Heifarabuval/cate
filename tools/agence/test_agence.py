@@ -2501,11 +2501,15 @@ class Version(unittest.TestCase):
 		self.addCleanup(shutil.rmtree, root, True)
 		os.makedirs(os.path.join(root, 'agence'))
 		shutil.copy(agence.__file__, os.path.join(root, 'agence', 'agence.py'))
-		for name, text in install_files.items():
-			with open(os.path.join(root, name), 'w') as f:
-				f.write(text)
-		return subprocess.run([sys.executable, os.path.join(root, 'agence', 'agence.py'), '--version'],
-		                      capture_output=True, text=True, env={'PATH': os.environ.get('PATH', '')})
+		for name, data in install_files.items():
+			with open(os.path.join(root, name), 'wb') as f:
+				f.write(data if isinstance(data, bytes) else data.encode())
+		self.root = root
+		return self.run_cli('--version')
+
+	def run_cli(self, *args):
+		return subprocess.run([sys.executable, os.path.join(self.root, 'agence', 'agence.py'), *args],
+		                      capture_output=True, text=True, timeout=30, env={'PATH': os.environ.get('PATH', '')})
 
 	def test_hors_install_sans_build_rend_dev(self):
 		r = self.run_version({})
@@ -2517,6 +2521,33 @@ class Version(unittest.TestCase):
 
 	def test_build_vide_rend_dev(self):
 		r = self.run_version({'BUILD': '\n'})
+		self.assertEqual((r.returncode, r.stdout.strip()), (0, 'dev'))
+
+	def test_build_non_utf8_ne_fait_echouer_aucune_commande(self):
+		r = self.run_version({'BUILD': b'1.2.3+\xff\xfe\x80abc\n'})
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertIn('1.2.3+', r.stdout)
+		self.assertEqual(self.run_cli('--help').returncode, 0)
+
+	def test_build_avec_pourcent_est_imprime_tel_quel(self):
+		r = self.run_version({'BUILD': '%(prog)s %d %\n'})
+		self.assertEqual((r.returncode, r.stdout.strip()), (0, '%(prog)s %d %'))
+
+	def test_build_geant_sans_espace_est_tronque_vite(self):
+		shown = self.run_version({'BUILD': 'a' * 4096}).stdout.replace('\n', '')  # argparse recoupe les longs mots
+		self.assertEqual(shown, 'a' * 200)
+		with open(os.path.join(self.root, 'BUILD'), 'wb') as f:  # 50 Mo, fichier creux
+			f.write(b'a' * 4096)
+			f.truncate(50 * 1024 * 1024)
+		start = time.time()
+		r = self.run_cli('--version')
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertLess(time.time() - start, 10)
+
+	def test_build_illisible_rend_dev(self):
+		self.run_version({})
+		os.mkdir(os.path.join(self.root, 'BUILD'))  # lire un dossier : OSError
+		r = self.run_cli('--version')
 		self.assertEqual((r.returncode, r.stdout.strip()), (0, 'dev'))
 
 

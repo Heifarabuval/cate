@@ -15,4 +15,13 @@ if [ -z "$py" ]; then
 	echo "agence : python3 requis (xcode-select --install)" >&2
 	exit 2
 fi
-exec "$py" "$(dirname "$0")/agence.py" "$@"
+# agence.py est a cote du vrai fichier, pas du lien (readlink -f n'existe pas partout).
+self=$0
+while [ -L "$self" ]; do
+	link=$(readlink "$self")
+	case $link in
+		/*) self=$link ;;
+		*) self=$(dirname "$self")/$link ;;
+	esac
+done
+exec "$py" "$(dirname "$self")/agence.py" "$@"

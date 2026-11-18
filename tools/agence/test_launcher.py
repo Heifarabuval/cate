@@ -29,7 +29,8 @@ class LauncherTest(unittest.TestCase):
 		self.install = os.path.join(self.root, 'install')
 		for d in (self.bin, self.brew, self.install):
 			os.makedirs(d)
-		os.symlink('/usr/bin/dirname', os.path.join(self.bin, 'dirname'))
+		for tool in ('dirname', 'readlink'):
+			os.symlink('/usr/bin/' + tool, os.path.join(self.bin, tool))
 		self.log = os.path.join(self.root, 'xcode-select.log')
 		# Copie du lanceur avec les chemins Homebrew redirigés vers un dossier jetable.
 		with open(LAUNCHER) as f:
@@ -91,6 +92,20 @@ class LauncherTest(unittest.TestCase):
 		self.xcode_select(0, dev)
 		r = self.run_launcher()
 		self.assertEqual(r.returncode, 2)
+
+	def test_lance_via_un_lien_symbolique_meme_relatif_et_en_chaine(self):
+		self.uname('Linux')
+		self.fake_python(os.path.join(self.bin, 'python3'))
+		other = os.path.join(self.root, 'other')
+		os.makedirs(other)
+		first = os.path.join(other, 'first')
+		os.symlink(self.launcher, first)
+		second = os.path.join(self.root, 'second')
+		os.symlink(os.path.relpath(first, self.root), second)  # lien relatif vers un lien
+		env = {'PATH': self.bin, 'HOME': os.path.join(self.root, 'home')}
+		r = subprocess.run(['/bin/sh', second, 'x'], env=env, capture_output=True, text=True)
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertTrue(r.stdout.strip().endswith(os.path.join(self.install, 'agence.py') + ' x'), r.stdout)
 
 	def test_hors_macos_utilise_python3_du_path(self):
 		self.uname('Linux')
