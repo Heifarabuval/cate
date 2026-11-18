@@ -16,11 +16,13 @@ import {
   mainWorktree,
   samePath,
   worktreeForPath,
+  type PullRequestRef,
   type RepoStatus,
 } from '@workspace/repository/contract'
 import { PanelSession, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
 import {
   defaultReviewState,
+  reviewPullRequest,
   reviewRepoPath,
   type AgentChangesFilterPatch,
   type RecordedFileSummary,
@@ -34,6 +36,12 @@ import {
   type ReviewState,
 } from './contract'
 import { recordedReviewPrompt } from './parts/runtime/prompts'
+import {
+  createPullRequestSubject,
+  initialPrState,
+  type PullRequestSubject,
+  type ReviewGithub,
+} from './parts/runtime/pullRequest'
 
 /** The git work a review needs (the repository runtime's git host and status
  *  monitors). `cwd` is an absolute checkout path. */
@@ -58,24 +66,15 @@ export interface ReviewAgents {
   start(ownerPanelId: string, args: { agentId: AgentId; prompt: string; title: string; worktreeId?: string; terminalPanelId?: string; at?: PlaceTarget }): Promise<{ panelId: string }>
 }
 
-/** What a pull request panel needs from GitHub: the repository runtime's `github`, which refuses an untrusted
- *  workspace and runs at most 3 `gh` calls at once. Reads answer raw `gh` JSON, parsed by the repository contract. */
-export interface ReviewGithub {
-  pullRequestView(repository: string, number: number): Promise<unknown>
-  /** The light read: state, draft, checks, mergeability. */
-  pullRequestChecks(repository: string, number: number): Promise<unknown>
-  pullRequestFiles(repository: string, number: number): Promise<unknown>
-  /** `owner/name` of the workspace origin; null without a GitHub origin. */
-  originRepository(): Promise<string | null>
-}
+export type { ReviewGithub }
 
 export interface ReviewSessionDeps {
   /** Canonical workspace root: the checkout of a record without `repoPath`. */
   root: string
   repository: ReviewRepository
   agents: ReviewAgents
-  /** Reads pull requests. Optional until `src/panels/runtime.ts` provides it (B006). */
-  github?: ReviewGithub
+  /** Reads pull requests (the repository runtime's `github`). */
+  github: ReviewGithub
 }
 
 const reject = (code: string): never => { throw new RpcError('rejected', code) }
@@ -97,7 +96,7 @@ function freshReview(record: PanelRecord, root: string): ReviewState {
   return defaultReviewState(reviewRepoPath(record.fields) || root, request)
 }
 
-function initialSnapshot(review: ReviewState, reveal: ReviewRevealRequest | null): ReviewSnapshot {
+function initialSnapshot(review: ReviewState, reveal: ReviewRevealRequest | null, pr: PullRequestRef | null): ReviewSnapshot {
   return {
     review: checkoutView(review),
     recorded: { loading: true, error: null, files: [], panels: [], agents: [] },
@@ -105,6 +104,7 @@ function initialSnapshot(review: ReviewState, reveal: ReviewRevealRequest | null
     agentBusy: false,
     error: null,
     reveal,
+    pr: pr ? initialPrState(pr) : null,
   }
 }
 
@@ -126,10 +126,36 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   private recordsError: string | null = null
   private defaultAgentFor: string | undefined
   private revealSeq = 1
+  /** Set for a panel opened on a pull request: its one subject, fixed at creation. */
+  private readonly prSubject: PullRequestSubject | null
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: ReviewSessionDeps) {
-    super(kit, record, initialSnapshot(freshReview(record, deps.root), requestReveal(record)) as unknown as JsonObject)
+    const pr = reviewPullRequest(record.fields)
+    super(kit, record, initialSnapshot(freshReview(record, deps.root), requestReveal(record), pr) as unknown as JsonObject)
     this.review = freshReview(record, deps.root)
+    this.prSubject = pr && createPullRequestSubject({
+      ref: pr,
+      github: deps.github,
+      publish: (state) => this.set({ pr: state }),
+      recordRepository: (repository) => this.recordPrRepository(repository, pr.number),
+    })
+  }
+
+  private recordPrRepository(repository: string, number: number): void {
+    try {
+      this.kit.document.apply({ kind: 'updatePanel', id: this.panelId, patch: { fields: { pr: { repository, number } } } })
+    } catch (cause) {
+      this.kit.log.warn('review %s could not record its pull request repository: %s', this.panelId, errorText(cause, 'failed'))
+    }
+  }
+
+  /** Agent-edit ops: refused on a pull request panel. */
+  private agentOnly<T>(run: () => T): T {
+    return this.prSubject ? reject('pr-subject') : run()
+  }
+
+  private prOnly<T>(run: (subject: PullRequestSubject) => T): T {
+    return this.prSubject ? run(this.prSubject) : reject('agent-subject')
   }
 
   /** Typed view of the snapshot. */
@@ -137,6 +163,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   private set(patch: Partial<ReviewSnapshot>): void { this.publish(patch as unknown as Partial<JsonObject>) }
 
   override start(): void {
+    if (this.prSubject) return this.prSubject.start()
     const saved = this.persisted<ReviewState & Json>()
     if (saved && typeof saved === 'object' && typeof saved.repoPath === 'string') {
       this.review = { ...checkoutView(saved), ...(saved.worktreeStates ? { worktreeStates: saved.worktreeStates } : {}) }
@@ -204,6 +231,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
 
   async refresh(): Promise<void> {
     if (this.disposed) return
+    if (this.prSubject) return this.prSubject.refresh()
     this.set({ loading: true })
     try {
       this.deps.repository.refreshStatus(this.cwd)
@@ -389,19 +417,19 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
 
   protected override readonly ops: OpHandlers<ReviewOp> = {
     refresh: () => this.refresh(),
-    updateFilter: ({ patch }) => this.updateFilter(patch),
-    recordedDiff: ({ recordId, path: filePath, page }) => this.recordedDiff(recordId, filePath, page),
-    switchCheckout: ({ path: target, worktreeId }) => this.switchCheckout({ path: target, worktreeId }),
-    switchWorktree: ({ worktreeId }) => this.switchWorktree(worktreeId),
-    retarget: ({ request }) => this.retarget(request),
-    reviewAgents: () => this.reviewAgents(),
-    reviewWithAgent: ({ agentId, terminalPanelId, at }) => this.reviewWithAgent(agentId, terminalPanelId, at),
-    // Pull request ops: the session has no pull request subject yet (B005, B006).
-    prTick: () => reject('agent-subject'),
-    prFileDiff: () => reject('agent-subject'),
+    updateFilter: ({ patch }) => this.agentOnly(() => this.updateFilter(patch)),
+    recordedDiff: ({ recordId, path: filePath, page }) => this.agentOnly(() => this.recordedDiff(recordId, filePath, page)),
+    switchCheckout: ({ path: target, worktreeId }) => this.agentOnly(() => this.switchCheckout({ path: target, worktreeId })),
+    switchWorktree: ({ worktreeId }) => this.agentOnly(() => this.switchWorktree(worktreeId)),
+    retarget: ({ request }) => this.agentOnly(() => this.retarget(request)),
+    reviewAgents: () => this.agentOnly(() => this.reviewAgents()),
+    reviewWithAgent: ({ agentId, terminalPanelId, at }) => this.agentOnly(() => this.reviewWithAgent(agentId, terminalPanelId, at)),
+    prTick: () => this.prOnly((subject) => subject.tick()),
+    prFileDiff: ({ path: filePath, page }) => this.prOnly((subject) => subject.fileDiff(filePath, page)),
   }
 
   protected override release(): void {
+    this.prSubject?.dispose()
     this.stopStatus?.()
     this.stopChanges?.()
   }

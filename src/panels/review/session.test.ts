@@ -95,6 +95,7 @@ beforeEach(async () => {
         return () => { changeListeners = changeListeners.filter((l) => l !== listener) }
       },
     },
+    github: fakeGithub(),
   }
   await start()
   for (const listener of statusListeners) listener(repoStatus([]))
@@ -427,6 +428,7 @@ it('re-reads the checks at most once per 25 seconds, and only the checks', async
   github.pullRequestChecks.mockResolvedValue(checksJson('FAILURE'))
   await startPr(github)
   await loaded()
+  const readAt = prSnap().readAt
 
   expect(await prOp({ kind: 'prTick' })).toBe(false)
   vi.setSystemTime(T0 + 24_000)
@@ -443,7 +445,7 @@ it('re-reads the checks at most once per 25 seconds, and only the checks', async
   expect(github.pullRequestFiles).toHaveBeenCalledTimes(1)
   expect(prSnap()).toMatchObject({
     data: { checks: { state: 'failing' } },
-    readAt: new Date(T0).toISOString(),
+    readAt,
     checksReadAt: new Date(T0 + 25_000).toISOString(),
   })
 })
@@ -493,9 +495,10 @@ it('keeps the last data and read time when a later read fails', async () => {
 
   expect(prSnap()).toMatchObject({ loading: false, readAt: before.readAt, checksReadAt: before.checksReadAt })
   expect(prSnap().data).toEqual(before.data)
+  vi.setSystemTime(T0 + 90_000)
   await prOp({ kind: 'refresh' })
-  await vi.waitFor(() => expect(prSnap().error).toBeNull())
-  expect(prSnap().readAt).toBe(new Date(T0 + 60_000).toISOString())
+  expect(prSnap().error).toBeNull()
+  expect(prSnap().readAt).toBe(new Date(T0 + 90_000).toISOString())
 })
 
 it.skipIf(process.platform === 'win32')('16 panels reading at once never run more than 3 gh calls', async () => {
@@ -552,6 +555,155 @@ it('refuses agent ops on a pull request panel, and pull request ops on an agent 
   for (const agentOp of agentOps) await expect(prOp(agentOp)).rejects.toMatchObject({ code: 'rejected', message: 'pr-subject' })
   await expect(op({ kind: 'prTick' })).rejects.toMatchObject({ code: 'rejected', message: 'agent-subject' })
   await expect(op({ kind: 'prFileDiff', path: 'a' })).rejects.toMatchObject({ code: 'rejected', message: 'agent-subject' })
+})
+
+function deferred<T = unknown>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+const flush = () => new Promise((done) => setTimeout(done, 20))
+
+it('lets the refreshes of several clients join the running read, and ignores their ticks', async () => {
+  const github = fakeGithub()
+  const files = deferred()
+  github.pullRequestFiles.mockImplementationOnce(() => files.promise)
+  await startPr(github)
+  const client = (clientId: string, value: ReviewOp) => lastPr().handleOp(value, { clientId, connectionId: 1 })
+
+  const refreshes = [client('a', { kind: 'refresh' }), client('b', { kind: 'refresh' }), client('c', { kind: 'refresh' })]
+  expect(await client('d', { kind: 'prTick' })).toBe(false)
+  files.resolve(filesJson())
+  await Promise.all(refreshes)
+  await loaded()
+
+  expect(github.pullRequestFiles).toHaveBeenCalledTimes(1)
+  expect(github.pullRequestView).toHaveBeenCalledTimes(1)
+  expect(github.pullRequestChecks).not.toHaveBeenCalled()
+})
+
+it('never runs two gh calls at once for one pull request', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
+  const github = fakeGithub()
+  let running = 0
+  let most = 0
+  for (const method of [github.pullRequestView, github.pullRequestFiles, github.pullRequestChecks]) {
+    const answer = method.getMockImplementation()!
+    method.mockImplementation(async (repository: string, number: number) => {
+      most = Math.max(most, ++running)
+      await new Promise((done) => setTimeout(done, 5))
+      running--
+      return answer(repository, number)
+    })
+  }
+  await startPr(github)
+
+  for (let round = 1; round <= 3; round++) {
+    vi.setSystemTime(T0 + round * 30_000)
+    await Promise.all([prOp({ kind: 'prTick' }), prOp({ kind: 'refresh' }), prOp({ kind: 'prTick' }), prOp({ kind: 'refresh' })])
+  }
+  await loaded()
+
+  expect(most).toBe(1)
+})
+
+it('runs a refresh asked during a checks read once that read is over', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
+  const github = fakeGithub()
+  const checks = deferred()
+  github.pullRequestChecks.mockImplementationOnce(() => checks.promise)
+  await startPr(github)
+  await loaded()
+  vi.setSystemTime(T0 + 30_000)
+
+  const tick = prOp({ kind: 'prTick' })
+  const refresh = prOp({ kind: 'refresh' })
+  await flush()
+  expect(github.pullRequestView).toHaveBeenCalledTimes(1)
+  checks.resolve(checksJson('SUCCESS'))
+  await Promise.all([tick, refresh])
+
+  expect(github.pullRequestView).toHaveBeenCalledTimes(2)
+  expect(github.pullRequestFiles).toHaveBeenCalledTimes(2)
+})
+
+it('keeps the last checks and their read time when a checks read fails, and marks the error', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
+  const github = fakeGithub()
+  github.pullRequestChecks.mockRejectedValueOnce(new GhReadError('rate-limited'))
+  await startPr(github)
+  await loaded()
+  const before = prSnap()
+  vi.setSystemTime(T0 + 30_000)
+
+  expect(await prOp({ kind: 'prTick' })).toBe(true)
+
+  expect(prSnap()).toMatchObject({ error: { kind: 'rate-limited' }, checksReadAt: before.checksReadAt, readAt: before.readAt })
+  expect(prSnap().data).toEqual(before.data)
+  vi.setSystemTime(T0 + 40_000)
+  expect(await prOp({ kind: 'prTick' })).toBe(false)
+  expect(github.pullRequestChecks).toHaveBeenCalledTimes(1)
+})
+
+it('reads nothing on its own: without a tick, no gh call however long the panel stays open', async () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(T0)
+  const github = fakeGithub()
+  await startPr(github)
+  await loaded()
+  const calls = ghCalls(github)
+
+  await vi.advanceTimersByTimeAsync(10 * 60_000)
+
+  expect(ghCalls(github)).toBe(calls)
+})
+
+it('forgets the patches of files a later read no longer lists', async () => {
+  const github = fakeGithub()
+  await startPr(github)
+  await loaded()
+  github.pullRequestFiles.mockResolvedValue([filesJson()[0]])
+  github.pullRequestView.mockResolvedValue({ ...viewJson(), changedFiles: 1 })
+
+  await prOp({ kind: 'refresh' })
+  await vi.waitFor(() => expect(prSnap().data!.files).toHaveLength(1))
+
+  await expect(prOp({ kind: 'prFileDiff', path: 'src/long.ts' })).rejects.toMatchObject({ message: 'pr-file-not-found' })
+  await expect(prOp({ kind: 'prFileDiff', path: 'src/a.ts' })).resolves.toMatchObject({ diff: 'patch', totalLines: 3 })
+})
+
+it('settles the ops waiting on a read when the panel closes, and writes nothing after', async () => {
+  const github = fakeGithub()
+  const files = deferred()
+  github.pullRequestFiles.mockImplementationOnce(() => files.promise)
+  await startPr(github)
+  const waiting = prOp({ kind: 'refresh' })
+  const before = lastPr().snapshot()
+
+  lastPr().dispose('shutdown')
+  await expect(waiting).resolves.toBeUndefined()
+  files.resolve(filesJson())
+  await flush()
+
+  expect(lastPr().snapshot()).toBe(before)
+  expect(github.pullRequestView).not.toHaveBeenCalled()
+})
+
+it('records no origin found after the panel closed', async () => {
+  const github = fakeGithub()
+  const origin = deferred<string | null>()
+  github.originRepository.mockImplementationOnce(() => origin.promise)
+  await startPr(github, { repository: null, number: 8 })
+
+  lastPr().dispose('shutdown')
+  origin.resolve('org/repo')
+  await flush()
+
+  expect(document.get().panels.pr.fields.pr).toEqual({ repository: null, number: 8 })
+  expect(ghCalls(github)).toBe(0)
 })
 
 it('disposes without a gh call, and writes nothing to its session file', async () => {
