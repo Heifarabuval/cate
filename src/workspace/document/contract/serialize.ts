@@ -3,7 +3,7 @@
 
 import { dockPanels, findStack, visitDock, type DockNode } from './dock'
 import { MAIN_WINDOW, type WorkspaceDocument } from './schema'
-import { checkDock, checkRecord, checkRelation, checkWorktree, isId, isObject, isRect } from './validate'
+import { checkDock, checkFrame, checkRecord, checkRelation, checkWorktree, isId, isObject, isRect } from './validate'
 
 export const DOCUMENT_FILE_VERSION = 1
 
@@ -86,11 +86,23 @@ export function validateDocument(value: unknown): string | null {
     canvasPanels.set(record.canvasId!, record.id)
   }
   const seenNodes = new Set<string>()
+  const seenFrames = new Set<string>()
   for (const [id, canvas] of Object.entries(doc.canvases)) {
     if (!isObject(canvas) || canvas.id !== id || !isObject(canvas.nodes)) return `canvas ${id} is malformed`
     if (!canvasPanels.has(id)) return `canvas ${id} has no canvas panel`
+    if (canvas.frames !== undefined && !isObject(canvas.frames)) return `canvas ${id} frames is not an object`
+    for (const [frameId, frame] of Object.entries(canvas.frames ?? {})) {
+      const problem = checkFrame(frame)
+      if (problem) return `frame ${frameId}: ${problem}`
+      if (frame.id !== frameId) return `frame ${frameId} is filed under the wrong key`
+      if (seenFrames.has(frameId)) return `frame id ${frameId} is used twice`
+      seenFrames.add(frameId)
+    }
     for (const [nodeId, node] of Object.entries(canvas.nodes)) {
       if (!isObject(node) || node.id !== nodeId || !isRect(node.rect) || !node.dock) return `node ${nodeId} is malformed`
+      if (node.frameId !== undefined && (!isId(node.frameId) || !canvas.frames?.[node.frameId])) {
+        return `node ${nodeId} names a frame that is not on its canvas`
+      }
       if (seenNodes.has(nodeId)) return `node id ${nodeId} is used twice`
       seenNodes.add(nodeId)
       const problem = place(node.dock, `node ${nodeId}`, true)

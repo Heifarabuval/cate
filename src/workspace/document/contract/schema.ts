@@ -10,6 +10,7 @@ export type PanelId = string
 export type WindowId = string
 export type CanvasId = string
 export type NodeId = string
+export type FrameId = string
 export type StackId = string
 export type SplitId = string
 export type RelationId = string
@@ -49,12 +50,31 @@ export interface DocWindow {
   dock: DockNode | null
 }
 
+/** The four states of a frame: in progress, waiting for the user, blocked, done. */
+export const FRAME_STATES = ['active', 'waiting', 'blocked', 'done'] as const
+export type FrameState = (typeof FRAME_STATES)[number]
+
+/** A frame on a canvas. Its geometry is derived from its member nodes; the
+ *  document keeps only where its title bar sits when it has no member to
+ *  derive from (empty or collapsed). */
+export interface CanvasFrame {
+  id: FrameId
+  /** Not empty, one line. */
+  title: string
+  state: FrameState
+  collapsed: boolean
+  /** Top left corner of the title bar. */
+  at: Point
+}
+
 /** One node on a canvas: a mini dock at a rect. */
 export interface CanvasNode {
   id: NodeId
   rect: Rect
   /** The node's mini dock; never empty (an emptied node is removed). */
   dock: DockNode
+  /** The frame holding this node and its whole tab stack, on the same canvas. */
+  frameId?: FrameId
 }
 
 /** A canvas: its nodes, placed with `workspace/canvas` geometry. */
@@ -63,6 +83,8 @@ export interface CanvasModel {
   /** In creation order: the last node is the newest. Stacking order is
    *  client state. */
   nodes: Record<NodeId, CanvasNode>
+  /** Absent when the canvas has no frame. */
+  frames?: Record<FrameId, CanvasFrame>
 }
 
 export type RelationKind = 'use' | 'context' | 'verify' | 'trigger'
