@@ -5,6 +5,7 @@ Lancer : python3 -m unittest common/tools/test_agence.py
 """
 import contextlib
 import fcntl
+import html
 import http.client
 import io
 import json
@@ -840,7 +841,14 @@ class MergeVerrou(Base):
 		qid = self.ask()
 		page = agence.page_ask(self.state(), qid)
 		self.assertRegex(page, r'<button class="btn" disabled>Répondre</button>')
-		self.assertIn('oninput="this.form.querySelector(&quot;button&quot;).disabled=!this.value.trim()"', page)
+		if not shutil.which('node'):
+			self.skipTest('node absent : comportement du oninput non exécuté')
+		js = html.unescape(re.search(r'<textarea[^>]* oninput="([^"]*)"', page).group(1))
+		for value, disabled in (('', 'true'), ('   ', 'true'), ('Autre', 'false')):  # le bouton suit le champ
+			prog = ("const b={disabled:true};const t={value:%s,form:{querySelector:(s)=>s==='button'?b:null}};"
+			        "(function(){%s}).call(t);console.log(b.disabled)" % (json.dumps(value), js))
+			out = subprocess.run(['node', '-e', prog], capture_output=True, text=True, check=True).stdout.strip()
+			self.assertEqual(out, disabled, repr(value))
 
 	def test_post_sans_choix_ni_texte_message_utile_et_retour_a_la_question(self):
 		qid = self.ask()
@@ -1529,7 +1537,7 @@ class Regisseur(Base):
 		with agence.tx() as st:
 			st['questions'][0]['answer'] = None
 		self.serve()
-		for form in ({}, {'libre': ' '}):
+		for form in ({}, {'libre': ' '}, {'choice': '9'}, {'choice': 'x'}):  # vide, blanc, hors liste, non numérique
 			status, head, body = self.post(self.TOKEN, '/ask/q2', **form)
 			self.assertEqual((status, head['Content-Type']), (400, 'text/html; charset=utf-8'))
 			self.assertIn('Écris une réponse ou choisis une option.', body)
