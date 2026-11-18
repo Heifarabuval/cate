@@ -11,7 +11,7 @@ import { canvasViewFor } from './registry'
 import { focusedNodeId } from './selection'
 import { CanvasViewProvider, useCanvasView } from './context'
 import { installCanvasTargetPicker } from './targetPicker'
-import { useStagedVisibleNodeIds, useVisibleNodeIds } from './visibleNodes'
+import { collapsedNodeIds, useStagedVisibleNodeIds, useVisibleNodeIds } from './visibleNodes'
 import Canvas from './Canvas'
 import CanvasNode from './CanvasNode'
 import CanvasToolbar from './CanvasToolbar'
@@ -25,6 +25,8 @@ export interface CanvasViewProps {
   /** The canvas panel showing this canvas. */
   canvasPanelId: string
 }
+
+const sameIds = (a: ReadonlySet<NodeId>, b: ReadonlySet<NodeId>) => a.size === b.size && [...a].every((id) => b.has(id))
 
 interface NodeSlotProps {
   workspaceId: string
@@ -49,7 +51,9 @@ function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store }: CanvasView
   store: NonNullable<ReturnType<typeof canvasViewFor>>
 }) {
   const keepMounted = useKeepMountedPanelIds(workspaceId)
-  const visible = useVisibleNodeIds(store, keepMounted)
+  // Same members, same set: a rect op on the canvas does not re-run the cull.
+  const hidden = useDocument(workspaceId, (d) => collapsedNodeIds(d.canvases[canvasId]), sameIds)
+  const visible = useVisibleNodeIds(store, keepMounted, hidden)
   const staged = useStagedVisibleNodeIds(visible)
   return (
     <>

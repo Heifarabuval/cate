@@ -89,3 +89,47 @@ it('keeps focused, pinned and native-surface nodes mounted beyond the margin', a
     expect(host.textContent).toBe('n2')
   } finally { act(() => root.unmount()); store.getState().dispose() }
 })
+
+it('names the member nodes of collapsed frames only', async () => {
+  const { collapsedNodeIds } = await import('./visibleNodes')
+  const at = { x: 0, y: 0 }
+  const canvas = {
+    id: 'c',
+    nodes: {
+      a: { id: 'a', frameId: 'f1' },
+      b: { id: 'b', frameId: 'f2' },
+      c: { id: 'c' }
+    },
+    frames: {
+      f1: { id: 'f1', title: 't', state: 'active', collapsed: true, at },
+      f2: { id: 'f2', title: 't', state: 'active', collapsed: false, at }
+    }
+  } as unknown as Parameters<typeof collapsedNodeIds>[0]
+  expect([...collapsedNodeIds(canvas)]).toEqual(['a'])
+  expect([...collapsedNodeIds(undefined)]).toEqual([])
+  expect(collapsedNodeIds(canvas)).toBe(collapsedNodeIds(canvas))
+})
+
+it('drops the nodes of a collapsed frame, even focused, pinned or kept alive', async () => {
+  const { createCanvasView } = await import('./store')
+  const { fakeDocument, canvasDocument } = await import('./testing.canvas')
+  const { rect } = await import('@workspace/canvas/contract')
+  const { useVisibleNodeIds } = await import('./visibleNodes')
+  const document = fakeDocument(canvasDocument([0, 300, 600, 900].map((x, i) => ({ nodeId: `n${i}`, panelId: `p${i}`, rect: rect(x, 0, 200, 200) }))))
+  const store = createCanvasView({ workspaceId: 'test', canvasId: 'c1', document, animate: false })
+  store.getState().setContainerSize({ width: 2000, height: 800 })
+  store.getState().focusNode('n0')
+  store.getState().togglePin('n1')
+  const host = globalThis.document.createElement('div')
+  const root = createRoot(host)
+  const keep = new Set(['p2'])
+  let hidden: ReadonlySet<string> = new Set()
+  function Nodes() { return <>{useVisibleNodeIds(store, keep, hidden).join(',')}</> }
+  try {
+    act(() => root.render(<Nodes />))
+    expect(host.textContent).toBe('n0,n1,n2,n3')
+    hidden = new Set(['n0', 'n1', 'n2'])
+    act(() => root.render(<Nodes />))
+    expect(host.textContent).toBe('n3')
+  } finally { act(() => root.unmount()); store.getState().dispose() }
+})

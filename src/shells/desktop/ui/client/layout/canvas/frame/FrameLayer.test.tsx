@@ -1,5 +1,5 @@
 import React, { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { FRAME_STATES, MAX_FRAME_TITLE, applyOp, type DocChange, type FrameState } from '@workspace/document/contract'
@@ -131,6 +131,36 @@ describe('FrameLayer title', () => {
     open()
     expect(frameEl().className).toContain('motion-reduce:transition-none')
     expect(container.querySelector<HTMLElement>('[data-frame-state]')!.className).toContain('motion-reduce:transition-none')
+  })
+})
+
+describe('FrameLayer collapse', () => {
+  const bar = () => container.querySelector<HTMLElement>('[data-frame="f1"] [data-frame-bar]')!
+  const doubleClick = () => act(() => { bar().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })) })
+
+  it('draws the bar alone at its anchor when collapsed', () => {
+    open(framed('active', 'Besoin', true))
+    expect(box(frameEl())).toEqual(expected(true))
+  })
+
+  it('collapses on a double click with one updateFrame and nothing else', () => {
+    open()
+    const propose = vi.spyOn(documentStoreFor(WS)!, 'propose')
+    doubleClick()
+    const origin = frameBounds([rect(100, 200, 400, 300), rect(600, 200, 400, 300)], { x: 0, y: 0 }, false).origin
+    expect(propose).toHaveBeenCalledTimes(1)
+    expect(propose).toHaveBeenCalledWith({ kind: 'updateFrame', id: 'f1', patch: { collapsed: true, at: origin } })
+    expect(documentStoreFor(WS)!.getSnapshot().canvases.c1.frames!.f1.collapsed).toBe(true)
+    expect(box(frameEl())).toEqual({ left: origin.x, top: origin.y, width: expected(true).width, height: expected(true).height })
+  })
+
+  it('expands on a second double click, the panels untouched', () => {
+    open(framed('active', 'Besoin', true))
+    const before = documentStoreFor(WS)!.getSnapshot().panels
+    doubleClick()
+    const doc = documentStoreFor(WS)!.getSnapshot()
+    expect(doc.canvases.c1.frames!.f1.collapsed).toBe(false)
+    expect(doc.panels).toBe(before)
   })
 })
 
