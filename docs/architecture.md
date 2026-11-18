@@ -1870,13 +1870,23 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   once, since an agent that finished while the runtime was down sends no
   turn-end.
 - **Session usage** (`cate agent usage`, read access, 30 s timeout): per
-  live agent panel, what its known session has used (`sessionOf`):
+  live agent panel, what its agent has used since it started there:
   `model` (most tokens), `inputTokens` (cached included), `outputTokens`,
   `costUsd` (null when a response has no price; every field null for an agent
-  without token counts). `AgentUsageService.session` reuses the workspace
-  scan's cached transcript reader, pricing and aggregator, but reads only the
-  session's own files when its store names them (`files`), else that agent's
-  transcripts of the last 7 days, and keeps the records of that `sessionId`.
+  without token counts, or an `error` for a panel whose read failed), and
+  `sessionIds`. The resume stamps (`stamps.ts`) keep, per terminal, every
+  session id its hooks named since the agent started: a `/clear` adds one,
+  the agent exiting (`clear`) empties the list, closing the terminal drops
+  it; the panel's `sessionOf` session joins it. One call asks
+  `AgentUsageService.sessions` for all panels at once: one rate load, each
+  file parsed once through the scan cache, at most one cache write, the
+  cache pruned as `summary` does. A store that lists a session's files
+  (`files`) is read from them, the history a resume copied in included; one
+  that cannot (a database) is searched over the last 7 days, bounded to the
+  workspace's folders and to the listed session ids. A response counts once,
+  by the CLI's own `dedupeKey` (Claude: `message.id:requestId`). Not counted:
+  a CLI's sub-agent transcripts (Claude Code writes them to separate files),
+  and sessions run before a runtime restart that no longer show in the panel.
 - **terminal agents** (`terminal.ts`): plug into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).

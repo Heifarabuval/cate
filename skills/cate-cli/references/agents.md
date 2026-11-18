@@ -95,13 +95,22 @@ Panel ids may be the unique short ids `agent list` prints. `wait` accepts
 5000 to 60000 milliseconds and, with no ids, monitors every live agent panel;
 it exits 1 when it timed out, after printing the states.
 
-`cate agent usage [--panel <id>] [--json]` shows what each live agent panel's
-session has used: `model`, `inputTokens` (cached part included), `outputTokens`
-and `costUsd`, the API-equivalent cost from Cate's price table, not money
-spent. `costUsd` is null (a dash) when a model has no price. An agent that
-records no tokens, or a panel with no session yet, answers null in every field.
-It reads one session, so it answers in seconds; it is the whole session, a
-resumed one included, and a `/clear` starts a new one.
+`cate agent usage [--panel <id>] [--json]` shows what each live agent panel
+has used since its agent started there: `model`, `inputTokens` (cached part
+included), `outputTokens` and `costUsd`, the API-equivalent cost from Cate's
+price table, not money spent. `costUsd` is null (a dash) when a response has
+no price. `--json` adds `sessionIds`, the sessions summed: a `/clear` starts
+a new session and the earlier ones still count; the agent exiting and another
+starting in the panel starts again from zero. A resumed session counts the
+history it copied in. An agent that records no tokens, or a panel with no
+session yet, answers null in every field; a panel whose usage could not be
+read answers null with an `error` and the others still answer. It reads only
+those sessions, so it answers in seconds.
+
+Limits: usage the agent spent in sub-agents (Claude Code writes each to its own
+transcript file) is not counted. A panel's list of sessions is kept in
+memory: after a runtime restart it starts again from the session the panel
+shows.
 
 Send bounded prompts. `send` hands the prompt to the runtime and prints its
 id at once, busy agent or not: the runtime types it once the agent is at its
