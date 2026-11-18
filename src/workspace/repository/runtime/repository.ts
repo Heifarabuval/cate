@@ -17,6 +17,7 @@ import type { DocBatch, DocChange, WorkspaceDocument, WorktreeMeta } from '@work
 import {
   checkoutPathKey,
   EMPTY_REPO_STATUS,
+  githubRepository,
   pickWorktreeColor,
   samePath,
   toBranchName,
@@ -87,8 +88,12 @@ const GIT_READS = [
 /** The git the rest of the runtime gets: every call needs trust. */
 export type RepositoryGit = Pick<GitHost, (typeof GIT_WRITES)[number] | (typeof GIT_READS)[number]>
 /** The `gh` the rest of the runtime gets: every call needs trust. */
-export type RepositoryGithub = Pick<GithubHost, 'connection' | 'pullRequests' | 'loginState' | 'startLogin' | 'cancelLogin'>
-  & { pullRequestContext(repository: string, number: number): Promise<PullRequestContext | null> }
+export type RepositoryGithub = Pick<GithubHost, 'connection' | 'pullRequests' | 'loginState' | 'startLogin' | 'cancelLogin' | 'pullRequestView' | 'pullRequestChecks' | 'pullRequestFiles'>
+  & {
+    pullRequestContext(repository: string, number: number): Promise<PullRequestContext | null>
+    /** `owner/name` lowercased of the workspace's `origin`; null without a GitHub origin. */
+    originRepository(): Promise<string | null>
+  }
 
 type CreateParams = ParamsOf<VcsCapability['methods']['worktreeCreate']>
 type RemoveParams = ParamsOf<VcsCapability['methods']['worktreeRemove']>
@@ -148,6 +153,14 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
     pullRequestContext: gated(async (repository: string, number: number) => {
       if (!(await raw.isRepo({}))) return null
       return rawGithub.pullRequestContext(root, repository, number)
+    }),
+    pullRequestView: gated((repository: string, number: number) => rawGithub.pullRequestView(repository, number)),
+    pullRequestChecks: gated((repository: string, number: number) => rawGithub.pullRequestChecks(repository, number)),
+    pullRequestFiles: gated((repository: string, number: number) => rawGithub.pullRequestFiles(repository, number)),
+    originRepository: gated(async () => {
+      if (!(await raw.isRepo({}))) return null
+      const origin = (await raw.remotes({})).find((remote) => remote.name === 'origin')
+      return origin ? githubRepository(origin.fetchUrl) : null
     }),
   }
 
