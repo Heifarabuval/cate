@@ -20,9 +20,8 @@
 # 4 disk space, 5 prerequisite missing. Log: ~/Library/Logs/cate-fork-update.log
 set -eu
 
-CONF="${CATE_FORK_CONF:-$HOME/.config/cate-fork-update.conf}"
-LOG="$HOME/Library/Logs/cate-fork-update.log"
 MIN_FREE_KB=5242880 # 5 GB: node_modules and release/ of a build
+MAX_TRIES=3         # failed builds of one commit before waiting for the next commit
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*"; }
 short() { printf '%s' "$1" | cut -c1-8; }
@@ -41,7 +40,8 @@ notify_once() {
 # Only the four settings are read, and never evaluated as code.
 load_conf() {
 	[ -f "$CONF" ] || return 0
-	while IFS='=' read -r k v; do
+	# "|| [ -n ]": a last line without a final newline is read too.
+	while IFS='=' read -r k v || [ -n "$k" ]; do
 		case $k in CATE_FORK_REPO | CATE_FORK_BRANCH | CATE_BUILD_DIR | CATE_APPS_DIR) ;; *) continue ;; esac
 		v=${v#\"}
 		v=${v%\"}
@@ -245,7 +245,25 @@ stage() {
 
 need_build() {
 	if [ "$FORCE" = 1 ]; then return 0; fi
-	[ "$SHA" != "$installed" ] && [ "$SHA" != "$staged" ] && [ "$SHA" != "$failed" ]
+	[ "$SHA" != "$installed" ] && [ "$SHA" != "$staged" ] &&
+		{ [ "$SHA" != "$failed" ] || [ "$tries" -lt "$MAX_TRIES" ]; }
+}
+
+# The installed copy of this script follows the commit it builds, so a fix to it
+# reaches the machine without pasting the line again. Only the fixed path under
+# HOME is replaced (never a checkout), only by a non-empty copy that parses, and
+# by rename: the running shell keeps reading the old file.
+refresh_self() {
+	self=$HOME/.local/bin/cate-fork-update
+	[ -f "$self" ] || return 0
+	if ! git show "$SHA:scripts/cate-fork-update.sh" > "$self.new" 2> /dev/null ||
+		[ ! -s "$self.new" ] || ! sh -n "$self.new" 2> /dev/null || cmp -s "$self.new" "$self"; then
+		rm -f "$self.new"
+		return 0
+	fi
+	chmod 755 "$self.new"
+	mv -f "$self.new" "$self"
+	log "cate-fork-update refreshed from $(short "$SHA")"
 }
 
 # Builds when origin/<branch> moved. Never exits: the install step still runs.
@@ -273,10 +291,17 @@ maybe_build() {
 		log "built $(short "$SHA")"
 		return 0
 	fi
-	# The installed app is untouched. The same commit is not retried every 10 minutes.
-	printf '%s\n' "$SHA" > "$DIR.failed"
-	log "build of $(short "$SHA") failed, installed app untouched (retry on a new commit or with --force)"
-	notify_once "build:$SHA" "Cate : la construction de $(short "$SHA") a échoué. Voir le journal."
+	# The installed app is untouched. A cut network or an interrupted build is
+	# retried on the next runs; after MAX_TRIES the commit waits for the next one.
+	# An interruption by a signal never gets here (trap): it does not count.
+	if [ "$SHA" = "$failed" ]; then tries=$((tries + 1)); else tries=1; fi
+	printf '%s %s\n' "$SHA" "$tries" > "$DIR.failed"
+	if [ "$tries" -lt "$MAX_TRIES" ]; then
+		log "build of $(short "$SHA") failed ($tries/$MAX_TRIES), installed app untouched, retried on the next run"
+	else
+		log "build of $(short "$SHA") failed $tries times, installed app untouched (retry on a new commit or with --force)"
+		notify_once "build:$SHA" "Cate : la construction de $(short "$SHA") a échoué. Voir le journal."
+	fi
 	return 1
 }
 
@@ -322,6 +347,14 @@ main() {
 		esac
 	done
 	[ "$(uname -s)" = Darwin ] || { echo "cate-fork-update : macOS uniquement" >&2; exit 2; }
+	# Every path, and the build folder gate, hangs on HOME: an empty or "/" HOME
+	# would make "strictly under HOME" mean "anywhere".
+	h=${HOME:-}
+	while [ "${h%/}" != "$h" ]; do h=${h%/}; done
+	case $h in /*) ;; *) echo "HOME invalide (${HOME:-vide}) : un dossier absolu existant est requis. Rien n'a été touché." >&2; exit 1 ;; esac
+	[ -d "$h" ] || { echo "HOME introuvable : $HOME. Rien n'a été touché." >&2; exit 1; }
+	CONF="${CATE_FORK_CONF:-$HOME/.config/cate-fork-update.conf}"
+	LOG="$HOME/Library/Logs/cate-fork-update.log"
 
 	load_conf
 	REPO=${CATE_FORK_REPO:-https://github.com/Heifarabuval/cate.git}
@@ -378,7 +411,10 @@ main() {
 	fi
 	installed=$(cat "$DIR.installed" 2> /dev/null || true)
 	staged=$(cat "$DIR.staged/sha" 2> /dev/null || true)
-	failed=$(cat "$DIR.failed" 2> /dev/null || true)
+	failed="" tries=0
+	[ ! -f "$DIR.failed" ] || read -r failed tries < "$DIR.failed" || true
+	case $tries in '' | *[!0-9]*) tries=$MAX_TRIES ;; esac
+	refresh_self
 
 	rc=0
 	maybe_build || rc=$?

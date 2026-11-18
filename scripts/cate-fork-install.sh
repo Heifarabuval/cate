@@ -4,8 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate-fork-install.sh | sh
 #
 # Checks the prerequisites (all named at once), copies cate-fork-update to
-# ~/.local/bin, writes the launchd agent (every 10 minutes), builds and installs
-# Cate once, then loads the agent. Safe to run again: same result, no duplicate.
+# ~/.local/bin, writes and loads the launchd agent (every 10 minutes), then
+# builds and installs Cate once. Safe to run again: same result, no duplicate.
 # Usage: cate-fork-install.sh [--sans-launchd]
 # Settings: CATE_FORK_REPO, CATE_FORK_BRANCH, CATE_BUILD_DIR, CATE_APPS_DIR (kept
 # in ~/.config/cate-fork-update.conf when given), CATE_FORK_RAW_URL (where the
@@ -33,7 +33,6 @@ write_plist() {
 		printf '\t<key>Label</key><string>%s</string>\n' "$LABEL"
 		printf '\t<key>ProgramArguments</key><array><string>%s</string></array>\n' "$(xml "$BIN_DIR/cate-fork-update")"
 		echo '	<key>StartInterval</key><integer>600</integer>'
-		echo '	<key>RunAtLoad</key><true/>'
 		printf '\t<key>StandardOutPath</key><string>%s</string>\n' "$(xml "$LOG")"
 		printf '\t<key>StandardErrorPath</key><string>%s</string>\n' "$(xml "$LOG")"
 		echo '	<key>LowPriorityIO</key><true/>'
@@ -125,17 +124,12 @@ main() {
 	chmod 755 "$BIN_DIR/cate-fork-update.new"
 	mv -f "$BIN_DIR/cate-fork-update.new" "$BIN_DIR/cate-fork-update"
 	write_conf
-	[ "$SANS_LAUNCHD" = 1 ] || write_plist
 
-	# Built in the foreground before the agent starts, so the two never race for the lock.
-	echo "Première construction : 10 à 20 min attendues. Suivi : tail -f $LOG"
-	rc=0
-	"$BIN_DIR/cate-fork-update" || rc=$?
-	if [ "$rc" != 0 ]; then
-		tail -n 15 "$LOG" 2> /dev/null || true
-	fi
-
+	# The agent is loaded before the long first build: a Terminal closed during
+	# the build still leaves it, and it takes the build over. It has no RunAtLoad,
+	# so its first run comes 10 minutes later and waits on the lock, never races.
 	if [ "$SANS_LAUNCHD" = 0 ]; then
+		write_plist
 		uid=$(id -u)
 		launchctl bootout "gui/$uid/$LABEL" > /dev/null 2>&1 || true
 		launchctl bootstrap "gui/$uid" "$PLIST" || die "launchctl bootstrap a échoué : $PLIST"
@@ -144,11 +138,19 @@ main() {
 		agent="sans agent (--sans-launchd), à lancer à la main : $BIN_DIR/cate-fork-update"
 	fi
 
+	echo "Première construction : 10 à 20 min attendues. Suivi : tail -f $LOG"
+	rc=0
+	"$BIN_DIR/cate-fork-update" || rc=$?
+	if [ "$rc" != 0 ]; then
+		tail -n 15 "$LOG" 2> /dev/null || true
+	fi
+
 	state=$(tail -n 1 "$LOG" 2> /dev/null || true)
 	if [ "$rc" = 0 ]; then
 		echo "Fait : $BIN_DIR/cate-fork-update, $agent. Dernier état : ${state:-aucun}"
 	else
 		echo "Installé, mais la première construction a échoué (code $rc) : $BIN_DIR/cate-fork-update, $agent."
+		echo "L'agent la réessaie seul (3 fois au plus par commit). Relancer tout de suite : $BIN_DIR/cate-fork-update --force"
 	fi
 	echo "Journal : $LOG"
 	echo "Désinstaller : curl -fsSL $RAW/cate-fork-uninstall.sh | sh   (ajouter -s -- --purge pour supprimer aussi le dossier de build)"
