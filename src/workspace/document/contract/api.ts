@@ -104,6 +104,7 @@ export const canvasApi = defineCateApi(
         type: str.nonEmpty().pos('type').help(`The panel type: ${PANEL_TYPES.join(', ')}`),
         url: opt(str).pos('url').help('Browser panels: the page to open'),
         filePath: opt(path).flag('file', 'path').help('Editor panels: the file to open'),
+        pr: opt(str).flag('pr').help('Review panels: owner/repo#N, or N in the workspace origin. A pull request already open returns its existing panel, which is not brought to the front'),
         position: opt(obj({ x: num, y: num })).hidden(),
       },
       format: 'createdPanel',
