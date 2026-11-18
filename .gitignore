@@ -45,3 +45,6 @@ docs/superpowers/
 # Local performance reports and samples; profiling tests remain versioned.
 /docs/performance/*.json
 /docs/performance/*.md
+
+# vitest cache
+.vitest/
