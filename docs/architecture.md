@@ -2409,6 +2409,21 @@ a panel type in a menu by hand.
   actions in their groups, current keys, hidden items for keys without a
   visible item, the keys forwarded from web pages) and sends it to main,
   which only renders it. Main names no action.
+- **Frames on the desktop canvas** (`ui/client/layout/canvas/frame/`). The
+  frame layer draws under the nodes, next to the relation layer: each rect is
+  `frameBounds` of its members' rects as this client shows them, gesture
+  preview included, so a frame follows a node dragged alone. The title bar
+  shows the state with an icon and a label (colour never carries it) and the
+  panel count. Dragging the bar previews every member through the canvas
+  view's existing preview (client state) and sends one `batch [setNodeRects,
+  updateFrame {at}]` at the end, one undo step. A collapsed frame draws its
+  bar only and `useVisibleNodeIds` drops its members, exempt nodes included;
+  no session is touched, since sessions live in the runtime. `frame.collapse`,
+  `frame.expand`, `frame.rename` and `frame.dissolve` are canvas actions on the
+  frame under the pointer, else the frame of the selected node; rename asks
+  through `ClientUi.promptText`, dissolve confirms nothing because it closes
+  nothing. A native surface of a collapsed frame (a web view) is not handled
+  here yet.
 
 ### 12.5 Opening, joining and sharing
 
