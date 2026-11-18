@@ -134,6 +134,30 @@ answers with `cate agent send`. Refusals fail with `rejected` and say why.
 `cate agent start --relation <kind>` links you to the agent it starts
 (`references/agents.md`).
 
+## Groups
+
+A group is a titled frame on a canvas that holds panels, with one of four
+states: `active`, `waiting`, `blocked`, `done`. Keep one per need so the person
+reads the state without opening a panel. A panel is in one group at most; a
+tab stack goes in whole. Commands answer with `--json` as `{ frameId, ... }`;
+ids take any unique prefix.
+
+```bash
+cate panel group create "#n3 cadrage"           # on the canvas of the calling panel (or --canvas <panel>)
+cate panel group add <group> <panel>            # first free place of the group's grid, nothing else moves
+cate panel group remove <panel>                 # out of its group, the group stays
+cate panel group state <group> waiting          # active, waiting, blocked or done
+cate panel group collapse <group>               # fold into its title bar, panels stay alive
+cate panel group expand <group>
+cate panel group delete <group>                 # dissolves the group, closes no panel
+cate panel group list --json                    # frameId, canvasId, title, state, collapsed, panelIds
+```
+
+Run `list` before `create` when resuming work, so you do not make a second
+group for the same need. `add` twice is harmless (`moved: false`); a panel in a
+window or on another canvas is refused with the reason. Groups need the
+Panels permission (Read for `list`, Control for the rest).
+
 ## Reading terminals
 
 ```bash

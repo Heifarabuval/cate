@@ -83,6 +83,10 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(await runCate('agent', 'list')).toContain('(no agent runs)')
   expect(await runCate('agent', 'usage', '--help')).toContain('--panel')
 
+  // Groups: the generated help lists the eight commands (their behaviour is covered by frameApi.test.ts).
+  const groupHelp = await runCate('panel', 'group', '--help')
+  for (const verb of ['create', 'add', 'remove', 'state', 'collapse', 'expand', 'delete', 'list']) expect(groupHelp).toContain(verb)
+
   // Editor and panel verbs.
   const editorId = await runCate('editor', 'open', `${path.join(workspace, 'cli-fixture.ts')}:1:8`)
   expect(editorId).toMatch(/^[a-z0-9-]{8}$/i)
