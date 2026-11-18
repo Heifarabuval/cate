@@ -1064,8 +1064,12 @@ def page_ask(st, qid):
 		if locks and merge_motif(q) == CONFLIT:
 			cards += btn(f'/ask/{qid}', 'Demander le rebase', 'go', choice='rebase')
 		cards += (f'<form method="post" action="/ask/{qid}" style="display:block"><input type="hidden" name="token" value="{TOKEN}">'
-		          '<textarea name="libre" rows="3" placeholder="Autre réponse" oninput="this.form.querySelector(&quot;button&quot;).disabled=!this.value.trim()"></textarea>'
-		          '<div style="text-align:right"><button class="btn" disabled>Répondre</button></div></form>')
+		          '<textarea name="libre" rows="3" placeholder="Autre réponse"></textarea>'
+		          '<div style="text-align:right"><button class="btn">Répondre</button></div></form>'
+		          # Actif sans JavaScript (le serveur refuse le vide) ; le script le grise tant que le champ est vide,
+		          # au chargement et au retour arrière (pageshow), où le navigateur restaure le texte sans événement input.
+		          '<script>(function(){var f=document.currentScript.previousElementSibling,t=f.querySelector("textarea"),b=f.querySelector("button");'
+		          'function s(){b.disabled=!t.value.trim()}t.oninput=s;addEventListener("pageshow",s);s()})()</script>')
 	body = (f'<div class="sub"><a href="/">Suivi</a> · question de {e(st["titles"].get(q["agent"], q["agent"]))}</div>'
 	        f'<h1>{e(q["question"])}</h1>{cards}')
 	return layout('Question', body)
