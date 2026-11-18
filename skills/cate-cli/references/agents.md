@@ -101,16 +101,27 @@ included), `outputTokens` and `costUsd`, the API-equivalent cost from Cate's
 price table, not money spent. `costUsd` is null (a dash) when a response has
 no price. `--json` adds `sessionIds`, the sessions summed: a `/clear` starts
 a new session and the earlier ones still count; the agent exiting and another
-starting in the panel starts again from zero. A resumed session counts the
-history it copied in. An agent that records no tokens, or a panel with no
-session yet, answers null in every field; a panel whose usage could not be
-read answers null with an `error` and the others still answer. It reads only
-those sessions, so it answers in seconds.
+starting in the panel starts again from zero. The list survives a runtime
+restart while the agent can be resumed. It keeps the 50 most recent sessions:
+when older ones were dropped the panel carries `truncated: true` (the table
+prefixes the cost with `>=`) and the cost is a floor. A panel with no session
+yet, or an agent that records no tokens, answers null in every field; a panel
+whose usage could not be read answers null with an `error` and the others
+still answer. It reads only those sessions, so it answers in seconds.
 
-Limits: usage the agent spent in sub-agents (Claude Code writes each to its own
-transcript file) is not counted. A panel's list of sessions is kept in
-memory: after a runtime restart it starts again from the session the panel
-shows.
+Limits, to read the figure with:
+
+- Usage the agent spent in sub-agents (Claude Code writes each to its own
+  transcript file) is not counted.
+- A resumed session counts the history copied into its file, so resuming an
+  old session counts what was spent before the agent started in the panel.
+- A response is counted once by the CLI's own key. Claude has one
+  (`message.id:requestId`); Codex and OpenCode do not, so a response a resume
+  copied twice is not proven to count once for them.
+- A session the runtime lost track of (a `/clear` nothing followed before a
+  restart, a stamp whose panel moved to another checkout) is not counted.
+- The 30 s timeout answers the caller; it does not cancel the read, which
+  finishes in the runtime.
 
 Send bounded prompts. `send` hands the prompt to the runtime and prints its
 id at once, busy agent or not: the runtime types it once the agent is at its
