@@ -274,7 +274,7 @@ describe('agent start', () => {
 
   it('lists every agent CLI with whether it can start here', async () => {
     const types = await starter().types()
-    expect(types.map((type) => type.agentId)).toEqual(['claude-code', 'codex', 'cursor', 'grok', 'opencode', 'pi', 'kiro'])
+    expect(types.map((type) => type.agentId)).toEqual(['claude-code', 'codex', 'cursor', 'antigravity', 'grok', 'opencode', 'pi', 'kiro'])
     expect(types.find((type) => type.agentId === 'codex')).toEqual({ agentId: 'codex', displayName: 'Codex', ready: true })
     expect(types.find((type) => type.agentId === 'kiro')).toMatchObject({ ready: false })
   })

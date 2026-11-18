@@ -544,6 +544,73 @@ describe('kiro spec', () => {
   })
 })
 
+describe('antigravity spec', () => {
+  const spec = AGENT_HOOK_SPECS.antigravity
+  const file = spec.projectFiles![0]
+  // Field-for-field the payloads agy 1.5.6 posted in a real `agy -p` run.
+  const base = {
+    conversationId: '8710be68-01ef-4bff-a501-c994e584cc8a',
+    cwd: '/home/u/proj',
+    workspacePaths: ['/home/u/proj'],
+    transcriptPath: '/home/u/.gemini/antigravity-cli/brain/8710be68-01ef-4bff-a501-c994e584cc8a/.system_generated/logs/transcript_full.jsonl',
+    artifactDirectoryPath: '/home/u/.gemini/antigravity-cli/brain/8710be68-01ef-4bff-a501-c994e584cc8a',
+    modelName: 'gemini-3.8-flash-high',
+    lastUserInput: 'Review PR 36',
+  }
+
+  test('owns one named hook in the shared .agents/hooks.json, never PreToolUse', () => {
+    expect(file.relPath).toBe('.agents/hooks.json')
+    const parsed = JSON.parse(file.build(null, ctx)!) as Record<string, Record<string, any[]>>
+    const ours = parsed[CATE_HOOK_MARKER]
+    expect(Object.keys(ours).sort()).toEqual(['PostToolUse', 'PreInvocation', 'SessionStart', 'Stop'])
+    // A PreToolUse handler that answers {} denies the tool: never injected.
+    expect(ours.PreToolUse).toBeUndefined()
+    // agy reads a JSON object from every handler's stdout; the bridge prints
+    // nothing when it has nothing to say.
+    const command = `${ctx.bridgeCommand}; echo '{}'`
+    for (const event of ['SessionStart', 'PreInvocation', 'Stop']) expect(ours[event]).toEqual([{ type: 'command', command }])
+    expect(ours.PostToolUse).toEqual([{ matcher: '*', hooks: [{ type: 'command', command }] }])
+  })
+
+  test('keeps the user hooks of the file and strips only ours', () => {
+    const user = JSON.stringify({ lint: { PostToolUse: [{ matcher: 'write_to_file', hooks: [{ command: './lint.sh' }] }] } })
+    const merged = file.build(user, ctx)!
+    expect(Object.keys(JSON.parse(merged)).sort()).toEqual([CATE_HOOK_MARKER, 'lint'])
+    expect(file.build(merged, ctx)).toBeNull()
+    expect(JSON.parse((file.strip!(merged) as { content: string }).content)).toEqual(JSON.parse(user))
+    expect(file.strip!(file.build(null, ctx)!)).toEqual({ delete: true })
+    expect(file.strip!(user)).toBeNull()
+    expect(file.build('not json', ctx)).toBeNull()
+  })
+
+  test('lifecycle events normalize with identity fields', () => {
+    expect(norm('antigravity', { hookEventName: 'SessionStart', ...base })).toMatchObject({
+      kind: 'session-start', sessionId: base.conversationId, cwd: base.cwd, transcriptPath: base.transcriptPath,
+    })
+    // invocationNum counts model calls within one turn: 0 opens it.
+    expect(norm('antigravity', { hookEventName: 'PreInvocation', ...base, invocationNum: 0, initialNumSteps: 0 })?.kind).toBe('turn-start')
+    expect(norm('antigravity', { hookEventName: 'PreInvocation', ...base, invocationNum: 1, initialNumSteps: 0 })?.kind).toBe('turn-resume')
+    expect(norm('antigravity', { hookEventName: 'PostToolUse', ...base, toolCall: { id: 't', name: 'view_file', args: {} } })?.kind).toBe('turn-resume')
+    expect(norm('antigravity', { hookEventName: 'Stop', ...base, terminationReason: 'NO_TOOL_CALL', fullyIdle: true })).toMatchObject({ kind: 'turn-end' })
+    expect(norm('antigravity', { hookEventName: 'Stop', ...base, terminationReason: 'NO_TOOL_CALL' })).not.toHaveProperty('interrupted')
+    expect(norm('antigravity', { hookEventName: 'Stop', ...base, terminationReason: 'USER_CANCELED' })).toMatchObject({ kind: 'turn-end', interrupted: true })
+  })
+
+  test('no event reports a permission wait', () => {
+    expect(norm('antigravity', { hookEventName: 'PreToolUse', ...base, toolCall: { name: 'run_command' } })).toBeNull()
+    expect(norm('antigravity', { hookEventName: 'PostInvocation', ...base, invocationNum: 0 })).toBeNull()
+    expect(norm('antigravity', { hook_event_name: 'Stop', session_id: 'x' })).toBeNull()
+  })
+
+  test('PostToolUse reports the tool call, failed when it carries an error', () => {
+    const ok = { hookEventName: 'PostToolUse', ...base, stepIdx: 5, toolCall: { id: 'toolu_01', name: 'run_command', args: { CommandLine: 'npm test' } } }
+    expect(spec.toolCall(ok)).toMatchObject({ sessionId: base.conversationId, name: 'run_command', input: { CommandLine: 'npm test' }, callId: 'toolu_01', cwd: base.cwd })
+    expect(spec.toolCall(ok)).not.toHaveProperty('failed')
+    expect(spec.toolCall({ ...ok, error: 'exit status 1' })?.failed).toBe(true)
+    expect(spec.toolCall({ ...ok, hookEventName: 'PreToolUse' })).toBeNull()
+  })
+})
+
 describe('normalizeAgentHookPayload', () => {
   test('unknown agents and untracked payloads drop; raw payload rides along', () => {
     expect(normalizeAgentHookPayload('not-an-agent', 't', { hook_event_name: 'Stop' })).toBeNull()
@@ -592,6 +659,8 @@ describe('interrupt', () => {
       // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook or
       // transcript marker; the runtime recovers it from the Ctrl-C input edge.
       kiro: 'input',
+      // Documented by agy 1.5.6: Stop{terminationReason: USER_CANCELED}.
+      antigravity: 'hook',
     })
   })
 })

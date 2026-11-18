@@ -90,6 +90,19 @@ const FIXTURES: Record<AgentId, TitleFixture> = {
       )
     },
   },
+  antigravity: {
+    sessionId: '33333333-4444-4555-8666-777777777777',
+    sqlite: true,
+    prompt: (env) => ({ hookEventName: 'PreInvocation', conversationId: env.sessionId, cwd: env.cwd, invocationNum: 0 }),
+    writeTitle(env, title) {
+      // agy 1.5.6 keeps its conversation list in conversation_summaries.db.
+      sqlite(
+        path.join(env.home, '.gemini', 'antigravity-cli', 'conversation_summaries.db'),
+        'CREATE TABLE IF NOT EXISTS conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT "")',
+        (db) => db.prepare('INSERT OR REPLACE INTO conversation_summaries (conversation_id, title) VALUES (?, ?)').run(env.sessionId, title),
+      )
+    },
+  },
   grok: {
     sessionId: 'grok-session-1',
     prompt: (env) => ({ hookEventName: 'user_prompt_submit', sessionId: env.sessionId, cwd: env.cwd, transcriptPath: grokTranscript(env) }),

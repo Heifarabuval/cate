@@ -735,6 +735,10 @@ const TOOL_POSTS: Record<AgentId, { edit: (file: string) => Record<string, unkno
     edit: (file) => ({ hook_event_name: 'afterFileEdit', conversation_id: 's', file_path: file, edits: [{ old_string: '', new_string: 'after\n' }] }),
     shell: (command) => ({ hook_event_name: 'postToolUse', conversation_id: 's', tool_use_id: 'b', tool_name: 'Shell', tool_input: { command }, tool_output: '{"exitCode":0}' }),
   },
+  antigravity: {
+    edit: (file) => ({ hookEventName: 'PostToolUse', conversationId: 's', toolCall: { id: 'e', name: 'write_to_file', args: { TargetFile: file, CodeContent: 'after\n' } } }),
+    shell: (command) => ({ hookEventName: 'PostToolUse', conversationId: 's', toolCall: { id: 'b', name: 'run_command', args: { CommandLine: command } } }),
+  },
   grok: {
     edit: (file) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'e', toolName: 'write', toolInput: { file_path: file, content: 'after\n' }, toolResponse: {} }),
     shell: (command) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'b', toolName: 'run_terminal_command', toolInput: { command, description: 'Run it' }, toolResponse: {} }),
@@ -861,6 +865,7 @@ describe('terminal agentTerminals input and hook ordering', () => {
     { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
     { agentId: 'pi', start: { type: 'before_agent_start' }, wait: { type: 'ui_prompt_start', title: 'Allow command?' } },
     // These CLIs have no permission-wait hook. Input must preserve their running state.
+    { agentId: 'antigravity', start: { hookEventName: 'PreInvocation', invocationNum: 0 }, wait: null },
     { agentId: 'cursor', start: { hook_event_name: 'beforeSubmitPrompt' }, wait: null },
     { agentId: 'kiro', start: { hook_event_name: 'UserPromptSubmit' }, wait: null },
   ] as const

@@ -754,6 +754,87 @@ const grokSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// antigravity (agy) — hooks ride in <project>/.agents/hooks.json, a SHARED
+// file whose top-level keys are named hooks. Cate owns the `cate-hook` key
+// only. Read from the guide agy 1.5.6 embeds and pinned by a real `agy -p`:
+//  · Payloads are camelCase: conversationId, cwd, transcriptPath,
+//    hookEventName; the CATE_* env reaches the handler.
+//  · Every handler must print a JSON object. A PreToolUse handler answering
+//    {} DENIES the tool (seen live), so PreToolUse is never injected; the
+//    bridge prints nothing when it has nothing to say, hence `; echo '{}'`
+//    (run by `sh -c` on macOS and Linux).
+//  · PreInvocation fires before each model call of a turn, invocationNum
+//    counting from 0; Stop ends it, terminationReason USER_CANCELED on Esc.
+//  · No event reports a permission prompt, and none a session end.
+// ---------------------------------------------------------------------------
+
+const ANTIGRAVITY_FLAT_EVENTS = ['SessionStart', 'PreInvocation', 'Stop'] as const
+
+function antigravityHook(ctx: HookInjectionContext): Record<string, unknown> {
+  const handler = { type: 'command', command: `${ctx.bridgeCommand}; echo '{}'` }
+  return {
+    ...Object.fromEntries(ANTIGRAVITY_FLAT_EVENTS.map((event) => [event, [handler]])),
+    PostToolUse: [{ matcher: '*', hooks: [handler] }],
+  }
+}
+
+function parseNamedHooks(existing: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(existing)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+const antigravitySpec: AgentHookSpec = {
+  interrupt: { via: 'hook' },
+  projectFiles: [
+    {
+      relPath: '.agents/hooks.json',
+      build: (existing, ctx) => {
+        const parsed = existing === null ? {} : parseNamedHooks(existing)
+        if (!parsed) return null
+        const out = JSON.stringify({ ...parsed, [CATE_HOOK_MARKER]: antigravityHook(ctx) }, null, 2) + '\n'
+        return out === existing ? null : out
+      },
+      strip: (existing) => {
+        const parsed = parseNamedHooks(existing)
+        if (!parsed || !(CATE_HOOK_MARKER in parsed)) return null
+        const { [CATE_HOOK_MARKER]: _ours, ...rest } = parsed
+        return Object.keys(rest).length === 0 ? { delete: true } : { content: JSON.stringify(rest, null, 2) + '\n' }
+      },
+    },
+  ],
+  normalize: (p) => {
+    const base = {
+      sessionId: str(p.conversationId),
+      cwd: str(p.cwd) ?? undefined,
+      transcriptPath: str(p.transcriptPath) ?? undefined,
+    }
+    switch (p.hookEventName) {
+      case 'SessionStart': return { kind: 'session-start', ...base }
+      case 'PreInvocation': return { kind: p.invocationNum === 0 ? 'turn-start' : 'turn-resume', ...base }
+      case 'PostToolUse': return { kind: 'turn-resume', ...base }
+      case 'Stop': return { kind: 'turn-end', ...base, ...(p.terminationReason === 'USER_CANCELED' ? { interrupted: true as const } : {}) }
+      default: return null
+    }
+  },
+  toolCall: (p) => {
+    if (p.hookEventName !== 'PostToolUse') return null
+    const call = obj(p.toolCall)
+    return reportedToolCall(p, {
+      sessionId: str(p.conversationId),
+      name: str(call.name) ?? '',
+      input: call.args,
+      output: undefined,
+      callId: str(call.id) ?? undefined,
+      cwd: str(p.cwd) ?? undefined,
+    }, typeof p.error === 'string' && p.error !== '')
+  },
+}
+
+// ---------------------------------------------------------------------------
 // opencode — an in-process plugin at <project>/.opencode/plugin/cate-hook.js.
 // opencode scans `{plugin,plugins}/*.{ts,js}` under every config directory it
 // resolves and imports each match at startup (verified against the 1.18.3
@@ -1039,6 +1120,7 @@ const piSpec: AgentHookSpec = {
 }
 
 export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
+  antigravity: antigravitySpec,
   'claude-code': claudeSpec,
   codex: codexSpec,
   cursor: cursorSpec,

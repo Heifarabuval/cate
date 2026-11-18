@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { AGENT_HOOK_SPECS } from '../../contract'
+import { AGENT_HOOK_SPECS, CATE_HOOK_MARKER } from '../../contract'
 import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, PI_MANUAL_COMPACTION_CASES, CONVERSATION_RESET_COMMANDS, selectHookLifecycleCases } from './hookLifecycle.config'
 
 test('real CLI scenarios cover every hook Cate installs', () => {
@@ -13,6 +13,8 @@ test('real CLI scenarios cover every hook Cate installs', () => {
       const content = file.build(null, { bridgeCommand: '/fixture/cate-hook-bridge' })!
       if (agent === 'opencode') {
         installed.push(...JSON.parse(content.match(/const TRACKED = new Set\((\[[^\n]+\])\)/)![1]))
+      } else if (agent === 'antigravity') {
+        installed.push(...Object.keys(JSON.parse(content)[CATE_HOOK_MARKER]))
       } else if (agent === 'pi') {
         installed.push(...[...content.matchAll(/pi\.on\("([^"]+)"/g)].map((match) => match[1]).filter((name) => name !== 'tool_execution_start'))
       } else {

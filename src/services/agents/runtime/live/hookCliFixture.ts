@@ -66,6 +66,10 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       env.CURSOR_API_KEY = 'cate-fake-key'
       env.AGENT_CLI_CREDENTIAL_STORE = 'memory'
       return { args: ['--trust', '--endpoint', mockUrl, '--model', 'auto', initialPrompt] }
+    case 'antigravity':
+      // agy has no endpoint, key or provider setting for a fake model: it
+      // signs in with a Google account only.
+      throw new Error('agy cannot run against the fake provider (Google account sign-in only)')
     case 'grok': {
       env.GROK_FOLDER_TRUST = '0'
       env.GROK_HOME = path.join(directory, 'grok')

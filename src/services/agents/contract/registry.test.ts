@@ -24,6 +24,7 @@ describe('agent registry coverage', () => {
       'claude-code': 'additional-context',
       codex: 'additional-context',
       cursor: null,
+      antigravity: null,
       grok: null,
       kiro: 'plain-text',
       opencode: 'endpoint',
@@ -59,7 +60,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'kiro', 'pi',
+      'claude-code', 'opencode', 'codex', 'cursor', 'antigravity', 'grok', 'kiro', 'pi',
     ]
     expect(AGENTS.flatMap((a) => (a.skills ? [a.skills.targetId] : [])).sort()).toEqual([...expected].sort())
   })
@@ -93,6 +94,7 @@ describe('agentForLaunchCommand', () => {
     expect(agentForLaunchCommand('/usr/local/bin/codex --some-flag')?.id).toBe('codex')
     expect(agentForLaunchCommand('"C:\\tools\\cursor-agent"')?.id).toBe('cursor')
     expect(agentForLaunchCommand('/usr/local/bin/kiro-cli chat')?.id).toBe('kiro')
+    expect(agentForLaunchCommand('~/.local/bin/agy --model auto')?.id).toBe('antigravity')
   })
 
   it('does not guess through compound shell syntax', () => {
@@ -109,6 +111,7 @@ describe('matchAgentDef', () => {
     expect(matchAgentDef('cursor-agent')?.id).toBe('cursor')
     expect(matchAgentDef('cursor')?.id).toBe('cursor')
     expect(matchAgentDef('kiro-cli')?.id).toBe('kiro')
+    expect(matchAgentDef('agy')?.id).toBe('antigravity')
     expect(matchAgentDef('node')).toBeNull()
   })
 
@@ -130,6 +133,7 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
     expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
+    expect(resumeCommandForAgent('antigravity', uuid)).toBe(`agy --conversation ${uuid}`)
   })
 
   it('returns null for unknown agent ids', () => {
