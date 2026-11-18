@@ -152,7 +152,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       build: RUNTIME_BUILD,
       lifecycle,
       acceptHello: () => { throw new RpcError('rejected', message, data) },
-    }))
+    }), lock.takeEarly())
     refusing.open()
     const closed = new Promise<void>((resolve) => setTimeout(() => void refusing.close().then(resolve), NESTED_REFUSAL_MS))
     return { kind: 'nested', message, closed }
@@ -169,7 +169,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   let workspace: Workspace | undefined
   const rpc = new RpcServer({ version, build: RUNTIME_BUILD, lifecycle, acceptHello: (hello) => workspace?.acceptHello(hello) })
   // `pairing` exists by the time `listener.open()` serves the first hello.
-  const listener = serveLocal(lock.server, rpc)
+  const listener = serveLocal(lock.server, rpc, lock.takeEarly())
   const writeInfo = (remote: Omit<RuntimeEndpoints, 'local'> = {}) => writeRuntimeInfo(paths.dir, {
     runtimeId,
     root,

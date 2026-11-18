@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -6,6 +6,7 @@ import { defineCapability, framePortOver, method } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
+import { acquireRuntimeSocket } from '@runtime/data/runtime'
 import { dialLocal } from './node'
 import { serveLocal } from './runtime'
 
@@ -33,4 +34,24 @@ it.skipIf(process.platform === 'win32')('holds connections that arrive before op
   client.close()
   await listener.close()
   await expect(dialLocal(endpoint, { timeoutMs: 500 })).rejects.toThrow()
+})
+
+// A daemon awaits between binding the socket and serving it; a client that
+// retries meanwhile (a restart) must be served, and must not keep the
+// listener from closing.
+it.skipIf(process.platform === 'win32')('serves a connection that arrives between the bind and serveLocal', async () => {
+  const lock = await acquireRuntimeSocket(dir, 'abcdefghijklmnop')
+  if (lock.kind !== 'acquired') throw new Error(lock.kind)
+  const client = new RpcClient({ version: 'test', identity: { client: { clientId: 'c1', device: { name: 'test', publicKey: 'fp' }, features: [] } } })
+  const ready = client.attach(framePortOver(await dialLocal(lock.endpoint), 'stream'))
+  // Accepted before anyone serves the socket.
+  await vi.waitFor(() => new Promise<void>((resolve, reject) => lock.server.getConnections((_, n) => (n === 1 ? resolve() : reject(new Error(`${n} connections`))))))
+  const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
+  rpc.register(pingCap, { ping: () => 'pong' })
+  const listener = serveLocal(lock.server, rpc, lock.takeEarly())
+  listener.open()
+  await ready
+  expect(await createCapabilityProxy(client, pingCap).ping()).toBe('pong')
+  await listener.close()
+  client.close()
 })
