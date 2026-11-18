@@ -39,8 +39,8 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
   const client = new RpcClient({ version: RUNTIME_VERSION, identity: { client: { clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] } } })
   await client.attach(framePortOver(first.duplex, 'stream'))
   const runtime = createCapabilityProxy(client, runtimeCapability)
+  const info = await runtime.info()
   try {
-    const info = await runtime.info()
     expect(info.runtimeId).toBe(first.runtimeId)
     expect(info.pid).not.toBe(process.pid)
 
@@ -63,9 +63,21 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
     client.close()
   }
   await waitFor(() => !fs.existsSync(first.endpoint))
+  // The socket goes before the last state writes: the process exiting is
+  // the end of the daemon's writes under tmp.
+  await waitFor(() => !alive(info.pid), 10_000)
   expect(fs.readFileSync(path.join(home, '.cate', 'workspaces', first.runtimeId, 'logs', 'daemon.log'), 'utf-8'))
     .toMatch(/stopping \(stop\)/)
 }, 30_000)
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
 
 async function waitFor(check: () => boolean | Promise<boolean>, budgetMs = 5000): Promise<void> {
   const deadline = Date.now() + budgetMs
