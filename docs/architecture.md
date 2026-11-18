@@ -2738,7 +2738,10 @@ shell, with `--json` when it parses results.
 
 Quitting the desktop app closes its windows and connections. Each runtime then
 follows its `keepRunningWhile`, so the desktop shell's quit blockers only guard
-client-local work (a file drop still importing).
+client-local work (a file drop still importing). Quit is bounded and logged
+in `main.log` under `[lifecycle]`: the cleanup (device files, browser storage,
+proxies, Sentry) gets 5 s before the app quits without it, and a committed quit
+still running 10 s later (a hung renderer holding its window) exits the process.
 
 ## 16. Persistence
 

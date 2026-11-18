@@ -8,6 +8,22 @@ import { createLogger } from '@kernel/log/contract'
 
 const log = createLogger('lifecycle')
 
+/** How long quit cleanup may take before the app quits without it. */
+export const QUIT_CLEANUP_TIMEOUT_MS = 5_000
+/** How long a committed quit may take (windows closing) before the process exits. */
+export const QUIT_EXIT_TIMEOUT_MS = 10_000
+
+/** Resolves when `work` settles or after `ms`, whichever comes first; true on timeout. */
+function settleWithin(work: Promise<void>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(true), ms) })
+  const done = work.then(() => false, (error) => {
+    log.warn('quit cleanup failed: %O', error)
+    return false
+  })
+  return Promise.race([done, timeout]).finally(() => clearTimeout(timer))
+}
+
 /** The confirmation to show before quitting, or null to quit right away. */
 export function decideQuitPrompt(options: { warnBeforeQuit: boolean; blockers: readonly string[] }): { message: string; detail?: string } | null {
   const { blockers } = options
@@ -46,11 +62,18 @@ export function createQuitController(deps: QuitDeps): QuitController {
   const show = deps.showMessageBox ?? ((parent, options) => (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)))
 
   const finish = async (action: () => void, warn: boolean): Promise<boolean> => {
-    if (finishing || committed) return false
+    if (finishing || committed) {
+      log.info('quit already in progress, ignored')
+      return false
+    }
     finishing = true
     try {
-      const prompt = decideQuitPrompt({ warnBeforeQuit: warn && deps.warnBeforeQuit(), blockers: deps.blockers() })
+      const warnBeforeQuit = warn && deps.warnBeforeQuit()
+      const blockers = deps.blockers()
+      log.info('quit requested (warn=%s, blockers=%d)', warnBeforeQuit, blockers.length)
+      const prompt = decideQuitPrompt({ warnBeforeQuit, blockers })
       if (prompt) {
+        log.info('quit confirmation shown: %s', prompt.message)
         const { response } = await show(deps.parentWindow(), {
           type: 'warning',
           message: prompt.message,
@@ -60,10 +83,18 @@ export function createQuitController(deps: QuitDeps): QuitController {
           cancelId: 1,
           noLink: true,
         })
-        if (response !== 0) return false
+        if (response !== 0) {
+          log.info('quit cancelled by the user')
+          return false
+        }
       }
-      await deps.beforeExit().catch((error) => log.warn('quit cleanup failed: %O', error))
+      log.info('quit cleanup started')
+      // A cleanup that never returns (a flush stuck in swap) must not keep the app open.
+      if (await settleWithin(deps.beforeExit(), QUIT_CLEANUP_TIMEOUT_MS)) {
+        log.warn('quit cleanup timed out after %d ms, quitting anyway', QUIT_CLEANUP_TIMEOUT_MS)
+      }
       committed = true
+      log.info('quit committed')
       action()
       return true
     } finally {
@@ -75,7 +106,14 @@ export function createQuitController(deps: QuitDeps): QuitController {
     app.on('before-quit', (event) => {
       if (committed) return
       event.preventDefault()
-      void finish(() => app.quit(), true).catch((error) => log.warn('quit failed: %O', error))
+      void finish(() => {
+        app.quit()
+        // Closing windows waits on their renderers; a hung one would hold the quit forever.
+        setTimeout(() => {
+          log.warn('quit still pending after %d ms, exiting', QUIT_EXIT_TIMEOUT_MS)
+          app.exit(0)
+        }, QUIT_EXIT_TIMEOUT_MS).unref()
+      }, true).catch((error) => log.warn('quit failed: %O', error))
     })
   }
 
