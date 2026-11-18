@@ -1658,6 +1658,189 @@ class Relance(Base):
 		self.assertEqual(agence.verdict_relance(faits), (True, ['oui']))
 
 
+class Orphelins(Base):
+	"""Panneaux sans agent : offre Fermer ou Garder au suivi, jamais de fermeture sans clic."""
+
+	def setUp(self):
+		super().setUp()
+		self.booted()
+
+	@staticmethod
+	def row(pid, type='terminal', title='zsh', relations=(), caller=False):
+		return {'panelId': pid, 'type': type, 'title': title, 'caller': caller, 'relations': list(relations)}
+
+	def tour(self, *rows, agents=(), orch_relations=()):
+		"""Un tour du régisseur avec ces panneaux (l'orchestrateur, le régisseur et le suivi sont toujours là)."""
+		fixes = [self.row('o1', title='Orchestrateur', relations=orch_relations), self.row('r1', title='Régisseur'),
+		         self.row('s1', type='agence', title='Suivi'), self.row('c1', type='canvas', title='Agence')]
+		panneaux = {r['panelId']: r for r in fixes + list(rows)}
+		with agence.tx() as st:
+			return agence.tick(st, set(panneaux), list(agents), {}, 1000.0, None, panneaux)
+
+	def offres(self):
+		return [n for n in self.state()['needs'] if (n['ref'] or '').startswith('orphan:')]
+
+	def orphelin(self):
+		"""Un terminal #n12 sans agent, vu sur deux tours : l'offre est ouverte."""
+		t9 = self.row('t9', title='#n12 implémenteur')
+		self.tour(t9)
+		self.tour(t9)
+		return self.offres()[0]
+
+	def trigger(self, *ids):
+		return [{'relationId': f'rel{i}', 'toPanelId': p, 'kind': 'trigger'} for i, p in enumerate(ids)]
+
+	def test_terminal_titre_besoin_sans_agent_propose_au_2e_tour(self):
+		t9 = self.row('t9', title='#n12 implémenteur')
+		self.tour(t9)
+		self.assertEqual(self.offres(), [])
+		self.tour(t9)
+		[n] = self.offres()
+		self.assertEqual((n['kind'], n['owner'], n['ref'], n['status']), ('human', agence.OWNER_HUMAIN, 'orphan:t9', 'open'))
+		self.assertEqual(n['orphan'], {'panel': 't9', 'title': '#n12 implémenteur', 'motif': 'sans-agent'})
+		self.assertIn('#n12 implémenteur', n['title'])
+
+	def test_terminal_sans_agent_titre_autre_jamais_propose(self):
+		for _ in range(4):
+			self.tour(self.row('t1', title='zsh'), self.row('t2', title='npm run dev'), self.row('t3', title='#n12'))
+		self.assertEqual(self.offres(), [])
+
+	def test_panneau_relie_par_trigger_hors_besoin_propose_au_2e_tour(self):
+		b9 = self.row('b9', type='browser', title='Docs')
+		self.tour(b9, orch_relations=self.trigger('b9'))
+		self.assertEqual(self.offres(), [])
+		self.tour(b9, orch_relations=self.trigger('b9'))
+		self.assertEqual(self.offres()[0]['orphan'], {'panel': 'b9', 'title': 'Docs', 'motif': 'non-rattache'})
+
+	def test_jamais_proposes(self):
+		with agence.tx() as st:
+			agence.add_need(st, 'task', 'T5', panels=['t5'])
+		rows = [self.row('t5', title='#n5 implémenteur'),                       # panneau d'un besoin ouvert
+		        self.row('t7', title='#n7 implémenteur'),                       # son agent tourne
+		        self.row('e1', type='editor', title='#n9 notes'),               # un éditeur : travail non enregistré
+		        self.row('me', title='#n2 implémenteur', caller=True),          # le terminal qui appelle
+		        self.row('b8', type='browser', title='Docs')]                   # relié mais agent en plein tour
+		agents = [{'panelId': 't7', 'title': 'impl', 'state': 'running'}, {'panelId': 'b8', 'title': 'x', 'state': 'running'}]
+		for _ in range(4):
+			self.tour(*rows, agents=agents, orch_relations=self.trigger('t7', 'e1', 'b8'))
+		self.assertEqual(self.offres(), [])
+		protegees = [self.row('o1', title='#n3 orchestrateur'), self.row('r1', title='#n3 régisseur'),
+		             self.row('s1', type='terminal', title='#n3 suivi')]  # les panneaux du projet, même titrés #n
+		for _ in range(4):
+			self.tour(*protegees)
+		self.assertEqual(self.offres(), [])
+
+	def test_terminal_qui_retrouve_un_agent_repart_a_zero(self):
+		t9 = self.row('t9', title='#n12 implémenteur')
+		self.tour(t9)
+		self.tour(t9, agents=[{'panelId': 't9', 'title': 'impl', 'state': 'finished'}])
+		self.assertNotIn('t9', self.state()['orphanVus'])
+		self.tour(t9)
+		self.assertEqual(self.offres(), [])
+		self.tour(t9)
+		self.assertEqual(len(self.offres()), 1)
+
+	def test_un_seul_besoin_ouvert_par_panneau(self):
+		t9 = self.row('t9', title='#n12 implémenteur')
+		for _ in range(5):
+			self.tour(t9)
+		self.assertEqual(len(self.offres()), 1)
+
+	def test_panneau_mort_ferme_l_offre(self):
+		n = self.orphelin()
+		self.tour()  # t9 a disparu
+		self.assertEqual(agence.find(self.state(), 'needs', n['id'])['status'], 'dropped')
+		self.assertEqual(self.state()['orphanVus'], {})
+
+	def test_offre_attend_l_humain_et_le_dit(self):
+		n = self.orphelin()
+		self.assertEqual(agence.action_attendue(self.state(), n), 'fermer ou garder le panneau')
+		self.assertTrue(agence.attend(n))
+
+	def test_tour_du_regisseur_lit_les_panneaux(self):
+		self.run.reply(['cate', 'panel', 'list'], [self.row('o1'), self.row('r1'), self.row('t9', title='#n12 implémenteur')])
+		self.run.reply(['cate', 'agent', 'list'], [])
+		agence.un_tour()
+		self.assertEqual(self.offres(), [])
+		agence.un_tour()
+		self.assertEqual(len(self.offres()), 1)
+
+	# -- clics
+
+	def test_fermer_sans_discard_puis_besoin_fait(self):
+		n = self.orphelin()
+		self.assertEqual(agence.click(f"/orphan/{n['id']}/close", {}), (303, '/'))
+		self.assertEqual(self.run.ran('cate', 'panel', 'close'), [['cate', 'panel', 'close', 't9', '--json']])
+		fait = agence.find(self.state(), 'needs', n['id'])
+		self.assertEqual((fait['status'], fait['evidence']), ('done', 'panneau fermé : t9'))
+
+	def test_fermer_refuse_par_cate_409_besoin_ouvert(self):
+		n = self.orphelin()
+		self.run.reply(['cate', 'panel', 'close'], '', code=1, err='dirty: running program')
+		code, msg = agence.click(f"/orphan/{n['id']}/close", {})
+		self.assertEqual(code, 409)
+		self.assertIn('dirty', msg)
+		self.assertEqual(agence.find(self.state(), 'needs', n['id'])['status'], 'open')
+		self.assertFalse([c for c, _ in self.run.calls if '--discard' in c])
+
+	def test_garder_ferme_le_besoin_et_ne_repropose_plus(self):
+		n = self.orphelin()
+		self.assertEqual(agence.click(f"/orphan/{n['id']}/keep", {}), (303, '/'))
+		self.assertEqual(agence.find(self.state(), 'needs', n['id'])['status'], 'dropped')
+		self.assertEqual(self.state()['orphanGardes'], ['t9'])
+		self.assertFalse(self.run.ran('cate', 'panel', 'close'))
+		t9 = self.row('t9', title='#n12 implémenteur')
+		for _ in range(4):
+			self.tour(t9)
+		self.assertEqual(len(self.offres()), 1)  # toujours la seule offre, close
+
+	def test_besoin_deja_clos_409(self):
+		n = self.orphelin()
+		agence.click(f"/orphan/{n['id']}/keep", {})
+		for action in ('close', 'keep'):
+			self.assertEqual(agence.click(f"/orphan/{n['id']}/{action}", {})[0], 409)
+		self.assertFalse(self.run.ran('cate', 'panel', 'close'))
+
+	def test_besoin_sans_champ_orphan_409(self):
+		with agence.tx() as st:
+			n, _ = agence.add_need(st, 'human', 'autre', ref='x', owner=agence.OWNER_HUMAIN)
+		self.assertEqual(agence.click(f"/orphan/{n['id']}/close", {})[0], 409)
+
+	def test_jeton_absent_refuse(self):
+		self.assertFalse(agence.token_ok({}))
+
+	def test_la_page_de_suivi_montre_les_deux_boutons(self):
+		n = self.orphelin()
+		page = agence.page_suivi(self.state())
+		self.assertIn(f"/orphan/{n['id']}/close", page)
+		self.assertIn(f"/orphan/{n['id']}/keep", page)
+		self.assertIn('Garder', page)
+		self.assertIn('Fermer', page)
+
+	# -- état
+
+	def test_garde_mort_retire_de_orphanGardes(self):
+		n = self.orphelin()
+		agence.click(f"/orphan/{n['id']}/keep", {})
+		self.tour(self.row('t9', title='#n12 implémenteur'))
+		self.assertEqual(self.state()['orphanGardes'], ['t9'])
+		self.tour()
+		self.assertEqual(self.state()['orphanGardes'], [])
+
+	def test_etat_ancien_complete_sans_migration(self):
+		with agence.tx():
+			pass
+		with open(agence.state_file()) as f:
+			old = json.load(f)
+		for k in ('orphanVus', 'orphanGardes'):
+			old.pop(k, None)
+		with open(agence.state_file(), 'w') as f:
+			json.dump(old, f)
+		st = agence.load()
+		self.assertEqual((st['orphanVus'], st['orphanGardes']), ({}, []))
+		self.assertEqual(agence.empty()['orphanVus'], {})
+
+
 class ClientParti(Base):
 	def handler(self, exc):
 		class Mort:
