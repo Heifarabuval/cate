@@ -75,7 +75,7 @@ import {
   sessionCapabilityImpl,
 } from '@panels/framework/runtime'
 import { PANEL_RUNTIMES, type PanelPorts, type PanelRuntime, type PanelServices } from '@panels/runtime'
-import { installLayout } from '../contract'
+import { agenceLauncher, installLayout } from '../contract'
 import type { BusyRegistry } from '../runtime'
 import { createCliEnv } from './cliEnv'
 import { onQuarantine, quarantinedFiles, type Quarantined } from '@kernel/state/node'
@@ -104,6 +104,8 @@ export type Workspace = ReturnType<typeof composeWorkspace>
 export function composeWorkspace(deps: WorkspaceDeps) {
   const { root, paths, settings, rpc, log } = deps
   const layout = installLayout(deps.installDir, process.platform)
+  // Run from a bare bundle (`CATE_RUNTIME_BUNDLE`): no install around it, `argv[1]` is the bundle.
+  const agencePath = agenceLauncher(deps.installDir, process.env.CATE_RUNTIME_BUNDLE ? process.argv[1] : undefined, process.platform)
   const baseEnv = () => withoutInheritedHookIdentity(process.env)
   const offs: (() => void)[] = []
 
@@ -241,6 +243,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     launcherDir: paths.terminalCli,
     nodePath: process.execPath,
     cliPath: layout.cateCli,
+    agencePath,
     socketPath: deps.endpoint,
     mintToken: (panelId) => tokens.issue({ kind: 'cli', panelId }).token,
     revokeToken: (token) => tokens.revoke(token),
@@ -251,6 +254,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     launcherDir: paths.terminalCli,
     nodePath: process.execPath,
     cliPath: layout.cateCli,
+    agencePath,
     socketPath: deps.endpoint,
     mintToken: (panelId) => tokens.issue({ kind: 'cli', panelId }).token,
     revokeToken: (token) => tokens.revoke(token),

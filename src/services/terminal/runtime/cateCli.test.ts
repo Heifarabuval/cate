@@ -29,10 +29,13 @@ function setup(build: string) {
   }))`)
   const nodePath = process.platform === 'win32' ? process.execPath : path.join(install, 'node')
   if (process.platform !== 'win32') fs.symlinkSync(process.execPath, nodePath)
+  const agencePath = path.join(install, 'agence', 'agence')
+  fs.mkdirSync(path.dirname(agencePath))
+  fs.writeFileSync(agencePath, `#!/bin/sh\necho "agence ${build} $CATE_TOKEN $*"\n`, { mode: 0o755 })
   const tokens = new ApiTokenRegistry()
   const runtime = createCateCliRuntime({
     launcherDir: path.join(dir, "workspace 'quoted' $dollar %percent !bang", 'terminal-cli'),
-    nodePath, cliPath,
+    nodePath, cliPath, agencePath,
     socketPath: path.join(dir, 'runtime.sock'),
     mintToken: (panelId) => tokens.issue({ kind: 'cli', panelId }).token,
     revokeToken: (token) => tokens.revoke(token),
@@ -78,6 +81,27 @@ it('uses the restored PTY credentials and new install through a saved shell envi
     expect(fs.statSync(bin).mode & 0o077).toBe(0)
     expect(fs.statSync(path.join(bin, 'cate')).mode & 0o077).toBe(0)
   }
+})
+
+it.skipIf(process.platform === 'win32')('puts agence next to cate: private, absolute, tokenless, rewritten at every spawn', async () => {
+  const { runtime, install } = setup('build')
+  const env = await runtime.envForTerminal(spawn('first')) as Record<string, string>
+  const bin = env.PATH.split(path.delimiter)[0]
+  const launcher = path.join(bin, 'agence')
+  expect(fs.statSync(launcher).mode & 0o777).toBe(0o700)
+  const text = fs.readFileSync(launcher, 'utf8')
+  expect(text).toContain(path.join(install, 'agence', 'agence'))
+  expect(text).not.toContain(env.CATE_TOKEN)
+  const ran = await execFileP('/bin/sh', ['-c', 'agence "with spaces"'], { env: { ...process.env, ...env } })
+  // The token reaches agence through the terminal's env, as it does for any child.
+  expect(ran.stdout.trim()).toBe(`agence build ${env.CATE_TOKEN} with spaces`)
+  // A restored terminal respawns: a stale or deleted launcher is written again.
+  fs.writeFileSync(launcher, 'stale')
+  await runtime.envForTerminal(spawn('restored'))
+  expect(fs.readFileSync(launcher, 'utf8')).toBe(text)
+  fs.rmSync(launcher)
+  await runtime.envForTerminal(spawn('restored-again'))
+  expect(fs.readFileSync(launcher, 'utf8')).toBe(text)
 })
 
 it('keeps panel identities separate and removes a launcher and revokes its token on exit', async () => {

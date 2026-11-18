@@ -247,6 +247,7 @@ describe('terminal service', () => {
       launcherDir: binDir,
       nodePath: process.execPath,
       cliPath: '/install/cate/dist/cli.cjs',
+      agencePath: '/install/agence/agence',
       mintToken: (panelId) => { minted.push(panelId); return `tok-${panelId}` },
       revokeToken: () => {},
     })
