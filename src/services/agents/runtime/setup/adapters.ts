@@ -18,6 +18,9 @@ export const AGENT_SETUP_ADAPTERS: Record<AgentId, AgentSetupAdapter> = {
   codex: { downloadUrl: 'https://developers.openai.com/codex/cli/', login: ['login', '--device-auth'], status: ['login', 'status'], installer: { unix: { executable: 'npm', args: ['install', '-g', '@openai/codex'] }, windows: { executable: 'powershell.exe', args: ['-NoProfile', '-Command', 'npm install -g @openai/codex'] } } },
   cursor: { downloadUrl: 'https://cursor.com/cli', login: ['login'], status: ['status', '--format', 'json'], installer: { unix: installScript('https://cursor.com/install') } },
   // agy has no login or status subcommand: its TUI signs in with Google.
+  // URLs from Google's own sources: the Gemini CLI team's announcement
+  // (github.com/google-gemini/gemini-cli/discussions/28017) and the
+  // migration help of @google/gemini-cli 0.68.0 (`/help migrate antigravity`).
   antigravity: { downloadUrl: 'https://antigravity.google/docs/cli-getting-started', login: [], loginHint: 'Sign in with your Google account in the Antigravity terminal, then close it.', status: null, installer: { unix: installScript('https://antigravity.google/cli/install.sh'), windows: powershellScript('https://antigravity.google/cli/install.ps1') } },
   grok: { downloadUrl: 'https://docs.x.ai/build/cli', login: ['login', '--device-auth'], status: null, installer: { unix: installScript('https://x.ai/cli/install.sh'), windows: powershellScript('https://x.ai/cli/install.ps1') } },
   kiro: { downloadUrl: 'https://kiro.dev/downloads/', login: ['login', '--use-device-flow'], status: ['whoami', '--format', 'json'], installer: { unix: installScript('https://cli.kiro.dev/install'), windows: powershellScript('https://cli.kiro.dev/install.ps1') } },
