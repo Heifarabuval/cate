@@ -51,7 +51,7 @@ L'humain, ou l'orchestrateur pour lui, lance `agence doctor --relance` et lit «
 **Acceptance Scenarios**:
 
 1. **Given** aucun agent en plein tour, aucun worktree sale ou non poussé, aucune PR ouverte et un daemon au même build que l'app, **When** `agence doctor --relance`, **Then** la réponse est « oui ».
-2. **Given** 2 agents en plein tour, **When** `agence doctor --relance`, **Then** la réponse est « non » et nomme les 2 agents.
+2. **Given** 2 agents en plein tour, **When** `agence doctor --relance`, **Then** la réponse est « non » et nomme les 2 agents. Un agent en attente de saisie est cité sans bloquer.
 3. **Given** un worktree avec des modifications non commitées ou des commits non poussés, **When** la commande tourne, **Then** la réponse est « non » et nomme le worktree.
 4. **Given** une PR ouverte du projet, **When** la commande tourne, **Then** la réponse est « non » et cite la PR.
 5. **Given** un daemon dont le build diffère de celui que l'app installerait, **When** la commande tourne, **Then** la réponse dit que les terminaux et les agents s'arrêteront au redémarrage.
@@ -154,7 +154,7 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 **Récit 2 : relance**
 
 - **FR-006**: `agence doctor --relance` MUST répondre « oui » ou « non » en une première ligne, suivie des raisons.
-- **FR-007**: La réponse MUST être « non » dès qu'un agent est en plein tour (`running`) ou en attente de saisie, qu'un worktree du projet a des modifications non commitées ou des commits non poussés, ou qu'une PR du projet est ouverte.
+- **FR-007**: La réponse MUST être « non » dès qu'un agent est en plein tour (`running`), qu'un worktree du projet a des modifications non commitées ou des commits non poussés, ou qu'une PR du projet est ouverte. L'orchestrateur, le régisseur et le terminal qui appelle ne comptent pas. Les agents en attente de saisie sont cités comme information (ils s'arrêtent au redémarrage) et ne bloquent pas.
 - **FR-008**: La réponse MUST dire si le daemon redémarrerait (build du daemon du workspace différent du build installé le plus récent) et que ses terminaux et agents s'arrêteraient alors.
 - **FR-009**: Une source illisible MUST donner « non » avec le nom de la source, jamais « oui ».
 - **FR-010**: La commande MUST être en lecture seule.
