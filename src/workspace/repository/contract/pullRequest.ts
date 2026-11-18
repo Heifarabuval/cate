@@ -65,7 +65,13 @@ export interface PullRequestDetails {
 export const MAX_PR_COMMITS = 250
 export const MAX_PR_FILES = 3000
 export const MAX_PR_CHECKS = 300
-export const MAX_BODY_CHARS = 100_000
+export const MAX_BODY_CHARS = 20_000
+/** Text written by a third party is cleaned and cut to these lengths (the last character of a cut text is an ellipsis). */
+export const MAX_TITLE_CHARS = 300
+export const MAX_PATH_CHARS = 1024
+export const MAX_NAME_CHARS = 100
+export const MAX_REF_CHARS = 255
+export const MAX_URL_CHARS = 2048
 /** A longer patch is not kept: the file is `too-large` and read on GitHub. */
 export const MAX_PATCH_CHARS = 250_000
 /** All kept patches of one pull request together. */
@@ -107,7 +113,34 @@ type Row = Record<string, unknown>
 const isRow = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value)
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
-const httpsUrl = (value: unknown): string | null => (typeof value === 'string' && value.startsWith('https://') ? value : null)
+
+// ANSI escapes (CSI, OSC, two-character ones), then what cannot be shown: C0 and C1 controls, bidi overrides and
+// isolates, zero-width marks, the line and paragraph separators. line() and block() deal with tab and line breaks first.
+// Built from strings: written as literals, U+2028 and U+2029 would end the regex.
+const ANSI = new RegExp('\\u001b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007\\u001b]*(?:\\u0007|\\u001b\\\\)?|[@-Z\\\\-_])', 'g')
+const INVISIBLE = new RegExp(
+  '[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u0084\\u0086-\\u009f\\u061c\\u200b\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069\\ufeff]',
+  'g',
+)
+
+function bound(value: string, max: number): string {
+  if (value.length <= max) return value
+  let end = max - 1
+  const last = value.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1 // not half of an emoji
+  return `${value.slice(0, end)}…`
+}
+
+/** One line of text from GitHub: any run of white space becomes one space, invisible characters go, the length is bounded. */
+const line = (value: unknown, max: number): string =>
+  bound(str(value).replace(ANSI, '').replace(/[\s\u0085]+/g, ' ').replace(INVISIBLE, ''), max)
+
+/** Like `line`, but line breaks and tabs stay (a description). */
+const block = (value: unknown, max: number): string =>
+  bound(str(value).replace(ANSI, '').replace(/\r\n/g, '\n').replace(/\u0085/g, '\n').replace(/\r/g, '').replace(INVISIBLE, ''), max)
+
+const httpsUrl = (value: unknown): string | null =>
+  typeof value === 'string' && value.length <= MAX_URL_CHARS && /^https:\/\/[\x21-\x7e]+$/.test(value) ? value : null
 
 const RUN_FAILED = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE'])
 
@@ -116,7 +149,7 @@ function checkOf(row: unknown): PullRequestCheck | null {
   if (row.__typename === 'StatusContext') {
     const state = str(row.state)
     const result = state === 'SUCCESS' ? 'passing' : state === 'FAILURE' || state === 'ERROR' ? 'failing' : 'pending'
-    return { name: str(row.context), result, url: httpsUrl(row.targetUrl) }
+    return { name: line(row.context, MAX_TITLE_CHARS), result, url: httpsUrl(row.targetUrl) }
   }
   if (row.__typename === 'CheckRun') {
     const conclusion = str(row.conclusion)
@@ -125,7 +158,7 @@ function checkOf(row: unknown): PullRequestCheck | null {
       : conclusion === 'SKIPPED' || conclusion === 'NEUTRAL' ? 'skipped'
       : RUN_FAILED.has(conclusion) ? 'failing'
       : 'pending'
-    return { name: str(row.name), result, url: httpsUrl(row.detailsUrl) }
+    return { name: line(row.name, MAX_TITLE_CHARS), result, url: httpsUrl(row.detailsUrl) }
   }
   return null
 }
@@ -159,7 +192,9 @@ export function parsePullRequestFiles(
   let kept = 0
   for (const row of json) {
     if (files.length === MAX_PR_FILES) break
-    if (!isRow(row) || typeof row.filename !== 'string' || row.filename === '') continue
+    if (!isRow(row)) continue
+    const path = line(row.filename, MAX_PATH_CHARS)
+    if (path === '') continue
     const status = FILE_STATUS[str(row.status)] ?? 'modified'
     const additions = num(row.additions)
     const deletions = num(row.deletions)
@@ -169,21 +204,21 @@ export function parsePullRequestFiles(
     if (patch !== '') {
       diff = patch.length > MAX_PATCH_CHARS || kept + patch.length > MAX_PATCHES_CHARS ? 'too-large' : 'patch'
       if (diff === 'patch') {
-        patches.push([row.filename, patch])
+        patches.push([path, patch])
         kept += patch.length
       }
     } else if (changed > 0) diff = 'too-large'
     // ponytail: an empty added file also reads as binary; "Open on GitHub" shows it
     else diff = status === 'renamed' ? 'none' : 'binary'
-    const blob = str(row.blob_url)
+    const blob = httpsUrl(row.blob_url)
     files.push({
-      path: row.filename,
-      ...(typeof row.previous_filename === 'string' ? { oldPath: row.previous_filename } : {}),
+      path,
+      ...(typeof row.previous_filename === 'string' ? { oldPath: line(row.previous_filename, MAX_PATH_CHARS) } : {}),
       status,
       additions,
       deletions,
       diff,
-      webUrl: blob.startsWith('https://github.com/') ? blob : `https://github.com/${repository}/pull/${number}/files`,
+      webUrl: blob?.startsWith('https://github.com/') ? blob : `https://github.com/${repository}/pull/${number}/files`,
     })
   }
   return { files, patches: Object.fromEntries(patches) }
@@ -195,10 +230,10 @@ function commitOf(row: unknown): PullRequestCommit {
   const commit = isRow(row) ? row : {}
   const first = Array.isArray(commit.authors) && isRow(commit.authors[0]) ? commit.authors[0] : {}
   return {
-    oid: str(commit.oid),
-    title: str(commit.messageHeadline),
-    author: str(first.login) || str(first.name),
-    date: str(commit.committedDate) || str(commit.authoredDate),
+    oid: /^[0-9a-f]{7,64}$/i.test(str(commit.oid)) ? str(commit.oid) : '',
+    title: line(commit.messageHeadline, MAX_TITLE_CHARS),
+    author: line(first.login, MAX_NAME_CHARS) || line(first.name, MAX_NAME_CHARS),
+    date: line(commit.committedDate || commit.authoredDate, 40),
   }
 }
 
@@ -209,9 +244,9 @@ export function parsePullRequestView(json: unknown, files: PullRequestFile[]): P
   const where = parsePullRequestRef(url)
   const state = PR_STATE[str(json.state)]
   if (!where?.repository || !state) throw new GhReadError('error', UNEXPECTED)
-  const author = isRow(json.author) ? str(json.author.login) : ''
-  const owner = isRow(json.headRepositoryOwner) ? str(json.headRepositoryOwner.login) : ''
-  const branch = str(json.headRefName)
+  const author = isRow(json.author) ? line(json.author.login, MAX_NAME_CHARS) : ''
+  const owner = isRow(json.headRepositoryOwner) ? line(json.headRepositoryOwner.login, MAX_NAME_CHARS) : ''
+  const branch = line(json.headRefName, MAX_REF_CHARS)
   const rawCommits = Array.isArray(json.commits) ? json.commits : []
   const commits = rawCommits.slice(0, MAX_PR_COMMITS).map(commitOf)
   const fileCount = num(json.changedFiles)
@@ -219,13 +254,13 @@ export function parsePullRequestView(json: unknown, files: PullRequestFile[]): P
     repository: where.repository,
     number: where.number,
     url,
-    title: str(json.title),
+    title: line(json.title, MAX_TITLE_CHARS),
     author: author || 'Deleted account',
-    body: str(json.body).slice(0, MAX_BODY_CHARS),
+    body: block(json.body, MAX_BODY_CHARS),
     state,
     draft: json.isDraft === true,
     head: json.isCrossRepository === true ? `${owner || 'ghost'}:${branch}` : branch,
-    base: str(json.baseRefName),
+    base: line(json.baseRefName, MAX_REF_CHARS),
     commits,
     commitCount: commits.length,
     // gh does not report the total: 250 is GitHub's own ceiling, so a full page may be cut
