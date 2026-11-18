@@ -6,7 +6,7 @@ import { createLogger } from '@kernel/log/contract'
 import { RpcError } from '@kernel/rpc/contract'
 import { MAIN_WINDOW, type Json, type PanelRecord } from '@workspace/document/contract'
 import { createDocumentService, type DocumentService } from '@workspace/document/runtime'
-import { GhReadError, type RepoStatus } from '@workspace/repository/contract'
+import { GhReadError, MAX_TITLE_CHARS, type RepoStatus } from '@workspace/repository/contract'
 import { createGithubHost } from '@workspace/repository/runtime'
 import type { AgentChangeRecord } from '@services/agents/contract'
 import type { SessionKit, SessionStore } from '@panels/framework/runtime'
@@ -341,9 +341,8 @@ it('reads the pull request when the panel starts, and leaves agent edits alone',
   })
   expect(prSnap().data!.files.map((f) => f.path)).toEqual(['src/a.ts', 'src/long.ts'])
   expect(typeof prSnap().readAt).toBe('string')
-  expect(github.pullRequestView).toHaveBeenCalledWith('org/repo', 8)
-  expect(github.pullRequestFiles).toHaveBeenCalledWith('org/repo', 8)
-  expect(github.originRepository).not.toHaveBeenCalled()
+  expect(github.pullRequestView).toHaveBeenCalledWith('org/repo', 8, expect.any(AbortSignal))
+  expect(github.pullRequestFiles).toHaveBeenCalledWith('org/repo', 8, expect.any(AbortSignal))
   expect(deps.agents.readChanges).not.toHaveBeenCalled()
   expect(deps.agents.readiness).not.toHaveBeenCalled()
   expect([statusListeners.length, changeListeners.length]).toEqual(listeners)
@@ -355,8 +354,8 @@ it('resolves the workspace origin for a bare number and records it in the panel'
   await startPr(github, { repository: null, number: 8 })
   await loaded()
 
-  expect(github.pullRequestView).toHaveBeenCalledWith('org/repo', 8)
-  expect(document.get().panels.pr.fields.pr).toEqual({ repository: 'org/repo', number: 8 })
+  expect(github.pullRequestView).toHaveBeenCalledWith('org/repo', 8, expect.any(AbortSignal))
+  expect(document.get().panels.pr.fields.pr).toEqual({ repository: 'org/repo', number: 8, origin: true })
   expect(prSnap().ref).toEqual({ repository: 'org/repo', number: 8 })
 })
 
@@ -440,7 +439,7 @@ it('re-reads the checks at most once per 25 seconds, and only the checks', async
   expect(await prOp({ kind: 'prTick' })).toBe(false)
 
   expect(github.pullRequestChecks).toHaveBeenCalledTimes(1)
-  expect(github.pullRequestChecks).toHaveBeenCalledWith('org/repo', 8)
+  expect(github.pullRequestChecks).toHaveBeenCalledWith('org/repo', 8, expect.any(AbortSignal))
   expect(github.pullRequestView).toHaveBeenCalledTimes(1)
   expect(github.pullRequestFiles).toHaveBeenCalledTimes(1)
   expect(prSnap()).toMatchObject({
@@ -470,9 +469,12 @@ it('ignores a tick that arrives while a read is running', async () => {
 })
 
 it('refresh re-reads everything, whatever the 25 second threshold', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
   const github = fakeGithub()
   await startPr(github)
   await loaded()
+  vi.setSystemTime(T0 + 5_000)
 
   await prOp({ kind: 'refresh' })
 
@@ -662,9 +664,12 @@ it('reads nothing on its own: without a tick, no gh call however long the panel 
 })
 
 it('forgets the patches of files a later read no longer lists', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
   const github = fakeGithub()
   await startPr(github)
   await loaded()
+  vi.setSystemTime(T0 + 5_000)
   github.pullRequestFiles.mockResolvedValue([filesJson()[0]])
   github.pullRequestView.mockResolvedValue({ ...viewJson(), changedFiles: 1 })
 
@@ -706,10 +711,156 @@ it('records no origin found after the panel closed', async () => {
   expect(ghCalls(github)).toBe(0)
 })
 
-it('disposes without a gh call, and writes nothing to its session file', async () => {
+it('aborts the gh read it runs when the panel closes', async () => {
+  const github = fakeGithub()
+  let signal: AbortSignal | undefined
+  github.pullRequestFiles.mockImplementationOnce((_repository, _number, given) => {
+    signal = given
+    return new Promise((_resolve, fail) => given?.addEventListener('abort', () => fail(new GhReadError('error'))))
+  })
+  await startPr(github)
+  const waiting = prOp({ kind: 'refresh' })
+  expect(signal?.aborted).toBe(false)
+
+  lastPr().dispose('shutdown')
+
+  expect(signal?.aborted).toBe(true)
+  await expect(waiting).resolves.toBeUndefined()
+  await flush()
+  expect(github.pullRequestView).not.toHaveBeenCalled()
+})
+
+it.skipIf(process.platform === 'win32')('frees the gh slot of a closed panel for the other panels, with a gh that never answers', async () => {
+  const bin = path.join(dir, 'bin')
+  const log = path.join(dir, 'started.log')
+  mkdirSync(bin)
+  writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(' ') + '\\n')
+setInterval(() => {}, 1000)
+`)
+  chmodSync(path.join(bin, 'gh'), 0o755)
+  const host = createGithubHost({ env: () => ({ ...process.env, PATH: bin }) })
+  const github: ReviewGithub = {
+    originRepository: async () => 'org/repo',
+    pullRequestView: (repository, number, signal) => host.pullRequestView(repository, number, signal),
+    pullRequestChecks: (repository, number, signal) => host.pullRequestChecks(repository, number, signal),
+    pullRequestFiles: (repository, number, signal) => host.pullRequestFiles(repository, number, signal),
+  }
+  const started = () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean)
+  const closing = [
+    await startPr(github, { repository: 'org/repo', number: 1 }, 'pr1'),
+    await startPr(github, { repository: 'org/repo', number: 2 }, 'pr2'),
+    await startPr(github, { repository: 'org/repo', number: 3 }, 'pr3'),
+  ]
+  await vi.waitFor(() => expect(started()).toHaveLength(3), { timeout: 5_000 })
+  await startPr(github, { repository: 'org/repo', number: 4 }, 'pr4')
+  await flush()
+  expect(started()).toHaveLength(3)
+
+  for (const panel of closing) panel.dispose('shutdown')
+
+  await vi.waitFor(() => expect(started()).toHaveLength(4), { timeout: 5_000 })
+  expect(started()[3]).toContain('pulls/4/files')
+  lastPr().dispose('shutdown')
+  host.dispose()
+}, 15_000)
+
+it('marks the panel as the origin one once its repository proves to be the origin', async () => {
+  const github = fakeGithub()
+
+  await startPr(github)
+  await loaded()
+
+  await vi.waitFor(() => expect(document.get().panels.pr.fields.pr).toEqual({ repository: 'org/repo', number: 8, origin: true }))
+})
+
+it('leaves a pull request of another repository unmarked', async () => {
+  const github = fakeGithub()
+  github.originRepository.mockResolvedValue('org/other')
+
+  await startPr(github)
+  await loaded()
+  await flush()
+
+  expect(github.originRepository).toHaveBeenCalledTimes(1)
+  expect(document.get().panels.pr.fields.pr).toEqual({ repository: 'org/repo', number: 8 })
+})
+
+it('reads nothing more for a refresh within 5 seconds of the last full read', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
   const github = fakeGithub()
   await startPr(github)
   await loaded()
+
+  vi.setSystemTime(T0 + 4_999)
+  await prOp({ kind: 'refresh' })
+  expect(github.pullRequestView).toHaveBeenCalledTimes(1)
+
+  vi.setSystemTime(T0 + 5_000)
+  await prOp({ kind: 'refresh' })
+  expect(github.pullRequestView).toHaveBeenCalledTimes(2)
+})
+
+it('backs off after failed reads (25, 50, 100 s, at most 5 min) and starts over after a success', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
+  const github = fakeGithub()
+  github.pullRequestView.mockRejectedValue(new GhReadError('offline'))
+  await startPr(github)
+  await vi.waitFor(() => expect(prSnap().error?.kind).toBe('offline'))
+  let last = T0
+  const tickAfter = async (wait: number) => {
+    vi.setSystemTime(last + wait)
+    const read = await prOp({ kind: 'prTick' })
+    if (read) last += wait
+    return read
+  }
+
+  const waits = [25_000, 50_000, 100_000, 200_000, 300_000, 300_000]
+  for (const [index, wait] of waits.entries()) {
+    if (index === waits.length - 1) github.pullRequestView.mockResolvedValue(viewJson())
+    expect(await tickAfter(wait - 1), `${wait - 1} ms`).toBe(false)
+    expect(await tickAfter(wait), `${wait} ms`).toBe(true)
+  }
+  expect(github.pullRequestView).toHaveBeenCalledTimes(7)
+  expect(prSnap().data).not.toBeNull()
+  expect(await tickAfter(24_999)).toBe(false)
+  expect(await tickAfter(25_000)).toBe(true)
+  expect(github.pullRequestChecks).toHaveBeenCalledTimes(1)
+})
+
+it('shows a cleaned title and check name, whatever GitHub sends', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
+  const dirty = `\u001b[31mred\u001b[0m ‮evil⁦ ${'x'.repeat(5000)}`
+  const dirtyCheck = { ...run('SUCCESS'), name: dirty }
+  const github = fakeGithub()
+  github.pullRequestView.mockResolvedValue({ ...viewJson(), title: dirty, statusCheckRollup: [dirtyCheck] })
+  github.pullRequestChecks.mockResolvedValue({ ...checksJson('FAILURE'), statusCheckRollup: [{ ...dirtyCheck, conclusion: 'FAILURE' }] })
+  const clean = (text: string) => {
+    expect(text).not.toMatch(/[\u001b‪-‮⁦-⁩]/)
+    expect(text.length).toBeLessThanOrEqual(MAX_TITLE_CHARS)
+    expect(text.startsWith('red evil')).toBe(true)
+  }
+  await startPr(github)
+  await loaded()
+
+  clean(prSnap().data!.title)
+  clean(prSnap().data!.checks.items[0].name)
+  vi.setSystemTime(T0 + 25_000)
+  expect(await prOp({ kind: 'prTick' })).toBe(true)
+  clean(prSnap().data!.checks.items[0].name)
+  expect(JSON.stringify(lastPr().snapshot())).not.toMatch(/[\u001b‮]/)
+})
+
+it('disposes without a gh call, and writes nothing to its session file', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(T0)
+  const github = fakeGithub()
+  await startPr(github)
+  await loaded()
+  vi.setSystemTime(T0 + 5_000)
   await prOp({ kind: 'refresh' })
   await vi.waitFor(() => expect(github.pullRequestView).toHaveBeenCalledTimes(2))
   const calls = ghCalls(github)
