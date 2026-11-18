@@ -213,6 +213,21 @@ describe('canvas view store', () => {
     expect(clientState.getSnapshot().viewports.c1).toEqual({ x: 5, y: 6, zoom: 2 })
   })
 
+  // C002 (probe, hypothesis 10): dragging a tab out of a member node commits
+  // `placePanel {to: 'canvas'}` (drag/commit.ts); the new node has no frame.
+  it('a tab dragged out of a member node leaves the frame', () => {
+    const document = fakeDocument(canvasDocument(nodes))
+    expect(document.propose({ kind: 'placePanel', id: 'pb', at: { to: 'stack', dock: { canvasId: 'c1', nodeId: 'a' }, stackId: 'stack-a' } }).ok).toBe(true)
+    expect(document.propose({ kind: 'addFrame', canvasId: 'c1', frame: { id: 'f1', title: 'Besoin', state: 'active', collapsed: false, at: { x: 0, y: 0 } } }).ok).toBe(true)
+    expect(document.propose({ kind: 'setNodeFrame', canvasId: 'c1', nodeId: 'a', frameId: 'f1' }).ok).toBe(true)
+    const store = createCanvasView({ workspaceId: 'ws', canvasId: 'c1', document, animate: false })
+    expect(document.propose({ kind: 'placePanel', id: 'pb', at: { to: 'canvas', canvasId: 'c1', nodeId: 'out', stackId: 'stack-out', rect: rect(900, 0, 400, 300) } }).ok).toBe(true)
+    const canvas = document.getSnapshot().canvases.c1
+    expect(canvas.nodes.out.frameId).toBeUndefined()
+    expect(canvas.nodes.a.frameId).toBe('f1')
+    expect(store.getState().nodes.out).toBeDefined()
+  })
+
   it('starts from the viewport client state remembers', () => {
     const document = fakeDocument(canvasDocument(nodes))
     const clientState = createClientStateStore()
