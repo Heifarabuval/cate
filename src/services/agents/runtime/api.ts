@@ -4,7 +4,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi } from '../contract/api'
-import { AGENT_DEFS, isPromptAttachments, type AgentId, type AgentLaunchOptions, type AgentStartRequest, type PanelAgentState } from '../contract'
+import { AGENT_DEFS, isPromptAttachments, type AgentSessionUsageResult, type AgentId, type AgentLaunchOptions, type AgentStartRequest, type PanelAgentState } from '../contract'
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
 import type { DoneWhen } from './doneWhen'
@@ -120,7 +120,7 @@ export async function interruptAgent(agents: AgentsCore, panelId: string): Promi
   return { ok: true }
 }
 
-export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter, doneWhen: DoneWhen | undefined, usage: Pick<AgentUsageService, 'session'>): CateServiceHandlers<typeof agentApi> {
+export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter, doneWhen: DoneWhen | undefined, usage: Pick<AgentUsageService, 'sessions'>): CateServiceHandlers<typeof agentApi> {
   return {
     async start(args, ctx) {
       const started = await startAgent(starter, ctx.caller.panelId, args as AgentStartRequest)
@@ -133,16 +133,29 @@ export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter
 
     async usage({ targetPanelId }) {
       const states = targetPanelId ? [live(agents, targetPanelId)] : liveAgents(agents)
-      return Promise.all(states.map(async ({ panelId, agentId, session }) => ({
+      // Every session the panel's agent ran since it started (the one its
+      // state names too: a CLI that sent no hook yet, a restored panel).
+      const wanted = states.map(({ panelId, agentId, session }) => ({
+        panelId,
+        agentId,
+        sessionIds: [...new Set([...agents.terminals.sessionIds(panelId), ...(session ? [session.sessionId] : [])])],
+        cwd: session?.cwd ?? agents.root,
+      }))
+      const requests = wanted.flatMap(({ agentId, sessionIds, cwd }) => (agentId ? [{ agentId, sessionIds, cwd }] : []))
+      // One read for all panels; its failure is each panel's error, not the call's.
+      const results = await usage.sessions(requests).catch((): AgentSessionUsageResult[] => requests.map(() => ({ error: 'usage-unavailable' })))
+      let next = 0
+      return wanted.map(({ panelId, agentId, sessionIds }) => ({
         panelId,
         title: agents.document.panel(panelId)?.title ?? '',
         agentId,
+        sessionIds,
         model: null,
         inputTokens: null,
         outputTokens: null,
         costUsd: null,
-        ...(session?.agentId ? await usage.session({ ...session, agentId: session.agentId }) : null),
-      })))
+        ...(agentId ? results[next++] : null),
+      }))
     },
 
     async read({ panelId }) {

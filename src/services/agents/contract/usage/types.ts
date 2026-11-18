@@ -140,8 +140,9 @@ export interface UsageSummary {
   scanDurationMs: number
 }
 
-/** What one agent session has used so far (`cate agent usage`). `model` is
- *  the one that spent most tokens; `inputTokens` includes the cached part;
+/** What one agent panel has used since its agent started (`cate agent
+ *  usage`): the sessions it ran, `/clear` rotations included. `model` is the
+ *  one that spent most tokens; `inputTokens` includes the cached part;
  *  `costUsd` is null when any of its responses has no price. */
 export interface AgentSessionUsage {
   model: string
@@ -149,6 +150,17 @@ export interface AgentSessionUsage {
   outputTokens: number
   costUsd: number | null
 }
+
+/** The sessions one panel's agent ran, in the checkout `cwd`. */
+export interface AgentSessionsRequest {
+  agentId: AgentId
+  sessionIds: string[]
+  cwd: string
+}
+
+/** Null: no session, or an agent that records no tokens. `error`: this
+ *  request failed; the others still answer. */
+export type AgentSessionUsageResult = AgentSessionUsage | { error: string } | null
 
 /** USD per million tokens. Omitted cache rates use the input rate. */
 export interface UsageModelPriceOverride {

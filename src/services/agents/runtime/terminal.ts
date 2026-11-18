@@ -458,6 +458,11 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     return terminalId && terminals.has(terminalId) ? terminalId : null
   }
 
+  const sessionIds = (panelId: string): string[] => {
+    const terminalId = liveTerminal(panelId)
+    return terminalId ? stamps.sessions(terminalId) : []
+  }
+
   const sessionOf = (panelId: string, terminalId: string | null): AgentSession | null => {
     const latest = terminalId ? stamps.latest(terminalId) : undefined
     const record = document.panel(panelId)
@@ -626,6 +631,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       return () => { changeListeners.delete(listener) }
     },
     terminalOf: liveTerminal,
+    sessionIds,
     onStep(listener) {
       stepListeners.add(listener)
       return () => { stepListeners.delete(listener) }

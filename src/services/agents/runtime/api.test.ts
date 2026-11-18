@@ -11,13 +11,17 @@ import { createDoneWhen } from './doneWhen'
 import { agentsCapabilityImpl } from './capability'
 import { createAgentsCore, type AgentsCore, type AgentTerminals } from './core'
 import type { AgentStarter } from './start'
+import type { AgentUsageService } from './usage/usage'
 
 
 function fakeTerminals() {
   const states = new Map<string, PanelAgentState>()
   const listeners = new Set<(panelId: string) => void>()
+  /** The session ids each panel's agent ran since it started. */
+  const seen = new Map<string, string[]>()
   const terminals: AgentTerminals = {
     state: (panelId) => states.get(panelId) ?? null,
+    sessionIds: (panelId) => seen.get(panelId) ?? [],
     panelIds: () => states.keys(),
     send: vi.fn(async () => ({ ok: true as const })),
     interrupt: vi.fn(async () => ({ ok: true as const })),
@@ -39,7 +43,7 @@ function fakeTerminals() {
     })
     for (const listener of listeners) listener(panelId)
   }
-  return { terminals, set }
+  return { terminals, set, seen }
 }
 
 const ctx = (overrides: Partial<ApiHandlerContext['caller']> = {}, signal = new AbortController().signal): ApiHandlerContext => ({
@@ -60,7 +64,9 @@ let terminal: ReturnType<typeof fakeTerminals>
 let handlers: ReturnType<typeof createAgentApiHandlers>
 let starter: AgentStarter
 const sessionUsage = { model: 'gpt-5', inputTokens: 1200, outputTokens: 80, costUsd: 0.5 }
-const usage = { session: vi.fn(async ({ sessionId }: { sessionId: string }) => (sessionId === 's' ? sessionUsage : null)) }
+const usage = {
+  sessions: vi.fn<AgentUsageService['sessions']>(async (requests) => requests.map(({ sessionIds }) => (sessionIds.includes('s') ? sessionUsage : null))),
+}
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'cate-agents-api-'))
@@ -108,16 +114,48 @@ async function rpcError(promise: unknown): Promise<string> {
 }
 
 describe('cate.agent.*', () => {
-  it('reports each live agent panel\'s session usage, null where the agent has none', async () => {
+  const nulls = { model: null, inputTokens: null, outputTokens: null, costUsd: null }
+
+  it('reports each live agent panel\'s usage over the sessions it ran, null where there are none, in one read', async () => {
+    // term ran 'old' before a /clear and now runs 's'; term-2 has no session yet (a relaunched agent).
+    terminal.seen.set('term', ['old', 's'])
     terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
     terminal.set('term-2', { status: 'running' })
     terminal.set('idle-shell', { status: 'notRunning' })
     expect(await handlers.usage({}, ctx())).toEqual([
-      { panelId: 'term', title: 'Backend', agentId: 'codex', ...sessionUsage },
-      { panelId: 'term-2', title: 'Frontend', agentId: 'codex', model: null, inputTokens: null, outputTokens: null, costUsd: null },
+      { panelId: 'term', title: 'Backend', agentId: 'codex', sessionIds: ['old', 's'], ...sessionUsage },
+      { panelId: 'term-2', title: 'Frontend', agentId: 'codex', sessionIds: [], ...nulls },
+    ])
+    expect(usage.sessions).toHaveBeenCalledTimes(1)
+    expect(usage.sessions).toHaveBeenCalledWith([
+      { agentId: 'codex', sessionIds: ['old', 's'], cwd: '/repo' },
+      { agentId: 'codex', sessionIds: [], cwd: '/repo' },
     ])
     expect(await handlers.usage({ targetPanelId: 'term' }, ctx())).toHaveLength(1)
     await expect(rpcError(handlers.usage({ targetPanelId: 'none' }, ctx()))).resolves.toBe('agent-panel-not-found')
+  })
+
+  it('names a session the panel reported only through its state, once', async () => {
+    terminal.seen.set('term', ['s'])
+    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    expect(await handlers.usage({}, ctx())).toMatchObject([{ sessionIds: ['s'] }])
+    terminal.seen.set('term', [])
+    expect(await handlers.usage({}, ctx())).toMatchObject([{ sessionIds: ['s'] }])
+  })
+
+  it('answers an error for the panel whose usage failed, and for all when the read fails, not an error for the call', async () => {
+    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    terminal.set('term-2', { session: { agentId: 'codex', sessionId: 't', cwd: '/repo' } })
+    usage.sessions.mockResolvedValueOnce([{ error: 'boom' }, sessionUsage])
+    expect(await handlers.usage({}, ctx())).toMatchObject([
+      { panelId: 'term', error: 'boom', ...nulls },
+      { panelId: 'term-2', ...sessionUsage },
+    ])
+    usage.sessions.mockRejectedValueOnce(new Error('rates'))
+    expect(await handlers.usage({}, ctx())).toMatchObject([
+      { panelId: 'term', error: 'usage-unavailable', ...nulls },
+      { panelId: 'term-2', error: 'usage-unavailable', ...nulls },
+    ])
   })
 
   it('lists live agents, never an idle terminal', async () => {
