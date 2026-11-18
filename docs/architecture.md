@@ -620,6 +620,11 @@ persisted session and document file. It is created with mode `0700`.
   come free and gives up when it does not. So a stop writes the state files (settings, devices, push,
   secrets, document) first, before any step that can stall, and a starting
   daemon removes the temporary files a killed writer left in its data dir.
+  A client that connects between the bind and the moment the daemon serves
+  the socket (one retrying a start) is held, not dropped: serving the socket
+  (`serveLocal`) takes the held connections from the lock, and they get their
+  answer once every capability is registered, or the nesting refusal. A held
+  connection its client closes leaves the hold.
 - **Workspaces never nest.** After binding, a daemon whose root contains, or
   lies inside, the root of a live runtime on the machine (its `runtime.json`
   pid alive and its socket answering; a `runtime.json` left by a killed

@@ -18,10 +18,11 @@ export interface LocalListener {
  * Takes over an already-bound server (the socket lock from runtime/data).
  * Call it right after binding: a client can connect as soon as the socket
  * exists, and those connections wait until `open()`, when every capability
- * is registered. `early` are connections the binder held until now
- * (`takeEarly` of the socket lock).
+ * is registered. Connections the binder held until now are taken from it
+ * here (`takeEarly`), so none is left held for the life of the socket.
  */
-export function serveLocal(server: net.Server, rpc: RpcServer, early: net.Socket[] = []): LocalListener {
+export function serveLocal(bound: { server: net.Server; takeEarly(): net.Socket[] }, rpc: RpcServer): LocalListener {
+  const { server } = bound
   const sockets = new Set<net.Socket>()
   let waiting: net.Socket[] | null = []
   const serve = (socket: net.Socket) => {
@@ -34,7 +35,7 @@ export function serveLocal(server: net.Server, rpc: RpcServer, early: net.Socket
     else serve(socket)
   }
   server.on('connection', onConnection)
-  early.forEach(onConnection)
+  bound.takeEarly().forEach(onConnection)
   return {
     open() {
       const held = waiting ?? []
