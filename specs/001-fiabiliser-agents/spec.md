@@ -188,7 +188,7 @@ Un hook `PreToolUse` sur `Bash` refuse `playwright test`, `npm run test:e2e`, `e
 
 - **FR-022**: Le gabarit de brief du skill `orchestrateur` MUST contenir, dans sa ligne `Interdit`, « lancer Playwright, Electron ou l'app Cate, ouvrir une fenêtre ».
 - **FR-023**: Le rapport de fin du gabarit MUST demander « HEAD `<sha>`, poussé : oui ou non ».
-- **FR-024**: La règle de plafond du skill MUST dire 4 et compter les agents en attente de saisie, pour rester cohérente avec FR-001 et FR-002.
+- **FR-024**: La règle de plafond du skill (étape 2 de « Pour chaque tâche que Heifara te donne », aujourd'hui « Au plus 8 agents en plein tour... un agent qui attend une saisie ne compte pas ») MUST dire 4 et compter les agents en attente de saisie, pour rester cohérente avec FR-001 et FR-002.
 
 **Récit 6 : hook**
 
