@@ -143,7 +143,7 @@ tab stack goes in whole. Commands answer with `--json` as `{ frameId, ... }`;
 ids take any unique prefix.
 
 ```bash
-cate panel group create "#n3 cadrage"           # on the canvas of the calling panel (or --canvas <panel>)
+cate panel group create "#n3 cadrage"           # on the canvas of --canvas <panel> if given, else of the calling panel
 cate panel group add <group> <panel>            # first free place of the group's grid, nothing else moves
 cate panel group remove <panel>                 # out of its group, the group stays
 cate panel group state <group> waiting          # active, waiting, blocked or done
@@ -156,7 +156,20 @@ cate panel group list --json                    # frameId, canvasId, title, stat
 Run `list` before `create` when resuming work, so you do not make a second
 group for the same need. `add` twice is harmless (`moved: false`); a panel in a
 window or on another canvas is refused with the reason. Groups need the
-Panels permission (Read for `list`, Control for the rest).
+Panels permission (Read for `list`, Control for the rest). A title is one line
+without control characters, at most 120 characters.
+
+Known limits:
+
+- `--canvas` takes a canvas panel or any panel placed on a canvas, and wins
+  over the calling panel's canvas. A panel on no canvas is refused.
+- `cate panel group remove` of a panel named `toString` or `__proto__` answers
+  ok instead of `gone` (the daemon's panel adapter, older than groups).
+- An agent can create up to 200 groups per canvas, act on a group of any canvas
+  of the workspace, and move the node of any panel of the canvas by adding it to
+  a group (the place is computed for it). That is the power of the Control CLI,
+  bounded by the Panels Control setting (`cliPanelControlEnabled`).
+- The CLI's operations are not in the person's undo stack.
 
 ## Reading terminals
 

@@ -181,6 +181,7 @@ export const frameApi = defineCateApi(
       access: 'read',
       handler: 'service',
       summary: 'List the groups with their state and panels',
+      format: 'frameList',
       cli: { command: ['panel', 'group', 'list'] },
     },
   },

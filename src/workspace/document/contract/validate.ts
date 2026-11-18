@@ -75,13 +75,15 @@ export function checkRelation(v: unknown): Problem {
 }
 
 const isFrameState = (v: unknown) => (FRAME_STATES as readonly unknown[]).includes(v)
+/** Control characters (C0, DEL, C1: line breaks, tabs, escape sequences) and bidi marks. */
+const TITLE_FORBIDDEN = /\p{Cc}|[؜‎‏‪-‮⁦-⁩]/u
 const isTitle = (v: unknown) =>
-  typeof v === 'string' && v.trim() !== '' && v.length <= MAX_FRAME_TITLE && !/[\r\n]/.test(v)
+  typeof v === 'string' && v.trim() !== '' && v.length <= MAX_FRAME_TITLE && !TITLE_FORBIDDEN.test(v)
 
 export function checkFrame(v: unknown): Problem {
   if (!isObject(v)) return 'frame is not an object'
   if (!isId(v.id)) return 'frame id is missing'
-  if (!isTitle(v.title)) return 'frame title is empty, too long or on several lines'
+  if (!isTitle(v.title)) return 'frame title is empty, too long or has a control character'
   if (!isFrameState(v.state)) return 'unknown frame state'
   if (typeof v.collapsed !== 'boolean') return 'frame collapsed is not a boolean'
   if (!isPoint(v.at)) return 'frame at is not a point'
@@ -93,7 +95,7 @@ export function checkFrame(v: unknown): Problem {
 function checkFramePatch(v: unknown): Problem {
   if (!isObject(v)) return 'patch is not an object'
   const p = v as FramePatch
-  if (!optional(p.title, isTitle)) return 'patch title is empty, too long or on several lines'
+  if (!optional(p.title, isTitle)) return 'patch title is empty, too long or has a control character'
   if (!optional(p.state, isFrameState)) return 'unknown frame state'
   if (!optional(p.collapsed, (x) => typeof x === 'boolean')) return 'patch collapsed is not a boolean'
   if (!optional(p.at, isPoint)) return 'patch at is not a point'
