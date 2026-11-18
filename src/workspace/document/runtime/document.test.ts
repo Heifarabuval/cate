@@ -18,7 +18,16 @@ import {
   type PanelRecord,
   type PanelType,
 } from '../contract'
-import { createDocumentService, createPresence, documentCapabilityImpl, presenceCapabilityImpl } from './index'
+import { ApiRouter, ApiTokenRegistry } from '@kernel/api/runtime'
+import { canvasApi, panelApi } from '../contract/api'
+import {
+  createDocumentService,
+  createPresence,
+  documentCapabilityImpl,
+  presenceCapabilityImpl,
+  registerDocumentApi,
+  type CreatePanelRequest,
+} from './index'
 
 let dir: string
 let file: string
@@ -330,5 +339,41 @@ describe('presence', () => {
     presence.touch(3)
     expect(presence.pick(driver)?.clientId).toBe('b')
     presence.dispose()
+  })
+})
+
+describe('cate.canvas.createPanel', () => {
+  function wireCreate() {
+    const service = createDocumentService({ file })
+    const requests: Array<{ type: string; request: CreatePanelRequest }> = []
+    const tokens = new ApiTokenRegistry(() => `tok-${Math.random()}`)
+    const settings: Record<string, unknown> = { cliEnabled: true, cliPanelReadEnabled: true, cliPanelControlEnabled: true }
+    const router = new ApiRouter({
+      namespaces: [panelApi, canvasApi],
+      document: { panel: () => undefined, panels: () => [] },
+      presence: { activePanelId: () => undefined },
+      sessions: { handleApi: async () => null },
+      settings: { get: (key) => settings[key] },
+      tokens,
+    })
+    registerDocumentApi(router, {
+      document: service,
+      presence: { activePanelId: () => undefined },
+      checkRemoval: () => {},
+      createPanel: (type, request) => { requests.push({ type, request }); return 'p1' },
+      relationKinds: () => [],
+    })
+    const caller = tokens.issue({ kind: 'cli', panelId: 'caller' }).caller
+    return { service, requests, create: (args: Record<string, unknown>) => router.call(caller, 'cate.canvas.createPanel', args) }
+  }
+
+  it('hands pr to the panel factory like url and filePath', async () => {
+    const { service, requests, create } = wireCreate()
+    await expect(create({ type: 'review', pr: 'org/repo#8' })).resolves.toEqual({ panelId: 'p1' })
+    await create({ type: 'review' })
+    expect(requests[0].type).toBe('review')
+    expect(requests[0].request.pr).toBe('org/repo#8')
+    expect(requests[1].request).not.toHaveProperty('pr')
+    service.dispose()
   })
 })

@@ -20,6 +20,7 @@ export type CreatePanelRequest = {
   position?: Point
   url?: string
   filePath?: string
+  pr?: string
   placementGroupId?: string
 }
 
@@ -166,13 +167,14 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
       },
     },
     canvas: {
-      createPanel: async ({ type, url, filePath, position }, ctx) => {
+      createPanel: async ({ type, url, filePath, pr, position }, ctx) => {
         const panelId = await deps.createPanel(type, {
           ...(ctx.caller.panelId ? { near: ctx.caller.panelId } : {}),
           ...(ctx.caller.placementGroupId ? { placementGroupId: ctx.caller.placementGroupId } : {}),
           ...(position ? { position } : {}),
           ...(url !== undefined ? { url } : {}),
           ...(filePath !== undefined ? { filePath } : {}),
+          ...(pr !== undefined ? { pr } : {}),
         })
         if (!panelId) throw new RpcError('rejected', `could not create a ${type} panel`)
         return { panelId }
