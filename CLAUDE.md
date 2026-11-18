@@ -263,6 +263,10 @@ workspace settings `cliEnabled` and `cli*Enabled` (per area, read or control). S
 target a panel through the reserved `panelId` argument (`--panel` on the CLI),
 or the caller's sticky target (`cate panel set`).
 
+The `agence` CLI (Python and a POSIX launcher) lives in `tools/agence/`, outside
+`src/`: the runtime tarball ships it as `agence/` and terminals get it on PATH
+next to `cate`. `npm run test:agence` runs its tests (system python3, 3.9 and up).
+
 ### Key Patterns
 
 - **Functional React** with hooks for the desktop UI, and only there

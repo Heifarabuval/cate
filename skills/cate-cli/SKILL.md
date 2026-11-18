@@ -11,6 +11,10 @@ names the calling panel. It works the same when the workspace lives on
 another machine. If either variable is missing, `cate` exits 3 and says so:
 you are not in a Cate terminal, so this skill does not apply.
 
+`agence`, the orchestration CLI of the agence panel, is on the same PATH
+(`agence --help`, `agence --version`). It needs a system `python3` (3.9 or
+newer) and exits 2 without one.
+
 ## Reference files
 
 Read the one for your task before its first command:

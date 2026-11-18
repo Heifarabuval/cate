@@ -77,6 +77,23 @@ jobs:
       # E2E and Electron smoke tests run locally only. Keep the npm scripts
       # available for browser and full-app validation.
 
+  # The agence CLI (tools/agence) runs on the system python3: macOS ships 3.9,
+  # so test the oldest version. Not shipped on Windows.
+  agence:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: Agence tests
+        run: npm run test:agence
+
   # The release builds a runtime tarball per target; build the Linux one here
   # so a broken staging step (CLI, natives, BUILD, checksum) fails the PR
   # instead of the release.

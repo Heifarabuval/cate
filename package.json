@@ -39,6 +39,7 @@
     "lint": "eslint .",
     "lint:deps": "depcruise src --config .dependency-cruiser.cjs",
     "test": "vitest run",
+    "test:agence": "python3 -m unittest discover -s tools/agence -p \"test_*.py\"",
     "test:agent-hooks:ci": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts src/services/agents/runtime/live src/services/agents/runtime/setup/authCli.itest.ts --disableConsoleIntercept",
     "test:agent-changes": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts src/services/agents/runtime/changes",
     "test:runtime:linux-glibc": "node scripts/test-linux-node-pty-baseline.mjs",
