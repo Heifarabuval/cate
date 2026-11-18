@@ -235,6 +235,25 @@ describe('FrameLayer bar gesture', () => {
     expect(frameEl().style.transform).toBe('')
   })
 
+  it('moves the remaining members when one is closed mid-drag', () => {
+    open()
+    const propose = vi.spyOn(documentStoreFor(WS)!, 'propose')
+    pointer('pointerdown', bar(), 300, 100)
+    pointer('pointermove', window, 500, 180)
+    act(() => { documentStoreFor(WS)!.propose({ kind: 'removePanels', ids: ['pb'] }) })
+    propose.mockClear()
+    pointer('pointerup', window, 500, 180)
+    const origin = frameBounds([rect(300, 280, 400, 300)], { x: 0, y: 0 }, false).origin
+    expect(propose).toHaveBeenCalledWith({
+      kind: 'batch',
+      changes: [
+        { kind: 'setNodeRects', canvasId: 'c1', rects: [{ nodeId: 'a', rect: rect(300, 280, 400, 300) }] },
+        { kind: 'updateFrame', id: 'f1', patch: { at: origin } }
+      ]
+    })
+    expect(store.getState().preview).toEqual({})
+  })
+
   it('leaves a member dragged on its own in its frame, the others in place', () => {
     open()
     act(() => store.getState().moveNode('b', { x: 900, y: 500 }))

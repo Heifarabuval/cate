@@ -66,7 +66,9 @@ function useBarDrag({ workspaceId, canvasId, frameId, onShift }: Pick<FrameTitle
       window.removeEventListener('pointercancel', end)
       onShift?.(null)
       if (moved) {
-        const rects = members.map((m) => ({ nodeId: m.nodeId, rect: view.getState().nodes[m.nodeId].rect }))
+        // A member closed mid-drag (CLI, another client) has no node left.
+        const nodes = view.getState().nodes
+        const rects = members.filter((m) => nodes[m.nodeId]).map((m) => ({ nodeId: m.nodeId, rect: nodes[m.nodeId].rect }))
         const at = frameOrigin(rects.map((r) => r.rect)) ?? { x: frame.at.x + delta.x, y: frame.at.y + delta.y }
         const changes: DocChange[] = [{ kind: 'updateFrame', id: frameId, patch: { at } }]
         if (rects.length > 0) changes.unshift({ kind: 'setNodeRects', canvasId, rects })
