@@ -228,6 +228,7 @@ describe('parsePullRequestFiles', () => {
 
   it('throws on something that is not a list', () => {
     expect(() => parsePullRequestFiles({ message: 'Not Found' }, 'o/r', 1)).toThrow('Unexpected GitHub response')
+    expect(() => parsePullRequestFiles({ message: 'Not Found' }, 'o/r', 1)).toThrow(GhReadError)
   })
 })
 
@@ -309,6 +310,7 @@ describe('parsePullRequestView', () => {
   })
 
   it('throws on something that is not a pull request', () => {
+    expect(() => parsePullRequestView(null, [])).toThrow(GhReadError)
     expect(() => parsePullRequestView(null, [])).toThrow('Unexpected GitHub response')
     expect(() => parsePullRequestView({ ...viewFixture, state: 'WEIRD' }, [])).toThrow('Unexpected GitHub response')
     expect(() => parsePullRequestView({ ...viewFixture, url: 'https://example.test/x' }, [])).toThrow('Unexpected GitHub response')

@@ -5,9 +5,11 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import os from 'node:os'
 import {
+  GhReadError,
   githubRepository,
   parsePullRequests,
   PR_QUERY,
+  toGhReadError,
   type GitHubConnection,
   type GitHubLoginState,
   type PullRequestContext,
@@ -15,6 +17,16 @@ import {
 } from '../contract'
 
 const exec = promisify(execFile)
+
+/** `gh` calls running at once; the others wait their turn (16 pull requests opened in a row must not spawn 16 processes). */
+const MAX_GH_CALLS = 3
+const GH_TIMEOUT_MS = 30_000
+const GH_BUFFER = 4 * 1024 * 1024
+/** Listing the files of a pull request pages through up to 3000 patches. */
+const PR_FILES_TIMEOUT_MS = 60_000
+const PR_FILES_BUFFER = 32 * 1024 * 1024
+const PR_VIEW_FIELDS = 'number,url,title,author,body,state,isDraft,headRefName,baseRefName,isCrossRepository,headRepositoryOwner,commits,changedFiles,additions,deletions,statusCheckRollup,mergeable,mergeStateStatus'
+const PR_CHECKS_FIELDS = 'state,isDraft,statusCheckRollup,mergeable,mergeStateStatus'
 
 export interface GithubHost {
   connection(): Promise<GitHubConnection>
@@ -25,6 +37,12 @@ export interface GithubHost {
   cancelLogin(owner: number): void
   /** `root` must already be validated against the workspace. */
   pullRequestContext(root: string, repository: string, number: number): Promise<PullRequestContext | null>
+  /** Read-only reads of one pull request (raw `gh` JSON, parsed by the contract). They reject with a `GhReadError`. */
+  pullRequestView(repository: string, number: number): Promise<unknown>
+  /** The lighter read for the 30 s refresh: state, checks and mergeability only. */
+  pullRequestChecks(repository: string, number: number): Promise<unknown>
+  /** Every changed file with its patch, all pages in one list. */
+  pullRequestFiles(repository: string, number: number): Promise<unknown>
   /** The github.com token `gh` would use, for anonymous-tolerant API calls. */
   token(): Promise<string | undefined>
   dispose(): void
@@ -37,8 +55,29 @@ interface Login {
 }
 
 export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): GithubHost {
-  const gh = async (args: string[]): Promise<string> =>
-    (await exec('gh', args, { cwd: os.homedir(), env: deps.env(), timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true })).stdout
+  let running = 0
+  const waiting: Array<() => void> = []
+  /** The one place `gh` is spawned: at most MAX_GH_CALLS at once, a freed slot goes straight to the next waiter. */
+  const gh = async (args: string[], limits = { timeout: GH_TIMEOUT_MS, maxBuffer: GH_BUFFER }): Promise<string> => {
+    if (running >= MAX_GH_CALLS) await new Promise<void>((resolve) => waiting.push(resolve))
+    else running += 1
+    try {
+      return (await exec('gh', args, { cwd: os.homedir(), env: deps.env(), windowsHide: true, ...limits })).stdout
+    } finally {
+      const next = waiting.shift()
+      if (next) next()
+      else running -= 1
+    }
+  }
+
+  async function readJson(repository: string, number: number, args: string[], limits?: { timeout: number; maxBuffer: number }): Promise<unknown> {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isSafeInteger(number) || number < 1) throw new GhReadError('error', 'Invalid pull request')
+    try {
+      return JSON.parse(await gh(args, limits))
+    } catch (error) {
+      throw error instanceof SyntaxError ? new GhReadError('error', 'Unexpected GitHub response') : toGhReadError(error)
+    }
+  }
 
   let cached: { at: number; result: PullRequestsResult } | undefined
   let pending: Promise<PullRequestsResult> | undefined
@@ -145,6 +184,14 @@ export function createGithubHost(deps: { env: () => NodeJS.ProcessEnv }): Github
       await exec('git', ['fetch', 'origin', data.baseRefOid], options)
       return { headRefName: data.headRefName, baseOid: data.baseRefOid }
     },
+
+    pullRequestView: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', repository, '--json', PR_VIEW_FIELDS]),
+
+    pullRequestChecks: (repository, number) => readJson(repository, number, ['pr', 'view', String(number), '--repo', repository, '--json', PR_CHECKS_FIELDS]),
+
+    pullRequestFiles: (repository, number) =>
+      readJson(repository, number, ['api', '--method', 'GET', '--paginate', `repos/${repository}/pulls/${number}/files?per_page=100`],
+        { timeout: PR_FILES_TIMEOUT_MS, maxBuffer: PR_FILES_BUFFER }),
 
     async token() {
       const env = deps.env()
