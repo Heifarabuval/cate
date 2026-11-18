@@ -215,3 +215,16 @@ it('is ready again after a declined dialog', async () => {
   await click(/^Merger quand même \(rebase\)/)
   expect(send).toHaveBeenCalledTimes(1)
 })
+
+it('keeps what is typed in the free answer and sends it with Répondre', async () => {
+  render(question())
+  const field = host.querySelector('textarea')!
+  field.focus()
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, '  Autre nom  ')
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(field.value).toBe('  Autre nom  ')
+  await click('Répondre')
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q1', libre: 'Autre nom' })
+})

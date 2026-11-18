@@ -40,4 +40,16 @@ describe('holdFocus', () => {
     vi.advanceTimersByTime(100)
     expect(document.activeElement).toBe(other)
   })
+
+  it('leaves focus to a text field the person clicked into after it took focus', () => {
+    vi.useFakeTimers()
+    const target = document.createElement('textarea')
+    const field = document.createElement('textarea')
+    document.body.append(target, field)
+    holdFocus(() => target, () => true)
+    expect(document.activeElement).toBe(target)
+    field.focus()
+    vi.advanceTimersByTime(100)
+    expect(document.activeElement).toBe(field)
+  })
 })
