@@ -2563,7 +2563,7 @@ Everything outside the UI that drives Cate goes through one router.
 |---|---|---|---|
 | `cate.version` | | kernel/api | service |
 | `cate.panel.*` | `list` (each row's outgoing `relations`), `close` (`discard` arg), `setTitle`, `link` (adds a relation, or sets a related pair's kind and label; held to the relation guard), `unlink`, `target.set`, `target.current`, `target.clear` | workspace/document | service |
-| `cate.canvas.*` | `createPanel` | workspace/document | service |
+| `cate.canvas.*` | `createPanel` (`url`, `filePath` and `pr` go to the type's `create` options; the review definition checks `pr` before any record, and an open pull request answers with its existing panel, unfocused) | workspace/document | service |
 | `cate.frame.*` (CLI: `cate panel group ...`) | `create` (on the canvas of the caller, or `--canvas`), `add` (the panel's whole node into a frame, on the first free place of the frame's grid; `moved: false` when already a member), `remove`, `state` (`active`, `waiting`, `blocked`, `done`), `collapse`, `expand` (both keep the title bar where the members' frame is), `delete` (dissolves, closes no panel), `list` (`read`). Frame references take a unique id prefix; none or several match: `gone`, listing the frames. Handlers are synchronous on the document, so concurrent calls apply one after the other | workspace/document | service |
 | `cate.ui.*` | `notify` | kernel/api (publishes a notification event) | service |
 | `cate.terminal.*` | `read`, `type`, `press` | terminal panel | session |

@@ -97,6 +97,7 @@ cate panel create browser https://example.com   # the URL is optional
 cate panel create editor --file app.tsx
 cate panel create terminal
 cate panel create canvas
+cate panel create review --pr acme/app#8 # a pull request in a review panel (or --pr 8 for the workspace origin)
 cate panel title "API tests"             # rename the calling panel (or --panel <id>)
 cate panel close <id>                    # fails with dirty on unsaved work or a running program
 cate panel close <id> --discard          # drops unsaved work, stops the program
@@ -107,6 +108,13 @@ cate editor active                       # which file the target editor shows
 `panel create` and `editor open` print the new panel's short id. New panels
 open next to the calling terminal. Only pass `--discard` when the person
 agreed to lose that work.
+
+`--pr` takes `owner/repo#N`, a github.com pull request URL, or `N` (the
+workspace's GitHub origin; without one, use `owner/repo#N`). Anything else is
+refused with `Expected owner/repo#N or N` and no panel is made. There is one
+panel per pull request: a second `--pr` for the same one returns the existing
+panel's id and does not bring it to the front, since the CLI cannot give focus.
+Tell the person where it is instead of assuming they see it.
 
 ## Relations
 
