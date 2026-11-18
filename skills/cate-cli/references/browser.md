@@ -102,12 +102,16 @@ Once you know the id of the part you want (usually `- main [id=N]`), print
 just that part with `cate browser snapshot <id>`; ids stay valid while the
 element stays on the page.
 
-Ids stay the same for an element while the page keeps its document and shows
-the element; after a navigation, use the ids of the new tree. An element the
-page removed keeps its id for one more snapshot, then acting on it fails with
-`stale-browser-element`: snapshot again. A long tree (a big page after
-`goto`) prints its first part and saves the whole tree to a file whose path
-it prints: search that file instead of printing it.
+Ids stay the same for an element while the page keeps its document and every
+read lists it; after a navigation, use the ids of the new tree. A read is any
+command that shows a tree: `snapshot`, `find`, and the observation each action
+returns. An element that a read no longer lists (removed, hidden, or ignored by
+the accessibility tree) keeps its id through one more such command. After the
+next one, acting on it fails with `stale-browser-element`: snapshot again. A
+command that fails shows nothing: it does not count, and its reads never make
+an id stale. A long tree (a big page after `goto`) prints its first part and
+saves the whole tree to a file whose path it prints: search that file instead
+of printing it.
 
 `--role` and `--name` find the element in a fresh snapshot: the role as the
 snapshot prints it (`button`, `link`, `textbox`, `checkbox`), and the name as
