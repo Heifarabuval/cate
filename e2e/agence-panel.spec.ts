@@ -4,7 +4,7 @@
 // reads it, and Lire et envoyer then Envoyer goes through the regisseur's form
 // to the fake `gh`.
 
-import { test, expect } from '@playwright/test'
+import { test, expect as baseExpect } from '@playwright/test'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -13,6 +13,13 @@ import { closeApp, makeHome, makeProject } from './fixtures/electron-app'
 import { launchWithRuntime } from './fixtures/runtime-install'
 import { freePort, hashOf, installAgenceFakes, writeAgenceState, writeDraftText, type AgenceFakes } from './fixtures/agence-fakes'
 
+// Every wait is 30 s, as the polls of this file: a send goes through a spawned
+// node, the local network and the panel's refresh cycle (the default is 5 s).
+const expect = baseExpect.configure({ timeout: 30_000 })
+
+/** Under this width the panel shows the follow-up as a tab (`NARROW_PX` of AgenceView.tsx). */
+const NARROW_PX = 640
+
 let app: ElectronApplication
 let page: Page
 let home = ''
@@ -20,6 +27,8 @@ let root = ''
 let fakes: AgenceFakes
 let port = 0
 let nodeId = ''
+/** The width the test gave the panel's root: what decides columns or tabs. */
+let panelWidth = 0
 
 const TEXT = '# Corriger le logo\n\nLe logo du bandeau est flou sur mobile.\n\n- reproduire à 375 px\n- servir le SVG'
 const TARGET = 'issue:acme/site'
@@ -71,6 +80,7 @@ async function press(target: Locator): Promise<void> {
 }
 
 async function resize(nodeId: string, width: number, height = 640): Promise<void> {
+  panelWidth = width
   await page.evaluate(({ nodeId, width, height }) => {
     const doc = window.__cateE2E!.document() as unknown as { canvases: Record<string, { id: string; nodes: Record<string, { rect: { origin: { x: number; y: number } } }> }> }
     const canvas = Object.values(doc.canvases).find((c) => c.nodes[nodeId])!
@@ -79,17 +89,26 @@ async function resize(nodeId: string, width: number, height = 640): Promise<void
   await expect.poll(() => root$().evaluate((el) => Math.round(el.getBoundingClientRect().width)).catch(() => 0)).toBeGreaterThan(0)
 }
 
-/** The panel's root element (the column's grandparent). */
-const root$ = () => page.getByTestId('suivi-column').locator('xpath=../..')
+/** The panel's root element. */
+const root$ = () => page.getByTestId('agence-root')
 
 const snapshot = (panelId: string) => page.evaluate((id) => window.__cateE2E!.sessionSnapshot(id), panelId) as Promise<Snapshot>
 const sendOp = (panelId: string, op: unknown) => page.evaluate(({ id, op }) => window.__cateE2E!.sessionOp(id, op), { id: panelId, op }) as Promise<{ ok: boolean; error?: string; message?: string }>
 const stateFile = () => JSON.parse(readFileSync(path.join(root, '.cate', 'tmp', 'agence', 'state.json'), 'utf8')) as { drafts: Array<{ id: string; statut: string; url: string | null }>; needs: Array<{ id: string; status: string; evidence: string | null }> }
 
-/** Narrow panels show the follow-up as a tab. */
+/** Brings the follow-up in view. The layout follows the root's width (tabs under
+ *  NARROW_PX, columns above) a frame after a resize, so each branch waits, with
+ *  the auto-retried assertions, for the layout the width calls for. */
 async function showSuivi(): Promise<void> {
-  const tab = page.getByRole('tab', { name: 'Suivi' })
-  if (await tab.isVisible()) await press(tab)
+  if (panelWidth < NARROW_PX) {
+    const tab = page.getByRole('tab', { name: 'Suivi' })
+    await expect(tab).toBeVisible()
+    await press(tab)
+    await expect(tab).toHaveAttribute('aria-selected', 'true')
+  } else {
+    await expect(page.getByRole('tablist')).toHaveCount(0)
+    await expect(page.getByTestId('suivi-column')).toBeVisible()
+  }
 }
 
 async function readDraft(): Promise<void> {
@@ -154,7 +173,11 @@ test('a double click on Envoyer sends once', async () => {
   await readDraft()
   await focusPanel()
   await page.getByRole('button', { name: 'Envoyer', exact: true }).dblclick()
-  await expect.poll(() => stateFile().drafts[0].statut, { timeout: 30_000 }).toBe('envoyé')
+  await expect.poll(() => stateFile().drafts[0].statut).toBe('envoyé')
+  await expect(page.getByText('Fait (1)')).toBeVisible()
+  // The fake regisseur would answer a second send with a 409 and hide it from gh:
+  // count what it received, the panel's own guard is what keeps it at one.
+  expect(fakes.posts().filter((post) => post.path === '/draft/d1/send')).toHaveLength(1)
   expect(fakes.ghCalls()).toHaveLength(1)
 })
 
@@ -197,12 +220,38 @@ test('refusals of the regisseur are shown as they are and nothing is sent', asyn
   expect(stateFile().drafts[0].statut).toBe('à valider')
 })
 
-test('the regisseur itself refuses a stale hash, an already sent draft and a closed need', async () => {
+test('a refusal by gh is shown, the draft stays to validate and sends once gh works', async () => {
+  test.setTimeout(180_000)
+  await launch()
+  const panelId = await openAgence()
+  await expect.poll(async () => (await snapshot(panelId)).regisseur.state).toBe('running')
+  await readDraft()
+  const envoyer = page.getByRole('button', { name: 'Envoyer', exact: true })
+
+  fakes.failGh('GraphQL: Could not resolve to a Repository')
+  await press(envoyer)
+  await expect(page.getByText('Envoi refusé par GitHub : GraphQL: Could not resolve to a Repository', { exact: true })).toBeVisible()
+  // gh was called and failed: the draft is back to « à valider », its need open, and the reader stays.
+  expect(fakes.ghCalls()).toHaveLength(1)
+  await expect(page.getByTestId('draft-actions')).toBeVisible()
+  expect(stateFile().drafts[0]).toMatchObject({ statut: 'à valider', url: null })
+  expect(stateFile().needs[0]).toMatchObject({ status: 'open', evidence: null })
+
+  // Once gh works again the same draft goes out, with the text that was shown.
+  fakes.failGh(null)
+  await press(envoyer)
+  await expect.poll(() => stateFile().drafts[0].statut).toBe('envoyé')
+  expect(fakes.ghCalls()).toHaveLength(2)
+  expect(hashOf(fakes.ghCalls()[1].stdin)).toBe(hashOf(TEXT))
+})
+
+test('the regisseur refuses a stale hash, a draft already being sent and a closed need; an unknown draft never reaches it', async () => {
   test.setTimeout(180_000)
   await launch()
   writeAgenceState(root, {
     port,
-    needs: [NEED, { id: 'n2', title: 'Brouillon en cours', ref: 'd2' }, { id: 'n3', title: 'Besoin clos', ref: 'd3', status: 'done' }],
+    needs: [NEED, { id: 'n2', title: 'Envoi en cours', ref: 'd2' }, { id: 'n3', title: 'Besoin clos', ref: 'd3', status: 'done' }],
+    // « envoyer » is the regisseur's own « being sent » (it sets it while it sends); « envoyé » drafts are not offered to the session at all.
     drafts: [DRAFT, { ...DRAFT, id: 'd2', needId: 'n2', statut: 'envoyer' }, { ...DRAFT, id: 'd3', needId: 'n3' }],
   })
   for (const id of ['d2', 'd3']) writeDraftText(root, id, TEXT)
@@ -213,11 +262,14 @@ test('the regisseur itself refuses a stale hash, an already sent draft and a clo
   const stale = await sendOp(panelId, { kind: 'draft.send', draftId: 'd1', hash: hashOf('un autre texte') })
   expect(stale).toMatchObject({ ok: false, error: 'conflict' })
   expect(stale.message).toContain('Le texte a changé')
-  const sent = await sendOp(panelId, { kind: 'draft.send', draftId: 'd2', hash: hashOf(TEXT) })
-  expect(sent).toMatchObject({ ok: false, error: 'conflict', message: 'Ce brouillon est déjà « envoyer ».' })
+  const sending = await sendOp(panelId, { kind: 'draft.send', draftId: 'd2', hash: hashOf(TEXT) })
+  expect(sending).toMatchObject({ ok: false, error: 'conflict', message: 'Ce brouillon est déjà « envoyer ».' })
   const closed = await sendOp(panelId, { kind: 'draft.send', draftId: 'd3', hash: hashOf(TEXT) })
   expect(closed).toMatchObject({ ok: false, error: 'conflict', message: "Ce brouillon n'est plus attendu (besoin clos)." })
+  // An id the state does not hold is refused by the session itself: no request is made.
+  const postsBefore = fakes.posts().length
   expect(await sendOp(panelId, { kind: 'draft.send', draftId: 'd9', hash: 'x' })).toMatchObject({ ok: false, error: 'invalid' })
+  expect(fakes.posts()).toHaveLength(postsBefore)
   expect(fakes.ghCalls()).toEqual([])
 })
 
@@ -282,13 +334,18 @@ test('the panel reads in light and dark at 320, 834 and 1280 px', async () => {
       // A canvas node is never narrower than the panel's minimum (420 px): the 320 px layout is the panel's own root, narrowed.
       await resize(nodeId, Math.max(width, 420))
       await root$().evaluate((el, w) => { el.style.width = w < 420 ? `${w}px` : ''; el.style.flex = w < 420 ? 'none' : '' }, width)
+      panelWidth = width
       await expect.poll(() => root$().evaluate((el, w) => Math.abs(el.getBoundingClientRect().width - w) <= 2, width)).toBe(true)
       for (const view of ['suivi', 'draft'] as const) {
         await showSuivi()
-        const back = page.getByRole('button', { name: 'Retour' })
-        if (view === 'suivi' && await back.isVisible()) await press(back)
-        if (view === 'draft' && !(await back.isVisible())) await press(page.getByRole('button', { name: 'Lire et envoyer' }))
-        const marker = view === 'draft' ? page.getByTestId('draft-actions') : page.getByRole('button', { name: 'Lire et envoyer' })
+        // The list or the draft is rendered, never both: wait for whichever it is, then go to the view asked.
+        const actions = page.getByTestId('draft-actions')
+        const read = page.getByRole('button', { name: 'Lire et envoyer' })
+        await expect(actions.or(read)).toBeVisible()
+        const reading = (await actions.count()) > 0
+        if (view === 'suivi' && reading) await press(page.getByRole('button', { name: 'Retour' }))
+        if (view === 'draft' && !reading) await press(read)
+        const marker = view === 'draft' ? actions : read
         await expect(marker).toBeVisible()
         // Nothing runs off the panel: no horizontal scroll, every visible button inside it.
         const outside = await root$().evaluate((el) => {
