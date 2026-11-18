@@ -17,6 +17,9 @@ function repo() {
   write('package-lock.json', '{"lockfileVersion":3}')
   write('src/kernel/a.ts', 'export const a = 1\n')
   write('skills/cate-cli/SKILL.md', '# cate\n')
+  write('tools/agence/agence', '#!/bin/sh\n')
+  write('tools/agence/agence.py', 'print(1)\n')
+  write('tools/agence/test_agence.py', 'assert 1\n')
   return write
 }
 
@@ -26,6 +29,8 @@ it('changes with every input of the install', () => {
   for (const [file, text] of [
     ['src/kernel/a.ts', 'export const a = 2\n'],
     ['skills/cate-cli/SKILL.md', '# cate, changed\n'],
+    ['tools/agence/agence.py', 'print(2)\n'],
+    ['tools/agence/agence', '#!/bin/sh\nexit 0\n'],
     ['package-lock.json', '{"lockfileVersion":3,"x":1}'],
   ]) {
     write(file, text)
@@ -33,4 +38,12 @@ it('changes with every input of the install', () => {
     expect(next, file).not.toBe(id)
     id = next
   }
+})
+
+it('ignores what the install does not ship from tools/agence', () => {
+  const write = repo()
+  const id = computeBuildId(dir)
+  write('tools/agence/test_agence.py', 'assert 2\n')
+  write('tools/agence/__pycache__/agence.cpython-314.pyc', 'x')
+  expect(computeBuildId(dir)).toBe(id)
 })
