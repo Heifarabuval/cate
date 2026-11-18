@@ -17,13 +17,16 @@ export interface FrameTitleBarProps {
   title: string
   state: FrameState
   panelCount: number
+  /** Double click on the bar. */
+  onToggleCollapse?: () => void
 }
 
-export function FrameTitleBar({ title, state, panelCount }: FrameTitleBarProps): React.ReactElement {
+export function FrameTitleBar({ title, state, panelCount, onToggleCollapse }: FrameTitleBarProps): React.ReactElement {
   const { label, Icon, accent } = FRAME_STATE_VIEW[state]
   return (
     <div
       data-frame-bar
+      onDoubleClick={onToggleCollapse}
       className="flex h-full w-full select-none items-center gap-2 px-2 text-xs"
       style={{ pointerEvents: 'auto', background: 'var(--surface-1)', borderRadius: 'inherit' }}
     >

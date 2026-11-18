@@ -3,7 +3,7 @@
 // keep-mounted nodes (native surfaces, whose guest would reload) are exempt.
 
 import { useEffect, useState } from 'react'
-import { dockPanels, type NodeId, type PanelId } from '@workspace/document/contract'
+import { dockPanels, type CanvasModel, type NodeId, type PanelId } from '@workspace/document/contract'
 import type { CanvasView, CanvasViewStore, ViewNode } from './store'
 import { canvasPerfCount } from './perf'
 import { focusedNodeId } from './selection'
@@ -62,11 +62,30 @@ function keepAliveNodeIds(nodes: Record<NodeId, ViewNode>, keepMounted: Readonly
   return ids
 }
 
+// The members of collapsed frames, cached by canvas identity: a collapsed
+// frame draws its bar only, so its nodes do not mount. Their panels' sessions
+// live in the runtime and are not touched.
+const collapsedCache = new WeakMap<CanvasModel, ReadonlySet<NodeId>>()
+export function collapsedNodeIds(canvas: CanvasModel | undefined): ReadonlySet<NodeId> {
+  if (!canvas?.frames) return EMPTY
+  const cached = collapsedCache.get(canvas)
+  if (cached) return cached
+  const ids = new Set<NodeId>()
+  for (const node of Object.values(canvas.nodes)) {
+    if (node.frameId !== undefined && canvas.frames[node.frameId]?.collapsed) ids.add(node.id)
+  }
+  const result = ids.size === 0 ? EMPTY : ids
+  collapsedCache.set(canvas, result)
+  return result
+}
+
 /** Creation-ordered ids of the nodes to mount: those within a quarter-screen's
- *  margin of the viewport, plus the exempt ones. */
+ *  margin of the viewport, plus the exempt ones; `hidden` ones never mount,
+ *  exempt or not. */
 function selectVisibleNodeIds(
   s: Pick<CanvasView, 'nodes' | 'viewportOffset' | 'zoomLevel' | 'containerSize' | 'selection' | 'selectionActive'>,
   keepMounted?: ReadonlySet<PanelId>,
+  hidden: ReadonlySet<NodeId> = EMPTY,
   marginScreens = 0.25,
 ): NodeId[] {
   canvasPerfCount('canvasCullEval')
@@ -76,7 +95,7 @@ function selectVisibleNodeIds(
   const ch = containerSize.height
   const sorted = sortedByCreation(nodes)
   // Before the container is measured, mount everything so nothing flashes.
-  if (cw === 0 || ch === 0 || z <= 0) return sorted.map((n) => n.id)
+  if (cw === 0 || ch === 0 || z <= 0) return sorted.filter((n) => !hidden.has(n.id)).map((n) => n.id)
 
   const keepAlive = keepAliveNodeIds(nodes, keepMounted)
   const marginX = cw / z * marginScreens
@@ -88,6 +107,7 @@ function selectVisibleNodeIds(
 
   const result: NodeId[] = []
   for (const n of sorted) {
+    if (hidden.has(n.id)) continue
     if (n.id === focused || n.isPinned || keepAlive.has(n.id)) {
       result.push(n.id)
       continue
@@ -100,12 +120,12 @@ function selectVisibleNodeIds(
   return result
 }
 
-export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlySet<PanelId>): NodeId[] {
-  const [visible, setVisible] = useState(() => selectVisibleNodeIds(store.getState(), keepMounted))
+export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlySet<PanelId>, hidden: ReadonlySet<NodeId> = EMPTY): NodeId[] {
+  const [visible, setVisible] = useState(() => selectVisibleNodeIds(store.getState(), keepMounted, hidden))
 
   useEffect(() => {
     let settleTimer: ReturnType<typeof setTimeout> | undefined
-    let published = new Set(selectVisibleNodeIds(store.getState(), keepMounted))
+    let published = new Set(selectVisibleNodeIds(store.getState(), keepMounted, hidden))
     const publish = (ids: NodeId[]) => {
       published = new Set(ids)
       setVisible((current) => (shallowArrayEqual(current, ids) ? current : ids))
@@ -114,7 +134,7 @@ export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlyS
       cancelPending()
       settleTimer = setTimeout(() => {
         settleTimer = undefined
-        publish(selectVisibleNodeIds(store.getState(), keepMounted))
+        publish(selectVisibleNodeIds(store.getState(), keepMounted, hidden))
       }, 120)
     }
     const cancelPending = () => {
@@ -136,19 +156,19 @@ export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlyS
         return
       }
       if (state.viewportOffset === previous.viewportOffset && !structural) return
-      if (!structural && selectVisibleNodeIds(state, keepMounted).every((id) => published.has(id))) {
+      if (!structural && selectVisibleNodeIds(state, keepMounted, hidden).every((id) => published.has(id))) {
         settle()
         return
       }
       cancelPending()
-      publish(selectVisibleNodeIds(state, keepMounted))
+      publish(selectVisibleNodeIds(state, keepMounted, hidden))
     })
-    publish(selectVisibleNodeIds(store.getState(), keepMounted))
+    publish(selectVisibleNodeIds(store.getState(), keepMounted, hidden))
     return () => {
       cancelPending()
       unsubscribe()
     }
-  }, [store, keepMounted])
+  }, [store, keepMounted, hidden])
 
   return visible
 }
