@@ -44,6 +44,8 @@ export interface PanelListRow {
   type: string
   title: string
   focused: boolean
+  /** The panel the call comes from (the terminal of a CLI token); false for every row when the caller runs in no panel. */
+  caller: boolean
   /** The worktree the panel works in (`cate agent start --worktree`). */
   worktreeId?: string
   filePath?: string
@@ -103,7 +105,7 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
 
   return {
     panel: {
-      list: (): PanelListRow[] => {
+      list: (_args, ctx): PanelListRow[] => {
         const active = deps.presence.activePanelId()
         const relations = Object.values(document.get().relations)
         return Object.values(document.get().panels).map((record) => ({
@@ -111,6 +113,7 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
           type: record.type,
           title: record.title,
           focused: record.id === active,
+          caller: record.id === ctx.caller.panelId,
           ...(record.worktreeId ? { worktreeId: record.worktreeId } : {}),
           ...info(record),
           relations: relations.filter((r) => r.fromPanelId === record.id).map((r) => ({

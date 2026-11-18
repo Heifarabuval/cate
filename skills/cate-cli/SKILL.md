@@ -66,13 +66,16 @@ cate panel list
 ```
 
 ```
-   ID        TYPE      TITLE
-*  1a2b3c4d  terminal  zsh
-   5e6f7a8b  browser   https://example.com
+    ID        TYPE      TITLE
+*   1a2b3c4d  terminal  zsh
+>   5e6f7a8b  terminal  zsh
+    9c0d1e2f  browser   https://example.com
 ```
 
-`*` marks the focused panel. Ids are short; any unique prefix works, and
-`--json` gives full ids and each panel's `worktreeId`.
+`*` marks the focused panel, `>` the panel your command runs in. Ids are
+short; any unique prefix works, and `--json` gives full ids, each panel's
+`worktreeId` and `"caller": true|false` (only your own panel is `true`;
+every row is `false` outside a terminal Cate spawned).
 
 A command acts on, in order: `--panel <id>` (one command only), the panel
 you selected for this terminal with `cate panel set <id>`, or Cate's

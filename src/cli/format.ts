@@ -57,7 +57,7 @@ function panelList(value: unknown): string {
   if (value.length === 0) return '(no panels)'
   return table(['', 'ID', 'TYPE', 'TITLE'], value.map((item) => {
     const panel = asObject(item) ?? {}
-    return [panel.focused ? '*' : '', shortId(text(panel.panelId) || '?'), text(panel.type), text(panel.filePath ?? panel.url ?? panel.title)]
+    return [`${panel.focused ? '*' : ''}${panel.caller ? '>' : ''}`, shortId(text(panel.panelId) || '?'), text(panel.type), text(panel.filePath ?? panel.url ?? panel.title)]
   }))
 }
 

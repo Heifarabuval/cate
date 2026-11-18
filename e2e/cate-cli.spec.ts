@@ -123,6 +123,10 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   await runCate('panel', 'unlink', control, workerId)
   expect(await relationsOf(control)).toEqual([])
 
+  // The calling panel: `panel list` marks it and `panel current` names it.
+  const callers = (JSON.parse(await runCate('panel', 'list', '--json')) as Array<{ panelId: string; caller: boolean }>).filter((r) => r.caller)
+  expect(callers.map((r) => r.panelId)).toEqual([control])
+
   // Close keeps the list consistent for several panel types.
   for (const id of [workerId, browserId, editorId]) await runCate('panel', 'close', id)
   const finalPanels = await runCate('panel', 'list')
