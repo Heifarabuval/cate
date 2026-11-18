@@ -61,6 +61,9 @@ interface RefTarget {
   documentEpoch: number
   /** The last command whose tree read listed the element. */
   seen: number
+  /** The last command that succeeded after a read listing the element, so
+   *  showed it to the agent; 0 while no such command did. */
+  shown: number
   frameId?: string
   sessionId?: string
 }
@@ -279,9 +282,14 @@ export class PageDriver {
     const run = this.enqueue(async () => {
       this.inputSent = false
       this.commands += 1
-      const result = await this.executeBound(method, args)
-      if (!result.error) this.forgetUnshownRefs()
-      return result
+      let succeeded = false
+      try {
+        const result = await this.executeBound(method, args)
+        succeeded = !result.error
+        return result
+      } finally {
+        this.forgetUnshownRefs(succeeded)
+      }
     }).catch((error) => {
       const message = error instanceof Error ? error.message : 'browser-command-failed'
       const recovery = browserRecovery(message, this.inputSent)
@@ -534,12 +542,16 @@ export class PageDriver {
    *  previous shown one: the ids the agent holds stay valid until it gets new
    *  ones, plus one command to act on the older snapshot; older ids come back
    *  stale. Elements still on the page keep their id, since every read sees them.
-   *  ponytail: failed commands prune nothing, so a loop of failing locator
-   *  waits (up to 30 s of reads each) grows until the next success. */
-  private forgetUnshownRefs(): void {
-    if (this.readCommand !== this.commands) return
-    for (const [ref, target] of this.refs) if (target.seen < this.shownCommand) this.dropRef(ref, target)
-    this.shownCommand = this.commands
+   *  A failed command shows nothing: it forgets the elements only its reads
+   *  listed and leaves the shown ones alone. A single command still keeps what
+   *  its own reads list until it ends (a wait reads for up to 30 s). */
+  private forgetUnshownRefs(succeeded: boolean): void {
+    const shows = succeeded && this.readCommand === this.commands
+    for (const [ref, target] of this.refs) {
+      if (shows && target.seen === this.commands) target.shown = this.commands
+      else if (target.shown < (shows ? this.shownCommand : 1)) this.dropRef(ref, target)
+    }
+    if (shows) this.shownCommand = this.commands
   }
 
   private dropRef(ref: number, target: RefTarget): void {
@@ -1123,7 +1135,7 @@ export class PageDriver {
         const identity = `${target.sessionId ?? 'root'}:${target.backendNodeId}`
         let id = this.stableIds.get(identity)
         if (id === undefined) { id = ++this.elementCounter; this.stableIds.set(identity, id) }
-        this.refs.set(id, { ...target, documentEpoch: this.documentEpoch, seen: this.commands })
+        this.refs.set(id, { ...target, documentEpoch: this.documentEpoch, seen: this.commands, shown: this.refs.get(id)?.shown ?? 0 })
         return id
       },
     })

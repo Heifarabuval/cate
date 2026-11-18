@@ -58,10 +58,41 @@ it('keeps the ids of the last snapshot shown valid until the next one, then repo
   expect(await execute('click', { observationId: shown.observationId, target: old })).toHaveProperty('result')
   // Two snapshots later, the element no read shows any more is stale, with a hint.
   await observe()
-  await observe()
   expect(await execute('click', { observationId: shown.observationId, target: old })).toMatchObject({
     error: 'stale-browser-element', recovery: expect.stringContaining('Observe again'),
   })
+})
+
+it('keeps refs bounded across failing commands and keeps the shown snapshot usable', async () => {
+  let next = 1_000
+  let changing = false
+  const { runtime, observe, execute, state } = await setupGuest(async method => {
+    if (method === 'Page.getFrameTree' && changing) state.nodes = [{ backendDOMNodeId: next++, role: { value: 'button' }, name: { value: `Item ${next}` } }]
+    return undefined
+  })
+  state.nodes = [{ backendDOMNodeId: 500, role: { value: 'button' }, name: { value: 'Old' } }]
+  const shown = await observe()
+  changing = true
+  for (let attempt = 0; attempt < 8; attempt++) {
+    expect(await execute('waitFor', { name: 'Never', timeoutMs: 1 })).toMatchObject({ error: 'browser-wait-timeout' })
+  }
+  // Only the element of the last snapshot shown survives; the failures' reads are forgotten.
+  expect(retainedRefs(runtime)).toEqual({ refs: 1, stableIds: 1 })
+  expect(await execute('click', { observationId: shown.observationId, target: shown.elements[0].id })).toHaveProperty('result')
+})
+
+it.each([
+  { later: 1, outcome: { result: expect.anything() } },
+  { later: 2, outcome: { error: 'stale-browser-element' } }
+])('an id is valid after $later more snapshot(s) that no longer list it only if $later is 1', async ({ later, outcome }) => {
+  const { observe, execute, state } = await setupGuest()
+  state.nodes = [{ backendDOMNodeId: 500, role: { value: 'button' }, name: { value: 'Old' } }]
+  const first = await observe()
+  for (let snapshot = 0; snapshot < later; snapshot++) {
+    state.nodes = [{ backendDOMNodeId: 600 + snapshot, role: { value: 'button' }, name: { value: 'New' } }]
+    await observe()
+  }
+  expect(await execute('click', { observationId: first.observationId, target: first.elements[0].id })).toMatchObject(outcome)
 })
 
 it('forgets every ref when the tab or panel closes its page', async () => {
