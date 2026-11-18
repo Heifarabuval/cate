@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyGhError,
   GhReadError,
+  isRepositoryName,
   MAX_BODY_CHARS,
+  MAX_NAME_CHARS,
   MAX_PATCH_CHARS,
   MAX_PATCHES_CHARS,
+  MAX_PATH_CHARS,
   MAX_PR_COMMITS,
   MAX_PR_FILES,
+  MAX_REF_CHARS,
+  MAX_TITLE_CHARS,
   parsePullRequestFiles,
   parsePullRequestRef,
   parsePullRequestView,
@@ -52,6 +57,111 @@ describe('parsePullRequestRef', () => {
     'https://github.com/o/r/issues/8',
   ])('refuses %j', (value) => {
     expect(parsePullRequestRef(value)).toBeNull()
+  })
+})
+
+describe('isRepositoryName', () => {
+  it.each(['org/repo', 'a/b', 'Org/my.repo_1-x', '1/2', `${'a'.repeat(39)}/${'r'.repeat(100)}`])('accepts %s', (value) => {
+    expect(isRepositoryName(value)).toBe(true)
+  })
+
+  it.each(['', '/', 'org', 'org/', '/repo', '..', '.', '../..', './.', 'org/..', '../repo', 'org/.', '-x/-y', '-x/repo', 'org/-y', '.org/repo', 'a/b/c', 'a b/c',
+    'org/repo\n', `${'a'.repeat(40)}/repo`, `org/${'r'.repeat(101)}`, 'org/réo'])('refuses %j', (value) => {
+    expect(isRepositoryName(value)).toBe(false)
+  })
+
+  it('keeps pull request references to the same names', () => {
+    expect(parsePullRequestRef('../..#8')).toBeNull()
+    expect(parsePullRequestRef('-x/-y#8')).toBeNull()
+    expect(parsePullRequestRef('https://github.com/../x/pull/8')).toBeNull()
+  })
+})
+
+describe('text from a third party', () => {
+  // ANSI colour, carriage return, NUL, right-to-left override and a zero-width space inside one value
+  const dirty = 'a\u001b[31mred\u001b[0m\rb\u0000c‮d​e'
+  const clean = 'ared bcde'
+  const control = new RegExp('[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u200b\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]')
+  const long = (max: number) => 'x'.repeat(max * 2)
+  const row = { status: 'modified', additions: 1, deletions: 0, patch: '+x' }
+
+  it('cleans file paths and keeps the patch key in step', () => {
+    const out = parsePullRequestFiles([{ ...row, filename: dirty, previous_filename: dirty }], 'o/r', 1)
+    expect(out.files[0]).toMatchObject({ path: clean, oldPath: clean })
+    expect(Object.keys(out.patches)).toEqual([clean])
+  })
+
+  it('bounds a path and marks the cut', () => {
+    const [file] = parsePullRequestFiles([{ ...row, filename: long(MAX_PATH_CHARS), previous_filename: long(MAX_PATH_CHARS) }], 'o/r', 1).files
+    for (const text of [file.path, file.oldPath ?? '']) {
+      expect(text).toHaveLength(MAX_PATH_CHARS)
+      expect(text.endsWith('…')).toBe(true)
+    }
+  })
+
+  it('drops a link with a control character or a space', () => {
+    const fallback = 'https://github.com/o/r/pull/1/files'
+    const urls = ['https://github.com/o/r/blob/x/a b', 'https://github.com/o/r/blob/x/a\nb', 'https://github.com/o/r/blob/x/a‮b']
+    const { files } = parsePullRequestFiles(urls.map((blob_url, i) => ({ ...row, filename: `f${i}`, blob_url })), 'o/r', 1)
+    expect(files.map((f) => f.webUrl)).toEqual([fallback, fallback, fallback])
+    const rollup = urls.map((targetUrl) => ({ __typename: 'StatusContext', context: 'c', state: 'SUCCESS', targetUrl }))
+    expect(prChecks(rollup).items.map((i) => i.url)).toEqual([null, null, null])
+  })
+
+  it('cleans and bounds every text of a pull request', () => {
+    const view = {
+      ...viewFixture,
+      title: dirty,
+      author: { login: dirty },
+      headRefName: dirty,
+      baseRefName: dirty,
+      commits: [{ ...viewFixture.commits[0], oid: 'zz\u001b[31m', messageHeadline: dirty, authors: [{ login: dirty }] }],
+      statusCheckRollup: [{ __typename: 'CheckRun', name: dirty, status: 'COMPLETED', conclusion: 'SUCCESS' }],
+    }
+    const details = parsePullRequestView(view, [])
+    expect(details).toMatchObject({ title: clean, author: clean, head: clean, base: clean })
+    expect(details.commits[0]).toMatchObject({ title: clean, author: clean, oid: '' })
+    expect(details.checks.items[0].name).toBe(clean)
+
+    const huge = parsePullRequestView({
+      ...view,
+      title: long(MAX_TITLE_CHARS),
+      author: { login: long(MAX_NAME_CHARS) },
+      headRefName: long(MAX_REF_CHARS),
+      baseRefName: long(MAX_REF_CHARS),
+      commits: [{ ...view.commits[0], messageHeadline: long(MAX_TITLE_CHARS) }],
+      statusCheckRollup: [{ ...view.statusCheckRollup[0], name: long(MAX_TITLE_CHARS) }],
+    }, [])
+    const bounded: Array<[string, number]> = [
+      [huge.title, MAX_TITLE_CHARS], [huge.author, MAX_NAME_CHARS], [huge.head, MAX_REF_CHARS], [huge.base, MAX_REF_CHARS],
+      [huge.commits[0].title, MAX_TITLE_CHARS], [huge.checks.items[0].name, MAX_TITLE_CHARS],
+    ]
+    for (const [text, max] of bounded) {
+      expect(text).toHaveLength(max)
+      expect(text.endsWith('…')).toBe(true)
+    }
+  })
+
+  it('never cuts a character in two', () => {
+    const { title } = parsePullRequestView({ ...viewFixture, title: '😀'.repeat(MAX_TITLE_CHARS) }, [])
+    expect(title.length).toBeLessThanOrEqual(MAX_TITLE_CHARS)
+    expect(title).toBe(title.toWellFormed())
+  })
+
+  it('keeps line breaks in the description but nothing else that is invisible', () => {
+    const { body } = parsePullRequestView({ ...viewFixture, body: 'one\r\ntwo\u001b[31m\u0000‮\n\nthree\rfour' }, [])
+    expect(body).toBe('one\ntwo\n\nthreefour')
+    const cut = parsePullRequestView({ ...viewFixture, body: long(MAX_BODY_CHARS) }, []).body
+    expect(cut).toHaveLength(MAX_BODY_CHARS)
+    expect(cut.endsWith('…')).toBe(true)
+  })
+
+  it('leaves no control character in any parsed text of the real fixtures', () => {
+    const { files } = parsePullRequestFiles(filesFixture, 'o/r', 1)
+    const details = parsePullRequestView(forkFixture, files)
+    const texts = [details.title, details.author, details.head, details.base, ...files.map((f) => f.path), ...details.commits.map((c) => c.title)]
+    expect(texts.filter((t) => control.test(t))).toEqual([])
+    expect(details.title).toBe(forkFixture.title)
   })
 })
 
