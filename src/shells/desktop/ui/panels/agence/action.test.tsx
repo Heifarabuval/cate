@@ -100,3 +100,28 @@ it('tells the clicked option busy and ignores a second click, then closes on suc
   await act(async () => reply({ ok: true }))
   expect(onDone).toHaveBeenCalledTimes(1)
 })
+
+it('keeps the same room for its indicator at rest, busy and done, so the button never changes width', () => {
+  const slot = () => button('Go').querySelector('[data-testid="action-slot"]')
+  act(() => root.render(<ActionButton>Go</ActionButton>))
+  const rest = slot()!.className
+  expect(slot()!.querySelector('svg')).toBeNull()
+  act(() => root.render(<ActionButton busy>Go</ActionButton>))
+  expect(slot()!.className).toBe(rest)
+  expect(slot()!.querySelector('.animate-spin')).not.toBeNull()
+  act(() => root.render(<ActionButton done>Go</ActionButton>))
+  expect(slot()!.className).toBe(rest)
+  expect(slot()!.querySelector('svg.lucide-check')).not.toBeNull()
+})
+
+it('tells a screen reader the result politely, outside the button so its name stays', () => {
+  const live = () => host.querySelector('[aria-live="polite"]')!
+  act(() => root.render(<ActionButton>Go</ActionButton>))
+  expect(live().textContent).toBe('')
+  act(() => root.render(<ActionButton busy>Go</ActionButton>))
+  expect(live().textContent).toBe('En cours')
+  act(() => root.render(<ActionButton done>Go</ActionButton>))
+  expect(live().textContent).toBe('Fait')
+  expect(button('Go').contains(live())).toBe(false)
+  expect(button('Go').textContent).toBe('Go')
+})

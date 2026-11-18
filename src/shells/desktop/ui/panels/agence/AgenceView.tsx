@@ -1,10 +1,11 @@
 import { useCallback, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { openUrlBeside } from '@client/host'
 import type { AgenceOp, AgenceOpResult, AgenceSnapshot } from '@panels/agence/contract'
-import { Button, InlineNotice, LoadingState } from '../../kernel/interaction'
+import { InlineNotice, LoadingState } from '../../kernel/interaction'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { DockResizeHandle } from '../../client/layout/dock'
+import { ActionButton, useAction } from './action'
 import DraftReader from './DraftReader'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
@@ -70,16 +71,20 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
     setSplit(next)
   }, [setSplit])
 
-  /** An op whose refusal is shown above both columns. */
-  const run = async (op: AgenceOp) => {
+  /** An op whose refusal is shown above both columns; resolves to it, `null` when taken. */
+  const run = async (op: AgenceOp): Promise<string | null> => {
     setRefusal(null)
+    let refused: string | null = null
     try {
       const result = await send(op) as AgenceOpResult
-      if (!result.ok) setRefusal(result.message ?? result.error)
+      if (!result.ok) refused = result.message ?? result.error
     } catch (error) {
-      setRefusal(error instanceof Error ? error.message : String(error))
+      refused = error instanceof Error ? error.message : String(error)
     }
+    setRefusal(refused)
+    return refused
   }
+  const restart = useAction()
 
   if (!snapshot) {
     return <div ref={rootRef} className="h-full"><LoadingState label="Loading agence panel" className="h-full p-4 text-xs" /></div>
@@ -127,7 +132,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {orchestratorDown && (
             <div className="flex shrink-0 items-center gap-2 border-b border-subtle px-3 py-1.5 text-[12px] text-secondary">
               <span className="min-w-0 flex-1 truncate">{snapshot.orchestrator === 'failed' ? "L'orchestrateur n'a pas démarré." : "L'orchestrateur est arrêté."}</span>
-              <Button size="sm" className={ACTION} onClick={() => void run({ kind: 'orchestrator.restart' })}>Relancer l&apos;orchestrateur</Button>
+              <ActionButton className={ACTION} busy={restart.active === 'restart'} done={restart.done === 'restart'} onClick={() => void restart.run('restart', () => run({ kind: 'orchestrator.restart' }))}>Relancer l&apos;orchestrateur</ActionButton>
             </div>
           )}
           <div className="min-h-0 flex-1">
@@ -145,7 +150,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {...panelProps('suivi')}
           className={`min-h-0 min-w-0 overflow-auto ${showSuivi ? 'flex-1' : 'hidden'}`}
         >
-          <RegisseurBanner regisseur={snapshot.regisseur} onRestart={() => void run({ kind: 'orchestrator.restart' })} />
+          <RegisseurBanner regisseur={snapshot.regisseur} onRestart={() => run({ kind: 'orchestrator.restart' })} />
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
             : snapshot.suivi

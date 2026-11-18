@@ -85,11 +85,13 @@ interface RowActions {
   compact?: boolean
 }
 
-function Row({ row, workspaceId, questions, send, compact, enter, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string; enter: boolean } & RowActions) {
+function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string; enter: boolean } & RowActions) {
   const action = row.action
+  // Latched when the line mounts: a later render of the list does not cut the fade.
+  const [enter] = useState(arrived)
   const [answering, setAnswering] = useState(false)
-  // The answer was taken: Répondre says so until the follow-up moves the line.
-  const [answered, setAnswered] = useState(false)
+  // The question answered: Répondre says so until the follow-up moves the line or asks another.
+  const [answered, setAnswered] = useState<string | null>(null)
   const rebase = useAction()
   const question = action?.type === 'question' ? questions[action.questionId] : undefined
   return (
@@ -116,7 +118,7 @@ function Row({ row, workspaceId, questions, send, compact, enter, onRead, onReba
                 {compact ? 'Rebase' : 'Demander le rebase'}
               </ActionButton>
             )}
-            {question && <ActionButton className={ACTION} done={answered} disabled={rebase.active !== null} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</ActionButton>}
+            {question && <ActionButton className={ACTION} done={answered === action.questionId} disabled={rebase.active !== null} aria-expanded={answering} onClick={() => setAnswering((open) => !open)}>Répondre</ActionButton>}
           </span>
         )}
       </div>
@@ -131,7 +133,7 @@ function Row({ row, workspaceId, questions, send, compact, enter, onRead, onReba
         </div>
       )}
       {rebase.error && <InlineNotice tone="error" className="mt-1 !text-primary">{rebase.error}</InlineNotice>}
-      {answering && question && <QuestionCard question={question} send={send} compact={compact} onDone={() => { setAnswering(false); setAnswered(true) }} />}
+      {answering && question && <QuestionCard question={question} send={send} compact={compact} onDone={() => { setAnswering(false); setAnswered(question.id) }} />}
     </li>
   )
 }

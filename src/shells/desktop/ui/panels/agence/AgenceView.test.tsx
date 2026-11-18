@@ -253,3 +253,18 @@ it('asks for the rebase through the answer op, and shows a refusal above the lis
   expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q2', choice: 'rebase' })
   expect(host.querySelector('[role="alert"]')!.textContent).toBe('Question déjà répondue.')
 })
+
+it.each([
+  ['Relancer le régisseur', { regisseur: { state: 'stopped', error: 'arrêté', settingsHint: null } }],
+  ['Relancer l\'orchestrateur', { orchestrator: 'exited' }],
+] as const)('« %s » waits for the answer, ignores a second click, then says it was taken', async (label, patch) => {
+  let answer!: (result: { ok: boolean }) => void
+  send.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+  render(snapshot(patch as Partial<AgenceSnapshot>))
+  await act(async () => { button(label)!.click(); button(label)!.click() })
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(button(label)!.getAttribute('aria-busy')).toBe('true')
+  await act(async () => answer({ ok: true }))
+  expect(button(label)!.hasAttribute('aria-busy')).toBe(false)
+  expect(button(label)!.querySelector('svg.lucide-check')).not.toBeNull()
+})

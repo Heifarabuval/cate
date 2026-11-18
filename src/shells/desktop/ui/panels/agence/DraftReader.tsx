@@ -28,7 +28,7 @@ export interface DraftReaderProps {
  *  Abandonner, Envoyer. Envoyer carries the hash of the text shown, so a text
  *  edited since is refused by the regisseur, never sent. */
 export default function DraftReader({ workspaceId, panelId, draft, send, onBack }: DraftReaderProps) {
-  const { run, active, error, waiting } = useAction()
+  const { run, active, done, error, waiting } = useAction()
   const open = draft.statut === 'à valider'
 
   const act = async (key: string, op: AgenceOp, leave: boolean) => {
@@ -54,7 +54,7 @@ export default function DraftReader({ workspaceId, panelId, draft, send, onBack 
       {error && <InlineNotice tone="error" className="!text-primary">{error}</InlineNotice>}
       {open && (
         <div data-testid="draft-actions" className="flex shrink-0 items-center justify-end gap-1.5">
-          <ActionButton className="shrink-0 whitespace-nowrap" busy={active === 'edit'} disabled={waiting('edit')} onClick={() => void act('edit', { kind: 'draft.edit', draftId: draft.id }, false)}>Modifier</ActionButton>
+          <ActionButton className="shrink-0 whitespace-nowrap" busy={active === 'edit'} done={done === 'edit'} disabled={waiting('edit')} onClick={() => void act('edit', { kind: 'draft.edit', draftId: draft.id }, false)}>Modifier</ActionButton>
           <ActionButton className={ACTION_DANGER} busy={active === 'drop'} disabled={waiting('drop')} onClick={() => void act('drop', { kind: 'draft.drop', draftId: draft.id }, true)}>Abandonner</ActionButton>
           <ActionButton className={ACTION} busy={active === 'send'} disabled={waiting('send')} onClick={() => void act('send', { kind: 'draft.send', draftId: draft.id, hash: draft.hash }, true)}>Envoyer</ActionButton>
         </div>
