@@ -144,7 +144,7 @@ export function parsePullRequestFiles(
   repository: string,
   number: number,
 ): { files: PullRequestFile[]; patches: Record<string, string> } {
-  if (!Array.isArray(json)) throw new Error(UNEXPECTED)
+  if (!Array.isArray(json)) throw new GhReadError('error', UNEXPECTED)
   const files: PullRequestFile[] = []
   const patches: Array<[string, string]> = []
   let kept = 0
@@ -195,11 +195,11 @@ function commitOf(row: unknown): PullRequestCommit {
 
 /** `gh pr view --json ...` plus the files already read. Throws on a shape that is not a pull request. */
 export function parsePullRequestView(json: unknown, files: PullRequestFile[]): PullRequestDetails {
-  if (!isRow(json)) throw new Error(UNEXPECTED)
+  if (!isRow(json)) throw new GhReadError('error', UNEXPECTED)
   const url = str(json.url)
   const where = parsePullRequestRef(url)
   const state = PR_STATE[str(json.state)]
-  if (!where?.repository || !state) throw new Error(UNEXPECTED)
+  if (!where?.repository || !state) throw new GhReadError('error', UNEXPECTED)
   const author = isRow(json.author) ? str(json.author.login) : ''
   const owner = isRow(json.headRepositoryOwner) ? str(json.headRepositoryOwner.login) : ''
   const branch = str(json.headRefName)

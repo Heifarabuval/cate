@@ -1,12 +1,12 @@
 import os from 'node:os'
 import { EventEmitter } from 'node:events'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ exec: vi.fn(), spawn: vi.fn(), env: {} as NodeJS.ProcessEnv }))
 vi.mock('node:child_process', () => ({ execFile: mocks.exec, spawn: mocks.spawn }))
 
 import { createGithubHost } from './github'
-import { githubRepository, githubRepositoryUrl, parsePullRequests } from '../contract'
+import { GhReadError, githubRepository, githubRepositoryUrl, parsePullRequests } from '../contract'
 
 const host = () => createGithubHost({ env: () => mocks.env })
 
@@ -129,4 +129,91 @@ it('matches GitHub CLI environment token precedence', async () => {
 it.each(['ENOENT', 'not logged in'])('allows anonymous requests when gh reports %s', async (message) => {
   mocks.exec.mockImplementation((_cmd, _args, _opts, callback) => callback(new Error(message)))
   expect(await host().token()).toBeUndefined()
+})
+
+const VIEW_FIELDS = 'number,url,title,author,body,state,isDraft,headRefName,baseRefName,isCrossRepository,headRepositoryOwner,commits,changedFiles,additions,deletions,statusCheckRollup,mergeable,mergeStateStatus'
+const reads = [
+  ['pullRequestView', ['pr', 'view', '42', '--repo', 'org/repo', '--json', VIEW_FIELDS], 4 * 1024 * 1024, 30_000, '{"number":42}', { number: 42 }],
+  ['pullRequestChecks', ['pr', 'view', '42', '--repo', 'org/repo', '--json', 'state,isDraft,statusCheckRollup,mergeable,mergeStateStatus'], 4 * 1024 * 1024, 30_000, '{"state":"OPEN"}', { state: 'OPEN' }],
+  ['pullRequestFiles', ['api', '--method', 'GET', '--paginate', 'repos/org/repo/pulls/42/files?per_page=100'], 32 * 1024 * 1024, 60_000, '[{"filename":"a"}]', [{ filename: 'a' }]],
+] as const
+
+describe.each(reads)('%s', (method, args, maxBuffer, timeout, stdout, parsed) => {
+  it('runs the exact read-only gh call from the home directory with a named timeout and buffer', async () => {
+    mocks.exec.mockImplementation((_cmd, _args, _opts, callback) => callback(null, { stdout }))
+    expect(await host()[method]('org/repo', 42)).toEqual(parsed)
+    expect(mocks.exec).toHaveBeenCalledExactlyOnceWith('gh', args,
+      expect.objectContaining({ cwd: os.homedir(), env: mocks.env, timeout, maxBuffer, windowsHide: true }), expect.any(Function))
+  })
+
+  it('passes no write argument', async () => {
+    mocks.exec.mockImplementation((_cmd, _args, _opts, callback) => callback(null, { stdout }))
+    await host()[method]('org/repo', 42)
+    const sent: string[] = mocks.exec.mock.calls[0][1]
+    expect(sent.join(' ')).not.toMatch(/(^| )(merge|review|comment|close|edit|reopen|ready|lock|checkout|create|delete)( |$)|-X|--input|(^| )-[fF]( |$)|--(raw-)?field/)
+    if (sent[0] === 'api') expect(sent.slice(sent.indexOf('--method'), sent.indexOf('--method') + 2)).toEqual(['--method', 'GET'])
+    else expect(sent.slice(0, 2)).toEqual(['pr', 'view'])
+  })
+
+  it.each(['org', 'a/b/c', 'a b/c', '/repo', 'org/', '', 'org/repo; rm -rf'])('refuses the repository %j without calling gh', async (repository) => {
+    await expect(host()[method](repository, 42)).rejects.toBeInstanceOf(GhReadError)
+    expect(mocks.exec).not.toHaveBeenCalled()
+  })
+
+  it.each([0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])('refuses the number %s without calling gh', async (number) => {
+    await expect(host()[method]('org/repo', number)).rejects.toBeInstanceOf(GhReadError)
+    expect(mocks.exec).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), 'missing-cli'],
+    [Object.assign(new Error('failed'), { stderr: 'To get started with GitHub CLI, please run:  gh auth login' }), 'signed-out'],
+    [Object.assign(new Error('failed'), { stderr: 'GraphQL: Could not resolve to a PullRequest with the number of 42. (repository.pullRequest)' }), 'not-found'],
+    [Object.assign(new Error('failed'), { stderr: 'gh: API rate limit exceeded (HTTP 403)' }), 'rate-limited'],
+    [Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' }), 'offline'],
+  ])('rejects a gh failure as a typed error %#', async (failure, kind) => {
+    mocks.exec.mockImplementation((_cmd, _args, _opts, callback) => callback(failure))
+    const error = await host()[method]('org/repo', 42).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(GhReadError)
+    expect(error).toMatchObject({ kind })
+    expect(error).not.toBe(failure)
+  })
+
+  it('says the pull request is too large when the output overflows the buffer', async () => {
+    const overflow = Object.assign(new RangeError('stdout maxBuffer length exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' })
+    mocks.exec.mockImplementation((_cmd, _args, _opts, callback) => callback(overflow))
+    await expect(host()[method]('org/repo', 42)).rejects.toMatchObject({ kind: 'error', message: 'Pull request too large to list, see GitHub' })
+  })
+
+  it('rejects an answer that is not JSON as a typed error', async () => {
+    mocks.exec.mockImplementation((_cmd, _args, _opts, callback) => callback(null, { stdout: '<html>' }))
+    await expect(host()[method]('org/repo', 42)).rejects.toBeInstanceOf(GhReadError)
+  })
+})
+
+it('never runs more than 3 gh calls at once, resolves all 16 and survives failures', async () => {
+  const held: Array<() => void> = []
+  let active = 0
+  let peak = 0
+  mocks.exec.mockImplementation((_cmd, args, _opts, callback) => {
+    active += 1
+    peak = Math.max(peak, active)
+    held.push(() => {
+      active -= 1
+      if (args[args.indexOf('--paginate') + 1]?.includes('/pulls/3/')) callback(new Error('failed'))
+      else callback(null, { stdout: '[]' })
+    })
+  })
+  const gh = host()
+  const calls = Array.from({ length: 16 }, (_, i) => gh.pullRequestFiles('org/repo', i + 1).then(() => 'ok', () => 'failed'))
+  const flush = () => new Promise((resolve) => setImmediate(resolve))
+  await flush()
+  expect(held).toHaveLength(3)
+  while (held.length) {
+    held.shift()?.()
+    await flush()
+  }
+  expect(await Promise.all(calls)).toEqual(Array.from({ length: 16 }, (_, i) => (i === 2 ? 'failed' : 'ok')))
+  expect(mocks.exec).toHaveBeenCalledTimes(16)
+  expect(peak).toBeLessThanOrEqual(3)
 })
