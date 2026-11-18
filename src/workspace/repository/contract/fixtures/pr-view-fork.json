@@ -1,0 +1,61 @@
+{
+	"additions": 1297,
+	"author": { "id": "MDQ6VXNlcjkyNDI0Mw==", "is_bot": false, "login": "mrecachinas", "name": "" },
+	"baseRefName": "trunk",
+	"body": "No tracking issue yet; opening as a draft to discuss the design with a working implementation.\n\nFollowing [Working with us](https://github.com/cli/cli/blob/trunk/docs/working-with-us.md#step-0-create-",
+	"changedFiles": 4,
+	"commits": [
+		{
+			"authoredDate": "2026-10-21T15:29:49Z",
+			"authors": [
+				{ "email": "", "id": "MDQ6VXNlcjkyNDI0Mw==", "login": "mrecachinas", "name": "" },
+				{ "email": "", "id": "BOT_kgDODVMyew", "login": "Copilot", "name": "" }
+			],
+			"committedDate": "2026-10-21T15:29:49Z",
+			"messageBody": "`gh release download --verify` reports whether the release i",
+			"messageHeadline": "release download: add --verify and accept release asset URLs",
+			"oid": "0985b36ab3eb18e6c1390104442cd23c274097fa"
+		},
+		{
+			"authoredDate": "2026-10-21T16:46:52Z",
+			"authors": [{ "email": "", "id": "MDQ6VXNlcjkyNDI0Mw==", "login": "mrecachinas", "name": "" }],
+			"committedDate": "2026-10-21T16:46:52Z",
+			"messageBody": "… on GHES\n\n- For immutable releases, verify the release atte",
+			"messageHeadline": "release download: verify release attestation, stage stdout, fail fast…",
+			"oid": "84697246003bd3d2aa82859e322a6f9e521383aa"
+		}
+	],
+	"deletions": 22,
+	"headRefName": "release-download-verify",
+	"headRepositoryOwner": { "id": "MDQ6VXNlcjkyNDI0Mw==", "name": "", "login": "mrecachinas" },
+	"isCrossRepository": true,
+	"isDraft": true,
+	"mergeStateStatus": "BLOCKED",
+	"mergeable": "MERGEABLE",
+	"number": 14783,
+	"state": "OPEN",
+	"statusCheckRollup": [
+		{
+			"__typename": "CheckRun",
+			"completedAt": "2026-10-21T17:07:09Z",
+			"conclusion": "SKIPPED",
+			"detailsUrl": "https://github.com/cli/cli/actions/runs/39640910716/job/119363866134",
+			"name": "label-external",
+			"startedAt": "2026-10-21T17:07:10Z",
+			"status": "COMPLETED",
+			"workflowName": "PR Triaging"
+		},
+		{
+			"__typename": "CheckRun",
+			"completedAt": "2026-10-21T17:06:15Z",
+			"conclusion": "SUCCESS",
+			"detailsUrl": "https://github.com/cli/cli/actions/runs/39640743812/job/119363280867",
+			"name": "label-external / label_issues",
+			"startedAt": "2026-10-21T17:06:07Z",
+			"status": "COMPLETED",
+			"workflowName": "PR Triaging"
+		}
+	],
+	"title": "release download: add --verify to check immutability and build provenance before downloading",
+	"url": "https://github.com/cli/cli/pull/14783"
+}
