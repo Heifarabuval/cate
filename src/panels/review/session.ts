@@ -383,6 +383,9 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     retarget: ({ request }) => this.retarget(request),
     reviewAgents: () => this.reviewAgents(),
     reviewWithAgent: ({ agentId, terminalPanelId, at }) => this.reviewWithAgent(agentId, terminalPanelId, at),
+    // Pull request ops: the session has no pull request subject yet (B005, B006).
+    prTick: () => reject('agent-subject'),
+    prFileDiff: () => reject('agent-subject'),
   }
 
   protected override release(): void {

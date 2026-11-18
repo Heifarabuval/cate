@@ -6,7 +6,13 @@
 
 import type { AgentChangedFile, AgentChangesFilter, AgentId } from '@services/agents/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
-import type { DiffPage } from '@workspace/repository/contract'
+import type {
+  DiffPage,
+  PullRequestDetails,
+  PullRequestErrorKind,
+  PullRequestFile,
+  PullRequestRef
+} from '@workspace/repository/contract'
 import type { PanelCreateOptions } from '@panels/framework/contract'
 
 /** How a client shows diffs: its `reviewSettings`. */
@@ -48,6 +54,8 @@ export interface ReviewRevealRequest { seq: number; path: string }
 export interface ReviewFields {
   repoPath: string
   request?: ReviewOpenRequest
+  /** Present: the panel reviews this pull request, fixed at creation. Absent: recorded agent edits. */
+  pr?: PullRequestRef
 }
 
 /** One recorded file of the current selection, without its hunks (fetched
@@ -89,6 +97,24 @@ export interface ReviewRecordedState {
   agents: Array<{ agentId: AgentId; edits: number; uncommittedEdits: number }>
 }
 
+export type PrErrorKind = PullRequestErrorKind | 'no-origin' | 'untrusted'
+
+/** A pull request panel's reading. A failed read keeps the last `data` and `readAt`. */
+export interface ReviewPrState {
+  /** null until the workspace origin is resolved (`--pr N`). */
+  ref: { repository: string; number: number } | null
+  loading: boolean
+  /** ISO time of the last successful full read. */
+  readAt: string | null
+  /** ISO time of the last successful checks read. */
+  checksReadAt: string | null
+  error: { kind: PrErrorKind; message: string } | null
+  data: PullRequestDetails | null
+}
+
+/** One bounded page of a pull request file's patch. */
+export type PrDiffPage = { path: string; oldPath?: string; diff: PullRequestFile['diff'] } & DiffPage
+
 export interface ReviewSnapshot {
   /** The current checkout's review (without the other checkouts'). */
   review: ReviewCheckoutState
@@ -97,6 +123,8 @@ export interface ReviewSnapshot {
   agentBusy: boolean
   error: string | null
   reveal: ReviewRevealRequest | null
+  /** null or absent: the panel reviews recorded agent edits. */
+  pr?: ReviewPrState | null
 }
 
 export interface ReviewAgentChoice { agentId: AgentId; ready: boolean }
@@ -120,6 +148,10 @@ export type ReviewOp =
   /** In `terminalPanelId`, else a new terminal at `at` (default: with the
    *  review's other agent terminals). */
   | { kind: 'reviewWithAgent'; agentId: AgentId; terminalPanelId?: string; at?: PlaceTarget }
+  /** Pull request panels: returns true when checks were re-read, false when ignored (read too recent or running). */
+  | { kind: 'prTick' }
+  /** Pull request panels: returns one `PrDiffPage`; rejects `pr-file-not-found`. */
+  | { kind: 'prFileDiff'; path: string; page?: number }
 
 export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpenRequest>): ReviewState {
   return {
@@ -133,11 +165,20 @@ export function reviewRepoPath(fields: { [key: string]: unknown }): string {
   return typeof fields.repoPath === 'string' ? fields.repoPath : ''
 }
 
+/** The record's pull request, or null for a panel of recorded agent edits. */
+export function reviewPullRequest(fields: { [key: string]: unknown }): PullRequestRef | null {
+  const pr = fields.pr as Partial<PullRequestRef> | null | undefined
+  if (!pr || typeof pr !== 'object' || !Number.isSafeInteger(pr.number)) return null
+  return { repository: typeof pr.repository === 'string' ? pr.repository : null, number: pr.number as number }
+}
+
 /** A review of `repoPath`'s checkout (default: the bound worktree, else the
  *  workspace root), starting from `request`. */
 export interface ReviewCreateOptions extends PanelCreateOptions {
   repoPath?: string
   request?: ReviewOpenRequest
+  /** A pull request to review: the CLI's text (`owner/repo#N`, a URL, `N`) or a parsed ref. */
+  pr?: string | PullRequestRef
 }
 
 /** A changed file's absolute path in the reviewed checkout. */

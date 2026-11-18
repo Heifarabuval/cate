@@ -1,9 +1,11 @@
 // The review panel type: recorded agent edits. Pure.
 
-import { channel } from '@kernel/rpc/contract'
+import { channel, RpcError } from '@kernel/rpc/contract'
 import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
+import { parsePullRequestRef, prKey, type PullRequestRef } from '@workspace/repository/contract'
 import {
+  reviewPullRequest,
   reviewRepoPath,
   type ReviewCreateOptions,
   type ReviewFields,
@@ -12,9 +14,17 @@ import {
   type ReviewSnapshot,
 } from './contract/types'
 
-function fields(repoPath: string, request: ReviewOpenRequest | undefined): JsonObject {
-  const value: ReviewFields = request ? { repoPath, request } : { repoPath }
+function fields(repoPath: string, request: ReviewOpenRequest | undefined, pr?: PullRequestRef): JsonObject {
+  const value: ReviewFields = { repoPath, ...(request ? { request } : {}), ...(pr ? { pr } : {}) }
   return value as unknown as JsonObject
+}
+
+/** The options' pull request, or null without one; a bad reference is refused. */
+function requestedPullRequest(options: ReviewCreateOptions): PullRequestRef | null {
+  if (options.pr === undefined) return null
+  const ref = typeof options.pr === 'string' ? parsePullRequestRef(options.pr) : options.pr
+  if (!ref) throw new RpcError('rejected', 'Expected owner/repo#N or N')
+  return ref
 }
 
 export default definePanel({
@@ -29,8 +39,23 @@ export default definePanel({
   creation: { order: 8, toolbar: true, inWorktree: true },
   defaultTitle: 'Agent Review',
   channel: channel<ReviewSnapshot, Partial<ReviewSnapshot>, ReviewOp>(),
-  fields: (options: ReviewCreateOptions) => fields(options.repoPath ?? '', options.request),
+  fields: (options: ReviewCreateOptions) => fields(options.repoPath ?? '', options.request, requestedPullRequest(options) ?? undefined),
   create: (options: ReviewCreateOptions, kit) => {
+    const pr = requestedPullRequest(options)
+    if (pr) {
+      // One panel per pull request: the same one again is that panel.
+      const key = prKey(pr)
+      const open = Object.values(kit.document().panels).find((panel) => {
+        const other = panel.type === 'review' ? reviewPullRequest(panel.fields) : null
+        return other !== null && prKey(other) === key
+      })
+      if (open) return open.id
+      return kit.add(kit.record('review', {
+        id: kit.newId(),
+        title: options.title ?? `PR #${pr.number}`,
+        fields: fields('', undefined, pr),
+      }), options)
+    }
     const bound = options.worktreeId ? kit.document().worktrees[options.worktreeId]?.path : undefined
     const repoPath = options.repoPath ?? bound ?? ''
     const record = kit.record('review', {
@@ -41,8 +66,11 @@ export default definePanel({
     })
     return kit.add(record, options)
   },
-  checkoutPath: (record) => reviewRepoPath(record.fields) || undefined,
-  describe: (record) => reviewRepoPath(record.fields) || undefined,
+  checkoutPath: (record) => reviewPullRequest(record.fields) ? undefined : reviewRepoPath(record.fields) || undefined,
+  describe: (record) => {
+    const pr = reviewPullRequest(record.fields)
+    return pr ? prKey(pr) : reviewRepoPath(record.fields) || undefined
+  },
   commands: [
     { id: 'review.refresh', title: 'Refresh Review', op: { kind: 'refresh' } },
   ],
