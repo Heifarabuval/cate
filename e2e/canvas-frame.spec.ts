@@ -7,7 +7,8 @@ import { installPerfHelpers, waitForBrowserGuest, waitForPty } from './fixtures/
 // since the dev bundle ships no `cate` binary), then the frame folded into its
 // bar and unfolded, all read from the document and from the canvas. An editor,
 // a terminal and a browser go in; the browser keeps its page through the fold.
-test('a frame created through the cate API takes panels, folds into its bar and unfolds them intact', async () => {
+// Dragging the bar moves the members only; state and fold survive a reload.
+test('a frame created through the cate API takes panels, moves, folds and unfolds them intact, and survives a reload', async () => {
   const { electronApp: app, mainWindow: page } = await launchApp()
   try {
     await installPerfHelpers(page)
@@ -16,6 +17,7 @@ test('a frame created through the cate API takes panels, folds into its bar and 
     const terminal = await seedOnCanvas(page, 'terminal', { x: 40, y: 520 })
     const url = `data:text/html,${encodeURIComponent('<title>Frame page</title><h1>Frame page</h1>')}`
     const browser = await seedOnCanvas(page, 'browser', { x: 700, y: 60 }, { url })
+    const outside = await seedOnCanvas(page, 'editor', { x: 700, y: 620 })
     await waitForPty(page, terminal.panelId)
     const guest = await waitForBrowserGuest(page, browser.panelId)
     // Page state that a reload would lose.
@@ -34,7 +36,8 @@ test('a frame created through the cate API takes panels, folds into its bar and 
     const [frame] = await frames()
     const bar = page.locator(`[data-frame="${frame.id}"] [data-frame-bar]`)
     await expect(bar.locator('[data-frame-title]')).toHaveText('#n1 e2e')
-    await expect(bar.locator('[data-frame-state]')).toHaveAttribute('data-frame-state', frame.state)
+    await expect(bar.locator('[data-frame-state]')).toHaveAttribute('data-frame-state', 'active')
+    await expect(bar.locator('[data-frame-state]')).toHaveText('in progress')
 
     const members = [editor, terminal, browser]
     for (const member of members) await call('cate.frame.add', { frameId: frame.id, panelId: member.panelId })
@@ -48,6 +51,27 @@ test('a frame created through the cate API takes panels, folds into its bar and 
     // The state pill, at the bar's left end, takes the double click for the bar.
     const pill = bar.locator('[data-frame-state]')
     await expect(pill).toBeInViewport({ ratio: 0.99 })
+
+    // Dragging the bar by (40, 40) screen px at zoom 0.4 moves every member by
+    // (100, 100) canvas units, in one batch; the node outside stays put.
+    const rects = () => page.evaluate((nodeIds) => {
+      const nodes = Object.values(window.__cateE2E!.document()!.canvases).flatMap((c) => Object.values(c.nodes))
+      return nodeIds.map((id) => nodes.find((n) => n.id === id)!.rect.origin)
+    }, [...members, outside].map((m) => m.nodeId))
+    const before = await rects()
+    const grip = (await bar.locator('[data-frame-title]').boundingBox())!
+    await page.mouse.move(grip.x + 10, grip.y + grip.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(grip.x + 30, grip.y + grip.height / 2 + 20, { steps: 4 })
+    await page.mouse.move(grip.x + 50, grip.y + grip.height / 2 + 40, { steps: 4 })
+    await page.mouse.up()
+    const moved = before.map((o, i) => (i < members.length ? { x: o.x + 100, y: o.y + 100 } : o))
+    await expect.poll(async () => (await rects()).map((o) => ({ x: Math.round(o.x), y: Math.round(o.y) }))).toEqual(moved.map((o) => ({ x: Math.round(o.x), y: Math.round(o.y) })))
+    await expect(pill).toBeInViewport({ ratio: 0.99 })
+
+    await call('cate.frame.state', { frameId: frame.id, state: 'waiting' })
+    await expect(pill).toHaveAttribute('data-frame-state', 'waiting')
+    await expect(pill).toHaveText('waiting on you')
     const open = (await page.locator(`[data-frame="${frame.id}"]`).boundingBox())!
 
     const node = (id: string) => page.locator(`[data-node-id="${id}"]`)
@@ -73,5 +97,16 @@ test('a frame created through the cate API takes panels, folds into its bar and 
     // Same guest, same page: nothing reloaded.
     expect(await waitForBrowserGuest(page, browser.panelId)).toBe(guest)
     expect(await pageMark()).toBe('kept')
+
+    // Fold again and reload the window: state and fold come back from the document.
+    await pill.dblclick()
+    await expect.poll(async () => (await frames())[0].collapsed).toBe(true)
+    await page.reload()
+    await page.waitForFunction(() => window.__cateE2E?.ready === true, null, { timeout: 45_000 })
+    await expect.poll(frames, { timeout: 20_000 }).toEqual([{ id: frame.id, title: '#n1 e2e', collapsed: true, state: 'waiting' }])
+    await expect(bar.locator('[data-frame-title]')).toHaveText('#n1 e2e')
+    await expect(pill).toHaveText('waiting on you')
+    await expect(bar.locator('[data-frame-count]')).toHaveText('3')
+    await expect(node(editor.nodeId)).toHaveCount(0)
   } finally { await closeApp(app) }
 })
