@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
 import type { AgenceOp, AgenceOpResult, DraftView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
+import { ActionButton, useAction } from './action'
 import { MarkdownPreview } from '../editor/MarkdownPreview'
 import { ACTION, ACTION_DANGER } from './styles'
 
@@ -28,30 +28,15 @@ export interface DraftReaderProps {
  *  Abandonner, Envoyer. Envoyer carries the hash of the text shown, so a text
  *  edited since is refused by the regisseur, never sent. */
 export default function DraftReader({ workspaceId, panelId, draft, send, onBack }: DraftReaderProps) {
-  const [pending, setPending] = useState(false)
-  // Set before React re-renders: a second click in the same batch is ignored.
-  const lock = useRef(false)
-  const [error, setError] = useState<string | null>(null)
+  const { run, active, error, waiting } = useAction()
   const open = draft.statut === 'à valider'
 
-  const run = async (op: AgenceOp, leave: boolean) => {
-    if (lock.current) return
-    lock.current = true
-    setPending(true)
-    setError(null)
-    try {
+  const act = async (key: string, op: AgenceOp, leave: boolean) => {
+    const taken = await run(key, async () => {
       const result = await send(op) as AgenceOpResult
-      if (result.ok) {
-        if (leave) onBack()
-      } else {
-        setError(refusal(result))
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      lock.current = false
-      setPending(false)
-    }
+      return result.ok ? null : refusal(result)
+    })
+    if (taken && leave) onBack()
   }
 
   return (
@@ -69,9 +54,9 @@ export default function DraftReader({ workspaceId, panelId, draft, send, onBack 
       {error && <InlineNotice tone="error" className="!text-primary">{error}</InlineNotice>}
       {open && (
         <div data-testid="draft-actions" className="flex shrink-0 items-center justify-end gap-1.5">
-          <Button size="sm" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => void run({ kind: 'draft.edit', draftId: draft.id }, false)}>Modifier</Button>
-          <Button size="sm" className={ACTION_DANGER} disabled={pending} onClick={() => void run({ kind: 'draft.drop', draftId: draft.id }, true)}>Abandonner</Button>
-          <Button size="sm" className={ACTION} disabled={pending} onClick={() => void run({ kind: 'draft.send', draftId: draft.id, hash: draft.hash }, true)}>Envoyer</Button>
+          <ActionButton className="shrink-0 whitespace-nowrap" busy={active === 'edit'} disabled={waiting('edit')} onClick={() => void act('edit', { kind: 'draft.edit', draftId: draft.id }, false)}>Modifier</ActionButton>
+          <ActionButton className={ACTION_DANGER} busy={active === 'drop'} disabled={waiting('drop')} onClick={() => void act('drop', { kind: 'draft.drop', draftId: draft.id }, true)}>Abandonner</ActionButton>
+          <ActionButton className={ACTION} busy={active === 'send'} disabled={waiting('send')} onClick={() => void act('send', { kind: 'draft.send', draftId: draft.id, hash: draft.hash }, true)}>Envoyer</ActionButton>
         </div>
       )}
     </div>
