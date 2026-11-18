@@ -19,13 +19,13 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-function run(seed: number, steps: number, onStep: (before: WorkspaceDocument, change: DocChange, after: WorkspaceDocument, ok: boolean) => void) {
+function run(seed: number, steps: number, onStep: (before: WorkspaceDocument, change: DocChange, after: WorkspaceDocument, ok: boolean) => void, frames = false) {
   const rng = createRng(seed)
   let n = 0
   const newId = () => `${seed}-${++n}`
   let doc = deepFreeze(createDocument())
   for (let i = 0; i < steps; i++) {
-    const change = randomChange(doc, rng, newId)
+    const change = randomChange(doc, rng, newId, frames)
     const result = applyOp(doc, change)
     onStep(doc, change, result.doc, !result.error)
     if (!result.error) doc = deepFreeze(result.doc)
@@ -107,7 +107,7 @@ describe('random changes', () => {
             expect(kept, `${frame.id} lost by ${change.kind}`).toBe(true)
           }
         }
-      })
+      }, true)
     }
     for (const kind of ['addFrame', 'updateFrame', 'removeFrame', 'setNodeFrame']) expect(applied[kind], kind).toBeGreaterThan(40)
     expect(dissolvedByRemoval).toBeGreaterThan(5)
