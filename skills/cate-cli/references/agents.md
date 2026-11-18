@@ -55,6 +55,11 @@ takes `--model` and `--effort`. Its hooks live in the repo's
 for an approval stays `running`, so give a reviewer work that needs none.
 agy's `plan` mode refuses edits but is not documented to skip every prompt;
 only `--dangerously-skip-permissions` does, and Cate does not pass it.
+agy also reports no session end, so a closed agy session is seen only when
+its process exits. Its transcripts do not say where a session ran: `cate
+agent usage` counts an agy panel's tokens (cost shows a dash), but the
+workspace usage overview leaves agy out. Relation context is not added to an
+agy prompt: agy takes injected context only in its own `injectSteps` form.
 
 Both go to the agent CLI at launch, and each works without the other. `--model` is free text
 (the CLI's own model id or alias; Claude Code, Codex, Cursor and OpenCode
