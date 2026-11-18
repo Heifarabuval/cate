@@ -157,12 +157,12 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
         return { panelId }
       },
       'target.current': (_args, ctx) => {
-        const panelId = ctx.sticky.get()
-        if (panelId && !document.get().panels[panelId]) {
-          ctx.sticky.clear()
-          return { panelId: null }
-        }
-        return { panelId: panelId ?? null }
+        const { panels } = document.get()
+        const selected = ctx.sticky.get()
+        if (selected && !panels[selected]) ctx.sticky.clear()
+        else if (selected) return { panelId: selected }
+        const caller = ctx.caller.panelId
+        return { panelId: caller && panels[caller] ? caller : null }
       },
       'target.clear': (_args, ctx) => {
         ctx.sticky.clear()
