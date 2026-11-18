@@ -522,7 +522,8 @@ export function useCanvasInteraction(
 
         // Left-click on canvas background (not on a node) => marquee selection or clear
         const target = e.target as HTMLElement
-        const isOnNode = target.closest('[data-node-id]') !== null
+        // A frame's title bar owns its press (it drags the frame): no marquee.
+        const isOnNode = target.closest('[data-node-id], [data-frame-bar]') !== null
         if (!isOnNode) {
           // Freeze any in-flight zoom/pan animation (a settling smooth-zoom from
           // a recent scroll, or leftover pan inertia) before anchoring the

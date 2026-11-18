@@ -3,8 +3,8 @@
 // frame follows a node dragged on its own. No rule lives here: geometry comes
 // from `workspace/canvas/contract/frame.ts`, membership from the document.
 
-import React, { useMemo } from 'react'
-import { FRAME_TITLE_HEIGHT, frameBounds, type Rect } from '@workspace/canvas/contract'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { FRAME_TITLE_HEIGHT, frameBounds, type Point, type Rect } from '@workspace/canvas/contract'
 import { dockPanels, type CanvasFrame, type CanvasNode, type NodeId } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { useDocument } from '../../../document'
@@ -15,6 +15,7 @@ import { FrameTitleBar } from './FrameTitleBar'
 
 // Under every node (their z-index is 1000 + order), over the grid.
 const FRAME_Z = 500
+const COLLAPSE_MS = 180
 
 interface FrameViewProps {
   workspaceId: string
@@ -36,11 +37,25 @@ function FrameView({ workspaceId, canvasId, frame, nodes }: FrameViewProps): Rea
     const change = canvas && setCollapsedChange(canvas, frame.id, !frame.collapsed)
     if (change) store?.propose(change)
   }
+  // Bar-only frames (empty, collapsed) have no member rect to follow a drag: they shift by it.
+  const [shift, setShift] = useState<Point | null>(null)
+  const shifted = shift && (frame.collapsed || rects.length === 0) ? shift : null
+  // The size animates for the beat after a collapse change only: a drag or a
+  // member moved alone must not trail behind its pointer.
+  const [settling, setSettling] = useState(false)
+  const lastCollapsed = useRef(frame.collapsed)
+  useEffect(() => {
+    if (lastCollapsed.current === frame.collapsed) return
+    lastCollapsed.current = frame.collapsed
+    setSettling(true)
+    const timer = setTimeout(() => setSettling(false), COLLAPSE_MS)
+    return () => clearTimeout(timer)
+  }, [frame.collapsed])
   return (
     <div
       data-frame={frame.id}
       data-dim={done ? 'true' : undefined}
-      className={`${done ? 'border-subtle' : 'border-strong'} border transition-[left,top,width,height] duration-150 motion-reduce:transition-none`}
+      className={`${done ? 'border-subtle' : 'border-strong'} border transition-colors motion-reduce:transition-none`}
       style={{
         position: 'absolute',
         left: bounds.origin.x,
@@ -50,12 +65,23 @@ function FrameView({ workspaceId, canvasId, frame, nodes }: FrameViewProps): Rea
         zIndex: FRAME_Z,
         borderRadius: NODE_CORNER_RADIUS,
         pointerEvents: 'none',
+        transform: shifted ? `translate(${shifted.x}px, ${shifted.y}px)` : undefined,
+        transition: settling ? `width ${COLLAPSE_MS}ms ease, height ${COLLAPSE_MS}ms ease` : undefined,
         // Dim the outline and bar fill, never the text: the label keeps its contrast.
         background: done ? 'transparent' : 'var(--surface-hover)'
       }}
     >
       <div style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: FRAME_TITLE_HEIGHT }}>
-        <FrameTitleBar title={frame.title} state={frame.state} panelCount={panelCount} onToggleCollapse={toggle} />
+        <FrameTitleBar
+          workspaceId={workspaceId}
+          canvasId={canvasId}
+          frameId={frame.id}
+          title={frame.title}
+          state={frame.state}
+          panelCount={panelCount}
+          onToggleCollapse={toggle}
+          onShift={setShift}
+        />
       </div>
     </div>
   )

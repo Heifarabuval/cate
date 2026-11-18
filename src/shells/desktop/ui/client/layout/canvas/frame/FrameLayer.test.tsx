@@ -164,6 +164,87 @@ describe('FrameLayer collapse', () => {
   })
 })
 
+describe('FrameLayer bar gesture', () => {
+  const bar = () => container.querySelector<HTMLElement>('[data-frame="f1"] [data-frame-bar]')!
+  const pointer = (type: string, target: EventTarget, x: number, y: number) =>
+    act(() => { target.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })) })
+  const origins = () => Object.fromEntries(Object.entries(store.getState().nodes).map(([id, n]) => [id, n.origin]))
+  const docRect = (id: string) => documentStoreFor(WS)!.getSnapshot().canvases.c1.nodes[id].rect
+
+  it('previews every member locally and sends nothing while moving', () => {
+    open()
+    const propose = vi.spyOn(documentStoreFor(WS)!, 'propose')
+    pointer('pointerdown', bar(), 300, 100)
+    pointer('pointermove', window, 500, 180)
+    expect(origins()).toMatchObject({ a: { x: 300, y: 280 }, b: { x: 800, y: 280 }, out: { x: 1400, y: 200 } })
+    const grown = frameBounds([rect(300, 280, 400, 300), rect(800, 280, 400, 300)], { x: 40, y: 60 }, false)
+    expect(box(frameEl())).toEqual({ left: grown.origin.x, top: grown.origin.y, width: grown.size.width, height: grown.size.height })
+    expect(propose).not.toHaveBeenCalled()
+  })
+
+  it('sends one batch at the end: the member rects and the new anchor', () => {
+    open()
+    const propose = vi.spyOn(documentStoreFor(WS)!, 'propose')
+    pointer('pointerdown', bar(), 300, 100)
+    pointer('pointermove', window, 500, 180)
+    pointer('pointerup', window, 500, 180)
+    const origin = frameBounds([rect(300, 280, 400, 300), rect(800, 280, 400, 300)], { x: 0, y: 0 }, false).origin
+    expect(propose).toHaveBeenCalledTimes(1)
+    expect(propose).toHaveBeenCalledWith({
+      kind: 'batch',
+      changes: [
+        { kind: 'setNodeRects', canvasId: 'c1', rects: [{ nodeId: 'a', rect: rect(300, 280, 400, 300) }, { nodeId: 'b', rect: rect(800, 280, 400, 300) }] },
+        { kind: 'updateFrame', id: 'f1', patch: { at: origin } }
+      ]
+    })
+    expect(store.getState().preview).toEqual({})
+    expect(docRect('out')).toEqual(rect(1400, 200, 400, 300))
+  })
+
+  it('is undone in one step', async () => {
+    open()
+    pointer('pointerdown', bar(), 300, 100)
+    pointer('pointermove', window, 500, 180)
+    pointer('pointerup', window, 500, 180)
+    await act(async () => { await Promise.resolve() }) // the runtime confirms the op: the undo entry exists
+    expect(documentStoreFor(WS)!.getUndoState().canUndo).toBe(true)
+    expect(documentStoreFor(WS)!.undo()).toBe(true)
+    expect(docRect('a')).toEqual(rect(100, 200, 400, 300))
+    expect(docRect('b')).toEqual(rect(600, 200, 400, 300))
+    expect(documentStoreFor(WS)!.getSnapshot().canvases.c1.frames!.f1.at).toEqual({ x: 40, y: 60 })
+  })
+
+  it('sends nothing for a click without movement', () => {
+    open()
+    const propose = vi.spyOn(documentStoreFor(WS)!, 'propose')
+    pointer('pointerdown', bar(), 300, 100)
+    pointer('pointerup', window, 300, 100)
+    expect(propose).not.toHaveBeenCalled()
+    expect(store.getState().preview).toEqual({})
+  })
+
+  it('moves a collapsed bar and its hidden members together', () => {
+    open(framed('active', 'Besoin', true))
+    pointer('pointerdown', bar(), 100, 100)
+    pointer('pointermove', window, 160, 130)
+    expect(frameEl().style.transform).toBe('translate(60px, 30px)')
+    pointer('pointerup', window, 160, 130)
+    const origin = frameBounds([rect(160, 230, 400, 300), rect(660, 230, 400, 300)], { x: 0, y: 0 }, false).origin
+    expect(documentStoreFor(WS)!.getSnapshot().canvases.c1.frames!.f1.at).toEqual(origin)
+    expect(docRect('a')).toEqual(rect(160, 230, 400, 300))
+    expect(frameEl().style.transform).toBe('')
+  })
+
+  it('leaves a member dragged on its own in its frame, the others in place', () => {
+    open()
+    act(() => store.getState().moveNode('b', { x: 900, y: 500 }))
+    act(() => store.getState().commitPreview())
+    const canvas = documentStoreFor(WS)!.getSnapshot().canvases.c1
+    expect(canvas.nodes.b.frameId).toBe('f1')
+    expect(canvas.nodes.a.rect).toEqual(rect(100, 200, 400, 300))
+  })
+})
+
 describe('FrameLayer colors', () => {
   it.each(FRAME_STATES)('uses theme tokens only (%s)', (state) => {
     open(framed(state))
