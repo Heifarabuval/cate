@@ -58,11 +58,24 @@ export interface ReviewAgents {
   start(ownerPanelId: string, args: { agentId: AgentId; prompt: string; title: string; worktreeId?: string; terminalPanelId?: string; at?: PlaceTarget }): Promise<{ panelId: string }>
 }
 
+/** What a pull request panel needs from GitHub: the repository runtime's `github`, which refuses an untrusted
+ *  workspace and runs at most 3 `gh` calls at once. Reads answer raw `gh` JSON, parsed by the repository contract. */
+export interface ReviewGithub {
+  pullRequestView(repository: string, number: number): Promise<unknown>
+  /** The light read: state, draft, checks, mergeability. */
+  pullRequestChecks(repository: string, number: number): Promise<unknown>
+  pullRequestFiles(repository: string, number: number): Promise<unknown>
+  /** `owner/name` of the workspace origin; null without a GitHub origin. */
+  originRepository(): Promise<string | null>
+}
+
 export interface ReviewSessionDeps {
   /** Canonical workspace root: the checkout of a record without `repoPath`. */
   root: string
   repository: ReviewRepository
   agents: ReviewAgents
+  /** Reads pull requests. Optional until `src/panels/runtime.ts` provides it (B006). */
+  github?: ReviewGithub
 }
 
 const reject = (code: string): never => { throw new RpcError('rejected', code) }
