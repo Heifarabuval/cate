@@ -23,6 +23,8 @@ export interface AgenceFakes {
   ghCalls(): Array<{ args: string[]; stdin: string }>
   /** Makes every fake `gh` call fail with this message (null: works again). */
   failGh(message: string | null): void
+  /** Every request the fake regisseur received (`posts.log`), whatever its answer. */
+  posts(): Array<{ path: string; code: number }>
   /** The next click on this draft is refused with a 409 and this message. */
   refuseDraft(draftId: string, message: string): void
 }
@@ -66,6 +68,9 @@ export function installAgenceFakes(home: string, opts: { mode?: 'old' } = {}): A
     },
     ghCalls: () => (existsSync(path.join(bin, 'gh.log'))
       ? readFileSync(path.join(bin, 'gh.log'), 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
+      : []),
+    posts: () => (existsSync(path.join(agenceDir, 'posts.log'))
+      ? readFileSync(path.join(agenceDir, 'posts.log'), 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
       : []),
     failGh: (message) => (message === null ? rmSync(path.join(bin, 'gh-fail'), { force: true }) : write(path.join(bin, 'gh-fail'), message)),
     refuseDraft(draftId, message) {

@@ -109,7 +109,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
   )
 
   return (
-    <div ref={rootRef} className="flex h-full min-w-0 flex-col bg-surface-1">
+    <div ref={rootRef} data-testid="agence-root" className="flex h-full min-w-0 flex-col bg-surface-1">
       {narrow && (
         <div role="tablist" className="flex shrink-0 border-b border-subtle">
           {tabButton('conversation', 'Conversation')}

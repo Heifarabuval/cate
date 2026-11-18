@@ -1,5 +1,6 @@
 /* global process, require, __dirname, URL, URLSearchParams */
 /* eslint-disable @typescript-eslint/no-require-imports */
+// Keep in step with click() and read_token_stdin() of tools/agence/agence.py (wording, order of the guards, token rule).
 // `agence` stand-in for the agence panel's e2e: only `agence watch
 // --token-stdin`, the regisseur the panel starts. It serves the form POSTs of
 // agence.py's `click()` for drafts (same checks, same wording, same
@@ -35,16 +36,27 @@ const save = (state) => {
 }
 
 let token = ''
-process.stdin.setEncoding('utf8')
-let first = true
-process.stdin.on('data', (chunk) => {
-  if (!first) return
-  first = false
-  token = chunk.split('\n')[0].trim()
+let started = false
+let buffered = ''
+/** The token is the first line of stdin, 24 characters at least (`read_token_stdin()`). */
+const takeToken = (line) => {
+  started = true
+  token = line.trim()
+  if (token.length < 24) { log("error: --token-stdin : jeton d'au moins 24 caractères attendu sur la première ligne de stdin"); process.exit(2) }
   start()
+}
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => {
+  if (started) return
+  buffered += chunk
+  // A complete line only: `readline()` waits for the newline.
+  if (buffered.includes('\n')) takeToken(buffered.slice(0, buffered.indexOf('\n')))
 })
-// The end of stdin means the daemon died: stop with it.
-process.stdin.on('end', () => process.exit(0))
+process.stdin.on('end', () => {
+  // EOF ends the token's line too (`readline()`); after the token it means the daemon died: stop with it.
+  if (!started) takeToken(buffered)
+  process.exit(0)
+})
 
 /** One draft click: `click()` of agence.py. Returns [code, message]. */
 function click(pathname, form) {
@@ -112,6 +124,8 @@ function start() {
       else {
         try { [code, message] = click(new URL(req.url, 'http://x').pathname, form) } catch (error) { [code, message] = [409, String(error)] }
       }
+      // One line per request received, for the tests that count them (`posts()`).
+      fs.appendFileSync(path.join(__dirname, 'posts.log'), `${JSON.stringify({ path: new URL(req.url, 'http://x').pathname, code })}\n`)
       res.writeHead(code === 303 ? 200 : code, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ code, message }))
     })
