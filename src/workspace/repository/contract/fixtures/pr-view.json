@@ -1,0 +1,53 @@
+{
+	"additions": 273,
+	"author": { "id": "MDQ6VXNlcjU4NzI1MzI3", "is_bot": false, "login": "Heifarabuval", "name": "" },
+	"baseRefName": "main",
+	"body": "Closes #11\n\n## Quoi\n\n`cate agent start --model <id> --effort <niveau>`, passés à la CLI de l'agent au lancement. Les deux sont indépendants et compatibles avec `--relation` et `--done-when`.\n\n- Chaque",
+	"changedFiles": 18,
+	"commits": [
+		{
+			"authoredDate": "2026-11-17T19:19:14Z",
+			"authors": [{ "email": "", "id": "MDQ6VXNlcjU4NzI1MzI3", "login": "Heifarabuval", "name": "Heifarabuval" }],
+			"committedDate": "2026-11-17T19:19:14Z",
+			"messageBody": "Each agent declares its launch options in the registry (the ",
+			"messageHeadline": "feat(agents): add --model and --effort to cate agent start",
+			"oid": "8a0b8504618e9cc67f99ce155ff0b083c6425d56"
+		},
+		{
+			"authoredDate": "2026-11-17T19:19:14Z",
+			"authors": [{ "email": "", "id": "MDQ6VXNlcjU4NzI1MzI3", "login": "Heifarabuval", "name": "Heifarabuval" }],
+			"committedDate": "2026-11-17T19:19:14Z",
+			"messageBody": "",
+			"messageHeadline": "docs(agents): document --model and --effort",
+			"oid": "a2628fea84977bf3e1f9f272c5c7b30c5e0f69ad"
+		},
+		{
+			"authoredDate": "2026-11-17T19:21:13Z",
+			"authors": [{ "email": "", "id": "MDQ6VXNlcjU4NzI1MzI3", "login": "Heifarabuval", "name": "Heifarabuval" }],
+			"committedDate": "2026-11-17T19:21:13Z",
+			"messageBody": "Codex and pi effort options came from memory, and a wrong fl",
+			"messageHeadline": "fix(agents): declare effort only for CLIs whose help was read",
+			"oid": "50a5b6335be74a8806f714795152d10d717b6d21"
+		},
+		{
+			"authoredDate": "2026-11-17T19:25:34Z",
+			"authors": [{ "email": "", "id": "MDQ6VXNlcjU4NzI1MzI3", "login": "Heifarabuval", "name": "Heifarabuval" }],
+			"committedDate": "2026-11-17T19:25:34Z",
+			"messageBody": "The starter kept model and effort of every panel it ever sta",
+			"messageHeadline": "fix(agents): forget launch options of removed panels",
+			"oid": "a407c3f18bf65b493b861c363cbeef328a18e064"
+		}
+	],
+	"deletions": 21,
+	"headRefName": "feat/agent-model-effort",
+	"headRepositoryOwner": { "id": "MDQ6VXNlcjU4NzI1MzI3", "login": "Heifarabuval" },
+	"isCrossRepository": false,
+	"isDraft": false,
+	"mergeStateStatus": "UNKNOWN",
+	"mergeable": "UNKNOWN",
+	"number": 13,
+	"state": "MERGED",
+	"statusCheckRollup": [],
+	"title": "feat(agents): add --model and --effort to cate agent start",
+	"url": "https://github.com/Heifarabuval/cate/pull/13"
+}

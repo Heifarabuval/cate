@@ -1,0 +1,49 @@
+{
+	"state": "OPEN",
+	"isDraft": false,
+	"mergeable": "MERGEABLE",
+	"mergeStateStatus": "BLOCKED",
+	"statusCheckRollup": [
+		{
+			"__typename": "CheckRun",
+			"completedAt": "2026-11-17T17:32:38Z",
+			"conclusion": "SUCCESS",
+			"detailsUrl": "https://github.com/nodejs/node/actions/runs/44137035722/job/134229278565",
+			"name": "build-tarball",
+			"startedAt": "2026-11-17T17:26:48Z",
+			"status": "COMPLETED",
+			"workflowName": "Build from tarball"
+		},
+		{
+			"__typename": "CheckRun",
+			"completedAt": "2026-10-21T17:07:09Z",
+			"conclusion": "SKIPPED",
+			"detailsUrl": "https://github.com/cli/cli/actions/runs/39640910716/job/119363866134",
+			"name": "label-external",
+			"startedAt": "2026-10-21T17:07:10Z",
+			"status": "COMPLETED",
+			"workflowName": "PR Triaging"
+		},
+		{
+			"__typename": "StatusContext",
+			"context": "node-test-commit",
+			"startedAt": "2026-11-17T22:33:13Z",
+			"state": "SUCCESS",
+			"targetUrl": "https://ci.nodejs.org/job/node-test-commit/94275/"
+		},
+		{
+			"__typename": "StatusContext",
+			"context": "tide",
+			"startedAt": "2026-11-16T17:28:52Z",
+			"state": "PENDING",
+			"targetUrl": "https://prow.k8s.io/pr?query=is%3Apr+repo%3Akubernetes%2Fkubernetes+author%3Askitt+head%3Agentype2-2026"
+		},
+		{
+			"__typename": "StatusContext",
+			"context": "tide",
+			"startedAt": "2026-11-17T05:11:27Z",
+			"state": "ERROR",
+			"targetUrl": "https://prow.k8s.io/pr?query=is%3Apr+repo%3Akubernetes%2Fkubernetes+author%3Atallclair+head%3Apod-allocation-pending"
+		}
+	]
+}
