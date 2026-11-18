@@ -275,6 +275,18 @@ export function parsePullRequestView(json: unknown, files: PullRequestFile[]): P
   }
 }
 
+/** The light refresh (`gh pr view --json state,isDraft,statusCheckRollup,mergeable,mergeStateStatus`). */
+export function parsePullRequestChecks(json: unknown): Pick<PullRequestDetails, 'state' | 'draft' | 'checks' | 'mergeability'> {
+  const state = isRow(json) ? PR_STATE[str(json.state)] : undefined
+  if (!isRow(json) || !state) throw new GhReadError('error', UNEXPECTED)
+  return {
+    state,
+    draft: json.isDraft === true,
+    checks: prChecks(json.statusCheckRollup),
+    mergeability: prMergeability(str(json.state), str(json.mergeable), str(json.mergeStateStatus)),
+  }
+}
+
 export type PullRequestErrorKind = 'missing-cli' | 'signed-out' | 'not-found' | 'repo-unreadable' | 'rate-limited' | 'offline' | 'error'
 
 const NETWORK = /ETIMEDOUT|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|error connecting to|no such host/i

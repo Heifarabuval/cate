@@ -12,6 +12,7 @@ import {
   MAX_PR_FILES,
   MAX_REF_CHARS,
   MAX_TITLE_CHARS,
+  parsePullRequestChecks,
   parsePullRequestFiles,
   parsePullRequestRef,
   parsePullRequestView,
@@ -239,6 +240,26 @@ describe('prMergeability', () => {
     ['merged', 'MERGEABLE', 'CLEAN', null],
   ])('%s %s %s gives %s', (state, mergeable, status, expected) => {
     expect(prMergeability(state, mergeable, status)).toBe(expected)
+  })
+})
+
+describe('parsePullRequestChecks', () => {
+  it('reads the light refresh of the real fixture', () => {
+    expect(parsePullRequestChecks(checksFixture)).toEqual({
+      state: 'open',
+      draft: false,
+      checks: prChecks(checksFixture.statusCheckRollup),
+      mergeability: 'blocked',
+    })
+  })
+
+  it('follows a pull request merged since the last read', () => {
+    expect(parsePullRequestChecks({ state: 'MERGED', isDraft: false, statusCheckRollup: [], mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }))
+      .toMatchObject({ state: 'merged', mergeability: null, checks: { state: 'none', items: [] } })
+  })
+
+  it.each([null, [], 'x', { state: 'WEIRD' }])('refuses %j, which is not a pull request', (json) => {
+    expect(() => parsePullRequestChecks(json)).toThrow(GhReadError)
   })
 })
 
