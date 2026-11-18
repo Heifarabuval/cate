@@ -60,6 +60,7 @@ its process exits. Its transcripts do not say where a session ran: `cate
 agent usage` counts an agy panel's tokens (cost shows a dash), but the
 workspace usage overview leaves agy out. Relation context is not added to an
 agy prompt: agy takes injected context only in its own `injectSteps` form.
+Cate's live CI does not run agy (Google account only, no fake provider).
 
 Both go to the agent CLI at launch, and each works without the other. `--model` is free text
 (the CLI's own model id or alias; Claude Code, Codex, Cursor and OpenCode
