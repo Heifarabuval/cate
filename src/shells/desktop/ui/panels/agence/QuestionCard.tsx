@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import type { AgenceOp, AgenceOpResult, QuestionView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
+import { ACTION, ACTION_DANGER } from './styles'
 
 type Answer = Extract<AgenceOp, { kind: 'answer' }>
 
@@ -59,9 +60,9 @@ export default function QuestionCard({ question, send, onDone, compact = false }
   return (
     <div className="mt-2 flex flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-2">
       <div className="break-words text-[12px] font-medium text-primary">{question.question}</div>
-      {question.ghUnknown && <div className="text-[11px] text-muted">état GitHub inconnu</div>}
+      {question.ghUnknown && <div className="text-[11px] text-secondary">état GitHub inconnu</div>}
       {greyed && (
-        <div className="text-[11px] text-muted">
+        <div className="text-[11px] text-secondary">
           Merger grisé :
           <ul className="list-disc pl-4">{question.locks.map((reason) => <li key={reason} className="break-words">{reason}</li>)}</ul>
         </div>
@@ -73,10 +74,10 @@ export default function QuestionCard({ question, send, onDone, compact = false }
           data-testid="option"
           disabled={pending || (index === 0 && greyed)}
           onClick={() => void answer({ choice: index })}
-          className={`rounded-md border px-2 py-1.5 text-left text-[12px] disabled:opacity-40 ${index === 0 ? 'border-agent' : 'border-subtle'} hover:bg-hover`}
+          className={`rounded-md border px-2 py-1.5 text-left text-[12px] text-primary disabled:border-dashed disabled:opacity-100 ${index === 0 ? 'border-agent' : 'border-subtle'} hover:bg-hover disabled:hover:bg-transparent`}
         >
-          <b className="block break-words">{index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
-          {option.detail && <span className="block break-words text-[11px] text-muted">{option.detail}</span>}
+          <b className="block break-words text-primary">{index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
+          {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
         </button>
       ))}
       {greyed && (
@@ -84,8 +85,7 @@ export default function QuestionCard({ question, send, onDone, compact = false }
           {question.rebase && (
             <Button
               size="sm"
-              variant="primary"
-              className="shrink-0 whitespace-nowrap"
+              className={ACTION}
               disabled={pending}
               onClick={() => void answer({ choice: 'rebase' })}
               {...(compact ? { title: 'Demander le rebase', 'aria-label': 'Demander le rebase' } : {})}
@@ -95,8 +95,7 @@ export default function QuestionCard({ question, send, onDone, compact = false }
           )}
           <Button
             size="sm"
-            variant="danger"
-            className="shrink-0 whitespace-nowrap"
+            className={ACTION_DANGER}
             disabled={pending}
             onClick={() => void mergeAnyway()}
             {...(compact ? { title: 'Merger quand même', 'aria-label': 'Merger quand même' } : {})}
@@ -111,12 +110,12 @@ export default function QuestionCard({ question, send, onDone, compact = false }
         onChange={(event) => setText(event.target.value)}
         aria-label="Autre réponse"
         placeholder="Autre réponse"
-        className="w-full resize-y rounded-md border border-subtle bg-surface-2 p-1.5 text-[12px] text-primary"
+        className="w-full resize-y rounded-md border border-subtle bg-surface-2 p-1.5 text-[12px] text-primary placeholder:text-secondary"
       />
       <div data-testid={greyed ? undefined : 'question-actions'} className="flex shrink-0 justify-end">
-        <Button size="sm" className="shrink-0 whitespace-nowrap" disabled={pending || text.trim() === ''} onClick={() => void answer({ libre: text.trim() })}>Répondre</Button>
+        <Button size="sm" className={ACTION} disabled={pending || text.trim() === ''} onClick={() => void answer({ libre: text.trim() })}>Répondre</Button>
       </div>
-      {error && <InlineNotice tone="error">{error}</InlineNotice>}
+      {error && <InlineNotice tone="error" className="!text-primary">{error}</InlineNotice>}
     </div>
   )
 }

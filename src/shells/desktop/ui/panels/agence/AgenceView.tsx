@@ -9,6 +9,7 @@ import DraftReader from './DraftReader'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
 import TerminalPane from './TerminalPane'
+import { ACTION } from './styles'
 
 /** Under this width the conversation and the follow-up are tabs, not columns. */
 const NARROW_PX = 640
@@ -87,7 +88,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
   const orchestratorDown = snapshot.orchestrator === 'exited' || snapshot.orchestrator === 'failed'
   const showConversation = !narrow || tab === 'conversation'
   const showSuivi = !narrow || tab === 'suivi'
-  const tabClass = (name: Tab) => `px-3 py-1.5 text-[12px] ${tab === name ? 'text-primary border-b-2 border-focus-blue' : 'text-muted hover:text-primary'}`
+  const tabClass = (name: Tab) => `px-3 py-1.5 text-[12px] ${tab === name ? 'text-primary border-b-2 border-focus-blue' : 'text-secondary hover:text-primary'}`
   const ids = (name: Tab) => ({ tab: `${uid}-tab-${name}`, panel: `${uid}-panel-${name}` })
   const panelProps = (name: Tab) => ({
     id: ids(name).panel,
@@ -115,7 +116,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {tabButton('suivi', 'Suivi')}
         </div>
       )}
-      {refusal && <InlineNotice tone="error" className="m-3 mb-0 shrink-0">{refusal}</InlineNotice>}
+      {refusal && <InlineNotice tone="error" className="m-3 mb-0 shrink-0 !text-primary">{refusal}</InlineNotice>}
       <div className="flex min-h-0 flex-1">
         <section
           data-testid="conversation-column"
@@ -126,7 +127,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {orchestratorDown && (
             <div className="flex shrink-0 items-center gap-2 border-b border-subtle px-3 py-1.5 text-[12px] text-secondary">
               <span className="min-w-0 flex-1 truncate">{snapshot.orchestrator === 'failed' ? "L'orchestrateur n'a pas démarré." : "L'orchestrateur est arrêté."}</span>
-              <Button size="sm" variant="primary" className="shrink-0 whitespace-nowrap" onClick={() => void run({ kind: 'orchestrator.restart' })}>Relancer l&apos;orchestrateur</Button>
+              <Button size="sm" className={ACTION} onClick={() => void run({ kind: 'orchestrator.restart' })}>Relancer l&apos;orchestrateur</Button>
             </div>
           )}
           <div className="min-h-0 flex-1">
@@ -160,7 +161,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                   onOpenUrl={(url) => { openUrlBeside(workspaceId, panelId, url) }}
                 />
               )
-              : <div className="p-4 text-[12px] text-muted">Aucun suivi pour l&apos;instant.</div>}
+              : <div className="p-4 text-[12px] text-secondary">Aucun suivi pour l&apos;instant.</div>}
         </section>
       </div>
     </div>
