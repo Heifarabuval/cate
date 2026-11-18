@@ -45,7 +45,7 @@ function fakeConnection(state: ConnectionState) {
 const render = (connection: ReturnType<typeof fakeConnection>, strict = false) => {
   const connections = { get: () => connection, getSnapshot: () => [connection], subscribe: () => () => {} } as unknown as ClientApp['connections']
   // The core's flow, as the app runs it: it tries the idle update at once.
-  updates = createRuntimeUpdates({ connections, version: '2.0.4', build: '2.0.4+new' })
+  updates = createRuntimeUpdates({ connections, version: '2.0.4', build: '2.0.4+new', followBuild: true })
   installClientApp({
     workspaces: { get: () => ({ name: 'cate' }) } as unknown as WorkspaceList,
     connections,

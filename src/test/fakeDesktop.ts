@@ -49,6 +49,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
     platform: 'linux',
     arch: 'x64',
     isPackaged: false,
+    runtimeBundleOverride: false,
     e2e: false,
     features: options.features ?? [],
     device: { name: 'test', publicKey: 'FP' },

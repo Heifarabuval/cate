@@ -7,14 +7,14 @@ import { RpcError } from '@kernel/rpc/contract'
 let updates: RuntimeUpdates | null = null
 afterEach(() => { updates?.dispose(); updates = null })
 
-function fakeConnection(state: ConnectionState, idle = true, shared = false, runtimeBuild: string | undefined = '2.0.4+b') {
+function fakeConnection(state: ConnectionState, idle = true, shared = false, runtimeBuild: string | null = '2.0.4+b') {
   const listeners = new Set<() => void>()
   const update = vi.fn(async (params: { ifIdle?: boolean }) => {
     if (params.ifIdle && (shared || !idle)) throw new RpcError('dirty', 'the runtime is in use', { reason: shared ? 'shared' : 'busy' })
   })
   const connection = {
     clientId: 'self',
-    rpc: { remote: { epoch: 1, build: runtimeBuild } },
+    rpc: { remote: { epoch: 1, build: runtimeBuild ?? undefined } },
     state,
     subscribe: (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } },
     runtime: { runtime: { update, info: vi.fn(async () => ({ pid: 1, clients: [{ clientId: 'self' }, ...(shared ? [{ clientId: 'other' }] : [])] })), updateProgress: vi.fn(async () => null) } },
@@ -27,12 +27,12 @@ function fakeConnection(state: ConnectionState, idle = true, shared = false, run
   return connection
 }
 
-const startWith = (build: string | undefined, ...all: ReturnType<typeof fakeConnection>[]) => {
+const startWith = (build: string | undefined, followBuild: boolean, ...all: ReturnType<typeof fakeConnection>[]) => {
   const connections = { getSnapshot: () => all as unknown as WorkspaceConnection[], subscribe: () => () => {} } as unknown as WorkspaceConnections
-  updates = createRuntimeUpdates({ connections, version: '2.0.4', build })
+  updates = createRuntimeUpdates({ connections, version: '2.0.4', build, followBuild })
   return updates
 }
-const start = (...all: ReturnType<typeof fakeConnection>[]) => startWith('2.0.4+b', ...all)
+const start = (...all: ReturnType<typeof fakeConnection>[]) => startWith('2.0.4+b', true, ...all)
 const as = (c: ReturnType<typeof fakeConnection>) => c as unknown as WorkspaceConnection
 
 it('tells which side a mismatch updates: never a newer runtime back', () => {
@@ -143,11 +143,21 @@ it('leaves a runtime of the same build alone', () => {
 
 it.each([
   ['the app', undefined, '2.0.4+a'],
-  ['the runtime', '2.0.4+b', undefined],
+  ['the runtime', '2.0.4+b', null],
 ])('does not compare builds when %s does not know its own', (_who, appBuild, runtimeBuild) => {
   const unknown = fakeConnection(SAME, true, false, runtimeBuild)
-  startWith(appBuild, unknown)
+  startWith(appBuild, true, unknown)
   expect(unknown.runtime.runtime.update).not.toHaveBeenCalled()
+})
+
+it('follows builds only when the shell asks (not on a bundle override, not on mobile)', () => {
+  const other = fakeConnection(SAME, true, false, '2.0.4+a')
+  startWith('2.0.4+b', false, other)
+  expect(other.runtime.runtime.update).not.toHaveBeenCalled()
+  // The build is still the target of an older release's update.
+  const older = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' })
+  startWith('2.0.4+b', false, older)
+  expect(older.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+b', ifIdle: true })
 })
 
 it('never downgrades a newer runtime of another build', () => {

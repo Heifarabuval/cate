@@ -24,6 +24,8 @@ export interface ClientCoreOptions {
   /** This client's build: the install a runtime of another version is
    *  updated to (`runtime.update`). */
   build?: string
+  /** Also update a runtime of this release but another build (desktop only). */
+  followBuild?: boolean
   /** `PANEL_DEFINITIONS`. */
   panels: readonly AnyPanelDefinition[]
   /** `RUNTIME_CAPABILITIES`. */
@@ -58,7 +60,7 @@ export async function startClientCore(options: ClientCoreOptions): Promise<Clien
   const workspaces = new WorkspaceList({ store: options.deviceStore, connections })
   await workspaces.load()
   stops.push(nameJoinedWorkspaces(workspaces, connections))
-  const runtimeUpdates = createRuntimeUpdates({ connections, version: options.version, ...(options.build ? { build: options.build } : {}) })
+  const runtimeUpdates = createRuntimeUpdates({ connections, version: options.version, ...(options.build ? { build: options.build } : {}), followBuild: options.followBuild })
   stops.push(() => runtimeUpdates.dispose())
   return {
     identity,
