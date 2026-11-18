@@ -1,6 +1,6 @@
 import type { AgenceOp, AgenceOpResult, DraftView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
-import { ActionButton, useAction } from './action'
+import { ActionButton, refusal, useAction } from './action'
 import { MarkdownPreview } from '../editor/MarkdownPreview'
 import { ACTION, ACTION_DANGER } from './styles'
 
@@ -8,12 +8,11 @@ const KINDS: Record<DraftView['kind'], string> = {
   issue: 'Issue', pr: 'Pull request', comment: 'Commentaire', slack: 'Message Slack', mail: 'Mail',
 }
 
-/** What a refusal says, in the regisseur's own words when it gave some. */
-function refusal(result: Extract<AgenceOpResult, { ok: false }>): string {
+/** What a refused draft op says: the draft's own cases, then the shared refusal. */
+function draftRefusal(result: Extract<AgenceOpResult, { ok: false }>): string {
   if (result.error === 'invalid') return 'Brouillon introuvable.'
-  if (result.error === 'unavailable') return `Régisseur indisponible${result.message ? ` : ${result.message}` : '.'}`
   if (/texte a changé/.test(result.message ?? '')) return 'Le texte a changé, relis avant d\'envoyer.'
-  return result.message ?? 'Action refusée.'
+  return refusal(result, 'Action refusée.')
 }
 
 export interface DraftReaderProps {
@@ -34,7 +33,7 @@ export default function DraftReader({ workspaceId, panelId, draft, send, onBack 
   const act = async (key: string, op: AgenceOp, leave: boolean) => {
     const taken = await run(key, async () => {
       const result = await send(op) as AgenceOpResult
-      return result.ok ? null : refusal(result)
+      return result.ok ? null : draftRefusal(result)
     })
     if (taken && leave) onBack()
   }

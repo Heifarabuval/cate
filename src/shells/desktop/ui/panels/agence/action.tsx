@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes } from 'react'
 import { Check } from 'lucide-react'
-import { buttonClassName, Spinner } from '../../kernel/interaction'
+import type { AgenceOpResult } from '@panels/agence/contract'
+import { Button, Spinner } from '../../kernel/interaction'
 
 /** The one feedback of every action of the panel, in three steps: pressed
  *  (a short scale, 150 ms), waiting (the button stays, spinner in front of its
@@ -18,6 +19,13 @@ export const ROW_ENTER = 'animate-sidebar-view-in motion-reduce:animate-none'
 /** How long the check stays on a button before it is ready again. */
 const DONE_MS = 2500
 
+/** What a refused op says: the regisseur's own words when it gave some, and
+ *  in words (never the raw code) when it is not there. */
+export function refusal(result: Extract<AgenceOpResult, { ok: false }>, fallback: string): string {
+  if (result.error === 'unavailable') return `Régisseur indisponible${result.message ? ` : ${result.message}` : '.'}`
+  return result.message ?? fallback
+}
+
 /** The one lock of a group of actions: one runs at a time, a second click on
  *  anything in the group is ignored. `run` tells the buttons which one is
  *  `active`, and keeps the refusal in `error` for the group to show in place. */
@@ -29,7 +37,9 @@ export function useAction() {
   const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>()
-  useEffect(() => () => clearTimeout(timer.current), [])
+  // A task that settles after the view is gone arms no timer and calls nothing back.
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false; clearTimeout(timer.current) }, [])
 
   /** `task` resolves to the refusal text, `null` when the action was taken, or
    *  `undefined` when the person backed out (nothing sent). Resolves to true when taken. */
@@ -42,6 +52,7 @@ export function useAction() {
     setError(null)
     try {
       const refused = await task()
+      if (!mounted.current) return false
       if (refused) setError(refused)
       else if (refused === null) {
         setDone(key)
@@ -49,11 +60,12 @@ export function useAction() {
       }
       return refused === null
     } catch (err) {
+      if (!mounted.current) return false
       setError(err instanceof Error ? err.message : String(err))
       return false
     } finally {
       lock.current = false
-      setActive(null)
+      if (mounted.current) setActive(null)
     }
   }
 
@@ -69,6 +81,9 @@ export function useAction() {
   }
 }
 
+/** The state of one lock, shared by the buttons of a question. */
+export type ActionState = ReturnType<typeof useAction>
+
 interface ActionButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   busy?: boolean
   done?: boolean
@@ -76,15 +91,16 @@ interface ActionButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   bare?: boolean
 }
 
-/** A button of the panel with its press, waiting and done states. A busy or
- *  done button is `aria-disabled`, not `disabled`: it ignores clicks and keeps the focus. */
+/** A button of the panel with its press, waiting and done states, on the shared
+ *  Button. A busy or done button is `aria-disabled`, not `disabled`: it ignores
+ *  clicks and keeps the focus. */
 export function ActionButton({ busy = false, done = false, bare = false, className = '', onClick, children, ...props }: ActionButtonProps) {
+  const text = `!text-primary ${FEEDBACK} ${className}`
   const shared = {
     ...props,
     'aria-busy': busy || undefined,
     'aria-disabled': busy || done || undefined,
     onClick: busy || done ? undefined : onClick,
-    className: `${bare ? '' : `${buttonClassName('secondary', 'sm')} `}${FEEDBACK} ${className}`,
   }
   // The indicator has its own room, kept at rest, busy and done: the button never changes width.
   const content = (
@@ -103,7 +119,7 @@ export function ActionButton({ busy = false, done = false, bare = false, classNa
   // The result is spoken from beside the button, so the button keeps its name.
   return (
     <>
-      <button type="button" {...shared} className={`!text-primary ${shared.className}`}>{content}</button>
+      {bare ? <button type="button" {...shared} className={text}>{content}</button> : <Button size="sm" {...shared} className={text}>{content}</Button>}
       <span aria-live="polite" className="sr-only">{busy ? 'En cours' : done ? 'Fait' : ''}</span>
     </>
   )

@@ -254,6 +254,15 @@ it('asks for the rebase through the answer op, and shows a refusal above the lis
   expect(host.querySelector('[role="alert"]')!.textContent).toBe('Question déjà répondue.')
 })
 
+it('says a stopped regisseur in words on the line, never the raw code', async () => {
+  const value = snapshot()
+  value.suivi!.sections.aFaire = [{ id: 'n2', title: 'Merger la 12 ?', kind: 'human', meta: [], evidence: null, link: null, links: [], action: { type: 'question', questionId: 'q2', rebase: true } }]
+  send.mockResolvedValueOnce({ ok: false, error: 'unavailable' } as never)
+  render(value)
+  await act(async () => { button('Demander le rebase')!.click() })
+  expect(host.querySelector('[role="alert"]')!.textContent).toBe('Régisseur indisponible.')
+})
+
 it.each([
   ['Relancer le régisseur', { regisseur: { state: 'stopped', error: 'arrêté', settingsHint: null } }],
   ['Relancer l\'orchestrateur', { orchestrator: 'exited' }],

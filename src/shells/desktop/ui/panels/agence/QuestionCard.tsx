@@ -2,20 +2,16 @@ import { Fragment, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import type { AgenceOp, AgenceOpResult, QuestionView } from '@panels/agence/contract'
 import { InlineNotice } from '../../kernel/interaction'
-import { ActionButton, useAction } from './action'
+import { ActionButton, refusal, type ActionState } from './action'
 import { ACTION } from './styles'
 
 type Answer = Extract<AgenceOp, { kind: 'answer' }>
 
-/** What a refusal says, in the regisseur's own words when it gave some. */
-function refusal(result: Extract<AgenceOpResult, { ok: false }>): string {
-  if (result.error === 'unavailable') return `Régisseur indisponible${result.message ? ` : ${result.message}` : '.'}`
-  return result.message ?? 'Réponse refusée.'
-}
-
 export interface QuestionCardProps {
   question: QuestionView
   send(op: AgenceOp): Promise<unknown>
+  /** The lock of the question, shared with its line: one answer at a time. */
+  action: ActionState
   /** The answer was taken: the question leaves the follow-up. */
   onDone(): void
   /** A narrow column: the two buttons under the options take short names
@@ -27,9 +23,8 @@ export interface QuestionCardProps {
  *  answer, and for a merge Merger greyed with its reasons, « Merger quand
  *  même » (in the place of the greyed option) and « Demander le rebase ». The regisseur's `click()` decides: a
  *  refusal shows here, in the card. */
-export default function QuestionCard({ question, send, onDone, compact = false }: QuestionCardProps) {
+export default function QuestionCard({ question, send, action: { run, active, error, waiting }, onDone, compact = false }: QuestionCardProps) {
   const [text, setText] = useState('')
-  const { run, active, error, waiting } = useAction()
   const greyed = question.isMerge && question.locks.length > 0
 
   /** `key` names the button; `confirmation`: the question put to the person first; no answer, nothing sent. */
@@ -37,7 +32,7 @@ export default function QuestionCard({ question, send, onDone, compact = false }
     const taken = await run(key, async () => {
       if (confirmation && !await clientUi().confirm(confirmation)) return undefined
       const result = await send({ kind: 'answer', questionId: question.id, ...fields }) as AgenceOpResult
-      return result.ok ? null : refusal(result)
+      return result.ok ? null : refusal(result, 'Réponse refusée.')
     })
     if (taken) onDone()
   }

@@ -268,14 +268,52 @@ it('lets the rebase be asked again a few seconds after it was taken', async () =
   }
 })
 
-it('offers « Répondre » again when the line asks another question', async () => {
-  const reply = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre' && b.hasAttribute('aria-expanded'))!
-  render(suivi({ aFaire: [questionRow] }), { q1: questionView })
-  act(() => reply().click())
-  await act(async () => { [...host.querySelectorAll('button')].find((b) => /^Suivi/.test(b.textContent ?? ''))!.click() })
-  expect(reply().getAttribute('aria-disabled')).toBe('true')
-  const next = row('n8', { kind: 'human', title: 'Quel nom ?', action: { type: 'question', questionId: 'q2', rebase: false } })
-  render(suivi({ aFaire: [next] }), { q2: { ...questionView, id: 'q2' } })
-  expect(reply().hasAttribute('aria-disabled')).toBe(false)
-  expect(reply().querySelector('svg.lucide-check')).toBeNull()
+it('keeps the check on « Répondre » a few seconds, then it answers again for the same question', async () => {
+  vi.useFakeTimers()
+  try {
+    render(suivi({ aFaire: [questionRow] }), { q1: questionView })
+    const reply = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre' && b.hasAttribute('aria-expanded'))!
+    act(() => reply().click())
+    await act(async () => { [...host.querySelectorAll('button')].find((b) => /^Suivi/.test(b.textContent ?? ''))!.click() })
+    expect(reply().getAttribute('aria-disabled')).toBe('true')
+    expect(reply().querySelector('svg.lucide-check')).not.toBeNull()
+    await act(async () => { vi.advanceTimersByTime(3000) })
+    expect(reply().hasAttribute('aria-disabled')).toBe(false)
+    expect(reply().querySelector('svg.lucide-check')).toBeNull()
+    act(() => reply().click())
+    expect(host.querySelector('textarea')).not.toBeNull()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('has one lock per question: a card answer in flight blocks the line\'s rebase', async () => {
+  const conflict = row('q2', { kind: 'human', title: 'Merger la 12 ?', action: { type: 'question', questionId: 'q2', rebase: true } })
+  const merge: QuestionView = { ...questionView, id: 'q2', isMerge: true, locks: ['conflit avec la base'], rebase: true }
+  let answer!: (result: { ok: boolean }) => void
+  send.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+  render(suivi({ aFaire: [conflict] }), { q2: merge })
+  const named = (label: string) => [...host.querySelectorAll('button')].filter((b) => b.textContent === label)
+  act(() => named('Répondre')[0].click())
+  expect(named('Demander le rebase')).toHaveLength(2)
+  await act(async () => { named('Demander le rebase')[1].click() })
+  expect(send).toHaveBeenCalledTimes(1)
+  await act(async () => { named('Demander le rebase')[0].click() })
+  expect(onRebase).not.toHaveBeenCalled()
+  await act(async () => answer({ ok: true }))
+})
+
+it('has one lock per question: the line\'s rebase in flight blocks the card', async () => {
+  const conflict = row('q2', { kind: 'human', title: 'Merger la 12 ?', action: { type: 'question', questionId: 'q2', rebase: true } })
+  const merge: QuestionView = { ...questionView, id: 'q2', isMerge: true, locks: ['conflit avec la base'], rebase: true }
+  let rebased!: (value: null) => void
+  onRebase.mockReturnValueOnce(new Promise((resolve) => { rebased = resolve }))
+  render(suivi({ aFaire: [conflict] }), { q2: merge })
+  const named = (label: string) => [...host.querySelectorAll('button')].filter((b) => b.textContent === label)
+  act(() => named('Répondre')[0].click())
+  await act(async () => { named('Demander le rebase')[0].click() })
+  await act(async () => { named('Demander le rebase')[1].click() })
+  expect(onRebase).toHaveBeenCalledTimes(1)
+  expect(send).not.toHaveBeenCalled()
+  await act(async () => rebased(null))
 })
