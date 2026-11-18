@@ -17,6 +17,10 @@ description: "Tâches : fiabiliser l'orchestration d'agents"
 - **[US1] à [US6]** : récit de la spec.
 - Un seul implémenteur par lot. Un vérificateur différent de l'implémenteur, par lot.
 
+## Issues du fork
+
+Récit 1 = #50 (plafond à 4), récit 2 = #51 (`agence doctor`, relance possible), récit 3 = #52 (panneaux orphelins), récit 4 = #53 (`node_modules` dans `addWorktree`), récit 5 = #54 (gabarit de brief), récit 6 = #55 (hook Playwright et Electron). La PR de spec écrit `Réf.` (elle ne règle aucune issue) ; chaque PR d'implémentation écrit `Closes #N` de son récit.
+
 ## Trois lots parallèles, sans fichier commun
 
 | Lot | Récits | Implémenteur | Fichiers (liste fermée) |
@@ -158,7 +162,7 @@ Aucune tâche bloquante entre lots. Dans le lot A, les récits 1, 2, 3 s'enchaî
 
 - [ ] T030 Lot A : `npm run test:agence` complet vert, `python3 tools/agence/agence.py --help` liste `doctor`, relecture de `git diff --stat` (deux fichiers seulement).
 - [ ] T031 Lot B : `npm test -- src/workspace/repository` vert, `npm run lint:deps` vert, `git diff --stat` (trois fichiers).
-- [ ] T032 Pour chaque lot : PR vers `main` du fork (`gh pr create -R Heifarabuval/cate --base main`), corps court, `Réf.` de l'issue du récit, écart upstream listé (lot B), « relance ou redéploiement nécessaire : oui, rebuild et arrêt du daemon pour embarquer `agence.py` » (lot A), « non exécuté : e2e » (tous).
+- [ ] T032 Pour chaque lot : PR vers `main` du fork (`gh pr create -R Heifarabuval/cate --base main`), corps court, `Closes #N` pour chaque récit réglé en entier (lot A : #50, #51, #52 ; lot B : #53), `Réf. #N` si le récit est partiel, écart upstream listé (lot B), « relance ou redéploiement nécessaire : oui, rebuild et arrêt du daemon pour embarquer `agence.py` » (lot A), « non exécuté : e2e » (tous).
 - [ ] T033 Vérificateur de chaque lot : relire les fichiers modifiés, relancer les tests du lot, vérifier l'absence de code mort (grep des textes « ne comptent pas » dans `agence.py`, `test_agence.py`, le skill) et rendre le rapport à l'orchestrateur.
 
 ---
