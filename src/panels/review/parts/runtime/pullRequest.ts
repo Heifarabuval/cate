@@ -15,7 +15,7 @@ import {
   toGhReadError,
   type PullRequestRef,
 } from '@workspace/repository/contract'
-import type { PrDiffPage, PrErrorKind, ReviewPrState } from '../../contract/types'
+import { PR_REFRESH_INTERVAL_MS, PR_TICK_INTERVAL_MS, type PrDiffPage, type PrErrorKind, type ReviewPrState } from '../../contract/types'
 
 /** What a pull request panel needs from GitHub: the repository runtime's `github`, which refuses an untrusted
  *  workspace and runs at most 3 `gh` calls at once. Reads answer raw `gh` JSON, parsed by the repository contract. */
@@ -47,12 +47,8 @@ export interface PullRequestSubject {
   dispose(): void
 }
 
-/** The least time between two reads a view's tick may start. */
-export const PR_TICK_INTERVAL_MS = 25_000
 /** After consecutive failures the tick waits twice as long each time (25, 50, 100 s...), up to this. */
 export const PR_TICK_BACKOFF_MAX_MS = 5 * 60_000
-/** The least time between two full reads a refresh may start; an earlier one gets the last read. */
-export const PR_REFRESH_INTERVAL_MS = 5_000
 const UNTRUSTED = 'Trust this workspace to read GitHub'
 const NO_ORIGIN = 'This workspace has no GitHub origin. Use owner/repo#N.'
 

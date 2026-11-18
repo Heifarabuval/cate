@@ -1,16 +1,19 @@
 // A pull request panel: what the session read through `gh`, read only (no comment, approval or merge).
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { ChevronDown as CaretDown, ChevronRight as CaretRight, ExternalLink, GitPullRequest, RefreshCw } from 'lucide-react'
 import { LoadingState, PanelCenteredState } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import type { PullRequestDetails, PullRequestFile } from '@workspace/repository/contract'
-import type { ReviewPrState, ReviewSnapshot } from '@panels/review/contract'
+import { PR_REFRESH_INTERVAL_MS, PR_TICK_INTERVAL_MS, type ReviewPrState, type ReviewSnapshot } from '@panels/review/contract'
 import { ReviewStats, ToolbarButton } from './ReviewControls'
 import { DiffPageBody } from './DiffPageBody'
 import { useReviewView, type ReviewSend } from './useReview'
 
-/** How often a visible view asks for fresh checks; the session ignores a tick that comes too soon or during a read. */
-const TICK_MS = 25_000
+/**
+ * How often a visible view offers a tick. The session starts a read only once PR_TICK_INTERVAL_MS has passed
+ * since its last one, so a tick that lands a hair early must not cost a whole interval: offer several per interval.
+ */
+const TICK_MS = PR_TICK_INTERVAL_MS / 5
 
 const MERGEABILITY: Record<NonNullable<PullRequestDetails['mergeability']>, string> = {
   mergeable: 'Mergeable', conflict: 'Conflicts', blocked: 'Blocked', computing: 'Checking mergeability',
@@ -38,17 +41,18 @@ export default function PullRequestView({ workspaceId, panelId, snapshot, pr, se
     const timer = setInterval(() => { void send({ kind: 'prTick' }).catch(() => {}) }, TICK_MS)
     return () => clearInterval(timer)
   }, [send, visible])
+  const busy = useRefreshBusy(pr.loading)
   const name = pr.ref ? `${pr.ref.repository}#${pr.ref.number}` : 'pull request'
-  const retry = <button type="button" aria-label="Retry" disabled={pr.loading} className="underline disabled:opacity-30" onClick={() => void send({ kind: 'refresh' })}>Retry</button>
+  const retry = <button type="button" aria-label="Retry" disabled={busy} title={busy ? 'Available in a few seconds' : undefined} className="underline disabled:opacity-30" onClick={() => void send({ kind: 'refresh' })}>Retry</button>
   const { data, error } = pr
   if (!data) {
     if (!error) return <LoadingState label={`Loading pull request ${name}`} className="h-full p-4 text-xs" />
     return <div role="alert" className="h-full"><PanelCenteredState icon={<GitPullRequest size={28} />} title={`Could not read ${name}`} description={error.message} actions={retry} /></div>
   }
-  return <PullRequestBody workspaceId={workspaceId} panelId={panelId} snapshot={snapshot} pr={pr} data={data} send={send} retry={retry} />
+  return <PullRequestBody workspaceId={workspaceId} panelId={panelId} snapshot={snapshot} pr={pr} data={data} send={send} retry={retry} busy={busy} />
 }
 
-function PullRequestBody({ workspaceId, panelId, snapshot, pr, data, send, retry }: {
+function PullRequestBody({ workspaceId, panelId, snapshot, pr, data, send, retry, busy }: {
   workspaceId: string
   panelId: string
   snapshot: ReviewSnapshot
@@ -56,6 +60,7 @@ function PullRequestBody({ workspaceId, panelId, snapshot, pr, data, send, retry
   data: PullRequestDetails
   send: ReviewSend
   retry: React.ReactNode
+  busy: boolean
 }) {
   const view = useReviewView(workspaceId, panelId, snapshot)
   const state = data.draft && data.state === 'open' ? 'draft' : data.state
@@ -66,7 +71,7 @@ function PullRequestBody({ workspaceId, panelId, snapshot, pr, data, send, retry
       <span className="shrink-0 text-xs text-muted">#{data.number}</span>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <ReviewStats files={data.fileCount} additions={data.additions} deletions={data.deletions} />
-        <ToolbarButton label="Refresh pull request" disabled={pr.loading} onClick={() => void send({ kind: 'refresh' })}><RefreshCw size={14} className={pr.loading ? 'animate-spin' : ''} /></ToolbarButton>
+        <ToolbarButton label="Refresh pull request" disabled={busy} onClick={() => void send({ kind: 'refresh' })}><RefreshCw size={14} className={pr.loading ? 'animate-spin' : ''} /></ToolbarButton>
         <ToolbarButton label="Open on GitHub" onClick={() => clientUi().openExternal(data.url)}><ExternalLink size={14} /></ToolbarButton>
       </div>
     </div>
@@ -89,6 +94,7 @@ function PullRequestBody({ workspaceId, panelId, snapshot, pr, data, send, retry
         {data.commits.map((commit) => <li key={commit.oid} className="flex gap-2 px-3 py-0.5"><span title={commit.oid} className="shrink-0 font-mono text-muted">{commit.oid.slice(0, 7)}</span><span className="min-w-0 flex-1 truncate">{commit.title}</span><span className="shrink-0 text-muted">{commit.author}</span></li>)}
       </Section>
       {data.filesTruncated && <p className="px-3 py-1 text-xs text-muted">Showing {data.files.length} of {data.fileCount} files.</p>}
+      {data.files.length === 0 && <p className="px-3 py-2 text-xs text-muted">This pull request changes no files.</p>}
       {data.files.map((file) => {
         const key = `pr:${file.path}`
         const open = view.expanded.has(key)
@@ -117,6 +123,21 @@ function PullRequestBody({ workspaceId, panelId, snapshot, pr, data, send, retry
       })}
     </div>
   </div>
+}
+
+/** True while a read runs and for the refresh interval after it, when the session would ignore another refresh. */
+function useRefreshBusy(loading: boolean): boolean {
+  const [cooling, setCooling] = useState(false)
+  const wasLoading = useRef(loading)
+  useEffect(() => {
+    if (loading) { wasLoading.current = true; return }
+    if (!wasLoading.current) return
+    wasLoading.current = false
+    setCooling(true)
+    const timer = setTimeout(() => setCooling(false), PR_REFRESH_INTERVAL_MS)
+    return () => clearTimeout(timer)
+  }, [loading])
+  return loading || cooling
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
