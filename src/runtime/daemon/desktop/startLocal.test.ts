@@ -39,8 +39,11 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
   const client = new RpcClient({ version: RUNTIME_VERSION, identity: { client: { clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] } } })
   await client.attach(framePortOver(first.duplex, 'stream'))
   const runtime = createCapabilityProxy(client, runtimeCapability)
-  const info = await runtime.info()
+  // Under the finally: a failed call must still stop the detached daemon.
+  let pid = 0
   try {
+    const info = await runtime.info()
+    pid = info.pid
     expect(info.runtimeId).toBe(first.runtimeId)
     expect(info.pid).not.toBe(process.pid)
 
@@ -52,7 +55,7 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
       kind: 'command', params: { executable: '/cate-round2-no-such-command', args: [] },
     } })
     await waitFor(async () => !(await terminal.list()).find((entry) => entry.id === missing.id)?.alive)
-    expect((await runtime.info()).pid).toBe(info.pid)
+    expect((await runtime.info()).pid).toBe(pid)
 
     const second = await startLocalRuntime(options)
     expect(second.started).toBe(false)
@@ -65,7 +68,7 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
   await waitFor(() => !fs.existsSync(first.endpoint))
   // The socket goes before the last state writes: the process exiting is
   // the end of the daemon's writes under tmp.
-  await waitFor(() => !alive(info.pid), 10_000)
+  await waitFor(() => !alive(pid), 10_000)
   expect(fs.readFileSync(path.join(home, '.cate', 'workspaces', first.runtimeId, 'logs', 'daemon.log'), 'utf-8'))
     .toMatch(/stopping \(stop\)/)
 }, 30_000)
