@@ -4,10 +4,13 @@
 # (agent written by cate-fork-install.sh). It never stops a daemon and never
 # starts Cate.
 #
-# Usage: cate-fork-update [--force] [--prereq] [--purge] [branch]
-#   --force   build even if this commit is already installed, staged or failed
-#   --prereq  list what is missing (tools, Node, npm, connection), change nothing
-#   --purge   delete the build folder and its markers (used by the uninstaller)
+# Usage: cate-fork-update [--force] [--prereq] [--purge] [--self-test] [branch]
+#   --force      build even if this commit is already installed, staged or failed
+#   --prereq     list what is missing (tools, Node, npm, connection), change nothing
+#   --purge      delete the build folder and its markers (used by the uninstaller)
+#   --self-test  check HOME, user, settings and build folder, change nothing, exit 0
+#                (run by the installer and before a refreshed copy replaces this one:
+#                every later version must keep it)
 #
 # Settings: environment, or KEY=value lines in ~/.config/cate-fork-update.conf
 # (the environment wins):
@@ -17,7 +20,7 @@
 #   CATE_APPS_DIR     /Applications
 #
 # Exit: 0 done or nothing to do, 1 failure, 2 not macOS, 3 no suitable Node,
-# 4 disk space, 5 prerequisite missing. Log: ~/Library/Logs/cate-fork-update.log
+# 4 disk space, 5 prerequisite missing, 6 build folder refused. Log: ~/Library/Logs/cate-fork-update.log
 set -eu
 
 MIN_FREE_KB=5242880 # 5 GB: node_modules and release/ of a build
@@ -130,13 +133,17 @@ restore_old() {
 	fi
 }
 
-# The lock is taken by mkdir. A dead owner, or a lock without pid older than 15
-# minutes, is moved aside with one atomic rename: of two runs, only one wins it.
+# The lock is taken by mkdir. An owner that is gone, or whose pid now names
+# another program (reused after a power cut), or a lock without pid older than
+# 15 minutes, is moved aside with one atomic rename: of two runs, only one wins it.
 acquire_lock() {
 	mkdir "$LOCK" 2> /dev/null && return 0
 	pid=$(cat "$LOCK/pid" 2> /dev/null || true)
 	if [ -n "$pid" ]; then
-		if kill -0 "$pid" 2> /dev/null; then return 1; fi
+		# This script as launchd, the installer or a checkout run it; not "tail -f ...cate-fork-update.log".
+		case $(ps -p "$pid" -o command= 2> /dev/null) in
+			*/cate-fork-update | *"/cate-fork-update "* | *cate-fork-update.sh*) return 1 ;;
+		esac
 	elif [ -z "$(find "$LOCK" -maxdepth 0 -mmin +15 2> /dev/null)" ]; then
 		return 1
 	fi
@@ -201,7 +208,13 @@ validate_dir() {
 	DIR=$d
 }
 
+# Under the lock: a purge never deletes the clone under a running build.
 purge() {
+	[ -d "$(dirname "$DIR")" ] || { echo "rien à supprimer : $DIR"; return 0; }
+	if ! acquire_lock; then
+		echo "construction en cours ($LOCK) : dossier de build conservé, réessayer à la fin" >&2
+		exit 1
+	fi
 	rm -rf "$DIR" "$DIR.staged" "$DIR.installed" "$DIR.failed" "$DIR.notified" "$DIR.lock"
 	echo "dossier de build supprimé : $DIR"
 }
@@ -251,14 +264,22 @@ need_build() {
 
 # The installed copy of this script follows the commit it builds, so a fix to it
 # reaches the machine without pasting the line again. Only the fixed path under
-# HOME is replaced (never a checkout), only by a non-empty copy that parses, and
-# by rename: the running shell keeps reading the old file.
+# HOME is replaced (never a checkout), only by a non-empty copy that parses and
+# passes --self-test, and by rename: the running shell keeps reading the old file.
+# A copy that fails is dropped: the installed one stays and takes the next fix.
+# ponytail: --self-test covers startup up to the build folder gate, not the
+# build steps after it; a .prev rollback would need a wrapper around launchd.
 refresh_self() {
 	self=$HOME/.local/bin/cate-fork-update
 	[ -f "$self" ] || return 0
 	if ! git show "$SHA:scripts/cate-fork-update.sh" > "$self.new" 2> /dev/null ||
 		[ ! -s "$self.new" ] || ! sh -n "$self.new" 2> /dev/null || cmp -s "$self.new" "$self"; then
 		rm -f "$self.new"
+		return 0
+	fi
+	if ! sh "$self.new" --self-test < /dev/null; then
+		rm -f "$self.new"
+		log "self-test failed, kept the installed copy (version of $(short "$SHA") not used)"
 		return 0
 	fi
 	chmod 755 "$self.new"
@@ -342,6 +363,7 @@ main() {
 			--force) FORCE=1 ;;
 			--prereq) MODE=prereq ;;
 			--purge) MODE=purge ;;
+			--self-test) MODE=self_test ;;
 			-*) echo "option inconnue : $a" >&2; exit 64 ;;
 			*) BRANCH_ARG=$a ;;
 		esac
@@ -353,6 +375,8 @@ main() {
 	while [ "${h%/}" != "$h" ]; do h=${h%/}; done
 	case $h in /*) ;; *) echo "HOME invalide (${HOME:-vide}) : un dossier absolu existant est requis. Rien n'a été touché." >&2; exit 1 ;; esac
 	[ -d "$h" ] || { echo "HOME introuvable : $HOME. Rien n'a été touché." >&2; exit 1; }
+	# sudo keeps the user's HOME: files written as root there lock the user out.
+	[ "$(id -u)" != 0 ] || { echo "ne pas lancer en root (sudo) : relancer sans sudo. Rien n'a été touché." >&2; exit 1; }
 	CONF="${CATE_FORK_CONF:-$HOME/.config/cate-fork-update.conf}"
 	LOG="$HOME/Library/Logs/cate-fork-update.log"
 
@@ -362,9 +386,6 @@ main() {
 	DIR=${CATE_BUILD_DIR:-$HOME/.local/share/cate-build}
 	APPS=${CATE_APPS_DIR:-/Applications}
 	APP=$APPS/Cate.app
-	STAGED=$DIR.staged/Cate.app # built, waiting for Cate to close
-	LOCK=$DIR.lock
-	NOTIFIED=$DIR.notified
 	# launchd gives a reduced PATH: Node is never taken from the inherited one alone.
 	BREW_PREFIXES=${CATE_BREW_PREFIXES:-/opt/homebrew /usr/local}
 	export GIT_TERMINAL_PROMPT=0
@@ -373,8 +394,14 @@ main() {
 	case $REPO in -*) echo "dépôt invalide (commence par -)" >&2; exit 64 ;; esac
 	case $BRANCH in -*) echo "branche invalide (commence par -)" >&2; exit 64 ;; esac
 	validate_dir
+	# Only from the validated DIR (no trailing slash): every state file sits next
+	# to the clone, never inside it where git clean would delete it.
+	STAGED=$DIR.staged/Cate.app # built, waiting for Cate to close
+	LOCK=$DIR.lock
+	NOTIFIED=$DIR.notified
 
 	case $MODE in
+		self_test) exit 0 ;;
 		prereq) if prereq; then exit 0; fi; exit 5 ;;
 		purge) purge; exit 0 ;;
 	esac
