@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRegisseurs, type RegisseurHandle, type Regisseurs, type RegisseursOptions } from './regisseur'
 
+// macOS arm64 uniquement (le régisseur est un processus POSIX)
+const itPosix = it.skipIf(process.platform === 'win32')
+
 const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-agence.mjs')
 
 let tmp: string
@@ -125,7 +128,7 @@ describe('regisseur', () => {
     expect(regisseurs.running()).toBe(2)
   })
 
-  it('keeps the process when a reference that does not own it goes, and sends SIGTERM at the last release', async () => {
+  itPosix('keeps the process when a reference that does not own it goes, and sends SIGTERM at the last release', async () => {
     const port = await freePort()
     const owner = await acquire(tmp, { port })
     const other = await acquire(tmp, { port, panelId: 'p2' })
@@ -163,7 +166,7 @@ describe('regisseur', () => {
     await expect(second.post('/draft/d1/send', { h: 'abc' })).resolves.toEqual({ code: 200, message: 'ok' })
   })
 
-  it('starts a new one after the last release, once the old one is gone', async () => {
+  itPosix('starts a new one after the last release, once the old one is gone', async () => {
     const port = await freePort()
     const first = await acquire(tmp, { port })
     await settled(first, 'running')
@@ -207,7 +210,7 @@ describe('regisseur', () => {
     await settled(handle, 'running')
   })
 
-  it('stops when trust is revoked, revoking its lease, and comes back when trust returns', async () => {
+  itPosix('stops when trust is revoked, revoking its lease, and comes back when trust returns', async () => {
     const handle = await acquire(tmp)
     await settled(handle, 'running')
     trust.set(false)
@@ -268,7 +271,7 @@ describe('regisseur', () => {
   // agence.py has no SIGTERM handler: a click killed between its GitHub call
   // and its state write leaves the draft « à valider », and a second Envoyer
   // creates the issue twice. A stop waits for the clicks in flight.
-  it('lets a click in flight finish before it restarts for another owner, and refuses new clicks meanwhile', async () => {
+  itPosix('lets a click in flight finish before it restarts for another owner, and refuses new clicks meanwhile', async () => {
     const port = await freePort()
     const first = await acquire(tmp, { port })
     const second = await acquire(tmp, { port, panelId: 'p2' })
@@ -284,7 +287,7 @@ describe('regisseur', () => {
     await settled(second, 'running')
   })
 
-  it('lets a click in flight finish when the last panel goes', async () => {
+  itPosix('lets a click in flight finish when the last panel goes', async () => {
     const handle = await acquire(tmp)
     await settled(handle, 'running')
     const slow = handle.post('/draft/d1/send', { h: 'lent' })
@@ -296,7 +299,7 @@ describe('regisseur', () => {
     expect(kinds.indexOf('sigterm')).toBeGreaterThan(kinds.indexOf('replied'))
   })
 
-  it('stops anyway once the wait for clicks in flight reaches its bound', async () => {
+  itPosix('stops anyway once the wait for clicks in flight reaches its bound', async () => {
     const bounded = create({ drainMaxMs: 150 })
     try {
       const handle = await acquire(tmp, { on: bounded, env: { FAKE_AGENCE_DELAY: '3000' } })
@@ -325,7 +328,7 @@ describe('regisseur', () => {
     } finally { await slowToDie.dispose() }
   })
 
-  it('stops every process at dispose and waits for them, killing one that ignores SIGTERM', async () => {
+  itPosix('stops every process at dispose and waits for them, killing one that ignores SIGTERM', async () => {
     const stubborn = create({ killAfterMs: 200 })
     try {
       const handle = await acquire(tmp, { mode: 'stubborn', on: stubborn })

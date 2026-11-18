@@ -13,6 +13,9 @@ import { AgenceSession, type AgenceSessionDeps } from './session'
 import { createRegisseurs, type RegisseurAcquire, type RegisseurHandle, type Regisseurs } from './parts/runtime/regisseur'
 import type { StateFilesRead } from './parts/runtime/stateFiles'
 
+// macOS arm64 uniquement (le régisseur est un processus POSIX)
+const itPosix = it.skipIf(process.platform === 'win32')
+
 function fakeTerminal() {
   const spawns: SpawnParams[] = []
   const closed: string[] = []
@@ -178,7 +181,7 @@ describe('AgenceSession', () => {
     expect(first.stored()).toEqual({ knownTitles: {} })
   })
 
-  it('works in the record\'s root when it has one', async () => {
+  itPosix('works in the record\'s root when it has one', async () => {
     const { session, terminal, regisseurs, files } = setup({ fields: { root: '/other' } })
     await session.start()
     expect(terminal.spawns[0].cwd).toBe('/other')
@@ -527,7 +530,7 @@ describe('AgenceSession', () => {
       rmSync(tmp, { recursive: true, force: true })
     })
 
-    it('runs one agence watch for two panels of the same repository, stopped with the last one', async () => {
+    itPosix('runs one agence watch for two panels of the same repository, stopped with the last one', async () => {
       const first = open('a1')
       const second = open('a2')
       await first.session.start()
