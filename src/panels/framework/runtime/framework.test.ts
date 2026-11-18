@@ -586,18 +586,21 @@ describe('panel and canvas API handlers', () => {
     expect(placementOf(w.document.get(), created.panelId)).toMatchObject({ index: 1 })
     await expect(w.router.call(cli.caller, 'cate.canvas.createPanel', { type: 'bogus' })).rejects.toMatchObject({ code: 'rejected' })
 
-    const rows = await w.router.call(cli.caller, 'cate.panel.list', {}) as Array<{ panelId: string; url?: string }>
+    const rows = await w.router.call(cli.caller, 'cate.panel.list', {}) as Array<{ panelId: string; url?: string; caller: boolean }>
     expect(rows.map((r) => r.panelId)).toEqual(['term-caller', created.panelId])
+    expect(rows.map((r) => r.caller)).toEqual([true, false])
     expect(rows[1].url).toBe('https://a.test')
 
     await w.router.call(cli.caller, 'cate.panel.setTitle', { title: 'My shell' })
     expect(w.document.get().panels['term-caller'].title).toBe('My shell')
 
-    await expect(w.router.call(cli.caller, 'cate.panel.target.current', {})).resolves.toEqual({ panelId: null })
+    await expect(w.router.call(cli.caller, 'cate.panel.target.current', {})).resolves.toEqual({ panelId: 'term-caller' })
     await w.router.call(cli.caller, 'cate.panel.target.set', { panelId: created.panelId.slice(0, 4) })
     await expect(w.router.call(cli.caller, 'cate.panel.target.current', {})).resolves.toEqual({ panelId: created.panelId })
     await w.router.call(cli.caller, 'cate.panel.target.clear', {})
-    await expect(w.router.call(cli.caller, 'cate.panel.target.current', {})).resolves.toEqual({ panelId: null })
+    await expect(w.router.call(cli.caller, 'cate.panel.target.current', {})).resolves.toEqual({ panelId: 'term-caller' })
+    const outside = w.tokens.issue({ kind: 'cli' })
+    await expect(w.router.call(outside.caller, 'cate.panel.target.current', {})).resolves.toEqual({ panelId: null })
 
     // Session methods reach the session through the host.
     await expect(w.router.call(cli.caller, 'cate.terminal.read', { panelId: 'term-caller', prefix: 'n=' })).resolves.toBe('n=0')
