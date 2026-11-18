@@ -3,7 +3,6 @@
 set -euo pipefail
 
 case "${1:?Pass a supported agent id}" in
-  antigravity) curl --fail --silent --show-error --location https://antigravity.google/cli/install.sh | bash ;;
   claude-code) npm install --global @anthropic-ai/claude-code@latest ;;
   codex) npm install --global @openai/codex@latest ;;
   cursor) curl --fail --silent --show-error --location https://cursor.com/install | bash ;;

@@ -23,7 +23,11 @@ shared daemon cannot be reset by test cleanup between connections. Each must pro
 Missing binaries, startup/authentication errors, timeouts, wrong attribution,
 and missing hooks fail the job. Selected agents are never silently skipped.
 The coverage tests require the matrix and installer to cover every agent in
-Cate's production registry. The suite lives in `src/services/agents/runtime/live/`;
+Cate's production registry, except the agents `LIVE_CI_EXCLUSIONS`
+(`live/hookSmoke.config.ts`) declares with a reason; any other missing agent
+fails them. Antigravity (`agy`) is excluded: it talks only to Google's backend
+with a signed-in Google account, so no fake provider can reach it. Its unit
+tests still run; its hooks are pinned on payloads from a real `agy -p` run. The suite lives in `src/services/agents/runtime/live/`;
 `hookLifecycle.config.ts` assigns every injected
 hook to a real CLI scenario. CI fails if Cate adds an event without a scenario,
 or if a scenario no longer observes that native event.
