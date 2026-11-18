@@ -8,8 +8,9 @@ import type { ApiRouter } from '@kernel/api/runtime'
 import { randomUUID } from 'node:crypto'
 import { RpcError } from '@kernel/rpc/contract'
 import { removalSet, renamePanelChange, type PanelId, type PanelRecord, type RelationKind } from '../contract'
-import { canvasApi, panelApi } from '../contract/api'
+import { canvasApi, frameApi, panelApi } from '../contract/api'
 import type { DocumentService } from './documentService'
+import { createFrameApiHandlers } from './frameApi'
 import type { PresenceService } from './presence'
 
 /** A `cate.canvas.createPanel` call as the panel framework receives it. */
@@ -94,6 +95,7 @@ function fieldInfo(record: PanelRecord): { filePath?: string; url?: string } {
 export function createDocumentApiHandlers(deps: DocumentApiDeps): {
   panel: CateServiceHandlers<typeof panelApi>
   canvas: CateServiceHandlers<typeof canvasApi>
+  frame: CateServiceHandlers<typeof frameApi>
 } {
   const { document } = deps
   const info = deps.listInfo ?? fieldInfo
@@ -176,6 +178,7 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
         return { panelId }
       },
     },
+    frame: createFrameApiHandlers(document),
   }
 }
 
@@ -183,5 +186,6 @@ export function registerDocumentApi(router: Pick<ApiRouter, 'registerService'>, 
   const handlers = createDocumentApiHandlers(deps)
   const offPanel = router.registerService(panelApi, handlers.panel)
   const offCanvas = router.registerService(canvasApi, handlers.canvas)
-  return () => { offPanel(); offCanvas() }
+  const offFrame = router.registerService(frameApi, handlers.frame)
+  return () => { offPanel(); offCanvas(); offFrame() }
 }
