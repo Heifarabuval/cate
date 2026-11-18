@@ -294,6 +294,35 @@ describe('worktree lifecycle', () => {
     expect(document.get().panels.t1).toBeUndefined()
   })
 
+  test('an untrusted workspace reads no pull request and resolves no origin', async () => {
+    trusted = false
+    const untrusted = (call: () => unknown) => {
+      try { call() } catch (e) { return isRpcError(e, 'untrusted') }
+      return false
+    }
+    expect(untrusted(() => repo.github.pullRequestView('org/repo', 1))).toBe(true)
+    expect(untrusted(() => repo.github.pullRequestChecks('org/repo', 1))).toBe(true)
+    expect(untrusted(() => repo.github.pullRequestFiles('org/repo', 1))).toBe(true)
+    expect(untrusted(() => repo.github.originRepository())).toBe(true)
+  })
+
+  test.each([
+    ['https://github.com/Org/Repo.git', 'org/repo'],
+    ['git@github.com:Org/Repo.git', 'org/repo'],
+    ['ssh://git@github.com/Org/Repo', 'org/repo'],
+    ['https://gitlab.com/org/repo.git', null],
+    ['https://github.com.evil.test/org/repo', null],
+  ])('originRepository reads %s as %s', async (url, expected) => {
+    await simpleGit(root).addRemote('origin', url)
+    expect(await repo.github.originRepository()).toBe(expected)
+  })
+
+  test('originRepository is null without an origin remote', async () => {
+    expect(await repo.github.originRepository()).toBeNull()
+    await simpleGit(root).addRemote('upstream', 'https://github.com/org/repo.git')
+    expect(await repo.github.originRepository()).toBeNull()
+  })
+
   test('an untrusted workspace runs no git at all', async () => {
     trusted = false
     const impl = vcsCapabilityImpl(repo)
