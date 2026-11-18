@@ -2493,5 +2493,32 @@ class Notification(Base):
 		self.assertIn('--max-agents', out.getvalue())
 
 
+class Version(unittest.TestCase):
+	"""`agence --version` lit `<install>/BUILD`, `agence.py` vivant dans `<install>/agence/`."""
+
+	def run_version(self, install_files):
+		root = tempfile.mkdtemp()
+		self.addCleanup(shutil.rmtree, root, True)
+		os.makedirs(os.path.join(root, 'agence'))
+		shutil.copy(agence.__file__, os.path.join(root, 'agence', 'agence.py'))
+		for name, text in install_files.items():
+			with open(os.path.join(root, name), 'w') as f:
+				f.write(text)
+		return subprocess.run([sys.executable, os.path.join(root, 'agence', 'agence.py'), '--version'],
+		                      capture_output=True, text=True, env={'PATH': os.environ.get('PATH', '')})
+
+	def test_hors_install_sans_build_rend_dev(self):
+		r = self.run_version({})
+		self.assertEqual((r.returncode, r.stdout.strip()), (0, 'dev'))
+
+	def test_avec_build_rend_son_contenu(self):
+		r = self.run_version({'BUILD': '1.2.3+0123456789ab\n'})
+		self.assertEqual((r.returncode, r.stdout.strip()), (0, '1.2.3+0123456789ab'))
+
+	def test_build_vide_rend_dev(self):
+		r = self.run_version({'BUILD': '\n'})
+		self.assertEqual((r.returncode, r.stdout.strip()), (0, 'dev'))
+
+
 if __name__ == '__main__':
 	unittest.main()
