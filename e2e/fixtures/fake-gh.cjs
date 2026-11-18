@@ -1,4 +1,4 @@
-/* global process, require, __dirname */
+/* global process, require, __dirname, console */
 /* eslint-disable @typescript-eslint/no-require-imports */
 // `gh` stand-in for the agence e2e: records each call ({args, stdin}) in
 // `gh.log` beside this file and answers like the commands the regisseur sends
