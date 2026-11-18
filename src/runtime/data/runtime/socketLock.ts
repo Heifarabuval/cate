@@ -13,7 +13,14 @@ import { ensureLocalEndpoint } from '../node'
 import { readRuntimeInfo } from './runtimeInfo'
 
 export type SocketAcquire =
-  | { kind: 'acquired'; server: net.Server; endpoint: string }
+  | {
+    kind: 'acquired'
+    server: net.Server
+    endpoint: string
+    /** Stops holding connections and returns those accepted since the bind
+     *  (a retrying client), for whoever serves the socket now. */
+    takeEarly(): net.Socket[]
+  }
   | { kind: 'running'; endpoint: string }
 
 export interface AcquireOptions {
@@ -38,19 +45,19 @@ export async function acquireRuntimeSocket(
   if (await socketAnswers(endpoint, probeMs)) return running
   if (platform !== 'win32') await awaitPreviousOwner(dataDir, options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
   // Of two starts binding a free endpoint, exactly one succeeds.
-  let server = await tryListen(endpoint)
-  if (!server && platform === 'win32') {
+  let bound = await tryListen(endpoint)
+  if (!bound && platform === 'win32') {
     // A pipe goes when its owner dies: one that is taken but does not answer
     // belongs to a daemon still stopping. Wait for it, then take it.
     const until = Date.now() + (options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
-    while (!server) {
+    while (!bound) {
       if (await socketAnswers(endpoint, probeMs)) return running
       if (Date.now() > until) throw new Error(`${endpoint} is in use and nothing answers on it`)
       await new Promise((resolve) => setTimeout(resolve, 250))
-      server = await tryListen(endpoint)
+      bound = await tryListen(endpoint)
     }
   }
-  if (!server) {
+  if (!bound) {
     // A socket file nobody answers on, left by a daemon that died. Starts
     // take it over one at a time: otherwise one could unlink the socket
     // another just bound, and both would serve the workspace.
@@ -63,10 +70,10 @@ export async function acquireRuntimeSocket(
       if (await socketAnswers(endpoint, probeMs)) return running
       throw new Error(`${endpoint} is in use and nothing answers on it`)
     }
-    server = taken
+    bound = taken
   }
   if (platform !== 'win32') await fs.chmod(endpoint, 0o600)
-  return { kind: 'acquired', server, endpoint }
+  return { kind: 'acquired', server: bound.server, endpoint, takeEarly: bound.takeEarly }
 }
 
 /** Runs `fn` while holding `takeover.lock` in the data dir (created
@@ -157,9 +164,24 @@ async function removeStaleSocket(endpoint: string): Promise<void> {
   await fs.rm(endpoint, { force: true })
 }
 
-/** A server bound to `endpoint`, or null when the endpoint is in use. */
-function tryListen(endpoint: string): Promise<net.Server | null> {
+interface Bound {
+  server: net.Server
+  takeEarly(): net.Socket[]
+}
+
+/** A server bound to `endpoint`, or null when the endpoint is in use. A
+ *  connection that arrives before the socket is served is held: with no
+ *  listener it would be neither served nor closed, and would keep
+ *  `server.close` waiting. */
+function tryListen(endpoint: string): Promise<Bound | null> {
   const server = net.createServer()
+  const early: net.Socket[] = []
+  const hold = (socket: net.Socket) => { early.push(socket) }
+  server.on('connection', hold)
+  const takeEarly = () => {
+    server.off('connection', hold)
+    return early.splice(0)
+  }
   return new Promise((resolve, reject) => {
     const onError = (error: NodeJS.ErrnoException) => {
       server.close()
@@ -169,7 +191,7 @@ function tryListen(endpoint: string): Promise<net.Server | null> {
     server.once('error', onError)
     server.listen(endpoint, () => {
       server.off('error', onError)
-      resolve(server)
+      resolve({ server, takeEarly })
     })
   })
 }
