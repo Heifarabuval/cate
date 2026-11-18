@@ -1483,6 +1483,181 @@ class Tour(Base):
 		self.assertTrue(self.state()['needs'][0]['closeFailed'])
 
 
+class Relance(Base):
+	"""agence doctor --relance : peut-on relancer Cate sans rien perdre ? Lecture seule."""
+	REPO = 'o/r'
+
+	def setUp(self):
+		super().setUp()
+		self.home = os.path.join(self.tmp, 'home')
+		self.old_home = os.environ.get('CATE_HOME')
+		os.environ['CATE_HOME'] = self.home
+		self.booted()
+		with agence.tx() as st:
+			st['ghRepo'] = self.REPO
+		self.monde()
+
+	def tearDown(self):
+		if self.old_home is None:
+			os.environ.pop('CATE_HOME', None)
+		else:
+			os.environ['CATE_HOME'] = self.old_home
+		super().tearDown()
+
+	def wt(self, name):
+		return os.path.join(self.tmp, '.cate', 'worktrees', name)
+
+	def ecrire(self, *parts, text=''):
+		path = os.path.join(self.home, *parts)
+		os.makedirs(os.path.dirname(path), exist_ok=True)
+		with open(path, 'w') as f:
+			f.write(text)
+
+	def monde(self, agents=(), worktrees=(), prs=(), daemon='1.0+a', app='1.0+a'):
+		"""Réponses préparées. L'orchestrateur, le régisseur et le terminal qui appelle tournent toujours.
+		worktrees : dicts name, dirty, ahead, upstream (faux : pas de branche distante suivie), prunable."""
+		fixes = [{'panelId': p, 'title': p, 'state': 'running', 'canReceivePrompt': True} for p in ('o1', 'r1', 'me')]
+		self.run.reply(['cate', 'agent', 'list'], fixes + list(agents))
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': p, 'type': 'terminal', 'title': p, 'caller': p == 'me',
+		                                            'relations': []} for p in ('o1', 'r1', 'me')])
+		blocks = [f'worktree {self.tmp}\nHEAD abc\nbranch refs/heads/main']
+		for w in worktrees:
+			blocks.append(f"worktree {self.wt(w['name'])}\nHEAD abc\nbranch refs/heads/{w['name']}"
+			              + ('\nprunable gitdir file points to non-existent location' if w.get('prunable') else ''))
+		self.run.reply(['git', '-C', self.tmp, 'worktree', 'list', '--porcelain'], '\n\n'.join(blocks) + '\n')
+		for w in worktrees:
+			p = self.wt(w['name'])
+			self.run.reply(['git', '-C', p, 'status', '--porcelain'], ' M f.ts\n' if w.get('dirty') else '')
+			if w.get('upstream', True):
+				self.run.reply(['git', '-C', p, 'rev-list', '--count', '@{u}..HEAD'], str(w.get('ahead', 0)))
+			else:
+				self.run.reply(['git', '-C', p, 'rev-list', '--count', '@{u}..HEAD'], '', code=128, err='no upstream')
+				self.run.reply(['git', '-C', p, 'rev-list', '--count', 'HEAD', '--not', '--remotes'], str(w.get('ahead', 0)))
+		self.run.reply(['gh', 'pr', 'list'], list(prs))
+		self.ecrire('runtime', 'current', text=app)
+		self.ecrire('workspaces', 'w1', 'runtime.json', text=json.dumps({'runtimeId': 'w1', 'root': self.tmp, 'build': daemon}))
+		self.ecrire('workspaces', 'w2', 'runtime.json', text=json.dumps({'runtimeId': 'w2', 'root': '/autre', 'build': 'autre'}))
+
+	def agent(self, state, title='#n12 implémenteur', panel='a1'):
+		return {'panelId': panel, 'title': title, 'state': state, 'canReceivePrompt': True}
+
+	def doctor(self, *argv):
+		code, out = self.cli('doctor', *(argv or ('--relance',)))
+		return code, out.splitlines()
+
+	def test_rien_en_cours_oui(self):
+		self.assertEqual(self.doctor(), (0, ['oui']))
+		self.assertEqual(self.doctor('--relance'), (0, ['oui']))
+
+	def test_agent_en_plein_tour_non(self):
+		self.monde(agents=[self.agent('running', '#n12 implémenteur', 'a1'), self.agent('running', '#n12 vérificateur', 'a2')])
+		code, lines = self.doctor()
+		self.assertEqual(code, 1)
+		self.assertEqual(lines, ['non : 2 agents en plein tour (#n12 implémenteur, #n12 vérificateur)'])
+
+	def test_agent_en_attente_seul_reste_oui_avec_info(self):
+		self.monde(agents=[self.agent('waitingForInput', '#n13 vérificateur')])
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent en attente de saisie (#n13 vérificateur)']))
+
+	def test_worktree_sale_non(self):
+		self.monde(worktrees=[{'name': 'n12-impl', 'dirty': True}])
+		self.assertEqual(self.doctor(), (1, ['non : worktree n12-impl : modifications non commitées']))
+
+	def test_commit_non_pousse_non(self):
+		self.monde(worktrees=[{'name': 'n12-impl', 'ahead': 1}, {'name': 'n13-impl', 'ahead': 0}])
+		self.assertEqual(self.doctor(), (1, ['non : worktree n12-impl : 1 commit non poussé']))
+
+	def test_sans_upstream_compte_les_commits_absents_des_distantes(self):
+		self.monde(worktrees=[{'name': 'n12-impl', 'upstream': False, 'ahead': 2}])
+		self.assertEqual(self.doctor(), (1, ['non : worktree n12-impl : 2 commits non poussés']))
+		self.monde(worktrees=[{'name': 'n12-impl', 'upstream': False, 'ahead': 0}])
+		self.assertEqual(self.doctor(), (0, ['oui']))
+
+	def test_worktree_prunable_ignore(self):
+		self.monde(worktrees=[{'name': 'n12-impl', 'prunable': True, 'dirty': True}])
+		self.assertEqual(self.doctor(), (0, ['oui']))
+
+	def test_pr_ouverte_non(self):
+		self.monde(prs=[{'number': 31, 'title': 'test(ci)', 'headRefName': 'x'}])
+		self.assertEqual(self.doctor(), (1, ['non : PR ouverte #31 test(ci)']))
+
+	def test_build_different_info_sans_changer_le_verdict(self):
+		self.monde(daemon='2.1.0+d', app='2.1.0+e')
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : daemon à redémarrer (build 2.1.0+d, app 2.1.0+e) : terminaux et agents arrêtés']))
+		self.monde(daemon='2.1.0+e', app='2.1.0+e')
+		self.assertEqual(self.doctor(), (0, ['oui']))
+
+	def test_plusieurs_raisons_non_d_abord_puis_info(self):
+		self.monde(agents=[self.agent('running'), self.agent('waitingForInput', '#n13 vérificateur', 'a2')],
+		           prs=[{'number': 31, 'title': 't', 'headRefName': 'x'}], daemon='a', app='b')
+		code, lines = self.doctor()
+		self.assertEqual(code, 1)
+		self.assertEqual([l.split(' ')[0] for l in lines], ['non', 'non', 'info', 'info'])
+
+	def test_source_illisible_jamais_oui(self):
+		def cate_agent():
+			self.run.reply(['cate', 'agent', 'list'], '', code=1, err='socket fermé')
+
+		def cate_panel():
+			self.run.reply(['cate', 'panel', 'list'], 'pas du json')
+
+		def git_liste():
+			self.run.reply(['git', '-C', self.tmp, 'worktree', 'list'], '', code=128, err='pas un dépôt')
+
+		def git_statut():
+			self.monde(worktrees=[{'name': 'n12-impl'}])
+			self.run.reply(['git', '-C', self.wt('n12-impl'), 'status'], '', code=128, err='fatal')
+
+		def git_compte():
+			self.monde(worktrees=[{'name': 'n12-impl'}])
+			self.run.reply(['git', '-C', self.wt('n12-impl'), 'rev-list', '--count', '@{u}..HEAD'], 'x')
+			self.run.reply(['git', '-C', self.wt('n12-impl'), 'rev-list', '--count', 'HEAD'], 'x')
+
+		def gh():
+			self.run.reply(['gh', 'pr', 'list'], '', code=127, err='gh introuvable')
+
+		def daemon_corrompu():
+			self.ecrire('workspaces', 'w1', 'runtime.json', text='{pas du json')
+
+		def daemon_absent():
+			os.remove(os.path.join(self.home, 'runtime', 'current'))
+
+		for source, casse in (('cate', cate_agent), ('cate', cate_panel), ('git', git_liste), ('git', git_statut),
+		                      ('git', git_compte), ('gh', gh), ('daemon', daemon_corrompu), ('daemon', daemon_absent)):
+			with self.subTest(source=source, cas=casse.__name__):
+				self.monde()
+				casse()
+				code, lines = self.doctor()
+				self.assertEqual(code, 1)
+				self.assertEqual(lines[0].split(' illisible')[0], f'non : {source}')
+				self.assertIn(' illisible (', lines[0])
+
+	def test_lecture_seule(self):
+		self.monde(agents=[self.agent('running')], worktrees=[{'name': 'n12-impl', 'dirty': True, 'ahead': 1}],
+		           prs=[{'number': 31, 'title': 't', 'headRefName': 'x'}], daemon='a', app='b')
+		path = agence.state_file()
+		with open(path, 'rb') as f:
+			avant = f.read()
+		self.doctor()
+		with open(path, 'rb') as f:
+			self.assertEqual(f.read(), avant)
+		self.assertTrue(self.run.calls)
+		for cmd, _ in self.run.calls:
+			for interdit in ('close', 'push', 'remove', 'title', 'send', 'link', '--discard'):
+				self.assertNotIn(interdit, cmd)
+
+	def test_hors_terminal_cate_sortie_2(self):
+		del os.environ['CATE_SOCKET']
+		code, out = self.cli('doctor', '--relance')
+		self.assertEqual((code, out), (2, ''))
+
+	def test_verdict_pur(self):
+		faits = {'running': ['#n12 a'], 'waiting': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
+		self.assertEqual(agence.verdict_relance(faits), (False, ['non : 1 agent en plein tour (#n12 a)']))
+		faits['running'] = []
+		self.assertEqual(agence.verdict_relance(faits), (True, ['oui']))
+
+
 class ClientParti(Base):
 	def handler(self, exc):
 		class Mort:

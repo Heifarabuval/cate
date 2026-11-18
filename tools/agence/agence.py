@@ -12,6 +12,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence draft new|edit|show|sent|drop  brouillons ; seul le bouton Envoyer de la page valide
   agence ask "question" --option "label|effet"... [--merge owner/repo#N]
   agence watch                       régisseur : boucle de suivi + pages (127.0.0.1:<port>)
+  agence doctor [--relance]          peut-on relancer Cate sans rien perdre ? oui ou non en première ligne, puis les raisons (lecture seule ; code 0 oui, 1 non)
   agence guard                       hook PreToolUse (JSON sur stdin)
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
@@ -21,6 +22,7 @@ Codes : 0 ok, 1 refus métier, 2 environnement.
 import argparse
 import contextlib
 import fcntl
+import glob
 import hashlib
 import html
 import http.server
@@ -1517,6 +1519,106 @@ def pr_mergee(repo, branch, tip):
 		return False
 
 
+def pluriel(n, mot):
+	return f"{n} {mot}{'s' if n > 1 else ''}"
+
+
+def verdict_relance(faits):
+	"""(oui, lignes) : peut-on relancer Cate sans rien perdre ? Pure : les faits sont déjà lus par lire_faits_relance.
+	Les lignes « non » viennent avant les lignes « info » ; sans cause bloquante, la première ligne est « oui »."""
+	non, info = [], []
+	if faits['running']:
+		non.append(f"{pluriel(len(faits['running']), 'agent')} en plein tour ({', '.join(faits['running'])})")
+	for nom_wt, sale, ahead in faits['worktrees']:
+		raisons = (['modifications non commitées'] if sale else []) + ([pluriel(ahead, 'commit') + ' non poussé' + 's' * (ahead > 1)] if ahead else [])
+		if raisons:
+			non.append(f"worktree {nom_wt} : {', '.join(raisons)}")
+	non += [f'PR ouverte #{num} {titre}' for num, titre in faits['prs']]
+	non += [f'{source} illisible ({err})' for source, err in faits['illisibles']]
+	if faits['waiting']:
+		info.append(f"{pluriel(len(faits['waiting']), 'agent')} en attente de saisie ({', '.join(faits['waiting'])})")
+	if faits['daemon'] and faits['daemon'][0] != faits['daemon'][1]:
+		info.append(f"daemon à redémarrer (build {faits['daemon'][0]}, app {faits['daemon'][1]}) : terminaux et agents arrêtés")
+	lignes = [f'non : {x}' for x in non] if non else ['oui']
+	return not non, lignes + [f'info : {x}' for x in info]
+
+
+def lire_faits_relance(st, base=None):
+	"""Lit, sans rien écrire, ce que verdict_relance juge. Une lecture en échec s'ajoute à « illisibles » (jamais un faux oui)."""
+	base = base or root()
+	faits = {'running': [], 'waiting': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
+
+	def illisible(source, err):
+		faits['illisibles'].append((source, ' '.join(str(err).split()) or 'sortie vide'))
+
+	try:
+		agents = cate('agent', 'list')
+		agents = agents if isinstance(agents, list) else agents.get('agents', [])
+		rows = cate('panel', 'list')
+		ignores = set(st['panels'].values()) | {r['panelId'] for r in rows if r.get('caller')}
+		for a in agents:
+			if a['panelId'] not in ignores:
+				cible = faits['running'] if a.get('state') == 'running' else faits['waiting'] if a.get('state') == 'waitingForInput' else None
+				if cible is not None:
+					cible.append(a.get('title') or a['panelId'])
+	except (Refus, ValueError, TypeError, KeyError, AttributeError) as err:
+		illisible('cate', err)
+
+	code, out, err = RUN(['git', '-C', base, 'worktree', 'list', '--porcelain'])
+	if code != 0:
+		illisible('git', err or out)
+	else:
+		for block in out.strip().split('\n\n')[1:]:  # le premier est le dépôt principal
+			f = dict((line.split(' ', 1) + [''])[:2] for line in block.splitlines())
+			path = f.get('worktree')
+			if not path or 'prunable' in f:  # dossier disparu : rien à perdre, git worktree prune le retire
+				continue
+			c1, dirty, e1 = RUN(['git', '-C', path, 'status', '--porcelain'])
+			c2, ahead, e2 = RUN(['git', '-C', path, 'rev-list', '--count', '@{u}..HEAD'])
+			if c2 != 0:  # sans upstream : les commits qu'aucune branche distante ne porte
+				c2, ahead, e2 = RUN(['git', '-C', path, 'rev-list', '--count', 'HEAD', '--not', '--remotes'])
+			try:
+				if c1 != 0 or c2 != 0:
+					raise ValueError(e1 or e2)
+				faits['worktrees'].append((os.path.basename(path), bool(dirty.strip()), int(ahead)))
+			except ValueError as err:
+				illisible('git', f'{os.path.basename(path)} : {err}')
+
+	repo = gh_repo(st)
+	code, out, err = RUN(['gh', 'pr', 'list', '-R', repo or '', '--state', 'open', '--json', 'number,title,headRefName'], timeout=GH_TIMEOUT) if repo else (1, '', 'dépôt GitHub inconnu')
+	try:
+		if code != 0:
+			raise ValueError(err or out)
+		faits['prs'] = [(p['number'], p['title']) for p in json.loads(out)]
+	except (ValueError, TypeError, KeyError) as err:
+		illisible('gh', err)
+
+	home = os.environ.get('CATE_HOME') or os.path.expanduser('~/.cate')
+	try:
+		build = None
+		for f in glob.glob(os.path.join(home, 'workspaces', '*', 'runtime.json')):
+			with contextlib.suppress(OSError, ValueError, AttributeError):
+				with open(f) as fh:
+					j = json.load(fh)
+				if os.path.realpath(j['root']) == os.path.realpath(base):
+					build = j['build']
+					break
+		if not build:
+			raise ValueError('runtime.json de ce projet introuvable ou illisible')
+		with open(os.path.join(home, 'runtime', 'current')) as fh:
+			faits['daemon'] = (build, fh.read().strip())
+	except (OSError, ValueError) as err:
+		illisible('daemon', err)
+	return faits
+
+
+def cmd_doctor(a):
+	require_cate()
+	oui, lignes = verdict_relance(lire_faits_relance(load()))
+	print('\n'.join(lignes))
+	return 0 if oui else 1
+
+
 def read_token_stdin():
 	"""Jeton des formulaires donné par le processus parent : première ligne de stdin, 24 caractères au moins."""
 	token = sys.stdin.readline().strip()
@@ -1754,6 +1856,9 @@ def parser():
 	w.add_argument('--interval', type=int, default=30)
 	w.add_argument('--token-stdin', action='store_true', help='jeton des formulaires lu sur stdin ; arrêt à la fin de stdin')
 	w.set_defaults(fn=cmd_watch)
+	d = sub.add_parser('doctor', help="peut-on relancer Cate sans rien perdre ? (lecture seule ; 0 oui, 1 non)")
+	d.add_argument('--relance', action='store_true', help='contrôle de relance (le seul contrôle : sans option, même résultat)')
+	d.set_defaults(fn=cmd_doctor)
 	sub.add_parser('guard').set_defaults(fn=cmd_guard)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
