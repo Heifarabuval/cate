@@ -114,8 +114,11 @@ function randomFrameChange(doc: WorkspaceDocument, rng: Rng, newId: () => string
   return { kind: 'setNodeFrame', canvasId: canvas.id, nodeId: rng.pick(Object.keys(canvas.nodes)), frameId: target }
 }
 
-/** One random change for `doc`. */
-export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => string): DocChange {
+/** One random change for `doc`. With `frames`, about one change in seven is a
+ *  frame op (one extra draw first); without it the draws are exactly what
+ *  they were before frames existed, so fixed seeds replay the same runs. */
+export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => string, frames = false): DocChange {
+  if (frames && rng.chance(0.15)) return randomFrameChange(doc, rng, newId)
   const panels = Object.values(doc.panels)
   const panelIds = panels.map((p) => p.id)
   const someId = () => (panelIds.length && !rng.chance(0.05) ? rng.pick(panelIds) : 'no-such-panel')
@@ -129,13 +132,12 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   const relations = Object.values(doc.relations)
   const worktrees = Object.values(doc.worktrees)
 
-  const roll = rng.int(115)
+  const roll = rng.int(100)
   if (roll < 22 || panelIds.length < 2) {
     const type = rng.chance(0.12) ? 'canvas' : rng.pick(PANEL_TYPES.filter((t) => t !== 'canvas'))
     const record = randomRecord(rng, newId, type)
     return { kind: 'addPanel', record, at: randomTarget(doc, rng, newId, type === 'canvas') }
   }
-  if (roll >= 100) return randomFrameChange(doc, rng, newId)
   if (roll < 45) {
     const id = someId()
     return { kind: 'placePanel', id, at: randomTarget(doc, rng, newId, doc.panels[id]?.type === 'canvas') }
