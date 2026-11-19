@@ -62,6 +62,8 @@ class Base(unittest.TestCase):
 		os.environ['AGENCE_ROOT'] = self.tmp
 		os.environ['CATE_SOCKET'] = '/tmp/x.sock'
 		os.environ['AGENCE_NOM'] = 'Max'  # jamais le gitconfig de la machine dans les attendus
+		self.env['HOME'] = os.environ.get('HOME')
+		os.environ['HOME'] = os.path.join(self.tmp, 'home')  # watch lit ~/.claude/settings.json : jamais le vrai
 		self.run = FakeRun()
 		self.old_run = agence.RUN
 		agence.RUN = self.run
@@ -1707,6 +1709,38 @@ class Relance(Base):
 		self.assertEqual(agence.verdict_relance(faits), (False, ['non : 1 agent en plein tour (#n12 a)']))
 		faits['running'] = []
 		self.assertEqual(agence.verdict_relance(faits), (True, ['oui']))
+
+
+class TourGarde(Base):
+	"""watch écrit à chaque tour st['garde'] d'après agence hooks status du HOME courant (faux HOME de Base)."""
+
+	def settings(self, entrees):
+		path = os.path.join(os.environ['HOME'], '.claude', 'settings.json')
+		os.makedirs(os.path.dirname(path), exist_ok=True)
+		with open(path, 'w') as f:
+			json.dump({'hooks': {'PreToolUse': entrees}}, f)
+
+	def test_ecrit_le_statut_a_chaque_tour(self):
+		self.booted()
+		agence.un_tour()
+		self.assertEqual(self.state()['garde'], 'inactif')
+		self.settings(agence.HOOK_ENTREES)
+		agence.un_tour()
+		self.assertEqual(self.state()['garde'], 'actif')
+		self.settings(agence.HOOK_ENTREES[1:])
+		agence.un_tour()
+		self.assertEqual(self.state()['garde'], 'partiel')
+
+	def test_etat_ancien_complete(self):
+		self.booted()
+		path = agence.state_file()
+		with open(path) as f:
+			st = json.load(f)
+		st.pop('garde', None)
+		with open(path, 'w') as f:
+			json.dump(st, f)
+		self.assertIn('garde', self.state())
+		self.assertIsNone(self.state()['garde'])  # pas encore de tour : le panneau dit « inconnu »
 
 
 class Orphelins(Base):
