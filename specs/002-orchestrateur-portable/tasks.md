@@ -75,7 +75,7 @@ Bilan : **36 cochées**, 5 retirées (L2-01, L2-04, L2-05 par la décision q303 
 - [ ] L2-17 Ses états existants se relisent. Ouverte : T013.
 - [ ] L2-18 Portes et PR du lot 2. Ouverte : T015.
 
-### Lot 3 : gardes et doctor (11 sur 12), branche `feat/agence-gardes`
+### Lot 3 : gardes et doctor (12 sur 12), PR #64
 
 - [x] L3-01 Tests de l'installeur sur config hostile. Preuve : T017.
 - [x] L3-02 `agence hooks`. Preuve : T018.
@@ -88,7 +88,7 @@ Bilan : **36 cochées**, 5 retirées (L2-01, L2-04, L2-05 par la décision q303 
 - [x] L3-09 Test de la bannière. Preuve : T027.
 - [x] L3-10 Panneau : `garde` et bannière. Preuve : T028.
 - [x] L3-11 Documentation. Preuve : T029.
-- [ ] L3-12 Portes et PR du lot 3. Ouverte : T030.
+- [x] L3-12 Portes et PR du lot 3. Preuve : T030, PR #64.
 
 ### Lot 4 : mise à jour automatique et amorçage (6 sur 11), PR #40
 
@@ -201,7 +201,7 @@ Aucune tâche bloquante entre lots. Décisions de Heifara (2026-11-19) : valeur 
 - [x] T027 [P] [US2] Test rouge du panneau (FR-010, US2 scénario 3) : instantané `garde: 'actif' | 'inactif' | 'partiel' | 'inconnu'` (`inconnu` avant le premier tour) ; bannière « garde d'envoi inactif » avec `agence hooks install` pour `inactif`, « garde d'envoi partiel » pour `partiel`, et pour `inconnu` après 5 s sans tour ; rien pour `actif`, `external` ou `missing`. Fichiers : `src/panels/agence/session.test.ts`, `src/shells/desktop/ui/panels/agence/AgenceView.test.tsx`. Modèle : sonnet. **Fait** : rouge : 5 échecs, `expected undefined to be 'inconnu'` et `expected '' to match /garde d'envoi inactif/i`.
 - [x] T028 [US2] Panneau : `garde` dans `src/panels/agence/contract/types.ts` et `src/panels/agence/session.ts` ; bannière dans `src/shells/desktop/ui/panels/agence/AgenceView.tsx`, en réutilisant `RegisseurBanner.tsx`. Preuve : T027 vert ; `typecheck`, `lint`, `lint:deps` verts. Modèle : sonnet. **Fait** : `types.ts:93-96` (`GardeState`) et `:184`, `session.ts` (`GARDES`, `garde` publié, `inconnu` sans état ou sans `agence`), `RegisseurBanner.tsx` (prop `garde`, minuterie de 5 s), `AgenceView.tsx`. T027 vert : `npx vitest run src/panels/agence src/shells/desktop/ui/panels/agence` donne `211 passed` ; `npm run typecheck` vert ; `npm run lint` 0 erreur ; `npm run lint:deps` « no dependency violations found ».
 - [x] T029 [P] Documentation : `docs/architecture.md` (panneau agence : gardes, qui écrit `settings.json`, Cate ne lance jamais `agence hooks`), une ligne dans `CLAUDE.md` (même règle), `specs/002-orchestrateur-portable/contracts/hooks.md` avec le texte figé. Preuve : diff relu. Modèle : haiku. **Fait** : `docs/architecture.md` (paragraphe « Send guards » :2134, ligne `agence` du tableau des panneaux, install `agence/`), `CLAUDE.md:250-251` (section State), `contracts/hooks.md` (texte figé, écart de `agence-hook send`). Diff relu.
-- [ ] T030 Portes et PR du lot 3 : suite complète et `npm run test:agence` ; `git grep -n "hooks install" -- src` ne rend que des textes d'aide et des tests. Corps : `Réf. #29` ; « ne pas lancer `agence hooks install` chez Heifara avant le lot 5 : deux gardes sur un même outil ». Modèle : haiku.
+- [x] T030 Portes et PR du lot 3 : suite complète et `npm run test:agence` ; `git grep -n "hooks install" -- src` ne rend que des textes d'aide et des tests. Corps : `Réf. #29` ; « ne pas lancer `agence hooks install` chez Heifara avant le lot 5 : deux gardes sur un même outil ». Modèle : haiku. **Fait** : `npm test` : 476 fichiers, 4267 tests verts, 3 ignorés ; `npm run test:agence` : `Ran 391 tests OK` (aussi sous `/usr/bin/python3` 3.9.6) ; `git grep -n "hooks install" -- src` : `RegisseurBanner.tsx:34` (texte de la bannière) et `AgenceView.test.tsx` seulement. PR #64 (`Réf. #29`, avertissement en tête du corps).
 
 **Checkpoint lot 3** : deux `install` = un ; un envoi Slack sans CLI donne `ask` ; la bannière s'affiche sans garde.
 
