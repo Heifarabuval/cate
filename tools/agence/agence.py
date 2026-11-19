@@ -46,6 +46,7 @@ CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w
                       r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
 ORCH_PROMPT = '/orchestrateur'
 CSS = 'https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css'
+PAGES = True  # faux sous --token-stdin : le panneau agence de Cate tient l'interface, plus aucune page ni jeton dans un corps
 TOKEN = secrets.token_urlsafe(18)  # jeton des formulaires, en mémoire du régisseur seulement
 
 
@@ -142,7 +143,7 @@ def draft_path(did):
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
 	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
-	        'orphanVus': {}, 'orphanGardes': []}
+	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain"}
 
 
 def plafond(st):
@@ -1162,6 +1163,8 @@ class Pages(http.server.BaseHTTPRequestHandler):
 			log(f'client parti avant la réponse : {self.command} {self.path}')
 
 	def do_GET(self):
+		if not PAGES:
+			return self.send(404, 'Introuvable', ctype='text/plain')
 		st = load()
 		path = urllib.parse.urlparse(self.path).path
 		try:
@@ -1701,6 +1704,7 @@ def un_tour():
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
+		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows)
 		apply(st, effects)
@@ -1709,13 +1713,14 @@ def un_tour():
 
 
 def cmd_watch(a):
-	global TOKEN
+	global TOKEN, PAGES
 	require_cate()
 	st = load()
 	if not st['port']:
 		raise Refus("pas de port : l'orchestrateur lance d'abord « agence boot »")
 	if a.token_stdin:
 		TOKEN = read_token_stdin()
+		PAGES = False
 	try:
 		server = http.server.ThreadingHTTPServer(('127.0.0.1', st['port']), Pages)
 	except OSError as err:
