@@ -25,7 +25,7 @@ export type EditorSnapshot = {
   /** An untitled editor's working file (connected editors): it has no real
    *  destination yet, so Save is a Save As into `checkout`. */
   draft: boolean
-  /** Set for files shown as a preview (image, PDF, DOCX); null for text. */
+  /** Set for files shown as a preview (image, video, audio, PDF, DOCX) or `binary`; null for text. */
   documentType: DocumentType | null
   dirty: boolean
   /** The file changed or was deleted on disk under unsaved edits. */
