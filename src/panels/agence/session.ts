@@ -24,6 +24,7 @@ import type {
   AgenceState,
   DraftKind,
   DraftView,
+  GardeState,
   PanelTitles,
   QuestionView,
 } from './contract/types'
@@ -49,6 +50,7 @@ const INITIAL_ROWS = 24
 const OPEN_DRAFT: ReadonlySet<string> = new Set(['à valider', 'envoyer'])
 const SAFE_ID = /^[\w-]+$/
 const DRAFT_KINDS: ReadonlySet<string> = new Set(['issue', 'pr', 'comment', 'slack', 'mail'])
+const GARDES: ReadonlySet<string> = new Set(['actif', 'inactif', 'partiel'])
 
 const initialSnapshot = (): AgenceSnapshot => ({
   ptyId: null,
@@ -57,6 +59,7 @@ const initialSnapshot = (): AgenceSnapshot => ({
   suivi: null,
   drafts: {},
   questions: {},
+  garde: 'inconnu',
 })
 
 export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
@@ -223,7 +226,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const read = this.files.read()
     // No agence CLI: nothing to act through, so nothing is shown as actionable.
     if (regisseur.state === 'missing' || !read.state) {
-      this.publish({ regisseur, suivi: null, drafts: {}, questions: {} })
+      this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu' })
       return
     }
     const state = read.state
@@ -240,6 +243,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       },
       drafts: drafts(state, read.drafts),
       questions: questions(state, now),
+      garde: GARDES.has(state.garde ?? '') ? state.garde as GardeState : 'inconnu',
     })
   }
 
