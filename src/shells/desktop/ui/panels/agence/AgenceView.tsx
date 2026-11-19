@@ -150,7 +150,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {...panelProps('suivi')}
           className={`min-h-0 min-w-0 overflow-auto ${showSuivi ? 'flex-1' : 'hidden'}`}
         >
-          <RegisseurBanner regisseur={snapshot.regisseur} onRestart={() => run({ kind: 'orchestrator.restart' })} />
+          <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
             : snapshot.suivi

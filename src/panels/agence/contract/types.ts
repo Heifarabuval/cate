@@ -90,7 +90,12 @@ export type AgenceSnapshot = {
   drafts: Record<string, DraftView>
   /** Questions with no answer. */
   questions: Record<string, QuestionView>
+  /** The send guard of the human's `~/.claude/settings.json`, as the regisseur
+   *  last read it (`agence hooks status`); `inconnu` before its first turn. */
+  garde: GardeState
 }
+
+export type GardeState = 'actif' | 'inactif' | 'partiel' | 'inconnu'
 
 export type AgenceOp =
   | { kind: 'draft.send'; draftId: string; hash: string }
@@ -179,6 +184,8 @@ export interface AgenceState {
   needs: StateNeed[]
   drafts: StateDraft[]
   questions: StateQuestion[]
+  /** Written by the regisseur at each turn; absent or null in an old state. */
+  garde?: string | null
 }
 
 /** What the document says of a linked panel: its last known title, and

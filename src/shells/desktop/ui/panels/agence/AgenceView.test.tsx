@@ -35,6 +35,7 @@ const snapshot = (patch: Partial<AgenceSnapshot> = {}): AgenceSnapshot => ({
   },
   drafts: { d1: { id: 'd1', cible: 'issue:x/y', kind: 'issue', titre: 'T', statut: 'à valider', texte: 'Texte', hash: 'h' } },
   questions: {},
+  garde: 'actif',
   ...patch,
 })
 
@@ -286,4 +287,43 @@ it.each([
   await act(async () => answer({ ok: true }))
   expect(button(label)!.hasAttribute('aria-busy')).toBe(false)
   expect(button(label)!.querySelector('svg.lucide-check')).not.toBeNull()
+})
+
+const banner = () => host.querySelector('[data-testid="regisseur-banner"]')?.textContent ?? ''
+
+it('says the send guard is off, with the command that installs it', () => {
+  render(snapshot({ garde: 'inactif' }))
+  expect(banner()).toMatch(/garde d'envoi inactif/i)
+  expect(banner()).toContain('agence hooks install')
+})
+
+it('says the send guard is partial', () => {
+  render(snapshot({ garde: 'partiel' }))
+  expect(banner()).toMatch(/garde d'envoi partiel/i)
+  expect(banner()).toContain('agence hooks install')
+})
+
+it('says nothing of the send guard when it is on, or when the regisseur is external or missing', () => {
+  render(snapshot({ garde: 'actif' }))
+  expect(host.querySelector('[data-testid="regisseur-banner"]')).toBeNull()
+  render(snapshot({ garde: 'inactif', regisseur: { state: 'external', error: 'régisseur déjà actif sur 4321', settingsHint: null } }))
+  expect(banner()).not.toMatch(/garde d'envoi/i)
+  render(snapshot({ garde: 'inactif', suivi: null, regisseur: { state: 'missing', error: 'agence introuvable', settingsHint: null } }))
+  expect(banner()).not.toMatch(/garde d'envoi/i)
+})
+
+it('says an unknown send guard only after 5 s without a turn of the regisseur', () => {
+  vi.useFakeTimers()
+  try {
+    render(snapshot({ garde: 'inconnu' }))
+    expect(banner()).not.toMatch(/garde d'envoi/i)
+    act(() => { vi.advanceTimersByTime(4900) })
+    expect(banner()).not.toMatch(/garde d'envoi/i)
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(banner()).toMatch(/garde d'envoi inconnu/i)
+    render(snapshot({ garde: 'actif' }))
+    expect(banner()).not.toMatch(/garde d'envoi/i)
+  } finally {
+    vi.useRealTimers()
+  }
 })
