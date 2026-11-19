@@ -13,7 +13,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence ask "question" --option "label|effet"... [--merge owner/repo#N]
   agence watch                       régisseur : boucle de suivi + pages (127.0.0.1:<port>)
   agence doctor [--relance]          peut-on relancer Cate sans rien perdre ? oui ou non en première ligne, puis les raisons (lecture seule ; code 0 oui, 1 non)
-  agence doctor --prerequis [--json] ce qui manque pour orchestrer, une ligne par point avec la commande qui règle (code 1 si un bloquant manque)
+  agence doctor --prerequis [--hors-cate] [--json] ce qui manque pour orchestrer, une ligne par point avec la commande qui règle (code 1 si un bloquant manque)
   agence guard [--mode send|pages]   hook PreToolUse (JSON sur stdin) ; send échoue fermé (ask), pages échoue ouvert
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence url                         adresse de la page de suivi
@@ -1687,10 +1687,13 @@ CLI_REGLAGES = {'cliEnabled': True, 'cliPanelReadEnabled': True, 'cliPanelContro
                 'cliSkillInstallEnabled': True}
 INPUT_TERMINAL = "Réglages de Cate > Workspace > CLI : cocher Terminal, colonne control (cliTerminalInputEnabled, coupé par défaut)"
 MAJ_CATE = "attendre la mise à jour automatique (cate-fork-update), ou recoller la ligne d'amorçage"
+# Points qui exigent un terminal Cate ou un Cate déjà démarré : `info` sous --hors-cate (l'amorçage ne lance jamais Cate).
+DANS_CATE = ('terminal Cate', 'CLI livrée', 'agent start --model', 'agent usage', 'type agence', 'réglages CLI', 'skill')
 
 
-def prerequis():
-	"""Points de `doctor --prerequis` : (point, état ok|manque|info, bloquant, détail, commande qui règle). Lecture seule."""
+def prerequis(hors_cate=False):
+	"""Points de `doctor --prerequis` : (point, état ok|manque|info, bloquant, détail, commande qui règle). Lecture seule.
+	hors_cate : les points de DANS_CATE sortent en `info` et `cate` n'est jamais lancé."""
 	points = []
 
 	def point(nom_, ok, bloquant, detail, commande, info=False):
@@ -1698,6 +1701,8 @@ def prerequis():
 		               'detail': detail, 'commande': None if ok else commande})
 
 	def aide(*args):
+		if hors_cate:
+			return 1, ''
 		code, out, err = RUN(['cate', *args, '--help'], timeout=10)
 		return code, out + err
 
@@ -1756,12 +1761,15 @@ def prerequis():
 	n, source = nom_source()
 	point('nom', source != 'défaut', False, f'{n} ({source})', 'git config --global agence.nom <Prénom>', info=True)
 	point('Slack, Gmail', False, False, 'non lisible depuis la CLI', 'brancher les connecteurs dans Claude Code', info=True)
+	for p in points if hors_cate else ():
+		if p['point'] in DANS_CATE:
+			p.update(etat='info', detail='à vérifier dans un terminal Cate', commande='agence doctor --prerequis')
 	return points
 
 
 def cmd_doctor(a):
 	if a.prerequis:
-		points = prerequis()
+		points = prerequis(a.hors_cate)
 		ok = not any(p['bloquant'] and p['etat'] == 'manque' for p in points)
 		if a.json:
 			print(json.dumps({'ok': ok, 'points': points}, ensure_ascii=False))
@@ -2206,6 +2214,7 @@ def parser():
 	d.add_argument('--relance', action='store_true', help='contrôle de relance (sans option, même résultat)')
 	d.add_argument('--prerequis', action='store_true', help="prérequis de l'orchestrateur, une ligne par point avec la commande qui règle (0 tout ok, 1 un point bloquant manque)")
 	d.add_argument('--json', action='store_true', help='avec --prerequis : sortie JSON')
+	d.add_argument('--hors-cate', action='store_true', help="avec --prerequis : hors d'un terminal Cate (amorçage), les points de Cate sortent en info")
 	d.set_defaults(fn=cmd_doctor)
 	g = sub.add_parser('guard', help='hook PreToolUse (JSON sur stdin)')
 	g.add_argument('--mode', choices=('send', 'pages'),
