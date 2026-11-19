@@ -18,6 +18,7 @@ import { useCanvasInteraction } from './useCanvasInteraction'
 import { useAutoFocusLargestVisible } from './useAutoFocusLargestVisible'
 import { CanvasRelationOverlayContext, CanvasTopOverlayContext, useCanvasView, useCanvasViewStore } from './context'
 import { canvasSlots } from './slots'
+import { useCanvasMenuEntries, type CanvasMenuEntry } from './toolbarItems'
 import { useCanvasUi } from './uiState'
 import { showContextMenu, type ContextMenuItem } from './contextMenu'
 import CanvasGrid from './background/CanvasGrid'
@@ -392,14 +393,19 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
 
   // A right click on empty canvas opens the native menu: the creation
   // entries, then the actions offered in the canvas menu, run on this canvas.
+  // Read through a ref: a change while the menu is open must not reopen it.
+  const menuEntries = useRef<CanvasMenuEntry[]>([])
+  menuEntries.current = useCanvasMenuEntries(workspaceId, canvasId)
   useEffect(() => {
     if (!canvasContextMenu) return
     let cancelled = false
     const point = canvasContextMenu.canvasPoint
     const context = { workspaceId, canvasId }
+    const entries = menuEntries.current
     const actions = declaredActions().filter(({ id, spec }) => spec.contextMenus?.includes('canvas') && canRunAction(id, context))
     const items: ContextMenuItem[] = [
       ...creationMenuItems(canvasHost().creatable(), worktreeList),
+      ...entries.map((entry) => ({ id: `entry:${entry.id}`, label: entry.label })),
       ...(actions.length > 0 ? [{ type: 'separator' as const }] : []),
       ...actions.map(({ id, spec }) => ({ id: `action:${id}`, label: spec.title })),
     ]
@@ -408,6 +414,11 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
       closeCanvasContextMenu()
       if (id?.startsWith('action:')) {
         void runAction(id.slice('action:'.length), context)
+        return
+      }
+      const entry = entries.find((candidate) => id === `entry:${candidate.id}`)
+      if (entry) {
+        entry.run(point)
         return
       }
       const pick = creationPick(id, worktreeList)
