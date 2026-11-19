@@ -18,7 +18,7 @@ Règles :
 
 ```json
 {"hooks": {"PreToolUse": [
-  {"matcher": "mcp__.*(slack_send_message|Gmail__send_message)$",
+  {"matcher": "mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$",
    "hooks": [{"type": "command", "command": "sh -c 'f=\"$HOME/.cate/runtime/$(cat \"$HOME/.cate/runtime/current\" 2>/dev/null)/agence/agence-hook\"; [ -x \"$f\" ] && exec \"$f\" send; printf %s \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"ask\\\",\\\"permissionDecisionReason\\\":\\\"garde agence introuvable : envoi à confirmer\\\"}}\"'"}]},
   {"matcher": "Bash|WebFetch|Write|Edit|MultiEdit",
    "hooks": [{"type": "command", "command": "sh -c 'f=\"$HOME/.cate/runtime/$(cat \"$HOME/.cate/runtime/current\" 2>/dev/null)/agence/agence-hook\"; [ -x \"$f\" ] && exec \"$f\" pages; exit 0'"}]}

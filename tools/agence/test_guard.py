@@ -9,6 +9,7 @@ Une sortie vide, ou un code non nul, compte comme un échec ouvert.
 import contextlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -29,9 +30,9 @@ class Garde(FauxHome):
 		super().setUp()
 		r = self.agence('hooks', 'install')
 		self.assertEqual(r.returncode, 0, r.stderr)
-		entrees = self.lit()['hooks']['PreToolUse']
-		self.cmd = {e['matcher']: e['hooks'][0]['command'] for e in entrees}
-		self.send_cmd = self.cmd['mcp__.*(slack_send_message|Gmail__send_message)$']
+		self.entrees = self.lit()['hooks']['PreToolUse']
+		self.cmd = {e['matcher']: e['hooks'][0]['command'] for e in self.entrees}
+		self.send_cmd = next(c for c in self.cmd.values() if 'exec "$f" send' in c)
 		self.pages_cmd = self.cmd['Bash|WebFetch|Write|Edit|MultiEdit']
 		self.projet = os.path.join(self.home, 'projet')
 		os.makedirs(self.projet)
@@ -185,6 +186,44 @@ class EnvoiAvecCli(Garde):
 		self.assertEqual(self.decision(self.envoi()), 'ask')
 		self.installe(build='b3')
 		self.assertEqual(self.decision(self.envoi()), 'allow')
+
+
+class OutilsDEnvoi(Garde):
+	"""Chaque outil qui envoie à son nom déclenche le garde d'envoi par son matcher (regex complète, comme Claude Code),
+	et seul un brouillon cliqué du même outil, même cible, même texte passe."""
+
+	ENVOIS = (SLACK, 'mcp__claude_ai_Slack__slack_schedule_message', GMAIL,
+	          'mcp__claude_ai_Gmail__reply', 'mcp__claude_ai_Gmail__forward')
+
+	def declenchees(self, tool):
+		return [e['hooks'][0]['command'] for e in self.entrees if re.fullmatch(e['matcher'], tool)]
+
+	def test_chaque_outil_d_envoi_declenche_le_garde_d_envoi(self):
+		for tool in self.ENVOIS:
+			with self.subTest(tool=tool):
+				self.assertEqual(self.declenchees(tool), [self.send_cmd])
+		for tool in ('mcp__claude_ai_Slack__slack_send_message_draft', 'mcp__claude_ai_Gmail__create_draft', 'Bash'):
+			with self.subTest(tool=tool):
+				self.assertNotIn(self.send_cmd, self.declenchees(tool))
+
+	def test_ask_meme_avec_un_brouillon_clique_pour_un_autre_outil(self):
+		self.installe()
+		self.orchestre(clic=True)
+		self.orchestre(clic=True, cible='mail:dg@exemple.fr', texte='Corps', titre='Point')
+		cas = {'mcp__claude_ai_Slack__slack_schedule_message': {'channel_id': 'C123', 'message': 'Bonjour', 'post_at': 1900000000},
+		       'mcp__claude_ai_Gmail__reply': {'messageId': 'm1', 'to': ['dg@exemple.fr'], 'subject': 'Point', 'body': 'Corps'},
+		       'mcp__claude_ai_Gmail__forward': {'messageId': 'm1', 'to': ['dg@exemple.fr'], 'subject': 'Point', 'body': 'Corps'}}
+		for tool, ti in cas.items():
+			with self.subTest(tool=tool):
+				for cmd in self.declenchees(tool):
+					self.assertEqual(self.decision(self.hook(cmd, tool, ti)), 'ask')
+				self.assertTrue(self.declenchees(tool))
+		self.assertEqual(self.decision(self.envoi()), 'allow')  # le brouillon Slack cliqué n'a pas été consommé
+
+	def test_ask_sans_cli(self):
+		for tool in self.ENVOIS:
+			with self.subTest(tool=tool):
+				self.assertEqual([self.decision(self.hook(c, tool, {})) for c in self.declenchees(tool)], ['ask'])
 
 
 class Pages(Garde):
