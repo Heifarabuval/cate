@@ -25,7 +25,9 @@ Règles :
 ]}}
 ```
 
-Le texte exact se fige au lot 3 dans `tools/agence/fixtures/settings/settings-attendu.json` ; le test compare à ce fichier, pas à ce bloc.
+Texte figé au lot 3 : `tools/agence/fixtures/settings/settings-attendu.json` (identique au bloc ci-dessus), égal à `HOOK_ENTREES` de `agence.py` (`test_hooks.py`). Le test compare à ce fichier, pas à ce bloc.
+
+`agence-hook send` ne fait pas un simple `exec` : il lance `agence.py guard --mode send` et rend `ask` si python3 manque, si la CLI sort en erreur ou si sa sortie n'est pas une décision (échec fermé, `test_guard.py`). `pages` fait l'`exec`.
 
 - `send` : échoue fermé. Sans CLI, décision `ask`. Avec CLI : `allow` si brouillon cliqué identique (`send_match`, juste avant `guard()`, `agence.py:1770`), sinon `ask` (reprend la dernière ligne de `send-guard.sh:15` de Skills, sans l'exception du DM de Heifara). Aujourd'hui `guard()` rend `None` sans clic : `--mode send` rend `ask` à la place.
 - `pages` : échoue ouvert. Sans CLI, pas de projet orchestré possible. Avec CLI : `guard()` actuel (`agence.py:1770-1809`), sortie immédiate sans `state.json` (comme `agence-guard.sh:5-11` de Skills).

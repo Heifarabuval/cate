@@ -479,7 +479,7 @@ the pieces that make it reachable and secure.
   and devices pair again.
 - **Install.** One layout everywhere: `~/.cate/runtime/<build>/` holds the
   daemon and its module chunks, its Node, ripgrep, the `cate` CLI, bundled skills, the
-  `agence` CLI (`agence/`: a POSIX launcher and `agence.py`, from `tools/agence/`
+  `agence` CLI (`agence/`: the POSIX launchers `agence` and `agence-hook`, and `agence.py`, from `tools/agence/`
   in the checkout, not shipped on Windows) and native
   addons; `<build>` is the build id (section 7.10), which the tarball
   carries in its `BUILD` file. An install is complete once its `.ok` marker
@@ -2099,7 +2099,7 @@ Every panel type meets the same contract.
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay; a panel opened on a pull request (`pr` field) reads it through `gh` instead (description, commits, checks, mergeability, files with bounded diff pages), read only: no comment, approval or merge; a visible view sends `prTick` and the session decides whether to re-read the checks |
-| agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("New Orchestrator") or by `cate panel create agence`; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
+| agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("New Orchestrator") or by `cate panel create agence`; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
@@ -2130,6 +2130,21 @@ gives a process a panel starts outside a PTY the `cate` CLI environment
 revokes the token; `PanelServices.trust` lets such a type ask workspace trust
 first and react to its changes. Both are composed from the workspace's token
 issuer and trust (`runtime/daemon/compose/cliEnv.ts`).
+
+**Send guards.** Only the human's click sends a Slack or Gmail message. Two
+`PreToolUse` entries in the user's `~/.claude/settings.json` enforce it, and
+only `agence hooks install` writes them, on the user's own command (or the
+bootstrap line they pasted); `agence hooks uninstall` removes them and
+`agence hooks status` reads them. Cate never runs `agence hooks` and never
+writes a user-global file. The entries call `~/.cate/runtime/<current>/agence/agence-hook`
+(`agence guard --mode send|pages`): the send guard fails closed (`ask`
+without the CLI, python3 or a decision; `allow` only for a clicked draft of
+the same target and text), the pages guard fails open. The install is
+strict JSON with a dated backup, an atomic replace of a symlink's target and
+the file's mode kept. The regisseur writes `agence hooks status` into the
+state at each turn (`garde`); the panel shows a banner when it is not
+`actif` (`inconnu` after 5 s without a turn), never for an external or
+missing regisseur.
 
 ## 12. Client
 
