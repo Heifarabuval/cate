@@ -225,6 +225,28 @@ class Installation(FauxHome):
 		self.assertEqual(r.returncode, 0, r.stderr)
 		self.assertEqual(self.lit()['hooks']['PreToolUse'], attendu())
 
+	def test_ancien_matcher_d_envoi_partiel_puis_mis_a_jour_sans_doublon(self):
+		"""Entrées du premier lot 3 (matcher d'envoi sans reply, forward ni schedule) : reconnues à agence-hook."""
+		ancien = json.loads(json.dumps(attendu()))
+		ancien[0]['matcher'] = 'mcp__.*(slack_send_message|Gmail__send_message)$'
+		self.pose(json.dumps({'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '/opt/a.sh'}]}] + ancien}}))
+		r = self.agence('hooks', 'status', '--json')
+		self.assertEqual((r.returncode, json.loads(r.stdout)['statut']), (1, 'partiel'))
+		r = self.agence('hooks', 'install')
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertEqual(self.lit()['hooks']['PreToolUse'][1:], attendu())
+		self.assertEqual(self.lit()['hooks']['PreToolUse'][0]['hooks'][0]['command'], '/opt/a.sh')
+		self.assertEqual(len(self.sauvegardes()), 1)
+		r = self.agence('hooks', 'uninstall')
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertEqual(self.lit(), {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '/opt/a.sh'}]}]}})
+
+	def test_matcher_d_envoi_couvre_tous_les_envois(self):
+		envoi = attendu()[0]['matcher']
+		for tool in ('mcp__claude_ai_Slack__slack_send_message', 'mcp__claude_ai_Slack__slack_schedule_message',
+		             'mcp__claude_ai_Gmail__send_message', 'mcp__claude_ai_Gmail__reply', 'mcp__claude_ai_Gmail__forward'):
+			self.assertRegex(tool, '^(?:' + envoi + ')$')
+
 	def test_permissions_et_cles_inconnues_intactes(self):
 		self.pose('cles-inconnues.json')
 		origine = self.lit()

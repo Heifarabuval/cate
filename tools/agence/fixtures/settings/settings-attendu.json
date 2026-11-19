@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__.*(slack_send_message|Gmail__send_message)$",
+        "matcher": "mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$",
         "hooks": [
           {
             "type": "command",

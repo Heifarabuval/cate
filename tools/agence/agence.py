@@ -1949,7 +1949,7 @@ HOOK_MARQUE = 'agence-hook'  # une entrée agence se reconnaît à sa commande, 
 _HOOK_SH = 'sh -c \'f="$HOME/.cate/runtime/$(cat "$HOME/.cate/runtime/current" 2>/dev/null)/agence/agence-hook"; [ -x "$f" ] && exec "$f" %s\''
 ASK_INTROUVABLE = "garde agence introuvable : envoi à confirmer"
 HOOK_ENTREES = [
-	{'matcher': 'mcp__.*(slack_send_message|Gmail__send_message)$',
+	{'matcher': 'mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$',
 	 'hooks': [{'type': 'command', 'command': _HOOK_SH % ('send; printf %s "{\\"hookSpecificOutput\\":{\\"hookEventName\\":\\"PreToolUse\\",'
 	                                                       '\\"permissionDecision\\":\\"ask\\",\\"permissionDecisionReason\\":\\"' + ASK_INTROUVABLE + '\\"}}"')}]},
 	{'matcher': 'Bash|WebFetch|Write|Edit|MultiEdit',
