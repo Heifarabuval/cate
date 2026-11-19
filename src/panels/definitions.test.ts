@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { PANEL_TYPES } from '@workspace/document/contract'
 import { definitionProblems } from './framework/contract'
-import { PANEL_DEFINITIONS, panelDefinition } from './definitions'
+import { PANEL_DEFINITIONS, creatableDefinitions, panelDefinition } from './definitions'
 
 it('every panel definition meets the contract', () => {
   for (const definition of PANEL_DEFINITIONS) expect(definitionProblems(definition), definition.type).toEqual([])
@@ -19,5 +19,6 @@ it('declares the agence panel: an execution panel with no cate api', () => {
   expect(agence?.icon).toBe('briefcase')
   expect(agence?.relation?.execution).toBe(true)
   expect(agence?.api).toBeUndefined()
+  expect(creatableDefinitions().map((definition) => definition.creation?.title ?? definition.label)).toContain('New Orchestrator')
   expect(PANEL_TYPES).toContain('agence')
 })

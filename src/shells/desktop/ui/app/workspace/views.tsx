@@ -16,14 +16,16 @@ import {
   canvasViewFor,
   inheritedCheckout,
   placeOnCanvas,
+  registerCanvasMenuEntries,
   registerCanvasToolbarItem,
   registerSpawnFlyout,
   useCanvasToolbarAction,
+  type CanvasMenuEntry,
   type CanvasToolbarAction,
   type CanvasToolbarItemProps,
   type SpawnFlyoutProps,
 } from '../../client/layout/canvas'
-import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, UsageOverview, agentContextPreview, useAgentContextTransport, useAgentPanelDecorations } from '../../services/agents'
+import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, UsageOverview, agentContextPreview, useAgentAvailability, useAgentContextTransport, useAgentPanelDecorations } from '../../services/agents'
 import { SkillsDialog } from '../../workspace/skills'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
@@ -149,19 +151,35 @@ function WorktreeToolbarItem({ canvasPanelId, menuSide, tooltipPlacement, onOpen
 function AgentTerminalFlyout({ workspaceId, canvasId, side, onClose, onShown }: SpawnFlyoutProps) {
   const pick = (agentId: AgentId) => {
     onClose()
-    const store = canvasViewFor(workspaceId, canvasId)
-    const { worktreeId } = store ? inheritedCheckout(workspaceId, store) : {}
-    placeOnCanvas(workspaceId, canvasId, 'terminal', (at) => {
-      const runtime = tryRuntimeFor(workspaceId)
-      if (!runtime) return false
-      runtime.agents.start({ agentId, at, ...(worktreeId ? { worktreeId } : {}) }).then(
-        ({ panelId }) => { void revealPanel(workspaceId, panelId) },
-        (error) => clientUi().showError(errorMessage(error, 'Could not start the agent.')),
-      )
-      return true
-    }, { focus: false })
+    startAgentOnCanvas(workspaceId, canvasId, agentId)
   }
   return <AgentSpawnFlyout workspaceId={workspaceId} side={side} onPick={pick} onShown={onShown} />
+}
+
+/** Starts `agentId` in a new terminal: at `position`, else through the new
+ *  terminal's placement flow. */
+function startAgentOnCanvas(workspaceId: string, canvasId: string, agentId: AgentId, position?: { x: number; y: number }): void {
+  const store = canvasViewFor(workspaceId, canvasId)
+  const { worktreeId } = store ? inheritedCheckout(workspaceId, store) : {}
+  placeOnCanvas(workspaceId, canvasId, 'terminal', (at) => {
+    const runtime = tryRuntimeFor(workspaceId)
+    if (!runtime) return false
+    runtime.agents.start({ agentId, at, ...(worktreeId ? { worktreeId } : {}) }).then(
+      ({ panelId }) => { void revealPanel(workspaceId, panelId) },
+      (error) => clientUi().showError(errorMessage(error, 'Could not start the agent.')),
+    )
+    return true
+  }, { focus: false, ...(position ? { position } : {}) })
+}
+
+/** The canvas menu's agent entries: the agents ready here, as in the flyout. */
+export function useAgentMenuEntries(workspaceId: string, canvasId: string): CanvasMenuEntry[] {
+  const types = useAgentAvailability(workspaceId)?.types ?? []
+  return types.filter((type) => type.ready).map((type) => ({
+    id: `agent:${type.agentId}`,
+    label: `New ${type.displayName}`,
+    run: (position) => startAgentOnCanvas(workspaceId, canvasId, type.agentId, position),
+  }))
 }
 
 // --- Registration -----------------------------------------------------------------
@@ -185,6 +203,7 @@ export function registerWorkspaceViews(): () => void {
     registerPanelChromeOverlay(AgentHooksOffOverlay),
     registerCanvasToolbarItem({ id: 'worktrees', group: 'tools', order: 10, Component: WorktreeToolbarItem }),
     registerSpawnFlyout({ panelType: 'terminal', Component: AgentTerminalFlyout }),
+    registerCanvasMenuEntries(useAgentMenuEntries),
   ]
   return () => {
     for (const stop of stops.splice(0)) stop()

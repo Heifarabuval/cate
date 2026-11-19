@@ -88,3 +88,31 @@ export function subscribeSpawnFlyouts(listener: () => void): () => void {
   flyoutListeners.add(listener)
   return () => { flyoutListeners.delete(listener) }
 }
+
+// --- Creation menu entries ------------------------------------------------------
+// "New …" entries a module adds to the canvas's empty-space menu, after the
+// panel types (the agents a terminal can start as).
+
+export interface CanvasMenuEntry {
+  id: string
+  label: string
+  /** Creates at the canvas point the menu opened on. */
+  run(position: { x: number; y: number }): void
+}
+
+/** A hook: called on every canvas render, so register before canvases mount. */
+export type CanvasMenuEntriesHook = (workspaceId: string, canvasId: string) => readonly CanvasMenuEntry[]
+
+const menuEntryHooks: CanvasMenuEntriesHook[] = []
+
+export function registerCanvasMenuEntries(hook: CanvasMenuEntriesHook): () => void {
+  menuEntryHooks.push(hook)
+  return () => {
+    const index = menuEntryHooks.indexOf(hook)
+    if (index >= 0) menuEntryHooks.splice(index, 1)
+  }
+}
+
+export function useCanvasMenuEntries(workspaceId: string, canvasId: string): CanvasMenuEntry[] {
+  return menuEntryHooks.flatMap((hook) => hook(workspaceId, canvasId))
+}
