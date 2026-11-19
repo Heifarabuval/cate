@@ -15,6 +15,15 @@
 
 Ce dépôt est un fork de [0-AI-UG/cate](https://github.com/0-AI-UG/cate). Il suit upstream et garde un écart minimal dans `src/`.
 
+Pourquoi ce fork :
+
+- Tout le travail et toute la réflexion sont visuels. Le canevas est une projection mentale du travail, et les liens entre panneaux la rendent lisible.
+- Un orchestrateur par projet. On parle à un terminal. Il crée, met à jour, ferme et relie les agents et les panneaux : l'espace de travail apparaît et disparaît au fil de l'avancée. Une commande à lancer ouvre un terminal. Une pull request à vérifier ouvre un navigateur ou une review.
+- Le modèle est celui d'une agence de services : découper, clarifier, spécifier, lier chaque spec à ses issues et pull requests, implémenter, tester, relire. Une validation centrale. L'humain fait le merge final.
+- Le fork reste branché sur upstream, pour suivre ses changements et y contribuer selon ses besoins.
+
+À venir (pas encore livré) : le système visuel de liens et la validation centrale restent généraux. Chaque utilisateur règle ses interactions (quand un panneau s'ouvre ou se ferme), ses panneaux et ses connecteurs. L'outil est pensé aujourd'hui pour les développeurs. Il vise aussi d'autres métiers, comme le marketing digital, le media planning, la gestion de projet et le SEO.
+
 Upstream est un IDE à canevas infini où vous pilotez vous-même plusieurs agents, sur macOS, Windows et Linux, avec des workspaces partagés entre appareils et une app iOS. Ce fork ajoute un orchestrateur : un agent découpe le travail, lance les autres agents et les relie comme panneaux du canevas. Vous validez par clic. Seul votre clic fait partir un message ou merger une pull request. Le fork vise macOS Apple silicon seul, écrit les tests d'abord, et s'installe en une ligne pour un collègue (issue #29).
 
 | Cate d'origine | Ce fork |

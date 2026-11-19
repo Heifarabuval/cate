@@ -13,6 +13,15 @@
 
 This is a fork of [0-AI-UG/cate](https://github.com/0-AI-UG/cate). It follows upstream and keeps its gap with `src/` small.
 
+Why this fork:
+
+- All the work and thinking is visual. The canvas is a mental projection of the work, and links between panels make it readable.
+- One orchestrator per project. You talk to one terminal. It creates, updates, closes and links agents and panels, so the workspace appears and disappears as work moves. A command to run opens a terminal. A pull request to check opens a browser or a review.
+- The model is a service agency: split, clarify, specify, link each spec to its issues and pull requests, implement, test, review. One central validation. The human does the final merge.
+- The fork stays connected to upstream, to follow its changes and to contribute back where needed.
+
+Where it is heading (not shipped yet): the visual link system and the central validation stay general. Each user sets their own interactions (when a panel opens or closes), panels and connectors. The tool is built for developers today. It also aims at other trades such as digital marketing, media planning, project management and SEO.
+
 Upstream is an infinite canvas IDE where you run several agents yourself, on macOS, Windows and Linux, with workspaces shared across devices and an iOS app. This fork adds an orchestrator: one agent splits the work, starts the other agents and links them as panels on the canvas. You validate by click. Only your click sends a message or merges a pull request. The fork targets macOS Apple silicon only, writes tests first, and installs for a colleague with one line (issue #29).
 
 | Original Cate | This fork |
