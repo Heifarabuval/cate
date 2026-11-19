@@ -57,6 +57,13 @@ it('shows the four sections in order with their counts, empty ones included', ()
   expect(host.textContent).toContain('Rien.')
 })
 
+it("shows the human's name as written, never as a replacement pattern", () => {
+  for (const humain of ["Jo $& Co", "$'x", '$$', '$`']) {
+    render({ ...suivi(), humain })
+    expect(headings()[1]).toBe(`À faire par ${humain} (0)`)
+  }
+})
+
 it('shows the repository, the active agents and the read error', () => {
   render({ ...suivi(), error: 'Unexpected end of JSON input' })
   expect(host.textContent).toContain('cate')

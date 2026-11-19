@@ -160,7 +160,7 @@ export default function SuiviList({ workspaceId, suivi, questions, send, compact
         <section key={key} className="rounded-lg border border-subtle bg-surface-2">
           <h2 className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-primary border-b border-subtle">
             <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-            {`${title.replace('{humain}', suivi.humain)} (${suivi.sections[key].length})`}
+            {`${title.replace('{humain}', () => suivi.humain)} (${suivi.sections[key].length})`}
           </h2>
           {suivi.sections[key].length === 0
             ? <div className="px-3 py-2 text-[12px] text-secondary">Rien.</div>
