@@ -25,10 +25,11 @@ Règles :
 ]}}
 ```
 
-Le texte exact se fige au lot 3 ; le test compare à un fichier attendu, pas à ce bloc.
+Le texte exact se fige au lot 3 dans `tools/agence/fixtures/settings/settings-attendu.json` ; le test compare à ce fichier, pas à ce bloc.
 
-- `send` : échoue fermé. Sans CLI, décision `ask`. Avec CLI : `allow` si brouillon cliqué identique (`send_match`, `agence.py:1501-1518`), sinon `ask` (reprend la dernière ligne de `send-guard.sh:15`, sans l'exception du DM de Heifara).
-- `pages` : échoue ouvert. Sans CLI, pas de projet orchestré possible. Avec CLI : `guard()` actuel (`agence.py:1520-1560`), sortie immédiate sans `state.json` (comme `agence-guard.sh:5-11`).
+- `send` : échoue fermé. Sans CLI, décision `ask`. Avec CLI : `allow` si brouillon cliqué identique (`send_match`, juste avant `guard()`, `agence.py:1770`), sinon `ask` (reprend la dernière ligne de `send-guard.sh:15` de Skills, sans l'exception du DM de Heifara). Aujourd'hui `guard()` rend `None` sans clic : `--mode send` rend `ask` à la place.
+- `pages` : échoue ouvert. Sans CLI, pas de projet orchestré possible. Avec CLI : `guard()` actuel (`agence.py:1770-1809`), sortie immédiate sans `state.json` (comme `agence-guard.sh:5-11` de Skills).
+- Écriture : refus (code 2, rien écrit) si le fichier ou son dossier n'est pas inscriptible ; mode du fichier conservé après `os.replace` ; `uninstall` rend le JSON d'origine, pas les octets (mise en forme), sauf à restaurer la sauvegarde (rapport du lot 0, L0-03).
 - `agence-hook` : lanceur POSIX livré dans `agence/` du tarball (`exec python3 agence.py guard --mode "$1"`), même test de python3 que le lanceur `agence`.
 
 ## Chez Heifara

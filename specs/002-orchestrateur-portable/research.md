@@ -1,6 +1,8 @@
 # Research: Orchestrateur portable
 
-Sources fork : `~/Documents/cate-wt/panneau-agence`, branche `feat/panneau-agence` (`f729834b`). Sources CLI : `common/tools/agence.py` de ce worktree (`6d8935d`). Config de Heifara lue en lecture seule.
+Sources d'origine (2026-11-18) : fork `feat/panneau-agence` (`f729834b`), CLI `common/tools/agence.py` de Skills (`6d8935d`). Les numéros de ligne de R1 à R10 sont ceux de ces commits.
+
+Relecture du 2026-11-19 sur `origin/main` du fork (`4630c3d2`) : chaque R porte une ligne **Statut**. R11 est nouvelle.
 
 Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours d'agent (j).
 
@@ -14,6 +16,7 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
 - **Risque 1, python3 sur Mac neuf**: `/usr/bin/python3` est un stub qui ouvre la boîte « installer les outils de développement » sans Command Line Tools. Les CLT sont déjà requis pour `git` et le build du fork. Vérifié ici : `/usr/bin/python3` = 3.9.6, `py_compile` OK, **241 tests de `test_agence.py` OK sous 3.9.6** (2026-11-18). Le lanceur teste `xcrun --find python3` avant d'exécuter, pour ne jamais ouvrir la boîte de dialogue depuis le régisseur. Garde-fou : le test `test_agence.py` tourne en CI sous 3.9 (`actions/setup-python` 3.9).
 - **Risque 2, PATH du terminal restauré**: les snapshots de shell des agents gardent PATH ; le dossier de lanceurs est stable par panneau (`cateCli.ts:70`) et réécrit au spawn. Un lanceur `agence` dans ce même dossier suit donc la même règle. Non vérifié : un terminal ouvert par l'ancien runtime avant la mise à jour garde l'ancien lanceur jusqu'à l'arrêt du daemon (qui tue de toute façon ses PTY).
 - **Dev** : avec `CATE_RUNTIME_BUNDLE`, le chemin d'`agence.py` doit pointer vers le checkout. À vérifier au lot 1 (hypothèse à confirmer : `installDirFromExecPath` ne couvre pas ce cas).
+- **Statut** : livré par la PR #30, option A. Écart avec le texte ci-dessus : le lanceur ne teste pas `xcrun --find` mais `xcode-select -p` puis exécute le python3 testé (`tools/agence/agence:7-27`), suite au lot 0. Mode dev couvert par `agenceLauncher` (`src/runtime/daemon/contract/install.ts:111-115`).
 
 ## R2. Le skill `orchestrateur` : skill livré du fork
 
@@ -24,6 +27,7 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
 - **Coût caché**: une copie par dépôt (`.claude/skills/orchestrateur/`), visible par git. Même règle que `cate-cli` aujourd'hui. Un dépôt sans `.claude` n'a pas le skill : `agence doctor` le dit.
 - **Doublon chez Heifara**: son `~/.claude/skills/orchestrateur` (lien de `skills.sh`) entre en concurrence avec la copie du dépôt. Au lot 5, Skills retire le skill et le lien `common/bin/agence`. Hypothèse à confirmer : priorité de Claude Code entre skill de projet et skill utilisateur du même nom.
 - Le skill cite `~/Documents/Skills/specs/001-...` (`SKILL.md:8`) et « Heifara » 10 fois : réécrit en « l'humain » et `agence nom`.
+- **Statut** : ouvert (lot 2). `skills/` du fork ne contient que `cate-cli` et `cate-theme`. Le mécanisme lit le dossier (`src/workspace/skills/runtime/bundled.ts:30`) : aucun code à ajouter, seulement le skill, son entrée `required` du tarball (`scripts/build-runtime-tarball.mjs:160`) et la ligne « bundled skills » de `docs/architecture.md` (section 9.6). La source du skill est aujourd'hui `~/.claude/skills/orchestrateur/SKILL.md` de Heifara (lien de Skills, modifié par la spec 001, lot C).
 
 ## R3. Les gardes : `agence hooks install`, lancé par l'utilisateur
 
@@ -34,6 +38,7 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
   - C. Script shell + `jq` à côté du fork. Rejeté : seconde logique de fusion, non testable en unittest.
 - **Sans les gardes** : un agent peut lire la page HTML du régisseur (le jeton est dans le formulaire, `agence.py:903`), puis poster le clic ; ou écrire `state.json` pour marquer un brouillon cliqué ; et un `slack_send_message` part selon les seules permissions de Max. Le panneau affiche une bannière (FR-010).
 - **Réduction structurelle (proposée)**: sous `--token-stdin` (régisseur du panneau), `watch` ne sert plus aucune page HTML (`do_GET` 404, `agence.py:1048-1062`) : le jeton ne sort plus du daemon. Le garde reste nécessaire pour `state.json` et pour Slack/Gmail. 0,25 j.
+- **Statut** : ouvert (lot 3 pour les gardes, lot 2 pour le 404). Sur `origin/main`, `guard()` est à `agence.py:1770-1809`, `cmd_guard` à `:1812`, `do_GET` à `:1164-1179` ; aucune commande `hooks` ni option `--mode`.
 
 ## R4. Le nom de l'humain
 
@@ -43,11 +48,13 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
   - B. Garder la valeur `heifara` comme clé opaque, changer seulement les textes. 0,25 j. Rejeté : Max voit `heifara` dans `need list` et `--owner`.
   - C. Fichier de config `~/.config/agence.json`. Rejeté : un fichier de plus pour une valeur.
 - **Fenêtre de compatibilité**: un panneau qui lit un vieil état avant tout `tx` classerait mal les lignes `heifara`. Le régisseur fait un tour au démarrage (`agence.py:1477-1482`), donc la fenêtre dure un tour (2 s). Accepté ; pas de shim dans le fork (règle « clean cuts »).
+- **Statut** : en partie livré par la PR #41, avec trois écarts. (1) Défaut « L'humain » au lieu de « toi ». (2) Alias `--owner heifara` retiré (coupe nette) ; `need add --owner humain`, `need list` affiche `humain` (`qui()`, `agence.py:99-101`). (3) Valeur stockée gardée à `heifara` (`OWNER_HUMAIN`, `agence.py:71`), lue telle quelle par le panneau (`src/panels/agence/contract/suivi.ts:86-87`). Le nom est nettoyé (une ligne, 40 caractères, `agence.py:74-77`). Reste : `watch` écrit `humain`, le panneau l'affiche (`SuiviList.tsx:12` dit « Heifara »). La réécriture de `heifara` en `humain` par `load()` est du code de migration (constitution, principe III) : Heifara garde la clé opaque (q303, 2026-11-19). L'option A ci-dessus est donc abandonnée pour la valeur stockée ; elle reste pour le nom affiché.
 
 ## R5. Notification et dépôt courant
 
 - `toast()` (`agence.py:273-283`) appelle `osascript` sans condition. Décision : `sys.platform == 'darwin' and shutil.which('osascript')`, sinon une ligne de journal. 0,1 j.
 - `gh_repo()` (`agence.py:315-319`) lit déjà `gh repo view` et met le résultat en cache dans l'état. Rien à changer. Aucun `/Users/` dans `agence.py` ni dans le skill (grep 2026-11-18).
+- **Statut** : `toast()` n'est plus à changer. Le fork ne vise que macOS (principe VIII : hors macOS, absence d'effet sans erreur). `toast()` journalise déjà un échec (`agence.py:315-321`) et `_run` rend 127 sur `OSError` : aucune commande n'échoue sans `osascript`. Tâches L2-08 et L2-09 retirées.
 
 ## R6. Max sur Cate upstream ou fork
 
@@ -66,6 +73,7 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
 - **Agent launchd**: étiquette neutre `fr.adfinitas.cate-fork-update`. Le plist est **généré** avec `$HOME` (launchd n'expande pas `~`) ; chargé par `launchctl bootstrap gui/$(id -u)`. Un agent existant qui lance déjà `cate-fork-update` sous une autre étiquette (cas de Heifara) est déchargé puis remplacé, sans que le script cite son nom : il cherche dans `~/Library/LaunchAgents/*.plist` la chaîne `cate-fork-update`.
 - **Pire cas du script** : une construction de 10 à 20 min (non mesuré) à `Nice 10` pendant que Max travaille ; aucun arrêt de quoi que ce soit. L'installation attend que Cate soit fermé. Ressource : disque du dossier de build (`node_modules` et `release/`), à lire par `df` avant le premier build (le script refuse sous 5 Go libres, valeur à confirmer en L4-03).
 - Ne jamais lancer le binaire de Cate pour lire sa version (mémoire du projet) : le script lit le SHA, pas l'app.
+- **Statut** : livré par la PR #40 (`scripts/cate-fork-update.sh`, 43 tests dans `scripts/cate-fork-install.test.mjs`). Écarts avec le texte ci-dessus, tous gardés (coupes nettes) : étiquette `com.cate.fork-update` (et non `fr.adfinitas...`) ; pas de `RunAtLoad` (le premier passage de l'agent attend le verrou du build en cours) ; trois essais par commit en échec ; la copie de `~/.local/bin` se rafraîchit depuis le commit suivi après `--self-test` ; un agent existant sous une autre étiquette est **laissé** et signalé, pas remplacé (`cate-fork-install.sh:109-114`) ; `CATE_SELF_UPDATE=0` au paquet (`cate-fork-update.sh:235`).
 
 ## R9. Le daemon suit l'app : mise à jour sur différence de build
 
@@ -78,6 +86,7 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
   - **Redémarrer le daemon à chaque ouverture de l'app** : rejeté. Coupe les workspaces partagés et les agents en cours ; contraire à « Runtimes never update on their own; a client asks ».
 - **Risques** : (1) deux apps de builds différents (fork et upstream) ouvertes sur un même workspace partagé : `shared` empêche la mise à jour, aucune boucle, mais l'une des deux affichera un runtime d'un autre build ; (2) égalité de version sans pouvoir dire qui est le plus récent : un runtime d'un build plus récent que l'app serait ramené au build de l'app (rare : l'app est toujours installée avant le runtime) ; (3) le client mobile partage le même cœur (`src/shells/mobile/core/state.ts` consomme `RuntimeMismatch`) : le champ ajouté est optionnel ; (4) `tried` n'autorise qu'un essai par connexion : si le redémarrage rend le même build, un seul message d'erreur, pas de boucle.
 - Taille : 0,75 j (tests Vitest, correctif de 5 lignes, texte de l'écran, PR). Dépendance : aucune. Coût : 0 €.
+- **Statut** : livré par la PR #27 (Closes #26). `updateCandidate` (`src/client/connections/runtimeUpdate.ts:38-43`) ; ajout non prévu : `followBuild`, fourni par le shell desktop seulement et coupé sous `CATE_RUNTIME_BUNDLE` ; `tried` effacé seulement par un verdict stable.
 
 ## R10. Amorçage en une ligne
 
@@ -89,7 +98,17 @@ Coût mensuel de toutes les options retenues : 0 €. Les tailles sont en jours 
   - C. Paquet `.pkg` signé. Rejeté : certificat développeur payant et notarisation pour deux utilisateurs.
 - **Ce qui ne peut pas être automatisé** : installer Node 22, `gh` ou les Command Line Tools à la place de Max (un `brew install` suppose Homebrew, et `xcode-select --install` ouvre une fenêtre système). Le script les nomme avec la commande, Max la lance, puis recolle la même ligne. C'est le seul cas de deuxième collage.
 - **Gardes chez Heifara** : l'amorçage lancé chez lui installerait `agence hooks` à côté de ses gardes de Skills (deux gardes sur un même outil, risque du plan). Chez lui : `--sans-gardes` jusqu'au lot 5.
-- **Réglages CLI** : `cliTerminalInputEnabled` est coupé par défaut et se règle par workspace dans Cate ; aucun script ne peut l'écrire (les réglages du workspace appartiennent au daemon). `doctor` le dit ; reste un clic. Question de produit posée à Heifara (tasks.md, « Ce que Heifara doit faire »).
+- **Réglages CLI** : `cliTerminalInputEnabled` est coupé par défaut et se règle par workspace dans Cate ; aucun script ne peut l'écrire (les réglages du workspace appartiennent au daemon). `doctor` le dit ; reste un clic. Heifara le garde coupé (q307, 2026-11-19).
+- **Statut** : livré par la PR #40 sous le nom `scripts/cate-fork-install.sh` (ligne dans `scripts/cate-fork-install.md:10`), avec `scripts/cate-fork-uninstall.sh [--purge]`. Prérequis vérifiés par `cate-fork-update.sh --prereq` (une seule source). Pas encore fait : étapes (4) gardes et `doctor`, `--sans-gardes`, `--gardes` à la désinstallation. Écart gardé : `gh` n'est pas un prérequis de l'amorçage (il ne sert qu'à l'orchestration) ; il passe dans `doctor --prerequis`.
+
+## R11. `agence doctor` existe déjà : où mettre les prérequis
+
+- **Constat**: la spec 001 (PR #58) a livré `agence doctor [--relance]` : « peut-on relancer Cate sans rien perdre ? », code 0 oui, 1 non ; sans option, même résultat (`agence.py:1676`, `:1920-1922`). Le `doctor` des prérequis de ce plan (FR-009) a un autre sens.
+- **Options**:
+  - A. **Recommandé** : `agence doctor --prerequis [--hors-cate] [--json]`. `doctor` seul et `--relance` restent ceux de la spec 001. 0,5 j, 0 €.
+  - B. `doctor` seul = prérequis puis relance ; `--relance` seul garde l'ancien. Change le contrat écrit par la spec 001. +0,25 j.
+  - C. Commande séparée `agence prerequis`. Rejeté : deux commandes de diagnostic à retenir.
+- **Décision** : A, choisie par Heifara (q305, 2026-11-19).
 
 ## R8. Ce qui reste personnel
 
