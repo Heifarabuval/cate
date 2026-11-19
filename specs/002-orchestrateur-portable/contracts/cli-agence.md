@@ -1,20 +1,21 @@
 # Contrat : changements de la CLI `agence` et de son lanceur
 
-Codes inchangés : 0 ok, 1 refus métier, 2 environnement (`agence.py:16`).
+Codes inchangés : 0 ok, 1 refus métier, 2 environnement.
 
-## Nouvelles commandes
+## Commandes
 
-| Commande | Sortie | Code |
-|---|---|---|
-| `agence --version` | build du runtime (fichier `BUILD` de l'install) ou `dev` | 0 |
-| `agence nom` | nom affiché et sa source (`AGENCE_NOM`, `git config agence.nom`, `user.name`, défaut) | 0 |
-| `agence doctor [--json]` | une ligne par point : `ok`, `manque` ou `info`, avec la commande qui règle | 0 tout ok, 1 un point bloquant manque |
-| `agence hooks install\|uninstall\|status` | voir `hooks.md` | voir `hooks.md` |
-| `agence guard --mode send\|pages` | décision JSON `PreToolUse` ou rien | 0 |
+| Commande | Sortie | Code | État |
+|---|---|---|---|
+| `agence --version` | build du runtime (fichier `BUILD` de l'install) ou `dev` | 0 | livré (PR #30) |
+| `agence nom` | nom affiché et sa source (`AGENCE_NOM`, `git agence.nom`, `git user.name`, `défaut`) | 0 | livré (PR #41) |
+| `agence doctor [--relance]` | contrôle de relance de la spec 001 | 0 oui, 1 non | livré (PR #58), inchangé |
+| `agence doctor --prerequis [--hors-cate] [--json]` | une ligne par point : `ok`, `manque` ou `info`, avec la commande qui règle | 0 tout ok, 1 un point bloquant manque | lots 3 et 4 |
+| `agence hooks install\|uninstall\|status` | voir `hooks.md` | voir `hooks.md` | lot 3 |
+| `agence guard --mode send\|pages` | décision JSON `PreToolUse` ou rien | 0 | lot 3 |
 
-`agence guard` sans `--mode` garde son comportement actuel (compatibilité des hooks de Heifara jusqu'au lot 5).
+`agence guard` sans `--mode` garde son comportement actuel (hooks de Heifara jusqu'au lot 5), puis se retire au lot 5 (coupe nette).
 
-## Points de `agence doctor`
+## Points de `agence doctor --prerequis`
 
 | Point | Bloquant | Vérification | Correctif affiché |
 |---|---|---|---|
@@ -26,28 +27,24 @@ Codes inchangés : 0 ok, 1 refus métier, 2 environnement (`agence.py:16`).
 | claude | oui | `claude --version` code 0 | installeur officiel de Claude Code |
 | gardes | oui | `agence hooks status` | `agence hooks install` |
 | skill | non | `.claude/skills/orchestrateur/SKILL.md` dans le dépôt | créer `.claude/` puis rouvrir le workspace |
-| nom | non | `agence nom` | `git config --global agence.nom <Prénom>` |
-| notification | non | macOS et `osascript` | info : notifications au journal seulement |
+| nom | non | `agence nom` ; source `défaut` = info | `git config --global agence.nom <Prénom>` |
 | Slack, Gmail | non | info seulement : non lisible depuis la CLI | brancher les connecteurs dans Claude Code |
+
+Avec `--hors-cate` (lancé par l'amorçage, sans `CATE_SOCKET`) : terminal Cate, réglages CLI, type `agence`, `agent usage` et skill semé sortent en `info` « à vérifier dans un terminal Cate : `agence doctor --prerequis` » ; le code 1 ne vient que d'un bloquant hors Cate.
 
 `doctor` n'écrit rien. Il ne lance jamais l'app Cate.
 
 ## Comportements changés
 
-- `toast()` : rien hors macOS ou sans `osascript`, une ligne de journal à la place.
-- Textes « Heifara » remplacés par le nom (`agence nom`) ; valeur stockée `humain` (voir `data-model.md`).
-- `watch --token-stdin` : `do_GET` rend 404 sur `/`, `/draft/*`, `/ask/*` (aucune page, aucun jeton dans du HTML) ; le POST JSON reste.
-- `watch` écrit à chaque tour `st['humain']` (nom) et `st['garde']` (`actif`, `inactif`, `partiel`).
+- Textes au nom de l'humain (`nom()`) : livré (PR #41).
+- `watch --token-stdin` : `do_GET` rend 404 sur `/`, `/draft/*`, `/ask/*` (aucune page, aucun jeton dans du HTML) ; le POST JSON reste. Lot 2.
+- `watch` écrit à chaque tour `st['humain']` (nom, lot 2) et `st['garde']` (`actif`, `inactif`, `partiel`, lot 3).
+- `toast()` : inchangé (principe VIII, un échec est déjà journalisé).
 
 ## Lanceurs livrés (tarball `agence/`)
 
-```sh
-#!/bin/sh
-# agence : CLI d'orchestration livrée avec le runtime Cate.
-if ! xcrun --find python3 >/dev/null 2>&1 && ! [ -x /opt/homebrew/bin/python3 ] && ! [ -x /usr/local/bin/python3 ]; then
-	echo "agence : python3 requis (xcode-select --install)" >&2; exit 2
-fi
-exec python3 "$(dirname "$0")/agence.py" "$@"
-```
+`agence` est livré (`tools/agence/agence`, PR #30) : il suit les liens symboliques, prend `$(xcode-select -p)/usr/bin/python3` si les outils développeur sont là, sinon un python3 de Homebrew, et exécute exactement le chemin testé ; sans python3 : `agence : python3 requis (xcode-select --install)` sur stderr, code 2. Il n'appelle jamais `/usr/bin/python3` ni `xcrun`, qui ouvrent la fenêtre d'installation.
 
-`xcrun` n'existe que sur macOS : hors macOS, le test devient `command -v python3` (fixé au lot 1). Les lanceurs du PATH des terminaux (`cateCli.ts`, `cliEnv.ts`) appellent ce fichier par son chemin absolu dans l'install.
+`agence-hook` (lot 3) reprend la même recherche de python3 puis `exec "$py" "<dossier>/agence.py" guard --mode "$1"`. Sans python3 : pour `send`, la décision `ask` sur stdout et code 0 ; pour `pages`, rien et code 0.
+
+Les lanceurs du PATH des terminaux (`cateCli.ts`, `cliEnv.ts`) appellent `agence` par son chemin absolu dans l'install.

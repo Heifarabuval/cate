@@ -1,12 +1,14 @@
 # Rapport du lot 0 : sondes de risques (orchestrateur portable)
 
+Historique, rapatrié de Skills (commit `78a8fd3`) le 2026-11-19. Les chemins et numéros de ligne sont ceux de la base du lot 0 ; l'état livré est dans `tasks.md`, partie A.
+
 Date : 2026-11-18. Fork lu : worktree `cate-wt/orch-portable`, branche `feat/orchestrateur-portable-lot0`, base `origin/main` = `88a5c821`. Aucune app Cate lancée, rien écrit dans `~/.claude`, `~/.cate` ni `/Applications`. Les essais tournent dans le scratchpad avec `HOME` redéfini. Aucun commit dans le fork.
 
 ## Écarts avec le plan, à connaître avant le lot 1
 
 1. **Le panneau agence n'est pas dans `origin/main`** (`git merge-base --is-ancestor origin/feat/panneau-agence origin/main` : non). `src/runtime/daemon/compose/cliEnv.ts` et le régisseur (`src/panels/agence/parts/runtime/regisseur.ts`) n'existent que sur `origin/feat/panneau-agence` (`a911d9ac`). Sur la base du lot 0, `PANEL_TYPES` n'a pas `agence` (`src/workspace/document/contract/schema.ts:24`). Le lot 1 doit partir d'une base qui contient le panneau, sinon L1-12 et L1-13 n'ont pas de fichier à modifier.
 2. **Numéros de ligne** : `installDirFromExecPath` est à `src/runtime/daemon/contract/install.ts:100-104` (le plan dit 82-96, qui est `installLayout`). La lecture du fichier `BUILD` est à `src/runtime/daemon/node/install.ts:74` (le plan dit :50).
-3. **Fixtures** : `tasks.md` demande cinq fichiers sous `tools/agence/fixtures/settings/` dont `heifara-neutre.json`. Ce brief les demande sous `specs/006-orchestrateur-portable/fixtures/`, sans rien copier du vrai `settings.json`. `heifara-neutre.json` n'est donc pas produit. Le lot 3 copie le dossier vers le fork.
+3. **Fixtures** : `tasks.md` demande cinq fichiers sous `tools/agence/fixtures/settings/` dont `heifara-neutre.json`. Ce brief les demande sous `specs/002-orchestrateur-portable/fixtures/`, sans rien copier du vrai `settings.json`. `heifara-neutre.json` n'est donc pas produit. Le lot 3 copie le dossier vers le fork.
 
 ## Tableau de synthèse (L0-05)
 
@@ -94,7 +96,7 @@ Nettoyage : la sonde est restée dans le fork (voir « Fichiers à supprimer » 
 
 ## L0-03. Fusion de `settings.json` avec une config hostile
 
-Fixtures écrites sous `specs/006-orchestrateur-portable/fixtures/` (neutres : chemins `/opt/outils/...`, aucun nom, aucun identifiant). Forme des hooks observée en lecture seule sur le vrai `~/.claude/settings.json` : `hooks.PreToolUse` et `PostToolUse` sont des tableaux d'objets `{matcher, hooks: [{type: "command", command}]}` ; un même matcher peut porter plusieurs commandes ; `matcher` peut être absent. Rien n'a été recopié.
+Fixtures écrites sous `specs/002-orchestrateur-portable/fixtures/` (neutres : chemins `/opt/outils/...`, aucun nom, aucun identifiant). Forme des hooks observée en lecture seule sur le vrai `~/.claude/settings.json` : `hooks.PreToolUse` et `PostToolUse` sont des tableaux d'objets `{matcher, hooks: [{type: "command", command}]}` ; un même matcher peut porter plusieurs commandes ; `matcher` peut être absent. Rien n'a été recopié.
 
 | Fixture | Contenu |
 |---|---|
