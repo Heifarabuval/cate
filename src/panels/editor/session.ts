@@ -280,7 +280,9 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
       this.hold(handle)
       this.publish({ loading: false })
     } catch (err) {
-      if (this.boundPath === file) this.publish({ loading: false, error: message(err, 'Could not open this file.') })
+      if (this.boundPath !== file) return
+      if (isRpcError(err, 'rejected') && (err.data as { binary?: boolean } | undefined)?.binary) this.publish({ documentType: 'binary', loading: false })
+      else this.publish({ loading: false, error: message(err, 'Could not open this file.') })
     }
   }
 

@@ -92,6 +92,19 @@ describe('EditorSession', () => {
     await expect(op('png', { kind: 'showMerge', show: true })).rejects.toSatisfy((e) => isRpcError(e, 'rejected'))
   })
 
+  it('previews video and audio, and never opens a text buffer for binary bytes', async () => {
+    const mp4 = path.join(ws.root, 'brag.mp4')
+    const blob = path.join(ws.root, 'archive')
+    const ts = path.join(ws.root, 'code.ts')
+    await fs.writeFile(mp4, Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]))
+    await fs.writeFile(blob, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01]))
+    await fs.writeFile(ts, 'export const a = 1')
+    expect((await addEditor('mp4', mp4)).snapshot()).toMatchObject({ documentType: 'video', loading: false, error: null })
+    expect((await addEditor('blob', blob)).snapshot()).toMatchObject({ documentType: 'binary', loading: false, error: null })
+    expect((await addEditor('ts', ts)).snapshot()).toMatchObject({ documentType: null, loading: false })
+    expect(ws.files.buffers.openPaths()).toEqual([ts])
+  })
+
   it('fails a save over an external change with conflict, then merges', async () => {
     const file = path.join(ws.root, 'c.txt')
     await fs.writeFile(file, 'a\nb\nc\n')

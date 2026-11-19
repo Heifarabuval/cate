@@ -65,7 +65,8 @@ export function relativeDisplayPath(p: string, root: string): string {
   return p
 }
 
-export type DocumentType = 'pdf' | 'docx' | 'image'
+/** `binary` is not an extension: a file whose bytes hold a NUL (see buffers). */
+export type DocumentType = 'pdf' | 'docx' | 'image' | 'video' | 'audio' | 'binary'
 
 const DOCUMENT_EXTENSIONS: Record<string, DocumentType> = {
   '.pdf': 'pdf',
@@ -80,6 +81,14 @@ const DOCUMENT_EXTENSIONS: Record<string, DocumentType> = {
   '.ico': 'image',
   '.tiff': 'image',
   '.tif': 'image',
+  '.mp4': 'video',
+  '.mov': 'video',
+  '.webm': 'video',
+  '.m4v': 'video',
+  '.mp3': 'audio',
+  '.wav': 'audio',
+  '.m4a': 'audio',
+  '.ogg': 'audio',
 }
 
 /** Files an editor previews instead of editing as text. */
