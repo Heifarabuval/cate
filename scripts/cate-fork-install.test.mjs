@@ -1148,6 +1148,19 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         expect(existsSync(plist())).toBe(false); // the agent still goes
       });
 
+      it("uninstall --gardes --purge keeps the update script when the guards fail, so a second run purges", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        const bin = path.join(home, ".local/bin/cate-fork-update");
+        const first = run(UNINSTALL, ["--gardes", "--purge"], { FAKE_HOOKS_FAIL: "1" });
+        expect(first.code).toBe(1);
+        expect(existsSync(bin)).toBe(true);
+        const second = run(UNINSTALL, ["--gardes", "--purge"]);
+        expect(second.code).toBe(0);
+        expect(existsSync(build)).toBe(false);
+        expect(existsSync(bin)).toBe(false);
+      });
+
       it("uninstall --gardes without the CLI fails only if guards are still installed", () => {
         nvm("22.22.2");
         run(INSTALL);
