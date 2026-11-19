@@ -17,7 +17,7 @@ const row = (id: string, patch: Partial<NeedRow> = {}): NeedRow => ({
   id, title: `Besoin ${id}`, kind: 'task', meta: [], evidence: null, link: null, links: [], action: null, ...patch,
 })
 const suivi = (sections: Partial<SuiviView['sections']> = {}): SuiviView => ({
-  repo: 'cate', agentsActive: 2, readAt: '2026-11-17T10:00:00Z', error: null,
+  repo: 'cate', humain: 'Max', agentsActive: 2, readAt: '2026-11-17T10:00:00Z', error: null,
   sections: { bloquant: [], aFaire: [], fait: [], reste: [], ...sections },
 })
 
@@ -53,7 +53,7 @@ afterEach(() => {
 
 it('shows the four sections in order with their counts, empty ones included', () => {
   render(suivi({ bloquant: [row('a')], aFaire: [row('b'), row('c')], fait: [], reste: [row('d')] }))
-  expect(headings()).toEqual(['Bloquant (1)', 'À faire par Heifara (2)', 'Fait (0)', 'Reste à faire (1)'])
+  expect(headings()).toEqual(['Bloquant (1)', 'À faire par Max (2)', 'Fait (0)', 'Reste à faire (1)'])
   expect(host.textContent).toContain('Rien.')
 })
 

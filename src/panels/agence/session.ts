@@ -15,7 +15,7 @@ import type { Json, PanelRecord } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalActivity, type TerminalStatus } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
-import { classify, mergeState } from './contract/suivi'
+import { classify, HUMAIN_DEFAUT, mergeState } from './contract/suivi'
 import type {
   AgenceOp,
   AgenceOpResult,
@@ -232,6 +232,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       regisseur,
       suivi: {
         repo: state.repo,
+        humain: state.humain || HUMAIN_DEFAUT,
         agentsActive: state.agentsActive,
         readAt: read.readAt ?? '',
         error: read.error,

@@ -27,7 +27,7 @@ import AgenceView from './AgenceView'
 const snapshot = (patch: Partial<AgenceSnapshot> = {}): AgenceSnapshot => ({
   ptyId: null, orchestrator: 'running', regisseur: { state: 'running', error: null, settingsHint: null },
   suivi: {
-    repo: 'cate', agentsActive: 1, readAt: 't', error: null,
+    repo: 'cate', humain: 'Max', agentsActive: 1, readAt: 't', error: null,
     sections: {
       bloquant: [], fait: [], reste: [],
       aFaire: [{ id: 'n1', title: 'Valider', kind: 'draft', meta: [], evidence: null, link: null, links: [], action: { type: 'draft', draftId: 'd1', inFlight: false } }],
@@ -80,7 +80,7 @@ it('goes back to the list when the draft being read is gone (sent or dropped els
   act(() => button('Lire et envoyer')!.click())
   render(snapshot({ drafts: {} }))
   expect(host.querySelector('[data-testid="markdown-preview"]')).toBeNull()
-  expect(host.textContent).toContain('À faire par Heifara')
+  expect(host.textContent).toContain('À faire par Max')
 })
 
 /** A ResizeObserver stand-in: `resize` reports the view's width. */
@@ -170,7 +170,7 @@ it('puts the conversation and the follow-up side by side when there is room', ()
   observer.resize(1000)
   expect(host.querySelector('[role="tablist"]')).toBeNull()
   expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
-  expect(host.textContent).toContain('À faire par Heifara')
+  expect(host.textContent).toContain('À faire par Max')
 })
 
 it('switches to the tabs Conversation and Suivi under 640 px, keeping the terminal mounted', () => {

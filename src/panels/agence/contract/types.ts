@@ -69,6 +69,8 @@ export type SuiviSections = {
 
 export type SuiviView = {
   repo: string
+  /** The human's name, shown in « À faire par <name> » (`agence nom`). */
+  humain: string
   agentsActive: number
   /** ISO time of the last state read. */
   readAt: string
@@ -166,6 +168,8 @@ export interface StateQuestion {
 /** The part of the CLI's state the panel reads. */
 export interface AgenceState {
   repo: string
+  /** The human's name, written by the regisseur at each turn; absent in an old state. */
+  humain?: string
   ghRepo: string | null
   agentsActive: number
   /** The regisseur's port, set by `agence boot`. */

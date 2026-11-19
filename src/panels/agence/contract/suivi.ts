@@ -5,6 +5,10 @@
 import type { AgenceState, NeedRow, PanelTitles, StateNeed, StateQuestion, SuiviSections } from './types'
 
 const DONE_SHOWN = 20
+/** The stored `owner` of the human's needs (OWNER_HUMAIN of agence.py): an opaque key, never shown. */
+export const OWNER_HUMAIN = 'heifara'
+/** Shown until the regisseur has written the name (old state). */
+export const HUMAIN_DEFAUT = "L'humain"
 /** Seconds after which the GitHub state read by the regisseur is ignored (GH_PERIME). */
 const GH_STALE_S = 300
 const CONFLICT = 'conflit avec la base'
@@ -83,8 +87,8 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
 
 export function classify(state: AgenceState, titles: PanelTitles, now: number): SuiviSections {
   const open = state.needs.filter((need) => need.status === 'open')
-  const mine = open.filter((need) => need.owner === 'heifara')
-  const blocked = open.filter((need) => need.owner !== 'heifara' && (need.blocking || need.overBudget || need.agentBlocked || need.closeFailed))
+  const mine = open.filter((need) => need.owner === OWNER_HUMAIN)
+  const blocked = open.filter((need) => need.owner !== OWNER_HUMAIN && (need.blocking || need.overBudget || need.agentBlocked || need.closeFailed))
   const rest = open.filter((need) => !mine.includes(need) && !blocked.includes(need))
   // Newest first; equal dates keep the state's order, as Python's reverse sort does.
   const done = state.needs.filter((need) => need.status === 'done')
