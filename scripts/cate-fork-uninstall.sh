@@ -25,7 +25,7 @@ build_dir() {
 }
 
 main() {
-	PURGE=0 GARDES=0 rc=0
+	PURGE=0 GARDES=0 KEEP=0 rc=0
 	for a in "$@"; do
 		case $a in
 			--purge) PURGE=1 ;;
@@ -52,7 +52,7 @@ main() {
 	if [ "$GARDES" = 1 ]; then
 		AGENCE="$(build_dir)/tools/agence/agence"
 		if [ -x "$AGENCE" ]; then
-			"$AGENCE" hooks uninstall || { rc=1; PURGE=0; echo "gardes non retirés : dossier de build conservé"; }
+			"$AGENCE" hooks uninstall || { rc=1; PURGE=0; KEEP=1; echo "gardes non retirés : dossier de build conservé"; }
 		elif grep -q agence-hook "$HOME/.claude/settings.json" 2> /dev/null; then
 			rc=1
 			echo "gardes non retirés : $AGENCE absent. Dans un terminal Cate : agence hooks uninstall"
@@ -65,12 +65,13 @@ main() {
 	if [ "$PURGE" = 1 ]; then
 		# The script checks the folder (named cate-build under HOME, origin = the configured repo) before any rm.
 		if [ -x "$BIN" ]; then
-			"$BIN" --purge || { rc=1; echo "dossier de build conservé"; }
+			"$BIN" --purge || { rc=1; KEEP=1; echo "dossier de build conservé"; }
 		else
 			echo "script absent : dossier de build non supprimé"
 		fi
 	fi
-	if [ -f "$BIN" ]; then
+	# The script stays while the build folder does: a second run needs it to purge.
+	if [ "$KEEP" = 0 ] && [ -f "$BIN" ]; then
 		rm -f "$BIN"
 		echo "script retiré : $BIN"
 	fi

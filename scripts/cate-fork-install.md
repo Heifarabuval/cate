@@ -111,7 +111,7 @@ Le script construit avec `CATE_SELF_UPDATE=0` : l'app du fork ne se met jamais �
 curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate-fork-uninstall.sh | sh
 ```
 
-Retire l'agent et le script. Ajouter `-s -- --purge` après `sh` supprime aussi le dossier de build. `--gardes` retire aussi les gardes d'envoi de `~/.claude/settings.json` (avec la CLI du clone, avant `--purge`) ; si elle ne peut pas, le dossier de build reste et le code de sortie est 1. Sans `--gardes`, `~/.claude` n'est jamais touché. L'application installée, le journal et le fichier de réglages restent.
+Retire l'agent et le script. Ajouter `-s -- --purge` après `sh` supprime aussi le dossier de build. `--gardes` retire aussi les gardes d'envoi de `~/.claude/settings.json` (avec la CLI du clone, avant `--purge`) ; si elle ne peut pas, le dossier de build et le script de mise à jour restent (un second passage peut finir) et le code de sortie est 1. Sans `--gardes`, `~/.claude` n'est jamais touché. L'application installée, le journal et le fichier de réglages restent.
 
 ## Non vérifié
 

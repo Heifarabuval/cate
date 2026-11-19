@@ -30,7 +30,7 @@ Codes inchangés : 0 ok, 1 refus métier, 2 environnement.
 | nom | non | `agence nom` ; source `défaut` = info | `git config --global agence.nom <Prénom>` |
 | Slack, Gmail | non | info seulement : non lisible depuis la CLI | brancher les connecteurs dans Claude Code |
 
-Avec `--hors-cate` (lancé par l'amorçage, sans `CATE_SOCKET`) : terminal Cate, réglages CLI, type `agence`, `agent usage` et skill semé sortent en `info` « à vérifier dans un terminal Cate : `agence doctor --prerequis` » ; le code 1 ne vient que d'un bloquant hors Cate.
+Avec `--hors-cate` (lancé par l'amorçage, sans `CATE_SOCKET`) : terminal Cate, CLI livrée, `agent start --model`, réglages CLI, type `agence`, `agent usage` et skill semé (7 points) sortent en `info` « à vérifier dans un terminal Cate : `agence doctor --prerequis` », car hors Cate « CLI livrée » et `agent start --model` ne peuvent pas passer (ils interrogent `cate`) ; le code 1 ne vient que d'un bloquant hors Cate.
 
 `doctor` n'écrit rien. Il ne lance jamais l'app Cate.
 
