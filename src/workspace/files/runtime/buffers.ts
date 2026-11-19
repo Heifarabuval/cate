@@ -196,6 +196,8 @@ class OpenBuffer {
 
   async load(): Promise<void> {
     const onDisk = await readBytesOrNull(this.path)
+    // A NUL in the first 8 KB is how git tells binary from text.
+    if (onDisk?.subarray(0, 8000).includes(0)) throw new RpcError('rejected', 'Binary file', { binary: true })
     if (onDisk) this.decodeDisk(onDisk)
     const saved = await readBytesOrNull(this.file)
     const persisted = saved ? decodePersisted(saved) : null

@@ -1,4 +1,4 @@
-// Previews of images, PDFs and DOCX files. The bytes are fetched from the
+// Previews of images, video, audio, PDFs and DOCX files. The bytes are fetched from the
 // runtime (`file.readBinary`), never pushed through the session, and fetched
 // again when the file changes on disk.
 
@@ -26,6 +26,22 @@ function ImageViewer({ data, mimeType, fileName }: { data: Uint8Array; mimeType:
   )
 }
 
+function MediaViewer({ data, mimeType, kind }: { data: Uint8Array; mimeType: string; kind: 'video' | 'audio' }) {
+  const [src, setSrc] = useState<string>()
+  useEffect(() => {
+    const url = URL.createObjectURL(new Blob([viewedArrayBuffer(data)], { type: mimeType }))
+    setSrc(url)
+    return () => URL.revokeObjectURL(url)
+  }, [data, mimeType])
+  return (
+    <div className="flex-1 flex items-center justify-center overflow-auto p-4 bg-neutral-900/50">
+      {kind === 'video'
+        ? <video src={src} controls className="max-w-full max-h-full rounded" />
+        : <audio src={src} controls />}
+    </div>
+  )
+}
+
 function DocxViewer({ data }: { data: Uint8Array }) {
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +64,12 @@ function DocxViewer({ data }: { data: Uint8Array }) {
     </div>
   )
 }
+
+const MEDIA_MIME: Record<string, string> = {
+  mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg',
+}
+const mediaMimeType = (file: string) => MEDIA_MIME[file.slice(file.lastIndexOf('.') + 1).toLowerCase()]
 
 const parentDir = (file: string) => file.replace(/[/\\][^/\\]*$/, '') || file
 
@@ -72,7 +94,7 @@ export default function FilePreview({ workspaceId, filePath }: { workspaceId: st
   const detected = useMemo(() => (state?.data ? detectTypeFromBytes(state.data) : null), [state?.data])
   const fileName = pathDisplayName(filePath) || 'Document'
   const documentType = detected?.documentType ?? getDocumentType(filePath)
-  const mimeType = detected?.mimeType ?? 'application/octet-stream'
+  const mimeType = detected?.mimeType ?? mediaMimeType(filePath) ?? 'application/octet-stream'
 
   if (!state) return <LoadingState label={`Loading ${fileName}`} className="w-full h-full bg-surface-4 text-sm" />
   if (state.error || !state.data) {
@@ -88,7 +110,8 @@ export default function FilePreview({ workspaceId, filePath }: { workspaceId: st
       {documentType === 'image' && <ImageViewer data={state.data} mimeType={mimeType} fileName={fileName} />}
       {documentType === 'pdf' && <Suspense fallback={<LoadingState label="Opening PDF" className="flex-1 text-sm" />}><PdfViewer data={state.data} /></Suspense>}
       {documentType === 'docx' && <DocxViewer data={state.data} />}
-      {!documentType && <PanelCenteredState title="Unsupported file format" />}
+      {(documentType === 'video' || documentType === 'audio') && <MediaViewer data={state.data} mimeType={mimeType} kind={documentType} />}
+      {(!documentType || documentType === 'binary') && <PanelCenteredState title="Binary file, not displayed" />}
     </div>
   )
 }

@@ -7,13 +7,6 @@ import { CATE_TEMP_DIR, cateTempDir, pathSeparatorOf } from '@workspace/files/co
 
 export const DRAFTS_DIR = CATE_TEMP_DIR
 
-/** Previews (images, PDF, DOCX) are never shared or autosaved. */
-const PREVIEW_EXTENSIONS = /\.(pdf|docx|jpe?g|png|gif|svg|webp|bmp|ico|tiff?)$/i
-
-export function isPreviewPath(path: string): boolean {
-  return PREVIEW_EXTENSIONS.test(path)
-}
-
 export function isEditorDraft(path: string | undefined): boolean {
   return !!path && /[/\\]\.cate[/\\]tmp[/\\][\da-f-]{36}\.md$/i.test(path)
 }

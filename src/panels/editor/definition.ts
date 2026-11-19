@@ -5,8 +5,8 @@ import { channel } from '@kernel/rpc/contract'
 import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
-import { pathDisplayName } from '@workspace/files/contract'
-import { isEditorDraft, isPreviewPath } from './contract/drafts'
+import { getDocumentType, pathDisplayName } from '@workspace/files/contract'
+import { isEditorDraft } from './contract/drafts'
 import { editorApi, type EditorOp, type EditorSnapshot } from './contract'
 
 interface EditorCreateOptions extends PanelCreateOptions {
@@ -77,7 +77,7 @@ export const editorDefinition = definePanel({
     },
     sharesFile: (panel) => {
       const file = filePathOf(panel.fields)
-      return !file || !isPreviewPath(file)
+      return !file || !getDocumentType(file)
     },
   },
 })
