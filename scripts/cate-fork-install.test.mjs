@@ -4,6 +4,7 @@
 // no launchctl, no build, no /Applications. The PATH holds only the fakes and
 // symlinks to the basic utilities, so a real git or node on the machine is never seen.
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -20,7 +21,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const SCRIPTS = path.resolve(import.meta.dirname);
 const UPDATE = path.join(SCRIPTS, "cate-fork-update.sh");
@@ -59,11 +60,27 @@ function which(name) {
 
 const describeUnix = process.platform === "win32" ? describe.skip : describe;
 
+// The real ~/.claude/settings.json and ~/Library/LaunchAgents, read only: the
+// suite must leave both as they were (the install writes the first and loads
+// an agent from the second, in the fake HOME only).
+const realHome = () => {
+  const settings = path.join(os.homedir(), ".claude/settings.json");
+  const agents = path.join(os.homedir(), "Library/LaunchAgents");
+  return {
+    settings: existsSync(settings)
+      ? createHash("sha256").update(readFileSync(settings)).digest("hex")
+      : null,
+    agents: existsSync(agents) ? readdirSync(agents).sort() : null,
+  };
+};
+
 describeUnix(
   "cate-fork scripts (fake HOME, fake commands)",
   { timeout: 60000 },
   () => {
     let root, home, fakes, calls, apps, build;
+    const realBefore = realHome();
+    afterAll(() => expect(realHome()).toEqual(realBefore));
 
     const write = (file, text, mode) => {
       mkdirSync(path.dirname(file), { recursive: true });
@@ -108,6 +125,7 @@ fi`,
       CATE_BREW_PREFIXES: path.join(root, "brew"),
       CATE_FORK_RAW_URL: "https://raw.example.test/scripts",
       SRC_SCRIPTS: SCRIPTS,
+      AGENCE_SRC: path.join(root, "agence-src/agence"),
       ...env,
     });
     const run = (script, args = [], env = {}, input) => {
@@ -222,7 +240,8 @@ fi`,
 dir=""
 case "$1" in -C) dir=$2; shift 2 ;; esac
 case "$1" in
-  clone) url=$3; for last; do :; done; mkdir -p "$last/.git"; echo "$url" > "$last/.git/origin"; printf '${ENGINES}' > "$last/package.json" ;;
+  clone) url=$3; for last; do :; done; mkdir -p "$last/.git" "$last/tools/agence"; echo "$url" > "$last/.git/origin"; printf '${ENGINES}' > "$last/package.json"
+    cp "$AGENCE_SRC" "$last/tools/agence/agence" ;;
   config) cat "$dir/.git/origin" 2>/dev/null || echo https://github.com/Heifarabuval/cate.git ;;
   fetch) [ "\${FAKE_FETCH_FAIL:-0}" = 0 ] || exit 1 ;;
   rev-parse) echo "\${FAKE_SHA:-${SHA}}" ;;
@@ -239,6 +258,30 @@ esac`,
       );
       fake("ditto", 'cp -R "$1" "$2"');
       fake("xattr", "true");
+      // The agence CLI of the clone: hooks write or remove the fake HOME's
+      // settings.json; doctor prints FAKE_DOCTOR (one tab-separated line per point).
+      fake(
+        "agence",
+        `settings="$HOME/.claude/settings.json"
+case "$1 $2" in
+  "hooks install")
+    [ "\${FAKE_HOOKS_FAIL:-0}" = 0 ] || { echo "agence : settings.json illisible" >&2; exit 2; }
+    mkdir -p "$HOME/.claude"
+    grep -q agence-hook "$settings" 2>/dev/null || echo '{"hooks":"agence-hook"}' > "$settings"
+    echo "gardes installés : $settings" ;;
+  "hooks uninstall")
+    [ "\${FAKE_HOOKS_FAIL:-0}" = 0 ] || { echo "agence : settings.json illisible" >&2; exit 2; }
+    rm -f "$settings"
+    echo "gardes retirés : $settings" ;;
+  "doctor --prerequis")
+    printf '%s' "\${FAKE_DOCTOR-ok\tpython3\t3.9.6
+ok\tgh\tgh auth status
+info\tterminal Cate\tà vérifier dans un terminal Cate\t→ agence doctor --prerequis
+}"
+    exit "\${FAKE_DOCTOR_CODE:-0}" ;;
+esac`,
+        path.join(root, "agence-src"),
+      );
       fake("osascript", "true");
       fake("launchctl", "true");
       fake("pgrep", '[ "${FAKE_CATE_OPEN:-0}" = 1 ]');
@@ -959,6 +1002,162 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
           readFileSync(path.join(apps, "Cate.app/Contents/id"), "utf8"),
         ).toBe("new\n");
       });
+
+    describe("send guards and doctor", () => {
+      const plist = () =>
+        path.join(home, "Library/LaunchAgents/com.cate.fork-update.plist");
+      const settings = () => path.join(home, ".claude/settings.json");
+      // Calls of the clone's agence CLI, without the path.
+      const agence = (dir = build) =>
+        called()
+          .filter((l) => l.startsWith(`agence@${dir}/tools/agence `))
+          .map((l) => l.slice(`agence@${dir}/tools/agence `.length));
+      const rest = (out) => out.split("\n").filter((l) => l.startsWith("Reste : "));
+      const DOCTOR = "agence doctor --prerequis --hors-cate";
+
+      it("after the first build, installs the guards then runs the doctor, with the clone's CLI", () => {
+        nvm("22.22.2");
+        const r = run(INSTALL);
+        expect(r.code).toBe(0);
+        expect(agence()).toEqual(["hooks install", "doctor --prerequis --hors-cate"]);
+        const order = called()
+          .filter((l) => /^npm@.* ci |^agence@/.test(l))
+          .map((l) => l.split("@")[0]);
+        expect(order).toEqual(["npm", "agence", "agence"]);
+        expect(readFileSync(settings(), "utf8")).toContain("agence-hook");
+        expect(rest(r.out)).toEqual([]); // nothing left: no summary line
+        expect(r.out.trim().split("\n").slice(-3).map((l) => l.split(" ")[0])).toEqual([
+          "Fait",
+          "Journal",
+          "Désinstaller",
+        ]);
+      });
+
+      it("--sans-gardes skips the guards, still runs the doctor, and never touches ~/.claude", () => {
+        nvm("22.22.2");
+        const r = run(INSTALL, ["--sans-gardes"], {
+          FAKE_DOCTOR: "manque\tgardes\tgardes agence inactif\t→ agence hooks install\n",
+          FAKE_DOCTOR_CODE: "1",
+        });
+        expect(r.code).toBe(0);
+        expect(agence()).toEqual(["doctor --prerequis --hors-cate"]);
+        expect(existsSync(path.join(home, ".claude"))).toBe(false);
+        expect(rest(r.out)).toEqual(["Reste : gardes → agence hooks install"]);
+      });
+
+      it("runs neither the guards nor the doctor when the first build fails", () => {
+        nvm("22.22.2");
+        const r = run(INSTALL, [], { FAKE_NPM_FAIL: "1" });
+        expect(r.code).toBe(1);
+        expect(agence()).toEqual([]);
+        expect(existsSync(path.join(home, ".claude"))).toBe(false);
+      });
+
+      it("stops with a non-zero code when hooks install fails, and keeps the agent", () => {
+        nvm("22.22.2");
+        const r = run(INSTALL, [], { FAKE_HOOKS_FAIL: "1" });
+        expect(r.code).not.toBe(0);
+        expect(agence()).toEqual(["hooks install"]); // no doctor after a failure
+        expect(r.out).toMatch(/gardes non branchés/);
+        expect(r.out).toMatch(/recoller la même ligne/);
+        expect(existsSync(plist())).toBe(true);
+        expect(count(/^launchctl@.* bootout /)).toBe(1); // loaded, never unloaded
+        expect(existsSync(settings())).toBe(false);
+      });
+
+      it("twice in a row: one more effective call of each, settings.json the same", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        const first = readFileSync(settings(), "utf8");
+        expect(run(INSTALL).code).toBe(0);
+        expect(readFileSync(settings(), "utf8")).toBe(first);
+        expect(agence()).toEqual([
+          "hooks install",
+          "doctor --prerequis --hors-cate",
+          "hooks install",
+          "doctor --prerequis --hors-cate",
+        ]);
+        expect(count(/^npm@.* ci /)).toBe(1);
+      });
+
+      it("sums up what is left in 3 lines at most", () => {
+        nvm("22.22.2");
+        const two = run(INSTALL, [], {
+          FAKE_DOCTOR:
+            "ok\tpython3\t3.9.6\nmanque\tgh\tgh auth status : not logged in\t→ gh auth login\ninfo\tskill\tà vérifier dans un terminal Cate\t→ agence doctor --prerequis\nmanque\tclaude\tclaude --version : code 127\t→ installeur officiel de Claude Code\n",
+          FAKE_DOCTOR_CODE: "1",
+        });
+        expect(two.code).toBe(0); // Cate is installed: what is left is said, not failed
+        expect(rest(two.out)).toEqual([
+          "Reste : gh → gh auth login",
+          "Reste : claude → installeur officiel de Claude Code",
+        ]);
+        const five = run(INSTALL, [], {
+          FAKE_DOCTOR: ["a", "b", "c", "d", "e"].map((p) => `manque\t${p}\tx\t→ fix ${p}\n`).join(""),
+          FAKE_DOCTOR_CODE: "1",
+        });
+        const lines = rest(five.out);
+        expect(lines.length).toBe(3);
+        expect(lines.slice(0, 2)).toEqual(["Reste : a → fix a", "Reste : b → fix b"]);
+        expect(lines[2]).toContain("3 autres");
+        expect(lines[2]).toContain(`${build}/tools/agence/${DOCTOR}`);
+        const broken = run(INSTALL, [], { FAKE_DOCTOR: "", FAKE_DOCTOR_CODE: "2" });
+        expect(rest(broken.out)).toEqual([
+          `Reste : prérequis non vérifiés (code 2) : ${build}/tools/agence/${DOCTOR}`,
+        ]);
+      });
+
+      it("finds the clone through the conf file when the environment does not name it", () => {
+        nvm("22.22.2");
+        const other = path.join(home, "other/cate-build");
+        write(path.join(home, ".config/cate-fork-update.conf"), 'CATE_BUILD_DIR="~/other/cate-build"\n');
+        expect(run(INSTALL, [], { CATE_BUILD_DIR: "" }).code).toBe(0);
+        expect(agence(other)).toEqual(["hooks install", "doctor --prerequis --hors-cate"]);
+      });
+
+      it("uninstall --gardes removes the guards with the clone's CLI before --purge drops it", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        writeFileSync(calls, "");
+        const r = run(UNINSTALL, ["--purge", "--gardes"]);
+        expect(r.code).toBe(0);
+        expect(agence()).toEqual(["hooks uninstall"]);
+        expect(existsSync(settings())).toBe(false);
+        expect(existsSync(build)).toBe(false);
+        expect(r.out.indexOf("gardes retirés")).toBeLessThan(r.out.indexOf("dossier de build supprimé"));
+        expect(run(UNINSTALL, ["--gardes", "--purge"]).code).toBe(0); // nothing left to undo
+      });
+
+      it("uninstall without --gardes never touches ~/.claude", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        const before = readFileSync(settings(), "utf8");
+        writeFileSync(calls, "");
+        expect(run(UNINSTALL, ["--purge"]).code).toBe(0);
+        expect(agence()).toEqual([]);
+        expect(readFileSync(settings(), "utf8")).toBe(before);
+      });
+
+      it("uninstall --gardes keeps the build folder when the guards cannot be removed", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        const r = run(UNINSTALL, ["--gardes", "--purge"], { FAKE_HOOKS_FAIL: "1" });
+        expect(r.code).toBe(1);
+        expect(r.out).toMatch(/gardes non retirés/);
+        expect(existsSync(path.join(build, "tools/agence/agence"))).toBe(true);
+        expect(existsSync(plist())).toBe(false); // the agent still goes
+      });
+
+      it("uninstall --gardes without the CLI fails only if guards are still installed", () => {
+        nvm("22.22.2");
+        run(INSTALL);
+        expect(run(UNINSTALL, ["--purge"]).code).toBe(0); // clone gone, guards still there
+        const r = run(UNINSTALL, ["--gardes"]);
+        expect(r.code).toBe(1);
+        expect(r.out).toMatch(/gardes non retirés/);
+        expect(r.out).toMatch(/agence hooks uninstall/);
+      });
+    });
     });
   },
 );

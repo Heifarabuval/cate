@@ -5,8 +5,12 @@
 #
 # Checks the prerequisites (all named at once), copies cate-fork-update to
 # ~/.local/bin, writes and loads the launchd agent (every 10 minutes), then
-# builds and installs Cate once. Safe to run again: same result, no duplicate.
-# Usage: cate-fork-install.sh [--sans-launchd]
+# builds and installs Cate once, then plugs the send guards into
+# ~/.claude/settings.json (agence hooks install, which backs it up first) and
+# runs agence doctor --prerequis --hors-cate, both with the clone's CLI.
+# Safe to run again: same result, no duplicate.
+# Usage: cate-fork-install.sh [--sans-launchd] [--sans-gardes] [--branche <ref>]
+#   --sans-gardes  leave ~/.claude untouched (someone whose own guards cover the same tools)
 # Settings: CATE_FORK_REPO, CATE_FORK_BRANCH, CATE_BUILD_DIR, CATE_APPS_DIR (kept
 # in ~/.config/cate-fork-update.conf when given), CATE_FORK_RAW_URL (where the
 # other scripts are downloaded from when this one is piped).
@@ -67,11 +71,42 @@ write_conf() {
 	mv -f "$conf.new" "$conf"
 }
 
+# The build folder, read like cate-fork-update does: environment, then the conf, then the default.
+build_dir() {
+	d=${CATE_BUILD_DIR:-}
+	conf=${CATE_FORK_CONF:-$HOME/.config/cate-fork-update.conf}
+	if [ -z "$d" ] && [ -f "$conf" ]; then
+		d=$(sed -n 's/^CATE_BUILD_DIR=//p' "$conf" | head -n 1)
+		d=${d#\"}
+		d=${d%\"}
+		# shellcheck disable=SC2088  # a literal "~/" typed in the config is matched on purpose
+		case $d in "~/"*) d="$HOME/${d#"~/"}" ;; esac
+	fi
+	printf '%s' "${d:-$HOME/.local/share/cate-build}"
+}
+
+# What is left by hand, from the doctor's "manque" lines: 3 lines at most, none if nothing is left.
+rest() {
+	code=0
+	out=$("$AGENCE" doctor --prerequis --hors-cate 2> /dev/null) || code=$?
+	if [ "$code" -gt 1 ]; then
+		echo "Reste : prérequis non vérifiés (code $code) : $AGENCE doctor --prerequis --hors-cate"
+		return 0
+	fi
+	printf '%s\n' "$out" | awk -F '\t' -v all="$AGENCE doctor --prerequis --hors-cate" '
+		$1 == "manque" { n++; l[n] = "Reste : " $2 " " $4 }
+		END {
+			for (i = 1; i <= n && (n <= 3 || i < 3); i++) print l[i]
+			if (n > 3) print "Reste : " n - 2 " autres : " all
+		}'
+}
+
 main() {
-	SANS_LAUNCHD=0
+	SANS_LAUNCHD=0 SANS_GARDES=0
 	while [ $# -gt 0 ]; do
 		case $1 in
 			--sans-launchd) SANS_LAUNCHD=1 ;;
+			--sans-gardes) SANS_GARDES=1 ;;
 			--branche)
 				[ $# -ge 2 ] || die "--branche demande un nom de branche, de tag ou de commit" 64
 				case $2 in -*) die "branche invalide : $2" 64 ;; esac
@@ -148,6 +183,18 @@ main() {
 		tail -n 15 "$LOG" 2> /dev/null || true
 	fi
 
+	# Guards and doctor only after a good build: the clone holds the CLI they run.
+	# The CLI backs settings.json up before changing it; a failure stops here and
+	# keeps the agent, which goes on updating Cate.
+	AGENCE="$(build_dir)/tools/agence/agence"
+	reste=""
+	if [ "$rc" = 0 ]; then
+		if [ "$SANS_GARDES" = 0 ]; then
+			"$AGENCE" hooks install || die "gardes non branchés ($AGENCE hooks install : code $?). Agent $LABEL gardé ; recoller la même ligne."
+		fi
+		reste=$(rest)
+	fi
+
 	state=$(tail -n 1 "$LOG" 2> /dev/null || true)
 	if [ "$rc" = 0 ]; then
 		echo "Fait : $BIN_DIR/cate-fork-update, $agent. Dernier état : ${state:-aucun}"
@@ -156,7 +203,8 @@ main() {
 		echo "L'agent la réessaie seul (3 fois au plus par commit). Relancer tout de suite : $BIN_DIR/cate-fork-update --force"
 	fi
 	echo "Journal : $LOG"
-	echo "Désinstaller : curl -fsSL $RAW/cate-fork-uninstall.sh | sh   (ajouter -s -- --purge pour supprimer aussi le dossier de build)"
+	echo "Désinstaller : curl -fsSL $RAW/cate-fork-uninstall.sh | sh   (ajouter -s -- --purge --gardes pour supprimer aussi le dossier de build et les gardes)"
+	[ -z "$reste" ] || printf '%s\n' "$reste"
 	exit "$rc"
 }
 

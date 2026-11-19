@@ -16,6 +16,10 @@ curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate
 2. Copie `cate-fork-update` dans `~/.local/bin`.
 3. Écrit l'agent launchd `com.cate.fork-update` (toutes les 10 minutes, priorité basse) dans `~/Library/LaunchAgents` et le charge.
 4. Construit le fork une première fois et l'installe dans `/Applications` (10 à 20 min, durée non mesurée). Fermer Terminal pendant ce temps ne casse rien : l'agent est déjà chargé et reprend la construction dans les 10 minutes.
+5. Après un premier build réussi, branche les gardes d'envoi avec la CLI du clone (`~/.local/share/cate-build/tools/agence/agence hooks install`) : sauvegarde de `~/.claude/settings.json` d'abord, puis deux entrées `PreToolUse` ajoutées, les hooks existants gardés. Un échec arrête la ligne (code non nul) ; l'agent reste chargé ; recoller la même ligne. `--sans-gardes` saute cette étape et ne touche pas à `~/.claude`.
+6. Lance `agence doctor --prerequis --hors-cate` (lecture seule) et dit en 3 lignes au plus ce qui reste à faire à la main (`Reste : <point> → <commande>`, rien si tout est là). Les points qui exigent Cate (réglages CLI du workspace, skill semé) sont à vérifier ensuite dans un terminal Cate : `agence doctor --prerequis`.
+
+Un build en échec ne branche aucun garde et ne lance pas `doctor`.
 
 Ensuite, à chaque nouveau commit de `main`, l'agent construit le fork. Le remplacement de `/Applications/Cate.app` attend que Cate soit fermé. Aucun daemon n'est arrêté, Cate n'est jamais lancé.
 
@@ -39,6 +43,7 @@ Ce que la ligne et l'agent écrivent (relevé dans les scripts et les outils du 
 | `~/.local/share/cate-build` | le clone du fork, `node_modules`, `release/`, `dist-runtime/` (dont `dist-runtime/cache/` : Node et ripgrep téléchargés) |
 | `~/.local/share/cate-build.staged`, `.installed`, `.failed`, `.notified`, `.lock` | l'état de l'agent, à côté du clone, jamais dedans |
 | `~/.config/cate-fork-update.conf` | les réglages, seulement si un réglage est donné |
+| `~/.claude/settings.json` (et sa sauvegarde `settings.json.bak-agence-<AAAAMMJJ-HHMMSS>` à côté, faite d'abord) | les gardes d'envoi agence (deux entrées `PreToolUse`), sauf `--sans-gardes` |
 | `~/Library/Logs/cate-fork-update.log` (et `.log.1` au-delà de 1 Mo) | le journal |
 | `~/.npm/` | le cache de `npm ci` |
 | `~/Library/Caches/electron/`, `~/Library/Caches/electron-builder/` | Electron et les outils de packaging, téléchargés par `npm ci` et le packaging |
@@ -56,6 +61,8 @@ La ligne ne touche ni les données des workspaces (`~/.cate/`) ni les réglages 
 
 `--sans-launchd` installe le script sans le planifier : `sh cate-fork-install.sh --sans-launchd`.
 
+`--sans-gardes` laisse `~/.claude/settings.json` intact, pour qui a déjà ses propres gardes sur les mêmes outils (deux gardes sur un même outil se contredisent) : `curl -fsSL .../cate-fork-install.sh | sh -s -- --sans-gardes`. Le résumé nomme alors les gardes comme reste à faire.
+
 ## Ce que ça signifie
 
 La mise à jour construit et installe automatiquement ce qui est sur la branche configurée du dépôt, toutes les 10 minutes, sans clic, avec les droits de l'utilisateur. Quiconque peut écrire sur cette branche peut donc faire exécuter du code sur le Mac : il faut faire confiance au propriétaire de la branche.
@@ -70,9 +77,10 @@ curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/<SHA>/scripts/cat
 
 ## Ce que l'installation ne fait pas
 
-- les gardes d'envoi, la CLI `agence` et `agence.nom` (lots suivants) ;
-- les skills et les hooks Claude ;
-- la connexion `gh`.
+- `agence.nom` : `git config --global agence.nom <Prénom>` (sinon « L'humain ») ;
+- les skills et les hooks Claude autres que les gardes d'envoi ;
+- la connexion `gh` et l'installation de Claude Code : le résumé les nomme s'ils manquent ;
+- le réglage `cliTerminalInputEnabled` du workspace, coupé par défaut : un clic dans Cate, nommé par `agence doctor --prerequis`.
 
 Après une installation, le daemon du workspace garde l'ancien runtime jusqu'à sa mise à jour par l'app (cate#26 mergé : automatique quand le workspace est inactif).
 
@@ -103,9 +111,10 @@ Le script construit avec `CATE_SELF_UPDATE=0` : l'app du fork ne se met jamais �
 curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate-fork-uninstall.sh | sh
 ```
 
-Retire l'agent et le script. Ajouter `-s -- --purge` après `sh` supprime aussi le dossier de build. L'application installée, le journal et le fichier de réglages restent.
+Retire l'agent et le script. Ajouter `-s -- --purge` après `sh` supprime aussi le dossier de build. `--gardes` retire aussi les gardes d'envoi de `~/.claude/settings.json` (avec la CLI du clone, avant `--purge`) ; si elle ne peut pas, le dossier de build reste et le code de sortie est 1. Sans `--gardes`, `~/.claude` n'est jamais touché. L'application installée, le journal et le fichier de réglages restent.
 
 ## Non vérifié
 
 - Gatekeeper : le script retire la quarantaine et signe l'app en ad hoc, mais l'ouverture sur un autre Mac n'a pas été essayée. Si macOS refuse d'ouvrir l'app, clic droit puis Ouvrir (non vérifié).
+- `agence hooks install` sur un vrai `~/.claude/settings.json` : couvert par les tests de la CLI et par ceux du script en faux HOME, pas exécuté sur un vrai Mac.
 - `launchctl` réel (dont le premier passage de l'agent 10 minutes après son chargement, faute de `RunAtLoad`), durée du premier build et installation dans `/Applications` : couverts seulement par les tests en faux HOME, pas exécutés pour de vrai.
