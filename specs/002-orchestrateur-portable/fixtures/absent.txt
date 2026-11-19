@@ -1,0 +1,3 @@
+Cas « fichier absent » : aucun settings.json.
+Le test crée un HOME jetable vide, avec ou sans le dossier .claude, puis lance l'installeur.
+Attendu au lot 3 : le dossier .claude est créé si besoin, le fichier est écrit avec les seules entrées agence, aucune sauvegarde (rien à sauvegarder).

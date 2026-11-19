@@ -1,0 +1,39 @@
+{
+  "model": "exemple",
+  "theme": "dark",
+  "permissions": {
+    "allow": ["Bash(ls:*)", "Bash(git status:*)", "mcp__exemple__lire"],
+    "deny": ["Bash(rm -rf:*)"],
+    "defaultMode": "default"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "/opt/outils/garde-bash.sh"},
+          {"type": "command", "command": "/opt/outils/journal.sh", "timeout": 5}
+        ]
+      },
+      {
+        "matcher": "mcp__.*slack_send_message_draft$",
+        "hooks": [{"type": "command", "command": "/opt/outils/garde-brouillon.sh"}]
+      },
+      {
+        "matcher": "mcp__.*(slack_send_message|Gmail__send_message)$",
+        "hooks": [{"type": "command", "command": "/opt/outils/garde-envoi-perso.sh"}]
+      },
+      {
+        "matcher": "Bash|WebFetch",
+        "hooks": [{"type": "command", "command": "/opt/outils/garde-reseau.sh"}]
+      }
+    ],
+    "PostToolUse": [
+      {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/opt/outils/format.sh"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "/opt/outils/fin.sh"}]}
+    ]
+  },
+  "enabledPlugins": {"exemple@place-de-marche": true}
+}

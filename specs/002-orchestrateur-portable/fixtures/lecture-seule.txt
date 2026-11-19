@@ -1,0 +1,6 @@
+Cas « lecture seule » : lecture-seule.json est un JSON valide ; le mode est posé par le test, pas par git.
+Le test copie le fichier dans un HOME jetable, puis fait deux variantes :
+  1. chmod 0444 sur le fichier (dossier inscriptible) ;
+  2. chmod 0555 sur le dossier .claude (fichier lisible).
+Cas lien symbolique : le test crée .claude/settings.json comme lien vers un fichier d'un autre dossier du HOME jetable.
+Attendu au lot 3 : refus net avec code 2 et un message, rien d'écrit, aucune sauvegarde laissée à moitié.
