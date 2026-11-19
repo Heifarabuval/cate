@@ -20,6 +20,7 @@ import time
 import unittest
 import urllib.parse
 from contextlib import redirect_stdout
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
@@ -1334,6 +1335,35 @@ class Tour(Base):
 		with agence.tx() as st:
 			return agence.tick(st, set(live), list(agents), gh or {}, now)
 
+	def un_tour(self):
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'}])
+		self.run.reply(['cate', 'agent', 'list'], [])
+		agence.un_tour()
+
+	def test_watch_ecrit_humain_a_chaque_tour(self):
+		self.booted()
+		self.un_tour()
+		self.assertEqual(self.state()['humain'], 'Max')
+		os.environ['AGENCE_NOM'] = 'Zoé'
+		self.un_tour()
+		self.assertEqual(self.state()['humain'], 'Zoé')
+
+	def test_humain_par_defaut_sans_reglage(self):
+		del os.environ['AGENCE_NOM']
+		with mock.patch.object(agence, 'nom_source', return_value=("L'humain", 'défaut')):
+			self.booted()
+			self.un_tour()
+		self.assertEqual(self.state()['humain'], "L'humain")
+
+	def test_etat_ancien_sans_humain_complete_par_load(self):
+		self.booted()
+		with open(agence.state_file(), encoding='utf-8') as f:
+			st = json.load(f)
+		st.pop('humain', None)
+		with open(agence.state_file(), 'w', encoding='utf-8') as f:
+			json.dump(st, f)
+		self.assertEqual(self.state()['humain'], "L'humain")
+
 	def test_pr_mergee_clot_et_ferme(self):
 		self.booted()
 		with agence.tx() as st:
@@ -2079,6 +2109,15 @@ class Regisseur(Base):
 			time.sleep(0.05)
 		self.assertTrue(agence.regisseur_up(self.port), 'le régisseur ne répond pas')
 
+	def get(self, path):
+		c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+		try:
+			c.request('GET', path)
+			r = c.getresponse()
+			return r.status, r.read().decode()
+		finally:
+			c.close()
+
 	def post(self, token, path='/draft/d9/send', accept=None, **form):
 		"""POST sans suivre les redirections ; rend (statut, en-têtes, corps)."""
 		c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
@@ -2200,6 +2239,26 @@ class Regisseur(Base):
 			p.stdin.flush()
 			self.assertEqual(p.wait(timeout=5), 2)
 			self.assertIn(f'régisseur déjà actif sur {self.port}', p.stderr.read())
+
+	def test_sous_token_stdin_aucune_page_et_aucun_jeton_dans_le_corps(self):
+		self.seed()
+		with agence.tx() as st:
+			st['questions'][0]['answer'] = None
+		self.serve()
+		for path in ('/', '/draft/d1', '/ask/q2', '/inconnu'):
+			status, body = self.get(path)
+			self.assertEqual(status, 404, path)
+			self.assertNotIn(self.TOKEN, body, path)
+			self.assertNotIn('name="token"', body, path)
+			self.assertNotIn('Texte lu', body, path)
+		self.assertEqual(self.post(self.TOKEN, '/draft/d1/drop', 'application/json')[0], 200)  # le POST JSON marche
+
+	def test_sans_token_stdin_les_pages_restent(self):
+		self.seed()
+		p = self.watch(stdin=subprocess.DEVNULL)
+		self.wait_port(p)
+		self.assertEqual(self.get('/')[0], 200)
+		self.assertEqual(self.get('/draft/d1')[0], 200)
 
 	def test_sans_l_option_comportement_actuel(self):
 		p = self.watch(stdin=subprocess.DEVNULL)  # fin de stdin immédiate : sans l'option, le régisseur reste
