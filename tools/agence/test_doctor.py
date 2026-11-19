@@ -23,6 +23,8 @@ TOUS = ('cliEnabled', 'cliPanelReadEnabled', 'cliPanelControlEnabled', 'cliAgent
         'cliTerminalReadEnabled', 'cliTerminalInputEnabled', 'cliSkillInstallEnabled')
 BLOQUANTS = ('python3', 'terminal Cate', 'CLI livrée', 'agent start --model', 'agent usage', 'type agence',
              'réglages CLI', 'gh', 'claude', 'gardes')
+# Points qui exigent un terminal Cate ou un Cate déjà démarré : `info` sous --hors-cate.
+DANS_CATE = ('terminal Cate', 'CLI livrée', 'agent start --model', 'agent usage', 'type agence', 'réglages CLI', 'skill')
 
 
 class Prerequis(Base):
@@ -214,6 +216,64 @@ class Prerequis(Base):
 		self.doctor()
 		for cmd, _ in self.run.calls:
 			self.assertTrue(cmd[-1] == '--help' or cmd[:2] in (['gh', 'auth'], ['claude', '--version'], ['git', 'config'], ['git', '-C']), cmd)
+
+	# ---- --hors-cate : lancé par l'amorçage, avant que Cate ait démarré (lot 4, T031) ----
+
+	def hors_cate(self):
+		"""Comme après la ligne d'amorçage : ni socket, ni install du runtime, ni `cate` sur le PATH."""
+		del os.environ['CATE_SOCKET']
+		os.remove(os.path.join(self.home, '.cate', 'runtime', 'current'))
+		self.run.reply(['cate'], '', code=127, err='cate: command not found')
+		return self.doctor('--hors-cate')
+
+	def test_hors_cate_points_de_cate_en_info(self):
+		code, points = self.hors_cate()
+		self.assertEqual(code, 0, points)
+		for nom in DANS_CATE:
+			p = self.point(points, nom)
+			self.assertEqual(p['etat'], 'info', p)
+			self.assertIn('à vérifier dans un terminal Cate', p['detail'])
+			self.assertEqual(p['commande'], 'agence doctor --prerequis')
+		for nom in ('python3', 'gh', 'claude', 'gardes', 'nom'):
+			self.assertEqual(self.point(points, nom)['etat'], 'ok', nom)
+
+	def test_hors_cate_ne_lance_pas_cate(self):
+		self.hors_cate()
+		self.assertEqual([c for c, _ in self.run.calls if c[0] == 'cate'], [])
+
+	def test_hors_cate_code_1_pour_un_bloquant_hors_cate(self):
+		os.remove(os.path.join(self.home, '.claude', 'settings.json'))
+		self.run.reply(['gh', 'auth', 'status'], '', code=1, err='not logged in')
+		code, points = self.hors_cate()
+		self.assertEqual(code, 1)
+		manques = sorted(p['point'] for p in points['points'] if p['etat'] == 'manque')
+		self.assertEqual(manques, ['gardes', 'gh'])
+		self.run.reply(['claude', '--version'], '', code=127)
+		self.assertEqual(self.point(self.doctor('--hors-cate')[1], 'claude')['etat'], 'manque')
+
+	def test_hors_cate_nom_par_defaut_reste_info(self):
+		with mock.patch.object(agence, 'nom_source', lambda: ("L'humain", 'défaut')):
+			code, points = self.hors_cate()
+		self.assertEqual((code, self.point(points, 'nom')['etat']), (0, 'info'))
+
+	def test_hors_cate_texte(self):
+		del os.environ['CATE_SOCKET']
+		out = io.StringIO()
+		with redirect_stdout(out):
+			code = agence.main(['doctor', '--prerequis', '--hors-cate'])
+		lignes = out.getvalue().strip().split('\n')
+		self.assertEqual(code, 0, lignes)
+		socket_ = [x for x in lignes if x.split('\t')[1:2] == ['terminal Cate']]
+		self.assertEqual(socket_, ['info\tterminal Cate\tà vérifier dans un terminal Cate\t→ agence doctor --prerequis'])
+
+	def test_hors_cate_rien_ecrit(self):
+		def photo():
+			return {os.path.join(d, f): os.stat(os.path.join(d, f)).st_mtime_ns
+			        for d, _, fs in os.walk(self.tmp) for f in fs + ['.']}
+		del os.environ['CATE_SOCKET']
+		avant = photo()
+		self.doctor('--hors-cate')
+		self.assertEqual(photo(), avant)
 
 	def test_doctor_seul_inchange(self):
 		"""Sans --prerequis : le contrôle de relance, première ligne oui ou non (spec 001)."""
