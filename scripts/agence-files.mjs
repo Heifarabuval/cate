@@ -1,12 +1,12 @@
 // What `tools/agence/` ships in the runtime install (`<install>/agence/`): the
-// launcher and the CLI, not its tests, fixtures or bytecode. The build id
+// launchers and the CLI, not its tests, fixtures or bytecode. The build id
 // hashes the same files, so a CLI change makes a new build.
 
 import { cpSync, mkdirSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
 /** Files an install must hold, relative to its root (the tarball's `required`). */
-export const AGENCE_REQUIRED = [path.join('agence', 'agence'), path.join('agence', 'agence.py')]
+export const AGENCE_REQUIRED = [path.join('agence', 'agence'), path.join('agence', 'agence-hook'), path.join('agence', 'agence.py')]
 
 const NOT_SHIPPED = /^(test_.*\.py|__pycache__|fixtures|\..*)$/
 

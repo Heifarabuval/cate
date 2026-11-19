@@ -1,0 +1,9 @@
+{
+  "model": "exemple",
+  "permissions": {"allow": ["Bash(ls:*)"]},
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "/opt/outils/mon-garde.sh"}]}
+    ]
+  }
+}

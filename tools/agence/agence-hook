@@ -1,0 +1,39 @@
+#!/bin/sh
+# agence-hook : lanceur des gardes PreToolUse (agence guard --mode send|pages),
+# livré avec le runtime Cate et appelé par les entrées de `agence hooks install`.
+# send échoue fermé : sans python3, CLI en échec ou sortie qui n'est pas une
+# décision, la décision est « ask » (code 0). pages échoue ouvert : sans CLI,
+# aucun projet orchestré à protéger. Même recherche de python3 que `agence` :
+# jamais /usr/bin/python3 ni xcrun, qui ouvrent l'installation des outils.
+ask() {
+	printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"$1\"}}"
+	exit 0
+}
+py=
+if [ "$(uname)" = Darwin ]; then
+	dev=$(xcode-select -p 2>/dev/null) && [ -x "$dev/usr/bin/python3" ] && py=$dev/usr/bin/python3
+	for p in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+		[ -n "$py" ] || { [ -x "$p" ] && py=$p; }
+	done
+else
+	py=$(command -v python3)
+fi
+self=$0
+while [ -L "$self" ]; do
+	link=$(readlink "$self")
+	case $link in
+		/*) self=$link ;;
+		*) self=$(dirname "$self")/$link ;;
+	esac
+done
+cli=$(dirname "$self")/agence.py
+if [ "$1" = pages ]; then
+	[ -n "$py" ] || exit 0
+	exec "$py" "$cli" guard --mode pages
+fi
+[ -n "$py" ] || ask "python3 introuvable (xcode-select --install) : envoi à confirmer"
+out=$("$py" "$cli" guard --mode "$1") || ask "garde agence en échec : envoi à confirmer"
+case $out in
+	'{"hookSpecificOutput": '*) printf '%s\n' "$out" ;;
+	*) ask "garde agence sans décision : envoi à confirmer" ;;
+esac
