@@ -1478,7 +1478,7 @@ and jobs alive, and views reattach to their existing state when remounted.
   registry), the manifest `.cate/skills.json`, the per-worktree mirror
   (`<checkout>/.cate/skills-mirror.json`), the workspace's skill sources
   (`skills/sources.json`), the curated registry and GitHub crawl, and bundled
-  skills (`cate-cli`, `cate-theme`) installed from the runtime tarball like any
+  skills (`cate-cli`, `cate-theme`, `orchestrateur`) installed from the runtime tarball like any
   other source (once trusted and with `cliSkillInstallEnabled`, into the
   agent directories that exist, never over an edited copy).
 - **Desktop UI** (`shells/desktop/ui/workspace/skills`): the skills dialog, the workspace skills tree, skills settings.
@@ -2857,7 +2857,7 @@ scripts/                    builds (runtime, tarball, mobile core, build id,
                             skills index), packaging and signing, the
                             install script, agent CLI installs, e2e and perf
                             runners
-skills/                     bundled skills (cate-cli, cate-theme)
+skills/                     bundled skills (cate-cli, cate-theme, orchestrateur)
 registry/                   the curated skills index and its sources
 native/passkeys/            the passkeys native addon
 ios/                        the iOS app: Cate/ (App, Core), Notifications/

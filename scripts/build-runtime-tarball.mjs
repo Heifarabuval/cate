@@ -158,6 +158,7 @@ const required = [
   path.join('cate', 'bin', 'cate'),
   path.join('cate', 'bin', 'cate.cmd'),
   path.join('skills', 'cate-cli', 'SKILL.md'),
+  path.join('skills', 'orchestrateur', 'SKILL.md'),
   ...(targetPlatform === 'win32' ? [] : AGENCE_REQUIRED),
   'BUILD',
 ]
