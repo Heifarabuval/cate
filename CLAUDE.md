@@ -246,7 +246,9 @@ corrupt-file quarantine); every file has one writer process.
   `workspaces.json`, `known-runtimes.json`, `device-key.json`, ...
 
 Agent CLIs keep their own logins in their own files; Cate writes only
-repo-local agent files, never user-global ones.
+repo-local agent files, never user-global ones. The send guards in
+`~/.claude/settings.json` are written only by `agence hooks install`, on the
+user's command; Cate never runs `agence hooks`.
 
 ### The `cate` API and CLI
 
