@@ -1,0 +1,19 @@
+{
+  "model": "exemple",
+  "cleInventeeParUneVersionFuture": {"a": [1, 2, {"b": null}], "ordre": ["z", "a", "m"]},
+  "nombreGrand": 12345678901234567890,
+  "decimal": 1.0,
+  "texte": "accents é à ü, emoji 🙂, barre \\ et guillemet \"",
+  "permissions": {
+    "allow": ["Zeta(*)", "Alpha(*)"],
+    "optionFuture": true
+  },
+  "hooks": {
+    "EvenementFutur": [
+      {"matcher": "Inconnu", "hooks": [{"type": "prompt", "prompt": "texte libre"}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Write", "hooks": [{"type": "command", "command": "/opt/outils/garde.sh", "champFutur": 1}]}
+    ]
+  }
+}

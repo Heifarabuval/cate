@@ -13,7 +13,9 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence ask "question" --option "label|effet"... [--merge owner/repo#N]
   agence watch                       régisseur : boucle de suivi + pages (127.0.0.1:<port>)
   agence doctor [--relance]          peut-on relancer Cate sans rien perdre ? oui ou non en première ligne, puis les raisons (lecture seule ; code 0 oui, 1 non)
-  agence guard                       hook PreToolUse (JSON sur stdin)
+  agence doctor --prerequis [--json] ce qui manque pour orchestrer, une ligne par point avec la commande qui règle (code 1 si un bloquant manque)
+  agence guard [--mode send|pages]   hook PreToolUse (JSON sur stdin) ; send échoue fermé (ask), pages échoue ouvert
+  agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
 
@@ -30,7 +32,9 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -143,7 +147,7 @@ def draft_path(did):
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
 	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
-	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain"}
+	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None}
 
 
 def plafond(st):
@@ -1676,7 +1680,95 @@ def lire_faits_relance(st, base=None):
 	return faits
 
 
+PYTHON_MIN = (3, 9)
+# Réglages CLI du workspace que l'orchestrateur emploie, et leur défaut dans Cate (src/kernel/api/contract/settings.ts).
+CLI_REGLAGES = {'cliEnabled': True, 'cliPanelReadEnabled': True, 'cliPanelControlEnabled': True, 'cliAgentReadEnabled': True,
+                'cliAgentControlEnabled': True, 'cliTerminalReadEnabled': True, 'cliTerminalInputEnabled': False,
+                'cliSkillInstallEnabled': True}
+INPUT_TERMINAL = "Réglages de Cate > Workspace > CLI : cocher Terminal, colonne control (cliTerminalInputEnabled, coupé par défaut)"
+MAJ_CATE = "attendre la mise à jour automatique (cate-fork-update), ou recoller la ligne d'amorçage"
+
+
+def prerequis():
+	"""Points de `doctor --prerequis` : (point, état ok|manque|info, bloquant, détail, commande qui règle). Lecture seule."""
+	points = []
+
+	def point(nom_, ok, bloquant, detail, commande, info=False):
+		points.append({'point': nom_, 'etat': 'ok' if ok else 'info' if info else 'manque', 'bloquant': bloquant,
+		               'detail': detail, 'commande': None if ok else commande})
+
+	def aide(*args):
+		code, out, err = RUN(['cate', *args, '--help'], timeout=10)
+		return code, out + err
+
+	v = sys.version_info
+	point('python3', v[:2] >= PYTHON_MIN, True, f'{v[0]}.{v[1]}.{v[2]} (3.9 au moins)', 'xcode-select --install')
+	sock = os.environ.get('CATE_SOCKET')
+	joignable = False
+	if sock:
+		with contextlib.suppress(OSError), socket.socket(socket.AF_UNIX) as s:
+			s.settimeout(2)
+			s.connect(sock)
+			joignable = True
+	point('terminal Cate', joignable, True, f'socket {sock} ' + ('joignable' if joignable else 'injoignable') if sock else 'CATE_SOCKET absent',
+	      'ouvrir un terminal Cate')
+	runtime = os.path.join(os.environ.get('CATE_HOME') or os.path.expanduser('~/.cate'), 'runtime')
+	try:
+		with open(os.path.join(runtime, 'current')) as f:
+			build = f.read().strip()
+	except OSError:
+		build = ''
+	livree = bool(build) and os.path.isfile(os.path.join(runtime, build, 'agence', 'agence'))
+	point('CLI livrée', livree, True, f"agence/ dans l'install {build or '(runtime/current absent)'}", MAJ_CATE)
+	code, out = aide('agent', 'start')
+	point('agent start --model', code == 0 and '--model' in out, True, 'cate agent start --help cite --model', MAJ_CATE)
+	code, out = aide('agent', 'usage')
+	point('agent usage', code == 0, True, f'cate agent usage --help : code {code}', MAJ_CATE)
+	code, out = aide('panel', 'create')
+	point('type agence', code == 0 and re.search(r'\bagence\b', out) is not None, True, 'cate panel create --help cite le type agence', MAJ_CATE)
+	fichier = os.path.join(os.path.dirname(sock), 'settings.json') if sock else None
+	try:
+		if not fichier:
+			raise ValueError('hors terminal Cate')
+		try:
+			with open(fichier) as f:
+				lus = json.load(f)
+		except FileNotFoundError:
+			lus = {}
+		if not isinstance(lus, dict):
+			raise ValueError('objet attendu')
+		coupes = [k for k, d in CLI_REGLAGES.items() if lus.get(k, d) is not True]
+		detail = 'à false : ' + ', '.join(coupes) if coupes else 'tous actifs'
+		commande = '; '.join(([SETTINGS_HINT] if set(coupes) - {'cliTerminalInputEnabled'} else [])
+		                     + ([INPUT_TERMINAL] if 'cliTerminalInputEnabled' in coupes else []))
+	except (OSError, ValueError) as err:
+		coupes, detail, commande = [None], f'{fichier or "réglages du workspace"} illisible : {err}', SETTINGS_HINT
+	point('réglages CLI', not coupes, True, detail, commande)
+	code, _, err = RUN(['gh', 'auth', 'status'], timeout=10)
+	point('gh', code == 0, True, 'gh auth status' + ('' if code == 0 else f' : {" ".join(err.split())[:120]}'), 'gh auth login')
+	code, out, _ = RUN(['claude', '--version'], timeout=10)
+	point('claude', code == 0, True, f'claude --version : {out.strip() or "code " + str(code)}',
+	      'installeur officiel de Claude Code : curl -fsSL https://claude.ai/install.sh | bash')
+	statut = hooks_statut()
+	point('gardes', statut == 'actif', True, f'gardes agence {statut} ({settings_defaut()})', 'agence hooks install')
+	skill = os.path.join(root(), '.claude', 'skills', 'orchestrateur', 'SKILL.md')
+	point('skill', os.path.isfile(skill), False, skill, "créer .claude/ dans le dépôt puis rouvrir le workspace dans Cate")
+	n, source = nom_source()
+	point('nom', source != 'défaut', False, f'{n} ({source})', 'git config --global agence.nom <Prénom>', info=True)
+	point('Slack, Gmail', False, False, 'non lisible depuis la CLI', 'brancher les connecteurs dans Claude Code', info=True)
+	return points
+
+
 def cmd_doctor(a):
+	if a.prerequis:
+		points = prerequis()
+		ok = not any(p['bloquant'] and p['etat'] == 'manque' for p in points)
+		if a.json:
+			print(json.dumps({'ok': ok, 'points': points}, ensure_ascii=False))
+		else:
+			for p in points:
+				print('\t'.join([p['etat'], p['point'], p['detail']] + ([f"→ {p['commande']}"] if p['commande'] else [])))
+		return 0 if ok else 1
 	require_cate()
 	oui, lignes = verdict_relance(lire_faits_relance(load()))
 	print('\n'.join(lignes))
@@ -1701,11 +1793,13 @@ def un_tour():
 	gh, merges = lire_github(snap)  # hors transaction : un gh lent ne bloque ni la boucle ni les clics
 	# ponytail: lecture en série, 5 s au pire par agent bloqué (6 au plus) ; en parallèle si ça gêne
 	screens = {p: lire_ecran(p) for p in ecrans_a_lire(snap, agents)}  # hors transaction aussi
+	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
+		st['garde'] = garde
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows)
 		apply(st, effects)
 	for eff in effects:
@@ -1772,23 +1866,37 @@ def send_match(st, tool, ti):
 	return None
 
 
-def guard(payload):
+def est_envoi(tool):
+	return tool.endswith('slack_send_message') or tool.endswith('Gmail__send_message')
+
+
+def envoi_ask(tool):
+	return decision('ask', f'Envoi au nom de {nom()} ({tool}) : brouillon seulement, {nom()} confirme chaque envoi '
+	                       "(seul un brouillon agence cliqué, cible et texte identiques, passe sans question).")
+
+
+def guard(payload, mode=None):
+	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
+	de canal) ; 'pages' : pages du régisseur et state.json seulement ; None : les deux, sans ask (hooks d'avant le lot 3)."""
+	tool = payload.get('tool_name') or ''
+	ti = payload.get('tool_input') or {}
+	refus = envoi_ask(tool) if mode == 'send' else None
+	if mode and (mode == 'send') != est_envoi(tool):
+		return refus
 	base = os.environ.get('CLAUDE_PROJECT_DIR') or payload.get('cwd') or os.getcwd()
 	if not os.path.isfile(state_file(base)):
 		base = main_repo(base) or base
 	if not os.path.isfile(state_file(base)):
-		return None
+		return refus
 	st = load(state_file(base))
-	tool = payload.get('tool_name') or ''
-	ti = payload.get('tool_input') or {}
-	if tool.endswith('slack_send_message') or tool.endswith('Gmail__send_message'):
+	if est_envoi(tool):
 		d = send_match(st, tool, ti)
 		if not d:
-			return None
+			return refus
 		with tx(base) as cur:  # une autorisation par clic : la suivante redemande
 			d = send_match(cur, tool, ti)
 			if not d:
-				return None
+				return refus
 			d['allowed'] = True
 		return decision('allow', f"Brouillon {d['id']} validé par le clic de {nom()} (cible et texte identiques).")
 	port = st.get('port')
@@ -1815,13 +1923,185 @@ def guard(payload):
 
 
 def cmd_guard(a):
+	if a.mode == 'send':  # échec fermé : toute erreur rend ask (agence-hook rend aussi ask si ce processus échoue)
+		try:
+			payload = json.loads(sys.stdin.read())
+			res = guard(payload, 'send') if isinstance(payload, dict) else envoi_ask('?')
+		except Exception as err:  # noqa: BLE001 : aucune exception ne doit laisser passer un envoi
+			res = decision('ask', f'garde agence en échec ({type(err).__name__}) : envoi à confirmer')
+		print(json.dumps(res, ensure_ascii=False))
+		return 0
 	try:
 		payload = json.loads(sys.stdin.read() or '{}')
 	except json.JSONDecodeError:
 		return 0
-	res = guard(payload)
+	res = guard(payload, a.mode) if isinstance(payload, dict) else None
 	if res:
 		print(json.dumps(res, ensure_ascii=False))
+	return 0
+
+
+# ---------- gardes dans ~/.claude/settings.json (agence hooks) ----------
+# Écrites seulement sur la commande de l'humain (ou de l'amorçage qu'il a collé) ; Cate ne lance jamais agence hooks.
+# Texte figé : contracts/hooks.md de la spec 002, comparé par test_hooks.py à fixtures/settings/settings-attendu.json.
+
+HOOK_MARQUE = 'agence-hook'  # une entrée agence se reconnaît à sa commande, rien d'autre n'est lu ni modifié
+_HOOK_SH = 'sh -c \'f="$HOME/.cate/runtime/$(cat "$HOME/.cate/runtime/current" 2>/dev/null)/agence/agence-hook"; [ -x "$f" ] && exec "$f" %s\''
+ASK_INTROUVABLE = "garde agence introuvable : envoi à confirmer"
+HOOK_ENTREES = [
+	{'matcher': 'mcp__.*(slack_send_message|Gmail__send_message)$',
+	 'hooks': [{'type': 'command', 'command': _HOOK_SH % ('send; printf %s "{\\"hookSpecificOutput\\":{\\"hookEventName\\":\\"PreToolUse\\",'
+	                                                       '\\"permissionDecision\\":\\"ask\\",\\"permissionDecisionReason\\":\\"' + ASK_INTROUVABLE + '\\"}}"')}]},
+	{'matcher': 'Bash|WebFetch|Write|Edit|MultiEdit',
+	 'hooks': [{'type': 'command', 'command': _HOOK_SH % 'pages; exit 0'}]},
+]
+
+
+def settings_defaut():
+	return os.path.join(os.path.expanduser('~'), '.claude', 'settings.json')
+
+
+def _sans_doublon(paires):
+	d = {}
+	for k, v in paires:
+		if k in d:
+			raise ValueError(f'clé « {k} » en double')
+		d[k] = v
+	return d
+
+
+def lire_settings(path):
+	"""settings.json lu strictement : None si absent ; Env (code 2, rien écrit) si illisible ou de forme inattendue."""
+	try:
+		with open(path, encoding='utf-8-sig') as f:
+			data = json.load(f, object_pairs_hook=_sans_doublon)
+	except FileNotFoundError:
+		return None
+	except (OSError, UnicodeDecodeError, ValueError) as err:
+		raise Env(f'{path} illisible, rien écrit (JSON strict attendu : ni commentaire ni virgule finale, clés uniques) : {err}')
+	hooks = data.get('hooks', {}) if isinstance(data, dict) else None
+	pre = hooks.get('PreToolUse', []) if isinstance(hooks, dict) else None
+	if not isinstance(pre, list) or not all(isinstance(e, dict) and isinstance(e.get('hooks', []), list) for e in pre):
+		raise Env(f'{path} : forme inattendue (objet, hooks objet, hooks.PreToolUse tableau d\'entrées), rien écrit')
+	return data
+
+
+def _est_agence(h):
+	return isinstance(h, dict) and HOOK_MARQUE in str(h.get('command', ''))
+
+
+def garde_statut(data):
+	"""actif : les deux entrées du contrat telles quelles et aucune autre commande agence-hook ; inactif : aucune ; partiel sinon."""
+	pre = ((data or {}).get('hooks') or {}).get('PreToolUse') or []
+	agence_ = [h for e in pre for h in e.get('hooks', []) if _est_agence(h)]
+	if not agence_:
+		return 'inactif'
+	return 'actif' if all(e in pre for e in HOOK_ENTREES) and len(agence_) == len(HOOK_ENTREES) else 'partiel'
+
+
+def sans_gardes(data):
+	"""Copie sans les commandes agence-hook ; une entrée vidée par ce retrait part, puis PreToolUse et hooks s'ils sont vides."""
+	data = json.loads(json.dumps(data))
+	hooks = data.get('hooks')
+	if not isinstance(hooks, dict) or 'PreToolUse' not in hooks:
+		return data
+	pre = []
+	for e in hooks['PreToolUse']:
+		garde_ = [h for h in e.get('hooks', []) if not _est_agence(h)]
+		if len(garde_) != len(e.get('hooks', [])):
+			if not garde_:
+				continue
+			e = dict(e, hooks=garde_)
+		pre.append(e)
+	if pre:
+		hooks['PreToolUse'] = pre
+	else:
+		del hooks['PreToolUse']
+		if not hooks:
+			del data['hooks']
+	return data
+
+
+def ecrire_settings(path, data, avant):
+	"""Écrit data dans la cible de path (lien résolu), atomiquement, mode conservé ; sauvegarde datée si le fichier existait.
+	Refus (Env, rien écrit) si le fichier ou un dossier à écrire n'est pas inscriptible. Rend le chemin de la sauvegarde."""
+	cible = os.path.realpath(path)
+	dossier, lien_dossier = os.path.dirname(cible), os.path.dirname(os.path.abspath(path))
+	existe = avant is not None
+	if existe and not os.access(cible, os.W_OK):
+		raise Env(f'{cible} non inscriptible, rien écrit')
+	try:
+		os.makedirs(dossier, exist_ok=True)
+	except OSError as err:
+		raise Env(f'{dossier} : création impossible, rien écrit ({err.strerror})')
+	for d in {dossier, lien_dossier} if existe else {dossier}:
+		if not os.access(d, os.W_OK):
+			raise Env(f'{d} non inscriptible, rien écrit')
+	mode = stat.S_IMODE(os.stat(cible).st_mode) if existe else 0o600
+	sauvegarde = None
+	if existe:  # à côté du chemin nommé (~/.claude), pas dans le dossier d'un lien
+		base = os.path.join(lien_dossier, f"{os.path.basename(path)}.bak-agence-{time.strftime('%Y%m%d-%H%M%S')}")
+		sauvegarde, i = base, 1
+		while os.path.lexists(sauvegarde):
+			sauvegarde, i = f'{base}-{i}', i + 1
+		try:
+			with open(cible, 'rb') as src, open(sauvegarde, 'xb') as dst:
+				shutil.copyfileobj(src, dst)
+				dst.flush()
+				os.fsync(dst.fileno())
+			os.chmod(sauvegarde, mode)
+		except OSError as err:
+			with contextlib.suppress(OSError):
+				os.remove(sauvegarde)
+			raise Env(f'sauvegarde {sauvegarde} impossible, rien écrit ({err.strerror})')
+	fd, tmp = tempfile.mkstemp(dir=dossier, prefix='.tmp-settings-')
+	try:
+		with os.fdopen(fd, 'w', encoding='utf-8') as f:
+			json.dump(data, f, ensure_ascii=False, indent=2)
+			f.write('\n')
+			f.flush()
+			os.fsync(f.fileno())
+		os.chmod(tmp, mode)
+		os.replace(tmp, cible)
+	except BaseException as err:
+		with contextlib.suppress(OSError):
+			os.remove(tmp)
+		if isinstance(err, OSError):
+			raise Env(f'{cible} : écriture impossible, rien écrit ({err.strerror})')
+		raise
+	return sauvegarde
+
+
+def hooks_statut(path=None):
+	"""Statut des gardes du HOME courant, sans exception : un settings.json illisible ne branche aucun garde (inactif)."""
+	try:
+		return garde_statut(lire_settings(path or settings_defaut()))
+	except Env:
+		return 'inactif'
+
+
+def cmd_hooks(a):
+	path = a.settings or settings_defaut()
+	if a.action == 'status':
+		try:
+			statut, detail = garde_statut(lire_settings(path)), None
+		except Env as err:
+			statut, detail = 'inactif', str(err)
+		out = {'settings': path, 'statut': statut, 'detail': detail}
+		print(json.dumps(out, ensure_ascii=False) if a.json else f"{statut} ({path}{' : ' + detail if detail else ''})")
+		return 0 if statut == 'actif' else 1
+	avant = lire_settings(path)
+	if a.action == 'install':
+		apres = avant if garde_statut(avant) == 'actif' else sans_gardes(avant or {})
+		if apres is not avant:
+			apres.setdefault('hooks', {}).setdefault('PreToolUse', []).extend(json.loads(json.dumps(HOOK_ENTREES)))
+	else:
+		apres = None if avant is None else sans_gardes(avant)
+	ecrit = apres != avant
+	sauvegarde = ecrire_settings(path, apres, avant) if ecrit else None
+	out = {'settings': path, 'statut': garde_statut(apres), 'ecrit': ecrit, 'sauvegarde': sauvegarde}
+	print(json.dumps(out, ensure_ascii=False) if a.json else
+	      f"{out['statut']} ({path}) : " + (f'écrit, sauvegarde {sauvegarde}' if sauvegarde else 'écrit' if ecrit else 'rien à changer'))
 	return 0
 
 
@@ -1923,9 +2203,19 @@ def parser():
 	w.add_argument('--token-stdin', action='store_true', help='jeton des formulaires lu sur stdin ; arrêt à la fin de stdin')
 	w.set_defaults(fn=cmd_watch)
 	d = sub.add_parser('doctor', help="peut-on relancer Cate sans rien perdre ? (lecture seule ; 0 oui, 1 non)")
-	d.add_argument('--relance', action='store_true', help='contrôle de relance (le seul contrôle : sans option, même résultat)')
+	d.add_argument('--relance', action='store_true', help='contrôle de relance (sans option, même résultat)')
+	d.add_argument('--prerequis', action='store_true', help="prérequis de l'orchestrateur, une ligne par point avec la commande qui règle (0 tout ok, 1 un point bloquant manque)")
+	d.add_argument('--json', action='store_true', help='avec --prerequis : sortie JSON')
 	d.set_defaults(fn=cmd_doctor)
-	sub.add_parser('guard').set_defaults(fn=cmd_guard)
+	g = sub.add_parser('guard', help='hook PreToolUse (JSON sur stdin)')
+	g.add_argument('--mode', choices=('send', 'pages'),
+	               help="send : envois Slack et Gmail, ask sauf brouillon cliqué identique ; pages : pages du régisseur et state.json ; sans : les deux (hooks d'avant le lot 3)")
+	g.set_defaults(fn=cmd_guard)
+	h = sub.add_parser('hooks', help='gardes agence dans ~/.claude/settings.json (sur commande de l\'humain ; Cate ne la lance jamais)')
+	h.add_argument('action', choices=('install', 'uninstall', 'status'))
+	h.add_argument('--settings', help='fichier à lire ou écrire (défaut : ~/.claude/settings.json)')
+	h.add_argument('--json', action='store_true')
+	h.set_defaults(fn=cmd_hooks)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p

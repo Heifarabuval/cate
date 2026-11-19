@@ -1,0 +1,12 @@
+{
+  // Réglages d'un utilisateur qui annote son fichier (JSONC toléré par certains éditeurs, refusé par json.load).
+  "model": "exemple",
+  "permissions": {
+    "allow": ["Bash(ls:*)"], /* liste courte */
+  },
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "/opt/outils/mon-garde.sh"}]},
+    ]
+  }
+}

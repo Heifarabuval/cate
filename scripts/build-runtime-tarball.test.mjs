@@ -21,6 +21,7 @@ function checkout() {
     chmodSync(path.join(dir, file), mode)
   }
   write('tools/agence/agence', '#!/bin/sh\n', 0o755)
+  write('tools/agence/agence-hook', '#!/bin/sh\n', 0o755)
   write('tools/agence/agence.py', 'print(1)\n')
   write('tools/agence/test_agence.py', 'assert 1\n')
   write('tools/agence/test_launcher.py', 'assert 1\n')
@@ -29,12 +30,12 @@ function checkout() {
   return path.join(dir, 'tools', 'agence')
 }
 
-it('lists the launcher and the CLI as required', () => {
-  expect(AGENCE_REQUIRED).toEqual([path.join('agence', 'agence'), path.join('agence', 'agence.py')])
+it('lists the launchers and the CLI as required', () => {
+  expect(AGENCE_REQUIRED).toEqual([path.join('agence', 'agence'), path.join('agence', 'agence-hook'), path.join('agence', 'agence.py')])
 })
 
-it('ships the launcher and the CLI, not tests, fixtures or bytecode', () => {
-  expect(agenceFiles(checkout())).toEqual(['agence', 'agence.py'])
+it('ships the launchers and the CLI, not tests, fixtures or bytecode', () => {
+  expect(agenceFiles(checkout())).toEqual(['agence', 'agence-hook', 'agence.py'])
 })
 
 itPosix('stages agence/ into the install with the launcher executable', () => {
@@ -45,4 +46,5 @@ itPosix('stages agence/ into the install with the launcher executable', () => {
   for (const rel of AGENCE_REQUIRED) expect(existsSync(path.join(stage, rel)), rel).toBe(true)
   expect(existsSync(path.join(stage, 'agence', 'test_agence.py'))).toBe(false)
   expect(statSync(path.join(stage, 'agence', 'agence')).mode & 0o111).not.toBe(0)
+  expect(statSync(path.join(stage, 'agence', 'agence-hook')).mode & 0o111).not.toBe(0)
 })
