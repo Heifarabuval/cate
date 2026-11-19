@@ -234,6 +234,25 @@ describe('AgenceSession', () => {
     expect(snap(session).regisseur).toEqual({ state: 'running', error: null, settingsHint: 'réglages CLI du workspace à activer dans Cate : x' })
   })
 
+  it('serves the send guard the regisseur wrote, inconnu before its first turn', async () => {
+    const { session, files } = setup({ files: { state: state(), readAt: 't' } })
+    expect(snap(session).garde).toBe('inconnu')
+    await session.start()
+    expect(snap(session).garde).toBe('inconnu')
+    for (const garde of ['actif', 'inactif', 'partiel'] as const) {
+      files.set({ state: state({ garde }) })
+      expect(snap(session).garde).toBe(garde)
+    }
+    files.set({ state: state({ garde: 'autre' as never }) })
+    expect(snap(session).garde).toBe('inconnu')
+  })
+
+  it('says the send guard is unknown when agence is missing', async () => {
+    const { session } = setup({ regisseur: 'missing', files: { state: state({ garde: 'actif' }), readAt: 't' } })
+    await session.start()
+    expect(snap(session).garde).toBe('inconnu')
+  })
+
   it('follows the orchestrator PTY until it exits', async () => {
     const { session, terminal } = setup()
     await session.start()
