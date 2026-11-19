@@ -280,6 +280,15 @@ describe('AgenceSession', () => {
     expect(snapshot.questions).toEqual({ q1: { id: 'q1', question: 'Merger ?', options: [{ label: 'Oui', detail: 'merge' }], isMerge: true, locks: [], ghUnknown: true, rebase: false } })
   })
 
+  it("serves the human's name from the state, « L'humain » for an old state without one", async () => {
+    const named = setup({ files: { state: state({ humain: 'Max' }), readAt: 't' } })
+    await named.session.start()
+    expect(snap(named.session).suivi?.humain).toBe('Max')
+    const old = setup({ files: { state: state(), readAt: 't' } })
+    await old.session.start()
+    expect(snap(old.session).suivi?.humain).toBe("L'humain")
+  })
+
   it('keeps the last state and shows the read error', async () => {
     const { session, files } = setup({ files: { state: state({ needs: [need('n1')] }), readAt: 't1' } })
     await session.start()
