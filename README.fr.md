@@ -11,6 +11,23 @@
 
 > **Note :** Cette traduction a été générée automatiquement et peut contenir des inexactitudes.
 
+## À propos de ce fork
+
+Ce dépôt est un fork de [0-AI-UG/cate](https://github.com/0-AI-UG/cate). Il suit upstream et garde un écart minimal dans `src/`.
+
+Upstream est un IDE à canevas infini où vous pilotez vous-même plusieurs agents, sur macOS, Windows et Linux, avec des workspaces partagés entre appareils et une app iOS. Ce fork ajoute un orchestrateur : un agent découpe le travail, lance les autres agents et les relie comme panneaux du canevas. Vous validez par clic. Seul votre clic fait partir un message ou merger une pull request. Le fork vise macOS Apple silicon seul, écrit les tests d'abord, et s'installe en une ligne pour un collègue (issue #29).
+
+| Cate d'origine | Ce fork |
+| --- | --- |
+| Vous lancez et suivez chaque agent vous-même. | Un agent orchestrateur lance et relie les agents comme panneaux (panneau `agence` dans `src/panels/agence/`, CLI `agence` dans `tools/agence/`, skill `skills/orchestrateur/SKILL.md`). |
+| Les panneaux se placent sur le canevas. | Des cadres groupent les panneaux d'un besoin, et le menu du canevas propose l'orchestrateur. |
+| CLI `cate` pour les agents. | Ajoute `--done-when`, `--model`, `--effort`, `cate agent usage`, l'agent Antigravity et les relations de panneaux. |
+| Panneau review. | Le panneau review ouvre aussi une pull request, lue par `gh`. |
+| macOS, Windows, Linux. | macOS Apple silicon seul. |
+| Les mises à jour viennent des releases de Cate. | Construit depuis le dépôt du fork. Avec `CATE_SELF_UPDATE=0`, le build ne vérifie pas les releases de Cate. |
+
+Suite : [installer le fork](scripts/cate-fork-install.md), lire la [constitution](.specify/memory/constitution.md), parcourir les [specs](specs/).
+
 <p align="center">
   Un IDE à canevas infini pour agents de code en parallèle.
 </p>

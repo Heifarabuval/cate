@@ -9,6 +9,23 @@
   <a href="README.md">English</a> | <a href="README.fr.md">Français</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.de.md">Deutsch</a>
 </p>
 
+## About this fork
+
+This is a fork of [0-AI-UG/cate](https://github.com/0-AI-UG/cate). It follows upstream and keeps its gap with `src/` small.
+
+Upstream is an infinite canvas IDE where you run several agents yourself, on macOS, Windows and Linux, with workspaces shared across devices and an iOS app. This fork adds an orchestrator: one agent splits the work, starts the other agents and links them as panels on the canvas. You validate by click. Only your click sends a message or merges a pull request. The fork targets macOS Apple silicon only, writes tests first, and installs for a colleague with one line (issue #29).
+
+| Original Cate | This fork |
+| --- | --- |
+| You start and follow each agent yourself. | An orchestrator agent starts and links agents as panels (`agence` panel in `src/panels/agence/`, `agence` CLI in `tools/agence/`, skill `skills/orchestrateur/SKILL.md`). |
+| Panels are placed on the canvas. | Frames group the panels of a need, and the canvas menu offers the orchestrator. |
+| `cate` CLI for agents. | Adds `--done-when`, `--model`, `--effort`, `cate agent usage`, the Antigravity agent and panel relations. |
+| Review panel. | The review panel also opens a pull request, read through `gh`. |
+| macOS, Windows, Linux. | macOS Apple silicon only. |
+| Updates come from Cate releases. | Built from the fork's own checkout. With `CATE_SELF_UPDATE=0`, the build does not check Cate releases. |
+
+Next: [install the fork](scripts/cate-fork-install.md), read the [constitution](.specify/memory/constitution.md), browse the [specs](specs/).
+
 <p align="center">
   An infinite canvas IDE for parallel coding agents.
 </p>
