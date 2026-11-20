@@ -9,20 +9,20 @@ const h = vi.hoisted(() => {
     setUserAgent: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
-    webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() },
+    webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn(), onHeadersReceived: vi.fn() },
   }
   const appSession = {
     getUserAgent: () => 'Mozilla/5.0 Chrome/140.0.0.0 Electron/41.0.0 Cate/2.0.0',
     setUserAgent: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
-    webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() },
+    webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn(), onHeadersReceived: vi.fn() },
   }
   // A session of its own for the partitions named `-fresh<n>`: a locked session registers its handlers once.
   const fresh = new Map<string, typeof appSession>()
   const freshSession = (partition: string) => {
     if (!fresh.has(partition)) {
-      fresh.set(partition, { ...appSession, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() } })
+      fresh.set(partition, { ...appSession, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn(), onHeadersReceived: vi.fn() } })
     }
     return fresh.get(partition)!
   }
@@ -31,10 +31,50 @@ const h = vi.hoisted(() => {
 vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition } }))
 vi.mock('@services/browser/desktop', () => ({ isAgentKeyInput: () => false, sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
 
-import { browserActionForInput, forwardedActionForInput, installWebSecurity, isAllowedGuestUrl, isTrustedAppUrl } from './webSecurity'
+import { browserActionForInput, declaredHosts, forwardedActionForInput, installWebSecurity, isAllowedGuestUrl, isPanelRequestAllowed, isTrustedAppUrl, LOCKED_WEBRTC_POLICY, type PanelPage } from './webSecurity'
+
+describe('isPanelRequestAllowed (FR-004, FR-005)', () => {
+  const page: PanelPage = { origin: 'http://127.0.0.1:4000', hosts: ['api.exemple.fr', '*.cdn.fr', 'files.exemple.fr:8443'] }
+  const allowed = (resourceType: string, url: string, on = page) => isPanelRequestAllowed({ resourceType, url }, on)
+
+  it('keeps the main frame on the origin of the page', () => {
+    expect(allowed('mainFrame', 'http://127.0.0.1:4000/t/notes/b.html')).toBe(true)
+    for (const url of ['http://127.0.0.1:4001/x', 'https://api.exemple.fr/', 'data:text/html,hi', 'about:blank', 'not a url']) expect(allowed('mainFrame', url), url).toBe(false)
+  })
+
+  it('lets a resource reach its own origin and the declared hosts only', () => {
+    expect(allowed('script', 'http://127.0.0.1:4000/t/notes/app.js')).toBe(true)
+    expect(allowed('xhr', 'https://api.exemple.fr/data')).toBe(true)
+    expect(allowed('webSocket', 'wss://api.exemple.fr/live')).toBe(true)
+    expect(allowed('image', 'https://a.cdn.fr/x.png')).toBe(true)
+    expect(allowed('xhr', 'https://files.exemple.fr:8443/f')).toBe(true)
+    for (const url of ['https://evil.example/?d=secret', 'https://cdn.fr/x', 'https://api.exemple.fr:8080/', 'https://files.exemple.fr/f', 'http://127.0.0.1:4001/x', 'ftp://api.exemple.fr/']) {
+      expect(allowed('other', url), url).toBe(false)
+    }
+  })
+
+  it('leaves data and blob resources to the policy of the page', () => {
+    expect(allowed('image', 'data:image/png;base64,AA==')).toBe(true)
+    expect(allowed('media', 'blob:http://127.0.0.1:4000/1')).toBe(true)
+  })
+
+  it('refuses every resource of a page with no origin yet', () => {
+    expect(allowed('xhr', 'https://api.exemple.fr/data', { origin: null, hosts: page.hosts })).toBe(false)
+  })
+
+  it('reads the declared hosts from the connect-src of the page policy', () => {
+    expect(declaredHosts("default-src 'self'; connect-src 'self' api.exemple.fr *.cdn.fr; object-src 'none'")).toEqual(['api.exemple.fr', '*.cdn.fr'])
+    expect(declaredHosts("default-src 'self'; connect-src 'self'")).toEqual([])
+    expect(declaredHosts(undefined)).toEqual([])
+  })
+
+  it('blocks non proxied UDP for WebRTC', () => {
+    expect(LOCKED_WEBRTC_POLICY).toBe('disable_non_proxied_udp')
+  })
+})
 
 function contents(type: string) {
-  return Object.assign(new EventEmitter(), { getType: () => type, setWindowOpenHandler: vi.fn(), session: h.guestSession, hostWebContents: { send: vi.fn() } })
+  return Object.assign(new EventEmitter(), { getType: () => type, setWindowOpenHandler: vi.fn(), setWebRTCIPHandlingPolicy: vi.fn(), session: h.guestSession, hostWebContents: { send: vi.fn() } })
 }
 
 describe('web security', () => {
@@ -96,7 +136,14 @@ describe('web security', () => {
         handler({ resourceType, url }, callback)
         return callback.mock.calls[0][0] as { cancel?: boolean }
       }
-      return { guest, request }
+      /** The page server answers a main frame with its policy. */
+      const respond = (url: string, csp: string) => {
+        const callback = vi.fn()
+        const handler = session.webRequest.onHeadersReceived.mock.calls[0][0] as (details: unknown, callback: (response: object) => void) => void
+        handler({ resourceType: 'mainFrame', url, responseHeaders: { 'Content-Security-Policy': [csp] } }, callback)
+        expect(callback).toHaveBeenCalledWith({})
+      }
+      return { guest, request, respond, partition }
     }
 
     it('cancels a main frame request to another site or port, redirects included, and keeps its own origin', () => {
@@ -108,9 +155,38 @@ describe('web security', () => {
       }
     })
 
-    it('lets a script request to a declared host through: the policy of the page decides', () => {
-      const { request } = open()
+    it('lets a request to a host the page policy declares through, and cancels one to any other host', () => {
+      const { request, respond } = open()
+      expect(request('xhr', 'https://api.exemple.fr/data').cancel).toBe(true)
+      respond(SRC, "default-src 'self'; connect-src 'self' api.exemple.fr")
       expect(request('xhr', 'https://api.exemple.fr/data').cancel).toBeFalsy()
+      expect(request('other', 'https://evil.example/prefetch').cancel).toBe(true)
+      expect(request('script', 'http://127.0.0.1:4000/token/notes/app.js').cancel).toBeFalsy()
+    })
+
+    it('ignores a policy from another origin than the page', () => {
+      const { request, respond } = open()
+      respond('http://127.0.0.1:4001/x', "connect-src 'self' evil.example")
+      expect(request('xhr', 'https://evil.example/').cancel).toBe(true)
+    })
+
+    it('keeps only the current origin when the page server moves to another port (FR-005)', () => {
+      const { request, respond, partition } = open()
+      respond(SRC, "connect-src 'self' api.exemple.fr")
+      attach(partition, 'http://127.0.0.1:4001/token/notes/index.html')
+      expect(request('mainFrame', 'http://127.0.0.1:4001/token/notes/index.html').cancel).toBeFalsy()
+      expect(request('mainFrame', SRC).cancel).toBe(true)
+      // The hosts were those of the old page: the new one has not answered yet.
+      expect(request('xhr', 'https://api.exemple.fr/data').cancel).toBe(true)
+    })
+
+    it('blocks non proxied UDP for WebRTC in a custom panel page, not in a browser page', () => {
+      const { guest } = open()
+      expect(guest.setWebRTCIPHandlingPolicy).toHaveBeenCalledWith('disable_non_proxied_udp')
+      attach('persist:ws-abcdefghijklmnop')
+      const browser = contents('webview')
+      h.app.emit('web-contents-created', {}, browser)
+      expect(browser.setWebRTCIPHandlingPolicy).not.toHaveBeenCalled()
     })
 
     it('stops will-navigate and will-redirect to another origin before the request leaves', () => {

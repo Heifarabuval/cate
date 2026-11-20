@@ -82,19 +82,53 @@ export function forwardedActionForInput(input: Pick<Electron.Input, 'type' | 'ke
 }
 
 const guestSessions = new WeakSet<Session>()
-/** The origins a locked session's pages may load as a main frame: the one
- *  that serves the panel, nothing else. A page never leaves it, by link,
- *  script, redirect or window, whatever its content policy says. */
-const lockedSessions = new WeakMap<Session, Set<string>>()
+
+/** The page a locked session shows: the one origin that serves it (the last
+ *  `src`, a replaced one is gone) and the hosts its policy lets it call. */
+export interface PanelPage {
+  origin: string | null
+  hosts: readonly string[]
+}
+
+/** The WebRTC policy of a locked session: no UDP outside a proxy, so no STUN. */
+export const LOCKED_WEBRTC_POLICY = 'disable_non_proxied_udp'
+
+/** A locked session's page per session. A page never leaves its origin, by
+ *  link, script, redirect or window, whatever its content policy says. */
+const lockedSessions = new WeakMap<Session, PanelPage>()
 
 const originOf = (url: string): string | null => {
   try { return new URL(url).origin } catch { return null }
 }
 
+/** The hosts of `connect-src` in a page policy, `'self'` left out. */
+export function declaredHosts(csp: string | undefined): string[] {
+  const directive = csp?.split(';').map((part) => part.trim().split(/\s+/)).find(([name]) => name === 'connect-src')
+  return directive ? directive.slice(1).filter((source) => !source.startsWith("'")) : []
+}
+
+/** `*.host` covers subdomains only; no port means the scheme's default, as in a CSP. */
+const matchesHost = (url: URL, source: string): boolean => {
+  const [host, port] = source.toLowerCase().split(':')
+  if (port ? (url.port || (/^(https|wss):$/.test(url.protocol) ? '443' : '80')) !== port : url.port !== '') return false
+  return host.startsWith('*.') ? url.hostname.endsWith(host.slice(1)) : url.hostname === host
+}
+
+/** Whether a request of a custom panel page may leave (FR-004, Q12): the main
+ *  frame only to the page's origin; a resource to it or a declared host;
+ *  `data:` and `blob:` stay with the page policy. */
+export function isPanelRequestAllowed(request: { resourceType: string; url: string }, page: PanelPage): boolean {
+  let url: URL
+  try { url = new URL(request.url) } catch { return false }
+  if (page.origin !== null && url.origin === page.origin) return true
+  if (request.resourceType === 'mainFrame' || page.origin === null) return false
+  if (url.protocol === 'data:' || url.protocol === 'blob:') return true
+  return /^(https?|wss?):$/.test(url.protocol) && page.hosts.some((source) => matchesHost(url, source))
+}
+
 const staysOnOrigin = (contents: WebContents, url: string): boolean => {
-  const origins = lockedSessions.get(contents.session)
-  const origin = originOf(url)
-  return !origins || (origin !== null && origin !== 'null' && origins.has(origin))
+  const page = lockedSessions.get(contents.session)
+  return !page || isPanelRequestAllowed({ resourceType: 'mainFrame', url }, page)
 }
 
 function browserUserAgent(target: Session): string {
@@ -135,25 +169,32 @@ function configureGuestSession(target: Session, platform: NodeJS.Platform): void
   })
 }
 
-/** The session of a custom panel: no permission, and main frame requests only
- *  to the origin that serves its page (`src`). */
+/** The session of a custom panel: no permission, and requests only to the
+ *  origin that serves its page (`src`, the last one: a replaced origin is
+ *  gone, FR-005) or, for resources, to the hosts its policy declares. */
 function lockGuestSession(target: Session, src: string): void {
-  const origin = originOf(src)
-  const known = lockedSessions.get(target)
-  if (known) {
-    if (origin) known.add(origin)
-    return
-  }
-  const origins = new Set(origin ? [origin] : [])
-  lockedSessions.set(target, origins)
+  const known = lockedSessions.has(target)
+  lockedSessions.set(target, { origin: originOf(src), hosts: [] })
+  if (known) return
   target.setPermissionRequestHandler((_contents, permission, callback) => {
     log.warn('denied custom panel permission %s', permission)
     callback(false)
   })
   target.setPermissionCheckHandler(() => false)
   target.webRequest.onBeforeRequest((details, callback) => {
-    const origin = originOf(details.url)
-    callback({ cancel: details.resourceType === 'mainFrame' && !(origin !== null && origins.has(origin)) })
+    const page = lockedSessions.get(target)!
+    const allowed = isPanelRequestAllowed(details, page)
+    if (!allowed) log.warn('blocked custom panel request to %s', details.url)
+    callback({ cancel: !allowed })
+  })
+  // The page server's policy names the declared hosts: read them from its main frame.
+  target.webRequest.onHeadersReceived((details, callback) => {
+    const page = lockedSessions.get(target)!
+    if (details.resourceType === 'mainFrame' && page.origin !== null && originOf(details.url) === page.origin) {
+      const header = Object.entries(details.responseHeaders ?? {}).find(([name]) => name.toLowerCase() === 'content-security-policy')?.[1]
+      lockedSessions.set(target, { ...page, hosts: declaredHosts(header?.join(';')) })
+    }
+    callback({})
   })
 }
 
@@ -166,6 +207,8 @@ function hardenGuest(contents: WebContents, options: WebSecurityOptions, platfor
   }
   contents.on('will-navigate', stayOnTheWeb)
   contents.on('will-redirect', stayOnTheWeb)
+  // `will-attach-webview` locked the session before this guest was created.
+  if (lockedSessions.has(contents.session)) contents.setWebRTCIPHandlingPolicy(LOCKED_WEBRTC_POLICY)
   contents.setWindowOpenHandler(({ url }) => {
     if (guestSessions.has(contents.session) && isAllowedGuestUrl(url)) sendOpenTabRequest(contents, url)
     else log.warn('blocked popup to %s', url)
