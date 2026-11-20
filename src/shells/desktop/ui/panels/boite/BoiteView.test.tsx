@@ -158,3 +158,35 @@ it('no longer runs a command once the view is gone', () => {
   expect(runBoiteCommand('pb', 'next')).toBe(false)
   root = createRoot(host)
 })
+
+const standing = (repo: string, state: 'unavailable' | 'error', error: string) => ({ ...project(repo), state, error })
+
+it('shows a project still being read, never « Rien ne t\'attend » over it', () => {
+  render({ projects: [standing('cate', 'unavailable', 'état en cours de lecture')], closedWorkspaces: 0, rows: [] })
+  expect(text()).not.toContain("Rien ne t'attend")
+  expect(host.querySelector('[data-testid="projet-attente"]')?.textContent).toContain('cate')
+  expect(host.querySelector('[data-testid="projet-attente"]')?.textContent).toContain('état en cours de lecture')
+})
+
+it('shows the error of a project whose state is unreadable, as an error', () => {
+  render({ projects: [project('lamif'), standing('cate', 'error', 'état illisible')], closedWorkspaces: 0, rows: [] })
+  expect(text()).not.toContain("Rien ne t'attend")
+  const failed = host.querySelector('[data-testid="projet-erreur"]')
+  expect(failed?.textContent).toContain('cate')
+  expect(failed?.textContent).toContain('état illisible')
+})
+
+it('does not repeat a project that already has a greyed line', () => {
+  render({ projects: [standing('cate', 'unavailable', 'régisseur arrêté')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1', { enabled: false, reason: 'régisseur arrêté' })] })
+  expect(host.querySelector('[data-testid="projet-attente"]')).toBeNull()
+})
+
+it('holds at 320 px by classes: the action never wraps or shrinks, the text breaks, no fixed color', () => {
+  const question = { type: 'question' as const, questionId: 'q1', options: [{ label: 'Oui', detail: 'x'.repeat(200) }], isMerge: false, locks: [], ghUnknown: false, rebase: false }
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1', { action: question, title: 'x'.repeat(300) })] })
+  const action = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre')!
+  expect(action.className).toContain('whitespace-nowrap')
+  expect(action.className).toContain('shrink-0')
+  expect(host.firstElementChild?.className).toContain('min-w-0')
+  expect(host.innerHTML).not.toMatch(/#[0-9a-f]{3,8}\b|(bg|text|border)-(white|black)\b/i)
+})
