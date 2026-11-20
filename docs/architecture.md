@@ -2212,6 +2212,12 @@ The schema, the allowed values and the presets are declared once in
 `agence watch` publishes the result as `pratiques` in `state.json` (values,
 sources, error) on every round; the `pages` guard refuses agents both files
 and the three writing commands.
+The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
+none): one line « Pratiques : <preset> (<source>) », each value with its source
+when opened, a banner for an invalid file, and the merge method on the Merger
+buttons. The view reads and writes no file; « Ouvrir le fichier » is the
+`openPratiques` op, where the session creates the project's file with `{}` if
+it is missing and opens an editor panel on it.
 
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a
@@ -2940,7 +2946,7 @@ and ignored, and the dialog stays until the user chooses.
 | Where | Files |
 |---|---|
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
-| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and never writes it |
+| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes only a missing `pratiques.json` (`{}`), at the person's click |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
 | Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 

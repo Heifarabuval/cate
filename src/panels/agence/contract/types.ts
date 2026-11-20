@@ -40,6 +40,8 @@ export type QuestionView = {
   ghUnknown: boolean
   /** A conflict: « Demander le rebase » is offered. */
   rebase: boolean
+  /** The merge method the policy publishes (`squash`, `rebase`, `merge`); absent without a policy. Merge questions only. */
+  methode?: string
 }
 
 export type NeedLink = { panelId: string; title: string; closed: boolean }
@@ -90,6 +92,20 @@ export type SuiviView = {
   sections: SuiviSections
 }
 
+/** A value of the policy (`pratiques.json` of the CLI): a scalar or a list of them. */
+export type PratiqueValeur = string | number | boolean | null | PratiqueValeur[]
+
+/** The policy the CLI published in its state (spec 005): the effective value of
+ *  each key and where it comes from (`défaut`, `dev`, `projet`; `preset` names the
+ *  preset's own source). `erreur`: the file that is invalid, the CLI having fallen
+ *  back to the neutral preset. */
+export type PratiquesView = {
+  preset: string
+  valeurs: Record<string, PratiqueValeur>
+  sources: Record<string, string>
+  erreur: string | null
+}
+
 export type AgenceSnapshot = {
   /** The orchestrator's PTY, for `process.attach`. */
   ptyId: string | null
@@ -104,6 +120,9 @@ export type AgenceSnapshot = {
   /** The send guard of the human's `~/.claude/settings.json`, as the regisseur
    *  last read it (`agence hooks status`); `inconnu` before its first turn. */
   garde: GardeState
+  /** Null: the CLI publishes no policy (old CLI) or is missing. Optional so the
+   *  other clients' fixtures (the boite's) need no change. */
+  pratiques?: PratiquesView | null
 }
 
 export type GardeState = 'actif' | 'inactif' | 'partiel' | 'inconnu'
@@ -119,6 +138,8 @@ export type AgenceOp =
   /** Oui or Non to the permission an agent waits on (need `needId`): the
    *  regisseur re-reads the agent's screen before it types. */
   | { kind: 'perm'; needId: string; reponse: 'oui' | 'non' }
+  /** Opens the project's `pratiques.json` in an editor panel, created with `{}` when it is missing. */
+  | { kind: 'openPratiques' }
 
 /** Why an op was refused. */
 export type AgenceOpError = 'busy' | 'conflict' | 'unavailable' | 'invalid'
@@ -214,6 +235,8 @@ export interface AgenceState {
   questions: StateQuestion[]
   /** Written by the regisseur at each turn; absent or null in an old state. */
   garde?: string | null
+  /** Written by `agence watch` each round (spec 005); absent in an old state. */
+  pratiques?: PratiquesView | null
 }
 
 /** What the document says of a linked panel: its last known title, and

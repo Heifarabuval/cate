@@ -26,9 +26,11 @@ import type {
   DraftView,
   GardeState,
   PanelTitles,
+  PratiquesView,
   QuestionView,
 } from './contract/types'
 import { draftHash } from './parts/runtime/draftHash'
+import { ensurePratiquesFile } from './parts/runtime/pratiquesFile'
 import type { RegisseurHandle, Regisseurs } from './parts/runtime/regisseur'
 import type { StateFiles, StateFilesRead } from './parts/runtime/stateFiles'
 
@@ -40,6 +42,8 @@ export interface AgenceSessionDeps {
   regisseurs: Pick<Regisseurs, 'acquire'>
   /** Reads `<root>/.cate/tmp/agence/` (`createStateFiles`). */
   files(dir: string, onChange: (read: StateFilesRead) => void): StateFiles
+  /** An editor panel on `filePath`, beside the panel `near`; false when it could not be created. */
+  openEditor(filePath: string, near: string): boolean
 }
 
 /** The orchestrator's first launch: Claude Code on the orchestrateur skill. */
@@ -61,6 +65,7 @@ const initialSnapshot = (): AgenceSnapshot => ({
   drafts: {},
   questions: {},
   garde: 'inconnu',
+  pratiques: null,
 })
 
 export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
@@ -106,6 +111,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
       'orchestrator.restart': () => this.restart(),
+      openPratiques: () => this.openPratiques(),
       perm: ({ needId, reponse }) => this.perm(needId, reponse),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
@@ -167,6 +173,18 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       if (reply.code === 200) return { ok: true }
       const error = reply.code === 403 ? 'unavailable' : reply.code === 400 ? 'invalid' : 'conflict'
       return { ok: false, error, message: reply.message }
+    } catch (err) {
+      return { ok: false, error: 'unavailable', message: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  /** The project's policy file in an editor panel beside this one. The file is
+   *  created with `{}` when missing (never overwritten), so there is something to edit;
+   *  the CLI stays the only one that writes keys into it (`agence pratiques set`). */
+  private async openPratiques(): Promise<AgenceOpResult> {
+    try {
+      const file = await ensurePratiquesFile(this.root)
+      return this.deps.openEditor(file, this.panelId) ? { ok: true } : { ok: false, error: 'unavailable', message: 'editor-unavailable' }
     } catch (err) {
       return { ok: false, error: 'unavailable', message: err instanceof Error ? err.message : String(err) }
     }
@@ -236,11 +254,12 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const read = this.files.read()
     // No agence CLI: nothing to act through, so nothing is shown as actionable.
     if (regisseur.state === 'missing' || !read.state) {
-      this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu' })
+      this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu', pratiques: null })
       return
     }
     const state = read.state
     const now = Date.now()
+    const pratiques = pratiquesView(state.pratiques)
     this.publish({
       regisseur,
       suivi: {
@@ -252,8 +271,9 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
         sections: classify(state, this.titles(state), now),
       },
       drafts: drafts(state, read.drafts),
-      questions: questions(state, now),
+      questions: questions(state, now, pratiques),
       garde: GARDES.has(state.garde ?? '') ? state.garde as GardeState : 'inconnu',
+      pratiques,
     })
   }
 
@@ -294,7 +314,16 @@ function drafts(state: AgenceState, texts: Record<string, string>): Record<strin
   return out
 }
 
-function questions(state: AgenceState, now: number): Record<string, QuestionView> {
+/** The policy as the CLI wrote it, or null when it is absent or not shaped like one. */
+function pratiquesView(raw: unknown): PratiquesView | null {
+  const value = raw as Partial<PratiquesView> | null | undefined
+  const isRecord = (x: unknown): x is Record<string, never> => typeof x === 'object' && x !== null && !Array.isArray(x)
+  if (!value || typeof value.preset !== 'string' || !isRecord(value.valeurs) || !isRecord(value.sources)) return null
+  return { preset: value.preset, valeurs: value.valeurs, sources: value.sources, erreur: typeof value.erreur === 'string' && value.erreur ? value.erreur : null }
+}
+
+function questions(state: AgenceState, now: number, pratiques: PratiquesView | null): Record<string, QuestionView> {
+  const methode = pratiques?.valeurs['livraison.methode']
   const out: Record<string, QuestionView> = {}
   for (const question of state.questions) {
     if (question.answer !== null && question.answer !== undefined) continue
@@ -305,6 +334,7 @@ function questions(state: AgenceState, now: number): Record<string, QuestionView
       isMerge: typeof question.action === 'string' && question.action.startsWith('merge:'),
       ...mergeState(state, question, now),
     }
+    if (out[question.id].isMerge && typeof methode === 'string') out[question.id].methode = methode
   }
   return out
 }

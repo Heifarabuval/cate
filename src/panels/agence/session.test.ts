@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -137,14 +137,16 @@ function setup(options: { saved?: Json; regisseur?: RegisseurView['state']; file
   const regisseurs = fakeRegisseurs(options.regisseur)
   const files = fakeFiles(options.files)
   const k = fakeKit(record(options.fields), options.saved, options.others)
+  const editors: Array<{ filePath: string; near: string }> = []
   const deps: AgenceSessionDeps = {
     root: '/repo',
     terminal: terminal.service,
     regisseurs: regisseurs.regisseurs,
     files: files.files,
+    openEditor: (filePath, near) => { editors.push({ filePath, near }); return true },
   }
   const session = new AgenceSession(k.kit, record(options.fields), deps)
-  return { session, terminal, regisseurs, files, ...k }
+  return { session, terminal, regisseurs, files, editors, ...k }
 }
 
 const snap = (session: AgenceSession): AgenceSnapshot => session.snapshot()
@@ -336,6 +338,82 @@ describe('AgenceSession', () => {
     expect(isRpcError(blocker, 'dirty')).toBe(true)
     terminal.update('pty-1', { activity: { type: 'idle' } })
     expect(session.closeBlocker()).toBeNull()
+  })
+
+  describe('pratiques', () => {
+    const pratiques = {
+      preset: 'pr-tdd',
+      valeurs: { 'livraison.methode': 'squash', 'livraison.merge': 'clic', preuve: ['pr-mergee', 'ci-verte'] },
+      sources: { preset: 'dev', 'livraison.methode': 'projet', 'livraison.merge': 'défaut', preuve: 'dev' },
+      erreur: null,
+    }
+    const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
+    let root: string
+    beforeEach(() => { root = mkdtempSync(path.join(os.tmpdir(), 'agence-pratiques-')) })
+    afterEach(() => { rmSync(root, { recursive: true, force: true }) })
+    const file = () => path.join(root, '.cate', 'tmp', 'agence', 'pratiques.json')
+
+    it('serves the policy the CLI published: values, sources, error', async () => {
+      const { session, files } = setup({ files: { state: state({ pratiques } as Partial<AgenceState>), readAt: 't' } })
+      expect(snap(session).pratiques).toBeNull()
+      await session.start()
+      expect(snap(session).pratiques).toEqual(pratiques)
+      files.set({ state: state({ pratiques: { ...pratiques, erreur: 'pratiques.json : clé inconnue « foo »' } } as Partial<AgenceState>) })
+      expect(snap(session).pratiques?.erreur).toBe('pratiques.json : clé inconnue « foo »')
+    })
+
+    it('serves null when the state has no policy (old CLI) or agence is missing', async () => {
+      const old = setup({ files: { state: state(), readAt: 't' } })
+      await old.session.start()
+      expect(snap(old.session).pratiques).toBeNull()
+      const missing = setup({ regisseur: 'missing', files: { state: state({ pratiques } as Partial<AgenceState>), readAt: 't' } })
+      await missing.session.start()
+      expect(snap(missing.session).pratiques).toBeNull()
+    })
+
+    it('ignores a policy of the wrong shape', async () => {
+      const { session } = setup({ files: { state: state({ pratiques: { preset: 3 } } as unknown as Partial<AgenceState>), readAt: 't' } })
+      await session.start()
+      expect(snap(session).pratiques).toBeNull()
+    })
+
+    it('puts the published merge method on each merge question only', async () => {
+      const questions = [
+        { id: 'q1', needId: 'n3', question: 'Merger ?', options: [{ label: 'Merger', detail: '' }], action: 'merge:x/y#3', answer: null },
+        { id: 'q2', needId: 'n4', question: 'Autre ?', options: [], action: null, answer: null },
+      ]
+      const { session } = setup({ files: { state: state({ pratiques, questions } as Partial<AgenceState>), readAt: 't' } })
+      await session.start()
+      expect(snap(session).questions.q1.methode).toBe('squash')
+      expect(snap(session).questions.q2.methode).toBeUndefined()
+    })
+
+    it('openPratiques creates the project file with {} and opens an editor panel on it', async () => {
+      const { session, editors } = setup({ fields: { root }, files: { state: state({ pratiques } as Partial<AgenceState>), readAt: 't' } })
+      await session.start()
+      await expect(op(session, { kind: 'openPratiques' })).resolves.toEqual({ ok: true })
+      expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual({})
+      expect(editors).toEqual([{ filePath: file(), near: 'ag1' }])
+    })
+
+    it('openPratiques keeps the file it finds', async () => {
+      mkdirSync(path.dirname(file()), { recursive: true })
+      writeFileSync(file(), '{"preset":"pr-tdd"}')
+      const { session, editors } = setup({ fields: { root } })
+      await session.start()
+      await expect(op(session, { kind: 'openPratiques' })).resolves.toEqual({ ok: true })
+      expect(readFileSync(file(), 'utf8')).toBe('{"preset":"pr-tdd"}')
+      expect(editors).toHaveLength(1)
+    })
+
+    it('openPratiques answers unavailable and creates no panel when the file cannot be written', async () => {
+      writeFileSync(path.join(root, '.cate'), 'a file, not a folder')
+      const { session, editors } = setup({ fields: { root } })
+      await session.start()
+      await expect(op(session, { kind: 'openPratiques' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+      expect(editors).toHaveLength(0)
+      expect(existsSync(file())).toBe(false)
+    })
   })
 
   describe('orchestrator.restart', () => {
@@ -596,7 +674,7 @@ describe('AgenceSession', () => {
       const k = fakeKit(panel, saved)
       const terminal = fakeTerminal()
       const files = fakeFiles({ state: state({ port, needs: [need('n1')] }), readAt: 't' })
-      const session = new AgenceSession(k.kit, panel, { root: tmp, terminal: terminal.service, regisseurs: registry, files: files.files })
+      const session = new AgenceSession(k.kit, panel, { root: tmp, terminal: terminal.service, regisseurs: registry, files: files.files, openEditor: () => true })
       return { session, terminal }
     }
 
