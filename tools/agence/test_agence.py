@@ -371,7 +371,7 @@ class Demarrage(Base):
 		start = self.run.ran('cate', 'agent', 'start')[0]
 		self.assertIn('--canvas', start)
 		self.assertEqual(start[start.index('--canvas') + 1], 'p1')
-		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1'}, {'panelId': 'p2'}])
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1'}, {'panelId': 'p2'}, {'panelId': 'p3'}])  # p3 : interlocuteur
 		before = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
 		self.assertEqual(self.cli('start')[0], 0)
 		after = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
@@ -399,10 +399,10 @@ class Demarrage(Base):
 	def test_start_type_agence_un_seul_panneau_sans_canvas(self):
 		self.assertEqual(self.cli('start')[0], 0)
 		st = self.state()
-		self.assertEqual(st['panels'], {'orchestrator': 'p1'})
+		self.assertEqual(st['panels'], {'orchestrator': 'p1', 'interlocuteur': 'p2'})
 		self.assertEqual(self.run.ran('cate', 'panel', 'create'), [['cate', 'panel', 'create', 'agence', '--json']])
 		self.assertEqual(self.run.ran('cate', 'panel', 'title')[0][3:6], ['--panel', 'p1', f"Agence : {st['repo']}"])
-		self.assertFalse(self.run.ran('cate', 'agent', 'start'))
+		self.assertEqual([c[-2] for c in self.run.ran('cate', 'agent', 'start')], [agence.INTER_PROMPT])  # l'interlocuteur seul
 
 	def test_start_type_refuse_chemin_actuel(self):
 		self.run.reply(['cate', 'panel', 'create', 'agence'], '', code=1, err="cate: unknown panel type 'agence'")
@@ -434,11 +434,10 @@ class Demarrage(Base):
 
 	def test_start_idempotent_avec_panneau_agence_vivant(self):
 		self.cli('start')
-		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'}])
-		before = len(self.run.ran('cate', 'panel', 'create'))
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'}, {'panelId': 'p2', 'type': 'terminal'}])
+		before = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
 		self.assertEqual(self.cli('start')[0], 0)
-		self.assertEqual(len(self.run.ran('cate', 'panel', 'create')), before)
-		self.assertFalse(self.run.ran('cate', 'agent', 'start'))
+		self.assertEqual(len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start')), before)
 
 	def test_boot_cree_regisseur_et_suivi_relies(self):
 		with agence.tx() as st:

@@ -5,7 +5,7 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
   agence need add|panel|pr|done|drop|list   add --done-when : conditions de fin séparées par une virgule (pr-merged:N, issue-closed:N, ci-green:N, tests-local, report), dérivées de la politique sans elle ; need pr ID N rattache la PR ; add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
@@ -61,6 +61,9 @@ KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
                       r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
 ORCH_PROMPT = '/orchestrateur'
+INTERLOCUTEUR, INTER_PROMPT = 'Interlocuteur', '/interlocuteur'  # spec 010 : un par projet, il écrit des fiches
+INTER_DENY = "l'interlocuteur ne lance rien : il écrit des fiches (agence fiche add), l'humain lance au clic."
+SONDE = 5  # secondes par appel cate de la sonde dans la garde : un hook ne bloque pas l'agent
 CSS = 'https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css'
 PAGES = True  # faux sous --token-stdin : le panneau agence de Cate tient l'interface, plus aucune page ni jeton dans un corps
 TOKEN = secrets.token_urlsafe(18)  # jeton des formulaires, en mémoire du régisseur seulement
@@ -356,9 +359,9 @@ def cate(*args, timeout=120):
 		raise Refus(f"cate {' '.join(map(str, args[:2]))} : sortie illisible")
 
 
-def live_rows():
+def live_rows(timeout=120):
 	"""Panneaux vivants par id ; None si la réponse est illisible (le régisseur saute alors son tour)."""
-	rows = cate('panel', 'list')
+	rows = cate('panel', 'list', timeout=timeout)
 	if not isinstance(rows, list) or not all(isinstance(r, dict) and 'panelId' in r for r in rows):
 		return None
 	return {r['panelId']: r for r in rows}
@@ -370,14 +373,22 @@ def sous_panneau_agence(st):
 	return bool(rows) and (rows.get(st['panels'].get('orchestrator')) or {}).get('type') == 'agence'
 
 
-def caller_panel():
+def caller_panel(timeout=120):
 	"""Panneau du terminal qui appelle la CLI : cate ne le donne pas, on le trouve en le renommant une seconde, puis on rétablit."""
 	with contextlib.suppress(Refus):
-		rows = live_rows() or {}
-		pid = (cate('panel', 'title', f'agence-{secrets.token_hex(4)}') or {}).get('panelId')
+		rows = live_rows(timeout) or {}
+		pid = (cate('panel', 'title', f'agence-{secrets.token_hex(4)}', timeout=timeout) or {}).get('panelId')
 		if pid in rows:
 			title(pid, rows[pid].get('title') or '')
 		return pid if pid in rows else None
+
+
+def refuse_interlocuteur():
+	"""Seconde barrière de FR-002 (spec 010), sans hook : refus si l'appelant est l'interlocuteur enregistré.
+	Sonde seulement s'il en existe un ; sonde en échec : rien ne prouve que c'est lui, on laisse passer."""
+	inter = load()['panels'].get('interlocuteur')
+	if inter and caller_panel() == inter:
+		raise Refus(INTER_DENY)
 
 
 def caller_is_orchestrator():
@@ -520,10 +531,10 @@ def cmd_start(a):
 					raise
 			else:
 				title(p['orchestrator'], f"Agence : {st['repo']}")
-				print(f"panneau agence {p['orchestrator']}")
+				print(f"panneau agence {p['orchestrator']}, interlocuteur {interlocuteur(live, p)}")
 				return 0
 		elif live[orch].get('type') == 'agence':
-			print(f'panneau agence {orch}')
+			print(f'panneau agence {orch}, interlocuteur {interlocuteur(live, p)}')
 			return 0
 		if p.get('canvas') not in live:
 			titre = f"Agence : {st['repo']}"
@@ -535,8 +546,20 @@ def cmd_start(a):
 			r = cate('agent', 'start', '--canvas', p['canvas'], '--agent', 'claude-code', '--title', 'Orchestrateur',
 			         ORCH_PROMPT)
 			p['orchestrator'] = r['panelId']
-		print(f"canvas {p['canvas']}, orchestrateur {p['orchestrator']}")
+		print(f"canvas {p['canvas']}, orchestrateur {p['orchestrator']}, interlocuteur {interlocuteur(live, p, p['canvas'])}")
 	return 0
+
+
+def interlocuteur(live, p, canvas=None):
+	"""Un seul interlocuteur par projet (spec 010, FR-001) : l'enregistré vivant, sinon le vivant de son titre, sinon un neuf ;
+	enregistré dès sa création, relié au panneau agence (ou à l'orchestrateur sur un canvas)."""
+	if p.get('interlocuteur') in live:
+		return p['interlocuteur']
+	p['interlocuteur'] = adopt(live, INTERLOCUTEUR, 'terminal') or cate(
+		'agent', 'start', *(['--canvas', canvas] if canvas else []), '--agent', 'claude-code', '--title', INTERLOCUTEUR,
+		INTER_PROMPT)['panelId']
+	link(p['interlocuteur'], p['orchestrator'], 'context', 'Fiches')
+	return p['interlocuteur']
 
 
 SETTINGS_HINT = ("réglages CLI du workspace à activer dans Cate : panneaux (cliPanelReadEnabled, cliPanelControlEnabled), "
@@ -613,6 +636,10 @@ def shq(s):
 
 def cmd_need(a):
 	if a.action == 'add':
+		panels = load()['panels']
+		me = caller_panel() if a.panel or panels.get('interlocuteur') else None  # une seule sonde pour les deux usages
+		if me is not None and me == panels.get('interlocuteur'):
+			raise Refus(INTER_DENY)
 		import pratiques  # voir politique()
 		done_when = a.done_when
 		if done_when is not None:
@@ -625,7 +652,7 @@ def cmd_need(a):
 			if v['issue'] == 'obligatoire' and not a.issue:
 				raise Refus('issue obligatoire (pratiques) : une tâche porte --issue N')
 			done_when = done_when or pratiques.done_when_defaut(v)
-		by_orch = bool(a.panel) and caller_is_orchestrator()
+		by_orch = bool(a.panel) and me is not None and me == panels.get('orchestrator')
 		with tx() as st:
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
 			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
@@ -778,6 +805,7 @@ def cmd_decision(a):
 def cmd_draft(a):
 	if a.action == 'new':
 		require_cate()
+		refuse_interlocuteur()
 		if not CIBLE_RE.match(a.cible or ''):
 			raise Refus('cible invalide : slack:<canal>, mail:<adresse>, issue:<owner/repo>, '
 			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>')
@@ -1023,6 +1051,7 @@ def lire_github(st):
 def cmd_ask(a):
 	require_cate()
 	if a.merge:
+		refuse_interlocuteur()
 		if not re.match(r'^[\w.-]+/[\w.-]+#\d+$', a.merge):
 			raise Refus('--merge attend owner/repo#N')
 		v = politique(agir=True)['valeurs']
@@ -2616,6 +2645,9 @@ PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+(pratiques\s+(set|unset|preset)\b|
 POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json')
 BACKLOG_DENY = "backlog.json et decisions.json s'écrivent seulement par la CLI : agence fiche, agence decision."
 REGISTRES = ('.cate/tmp/agence/backlog.json', '.cate/tmp/agence/decisions.json')
+# Ce qui lance, relie ou ferme du travail (spec 010, FR-002) : seules commandes où la garde sonde l'appelant.
+LANCE_RE = re.compile(r'\bcate\s+(agent\s+start|panel\s+(create|link|close)|terminal\s+(type|press|send|create))\b'
+                      r'|\bagence(\.py)?\s+(need\s+add|ask\b.*--merge|draft\s+new)\b')
 
 
 def send_match(st, tool, ti):
@@ -2645,7 +2677,8 @@ def envoi_ask(tool):
 
 def guard(payload, mode):
 	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
-	de canal) ; 'pages' : pages du régisseur et state.json seulement."""
+	de canal) ; 'pages' : pages du régisseur, fichiers écrits par la CLI, et refus à l'interlocuteur de ce qui lance
+	(LANCE_RE : la sonde de l'appelant ne tourne que sur ces commandes, bornée à SONDE secondes ; en échec, elle laisse passer)."""
 	tool = payload.get('tool_name') or ''
 	ti = payload.get('tool_input') or {}
 	refus = envoi_ask(tool) if mode == 'send' else None
@@ -2687,6 +2720,9 @@ def guard(payload, mode):
 		if (re.search(r'\b(backlog|decisions)\.json', cmd) and WRITE_RE.search(cmd)
 				and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or ''))):
 			return decision('deny', BACKLOG_DENY)
+		inter = st['panels'].get('interlocuteur')
+		if inter and LANCE_RE.search(cmd) and caller_panel(SONDE) == inter:
+			return decision('deny', INTER_DENY)
 		return None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
