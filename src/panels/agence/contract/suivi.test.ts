@@ -93,6 +93,12 @@ describe('classify', () => {
     expect(out.bloquant[0].meta.join()).not.toContain('min dépassé')
   })
 
+  it("carries each need's creation time, for the inbox's cross-project sort", () => {
+    const first = state.needs.find((need) => need.status === 'open' && need.owner === 'heifara')!
+    expect(sections.aFaire.find((row) => row.id === first.id)!.created).toBe(first.created)
+    for (const row of [...sections.bloquant, ...sections.aFaire, ...sections.fait, ...sections.reste]) expect(typeof row.created).toBe('string')
+  })
+
   it('classifies an empty state into four empty sections', () => {
     expect(classify({ ...state, needs: [], drafts: [], questions: [] }, {}, now)).toEqual({ bloquant: [], aFaire: [], fait: [], reste: [] })
   })

@@ -56,6 +56,8 @@ export type NeedRow = {
   /** The mentions of `need_line` in agence.py. */
   meta: string[]
   evidence: string | null
+  /** ISO time the need was created (how long it has waited); absent from a state without it. */
+  created?: string
   /** The #N of a PR or an issue, as a link; null when the repository is unknown. */
   link: { label: string; href: string } | null
   links: NeedLink[]
@@ -146,6 +148,8 @@ export interface StateNeed {
   evidence: string | null
   status: 'open' | 'done' | string
   closeFailed: boolean
+  /** ISO time `add_need` wrote. */
+  created?: string
   agentBlocked: boolean
   /** True for a minutes overrun and for a dollar one. */
   overBudget: boolean
