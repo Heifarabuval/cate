@@ -8,6 +8,7 @@ import { creationMenuItems, creationPick, worktreeChoices } from './creation'
 import { registerPanelActions } from './panelActions'
 import { closePanel, closePanels, registerPanelCloseGuard } from './close'
 import { placeTargetFor } from '@panels/framework/contract'
+import boiteDefinition from '@panels/boite/definition'
 import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
 import { creatableDefinitions, panelDefinition, registerPanelDefinitions } from './definitions'
@@ -43,6 +44,22 @@ describe('createPanel', () => {
     expect(doc.panels[id]).toMatchObject({ type: 'editor', title: 'editor', worktreeId: 'wt' })
     expect(ws.state.getSnapshot().activeTabs.s1).toBe(id)
     expect(ws.state.getSnapshot().focusedPanelId).toBe(id)
+  })
+
+  it('a unique type is created once: asking again focuses the existing panel', () => {
+    const plain = testPanelDefinitions()
+    registerPanelDefinitions(plain.map((definition) => definition.type === 'editor' ? { ...definition, creation: { order: 2, unique: true } } : definition))
+    try {
+      ws = attachTestWorkspace('w', fixture())
+      const first = createPanel('w', 'editor', { near: 't1' })!
+      ws.state.focus('t1')
+      const again = createPanel('w', 'editor', { near: 't1' })
+      expect(again).toBe(first)
+      expect(Object.values(ws.confirmed().panels).filter((panel) => panel.type === 'editor')).toHaveLength(1)
+      expect(ws.state.getSnapshot().focusedPanelId).toBe(first)
+    } finally {
+      registerPanelDefinitions(plain)
+    }
   })
 
   it('near a canvas panel or a panel on a canvas: a new node on that canvas', () => {
@@ -192,6 +209,26 @@ describe('actions', () => {
     expect(Object.values(ws.confirmed().panels).filter((p) => p.type === 'editor')).toHaveLength(1)
     stop()
     expect(actionSpec('panel.new.editor')).toBeUndefined()
+  })
+
+  it('opens the validation inbox from the palette and its global key: created once, then focused', async () => {
+    const plain = testPanelDefinitions()
+    registerPanelDefinitions([...plain, boiteDefinition])
+    try {
+      ws = attachTestWorkspace('w', fixture())
+      const stop = registerPanelActions((type, { workspaceId }) => { createPanel(workspaceId!, type) })
+      expect(actionSpec('panel.new.boite')).toMatchObject({ title: 'Open Validation Inbox', key: storedShortcut('i', { command: true, shift: true }), menu: { bar: 'file', group: 'new' } })
+      await runAction('panel.new.boite', { workspaceId: 'w' })
+      const boites = () => Object.values(ws!.confirmed().panels).filter((panel) => panel.type === 'boite')
+      expect(boites()).toHaveLength(1)
+      ws.state.focus('t1')
+      await runAction('panel.new.boite', { workspaceId: 'w' })
+      expect(boites()).toHaveLength(1)
+      expect(ws.state.getSnapshot().focusedPanelId).toBe(boites()[0].id)
+      stop()
+    } finally {
+      registerPanelDefinitions(plain)
+    }
   })
 
   it('panel commands run only while a panel of the type is focused', async () => {

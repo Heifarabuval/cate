@@ -11,8 +11,9 @@ import browser from './browser/definition'
 import canvas from './canvas/definition'
 import surface from './surface/definition'
 import agence from './agence/definition'
+import boite from './boite/definition'
 
-export const PANEL_DEFINITIONS: readonly AnyPanelDefinition[] = [terminal, editor, review, browser, canvas, surface, agence]
+export const PANEL_DEFINITIONS: readonly AnyPanelDefinition[] = [terminal, editor, review, browser, canvas, surface, agence, boite]
 
 const byType = new Map<string, AnyPanelDefinition>(PANEL_DEFINITIONS.map((definition) => [definition.type, definition]))
 

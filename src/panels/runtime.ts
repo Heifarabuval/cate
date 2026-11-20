@@ -23,6 +23,7 @@ import { browserApi } from '@services/browser/contract'
 import { surfacePanel } from './surface/runtime'
 import { canvasPanel } from './canvas/runtime'
 import { createAgencePanels } from './agence/runtime'
+import { boitePanel } from './boite/runtime'
 
 /** The runtime services the daemon has for panel types; each type's entry
  *  below names the ones it takes (`PanelRuntime<keys>`). */
@@ -158,4 +159,6 @@ const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv' | 'trust'> = (services
   trust: services.trust,
 })
 
-export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence]
+const boite: PanelRuntime = () => boitePanel()
+
+export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence, boite]

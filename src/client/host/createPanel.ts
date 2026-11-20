@@ -14,6 +14,7 @@ import { createPanelKit, placeTargetFor, type PanelCreateOptions, type PanelKit 
 import { inheritWorktree, type InheritedWorktree } from '@workspace/repository/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { panelCheckoutHooks, panelDefinition } from './definitions'
+import { revealPanel } from './reveal'
 
 export const newId = (): string => globalThis.crypto.randomUUID()
 
@@ -50,6 +51,14 @@ export function createPanel(
 ): PanelId | null {
   const definition = panelDefinition(type)
   if (!definition) return null
+  if (definition.creation?.unique) {
+    const existing = Object.values(documentStoreFor(workspaceId)?.getSnapshot().panels ?? {}).find((panel) => panel.type === definition.type)
+    if (existing) {
+      activateNewPanel(workspaceId, existing.id)
+      void revealPanel(workspaceId, existing.id)
+      return existing.id
+    }
+  }
   const kit = clientPanelKit(workspaceId)
   const nearRecord = options.near ? kit.document().panels[options.near] : undefined
   const worktreeId = options.worktreeId ?? nearRecord?.worktreeId

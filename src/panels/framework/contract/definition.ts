@@ -90,6 +90,8 @@ export interface PanelCreation {
   toolbar?: boolean
   /** Created in a checkout: menus offer each ready worktree. */
   inWorktree?: boolean
+  /** One per workspace: creating it again brings the existing panel on screen. */
+  unique?: boolean
 }
 
 /** A generic "open" action a panel type serves (`opens`). */
