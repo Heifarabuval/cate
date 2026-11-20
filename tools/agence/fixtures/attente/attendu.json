@@ -1,0 +1,16 @@
+{
+	"sessions": {"lues": 1, "non_lues": 0, "non_mesurees": 0},
+	"tours": 7,
+	"jetons_lus": 29500,
+	"jetons_sortie": 70,
+	"causes": {
+		"outil": {"tours": 6, "jetons_lus": 28500},
+		"stop_hook": {"tours": 1, "jetons_lus": 1000},
+		"agent": {"tours": 0, "jetons_lus": 0},
+		"autre": {"tours": 0, "jetons_lus": 0}
+	},
+	"passages_attente": {"tours": 2, "jetons_lus": 8000, "moyenne": 4000, "mediane": 4000, "part": 0.2712},
+	"appels_attente": {"total": 2, "par_timeout": {"60000": 1, "600000": 1}, "duree_s": 660, "passages_par_10min": 1.8182},
+	"stop_hook": {"tours": 1, "jetons_lus": 1000, "part": 0.0339},
+	"contexte": {"mediane": 4500, "moyenne": 4214, "hors_attente": {"tours": 5, "mediane": 4500, "moyenne": 4300}}
+}
