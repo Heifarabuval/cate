@@ -1,0 +1,15 @@
+{
+  "id": "mon-panneau",
+  "name": "Mon panneau",
+  "version": "1.0.0",
+  "description": "Une phrase : ce que fait le panneau",
+  "author": "",
+  "icon": "layout-dashboard",
+  "entry": "index.html",
+  "size": { "width": 900, "height": 600 },
+  "permissions": {
+    "files": { "read": [], "write": [] },
+    "network": [],
+    "links": { "receive": [], "emit": [] }
+  }
+}

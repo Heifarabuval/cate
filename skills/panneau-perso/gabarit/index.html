@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Mon panneau</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #8884; padding: 2px 8px; }
+</style>
+</head>
+<body>
+<h1>Mon panneau</h1>
+<p id="status">Prêt.</p>
+<!-- Bibliothèque : fichier local copié dans ce dossier, jamais d'URL externe.
+<script src="lib.min.js"></script> -->
+<script>
+  document.getElementById('status').textContent = 'Page chargée.'
+</script>
+</body>
+</html>
