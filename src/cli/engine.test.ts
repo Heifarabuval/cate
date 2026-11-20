@@ -419,18 +419,18 @@ describe('runCli', () => {
   it('prints agent usage as a table, "-" where there is none, and parses --panel', async () => {
     expect(call(['agent', 'usage', '--panel', 'abc', '--json']).args).toMatchObject({ targetPanelId: 'abc' })
     const usage = deps({ call: async () => [
-      { panelId: 'aaaaaaaa-1111', title: 'Impl', agentId: 'claude-code', model: 'claude-sonnet-4-5', inputTokens: 1200, outputTokens: 80, costUsd: 7.083 },
-      { panelId: 'bbbbbbbb-2222', title: 'Other', agentId: 'cursor', model: null, inputTokens: null, outputTokens: null, costUsd: null },
+      { panelId: 'aaaaaaaa-1111', title: 'Impl', agentId: 'claude-code', model: 'claude-sonnet-4-5', inputTokens: 1200, outputTokens: 80, contextTokens: 45000, costUsd: 7.083 },
+      { panelId: 'bbbbbbbb-2222', title: 'Other', agentId: 'cursor', model: null, inputTokens: null, outputTokens: null, contextTokens: null, costUsd: null },
       { panelId: 'cccccccc-3333', title: 'Bad', agentId: 'codex', model: null, inputTokens: null, outputTokens: null, costUsd: null, error: 'boom' },
       { panelId: 'dddddddd-4444', title: 'Cut', agentId: 'claude-code', model: 'gpt-5', inputTokens: 10, outputTokens: 2, costUsd: 3, truncated: true },
     ] })
     await runCli(['agent', 'usage'], CATE_API, usage.d)
     expect(usage.out[0].split('\n')).toEqual([
-      'ID        TITLE  MODEL              INPUT  OUTPUT  COST',
-      'aaaaaaaa  Impl   claude-sonnet-4-5  1200   80      $7.08',
-      'bbbbbbbb  Other  -                  -      -       -',
-      'cccccccc  Bad    -                  -      -       error',
-      'dddddddd  Cut    gpt-5              10     2       >=$3.00',
+      'ID        TITLE  MODEL              INPUT  OUTPUT  CONTEXT  COST',
+      'aaaaaaaa  Impl   claude-sonnet-4-5  1200   80      45000    $7.08',
+      'bbbbbbbb  Other  -                  -      -       -        -',
+      'cccccccc  Bad    -                  -      -       -        error',
+      'dddddddd  Cut    gpt-5              10     2       -        >=$3.00',
     ])
   })
 

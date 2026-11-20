@@ -159,6 +159,7 @@ export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter
         model: null,
         inputTokens: null,
         outputTokens: null,
+        contextTokens: null,
         costUsd: null,
         ...(agentId ? results[next++] : null),
       }))

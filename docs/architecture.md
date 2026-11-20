@@ -1928,7 +1928,9 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     account's subscription limits without a prompt (Claude Code's
     `get_usage` control request, `codex app-server`'s
     `account/rateLimits/read`); the report carries what each window has
-    left and its pace against the clock.
+    left and its pace against the clock. `cate agent usage` reads only the
+    sessions a panel ran and adds `contextTokens`: the input, cache creation
+    and cache read tokens of the latest response (null without a token count).
 - **Starting an agent** (`cate.agent.start`): its CLI, with or without a
   first prompt, in a new terminal panel (a hook-ready agent, launched in
   place of the shell) or an idle one the caller names, in the

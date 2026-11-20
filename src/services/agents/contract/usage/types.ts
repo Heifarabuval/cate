@@ -148,6 +148,10 @@ export interface AgentSessionUsage {
   model: string
   inputTokens: number
   outputTokens: number
+  /** The context size at the latest response: its input, cache creation and
+   *  cache read tokens. Only the last session's, so a `/clear` resets it; null
+   *  when no response carries a token count. */
+  contextTokens: number | null
   costUsd: number | null
 }
 

@@ -252,6 +252,31 @@ describe('session usage', () => {
     expect(await one('claude-code', ['s-old', 's-new'])).toMatchObject({ inputTokens: 200, outputTokens: 20 })
   })
 
+  it('reads contextTokens from the last response only: input, cache creation and cache read', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    const stamped = (id: string, time: string, usage: Record<string, number>) => claudeLine(id, time, '/proj', usage).replace(`"s-${id}"`, '"s-a"')
+    // Written out of order: the latest timestamp wins, not the last line.
+    writeFileSync(path.join(dir, 's-a.jsonl'), [
+      stamped('a3', '2026-10-10T12:03:00Z', { input_tokens: 10, cache_creation_input_tokens: 200, cache_read_input_tokens: 3000, output_tokens: 5 }),
+      stamped('a1', '2026-10-10T12:01:00Z', { input_tokens: 900, output_tokens: 5 }),
+      stamped('a2', '2026-10-10T12:02:00Z', { input_tokens: 90, cache_read_input_tokens: 800, output_tokens: 5 }),
+      stamped('a4', '2026-10-10T12:04:00Z', { input_tokens: 0, output_tokens: 0 })
+    ].join('\n') + '\n')
+    expect(await one('claude-code', ['s-a'])).toMatchObject({ contextTokens: 3210 })
+  })
+
+  it('reads contextTokens from the last session after a /clear, and null for a session without records', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-old.jsonl'), `${claudeLine('o1', '2026-10-10T10:00:00Z', '/proj', { input_tokens: 150000, output_tokens: 1 }).replace('"s-o1"', '"s-old"')}\n`)
+    writeFileSync(path.join(dir, 's-new.jsonl'), `${claudeLine('n1', '2026-10-10T11:00:00Z', '/proj', { input_tokens: 400, output_tokens: 1 }).replace('"s-n1"', '"s-new"')}\n`)
+    expect(await one('claude-code', ['s-old', 's-new'])).toMatchObject({ contextTokens: 400 })
+    expect(await one('claude-code', ['s-none'])).toBeNull()
+    writeFileSync(path.join(dir, 's-cut.jsonl'), '{"type":"assistant","message":{"usage":{"input_tok')
+    expect(await one('claude-code', ['s-cut'])).toBeNull()
+  })
+
   it('totals two panels of the same agent in the same folder apart, with one cache write', async () => {
     const dir = path.join(home, '.claude', 'projects', '-proj')
     mkdirSync(dir, { recursive: true })

@@ -100,6 +100,18 @@ function workspaceScope(root: string): (cwd: string) => Promise<boolean> {
   }
 }
 
+/** The size of the context at the latest response (by timestamp; a later
+ *  line wins a tie). Responses with no input are skipped: synthetic error
+ *  messages carry zeros. */
+function contextTokens(records: AgentUsageRecord[]): number | null {
+  let last: AgentUsageRecord | null = null
+  for (const record of records) {
+    const { uncachedInputTokens, cachedInputTokens, cacheCreationTokens } = record.totals
+    if (uncachedInputTokens + cachedInputTokens + cacheCreationTokens > 0 && (!last || record.timestampMs >= last.timestampMs)) last = record
+  }
+  return last && last.totals.uncachedInputTokens + last.totals.cachedInputTokens + last.totals.cacheCreationTokens
+}
+
 export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
   const now = deps.now ?? Date.now
   const fetchRates = deps.fetchRates ?? fetchLiteLlmRates
@@ -352,7 +364,7 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
         costUsd = unpricedRecords > 0 || costUsd === null ? null : costUsd + cost
       }
       const [model] = [...tokens].sort((a, b) => b[1] - a[1])[0]
-      return { model, inputTokens, outputTokens, costUsd }
+      return { model, inputTokens, outputTokens, contextTokens: contextTokens(records), costUsd }
     })
   }
 
