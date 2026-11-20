@@ -13,6 +13,10 @@ Codes inchangés : 0 ok, 1 refus métier, 2 environnement.
 | `agence hooks install\|uninstall\|status` | voir `hooks.md` | voir `hooks.md` | lot 3 |
 | `agence guard --mode send\|pages` | décision JSON `PreToolUse` ou rien | 0 | lot 3 |
 
+`agence need add` gagne `--budget-usd <dollars>` (> 0, ni NaN ni infini) : le besoin passe Bloquant au dépassement (`data-model.md`).
+
+Au clic sur Envoyer d'un brouillon `slack:`, le régisseur poste lui-même (`chat.postMessage`, `SLACK_USER_TOKEN` de `~/.hermes/.env`, jamais l'outil MCP : le connecteur ajoute « Envoyé avec Claude »). Refus certain : le brouillon reste `à valider`, l'erreur s'affiche. Issue inconnue : brouillon marqué `incertain`, 409, jamais renvoyé sans confirmation distincte. Seul le mail passe encore par l'orchestrateur et l'outil MCP ; `agence guard` ne laisse plus passer un Slack, même identique à un brouillon cliqué.
+
 `agence guard` sans `--mode` garde son comportement actuel (hooks de Heifara jusqu'au lot 5), puis se retire au lot 5 (coupe nette).
 
 ## Points de `agence doctor --prerequis`
