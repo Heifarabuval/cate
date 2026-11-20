@@ -23,8 +23,6 @@ export interface HostileFixture {
   tamper?: (bundle: RawBundle) => RawBundle | string
   /** The form it exists in: a bundle cannot hold a link, a disk cannot hold `..`. */
   only?: 'bundle' | 'folder'
-  /** Refused only once spec 007 lot 1 (T109, U+200B in `name`) has landed. */
-  needsLot1?: boolean
 }
 
 export interface RawBundle {
@@ -67,6 +65,14 @@ export function bundleText(fixture: Pick<HostileFixture, 'id' | 'files' | 'tampe
 const id = 'panneau-hostile'
 const sound = () => soundFiles(id)
 
+/** The sound files plus parts of at most 2 Mio, 10 Mio + 1 byte in all. */
+const overTotalByOne = (): FixtureFile[] => {
+  const files = sound()
+  const used = files.reduce((sum, file) => sum + Buffer.byteLength(file.data), 0)
+  const parts = Array.from({ length: 5 }, (_, n) => ({ path: `part-${n}.bin`, data: Buffer.alloc(n < 4 ? 2 * MIB : 2 * MIB - used + 1, 1) }))
+  return [...files, ...parts]
+}
+
 export const HOSTILE: HostileFixture[] = [
   { name: '..', id, files: [...sound(), { path: '../evil.js', data: 'x' }], error: /chemin refusé/, only: 'bundle' },
   { name: 'chemin absolu', id, files: [...sound(), { path: '/tmp/evil.js', data: 'x' }], error: /chemin refusé/, only: 'bundle' },
@@ -79,6 +85,6 @@ export const HOSTILE: HostileFixture[] = [
   { name: 'empreinte fausse', id, files: sound(), tamper: (raw) => ({ ...raw, fingerprint: '0'.repeat(64) }), error: /empreinte annoncée/, only: 'bundle' },
   { name: '201 fichiers', id, files: [...sound(), ...Array.from({ length: 198 }, (_, n) => ({ path: `f/${n}.txt`, data: String(n) }))], error: /201 fichiers/ },
   { name: '2 Mio + 1', id, files: [...sound(), { path: 'gros.bin', data: Buffer.alloc(2 * MIB + 1, 1) }], error: /dépasse 2 Mio/ },
-  { name: '10 Mio + 1', id, files: [...sound(), ...Array.from({ length: 5 }, (_, n) => ({ path: `part-${n}.bin`, data: Buffer.alloc(2 * MIB, 1) }))], error: /dépasse 10 Mio/ },
-  { name: 'nom U+200B', id, files: [{ path: 'cate-panel.json', data: manifestText(id, { name: 'Panneau\u200Bcaché' }) }, ...sound().slice(1)], error: /name doit/, needsLot1: true }
+  { name: '10 Mio + 1', id, files: overTotalByOne(), error: /dépasse 10 Mio/ },
+  { name: 'nom U+200B', id, files: [{ path: 'cate-panel.json', data: manifestText(id, { name: 'Panneau\u200Bcaché' }) }, ...sound().slice(1)], error: /name doit/ }
 ]

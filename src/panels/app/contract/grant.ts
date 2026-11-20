@@ -59,10 +59,11 @@ export function grantStatus(grant: AppGrant | undefined, current: CurrentFingerp
   return grant.folderFingerprint !== undefined && grant.folderFingerprint === current.folderFingerprint ? 'ok' : 'changed'
 }
 
-/** The one sentence of the grant card while the page has no bridge: what the
- *  panel may do. Files and messages join it when the bridge exists. */
+/** The one sentence of the grant card while the page has no bridge (FR-001):
+ *  a file the user picks in the page may reach every declared host. It
+ *  promises nothing about files; the bridge adds its own sentences. */
 export function grantSentence(manifest: AppManifest): string {
   const network = manifest.permissions.network
-  const internet = network.length ? `Il peut contacter ${network.join(', ')}.` : 'Il ne peut pas utiliser internet.'
-  return `« ${manifest.name} » s’exécute dans un cadre isolé, sans accès à vos fichiers. ${internet}`
+  const internet = network.length ? `Les fichiers que vous choisissez ici peuvent être envoyés à ${network.join(', ')}.` : 'Il ne peut pas utiliser internet.'
+  return `« ${manifest.name} » s’exécute dans un cadre isolé. ${internet}`
 }

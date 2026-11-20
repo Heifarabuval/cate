@@ -35,7 +35,9 @@ export const DEFAULT_APP_ICON: IconName = 'layout-dashboard'
 const DEFAULT_SIZE = { width: 900, height: 600 }
 
 // Control characters and the bidirectional overrides: a name is drawn in the menus and the frame.
-const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+// Controls, bidi marks, line separators and invisible characters (FR-003).
+// U+200C and U+200D stay: they compose emojis and non-Latin scripts (Q6).
+const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u00ad\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/
 // A host source of a CSP: no scheme, path, space or `;`, so a value can never
 // add a directive. `*.host` and `host:port` are allowed.
