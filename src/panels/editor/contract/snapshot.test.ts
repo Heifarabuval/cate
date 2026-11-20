@@ -10,6 +10,13 @@ describe('editorModeOf', () => {
     expect(editorModeOf({ ...md, filePath: '/repo/a.ts' }, undefined)).toBe('code')
   })
 
+  it('opens an agence draft file in source, other markdown under .cate/tmp unchanged', () => {
+    const draft = { ...md, filePath: '/repo/.cate/tmp/agence/drafts/d1.md' }
+    expect(editorModeOf(draft, undefined)).toBe('code')
+    expect(editorModeOf(draft, { filePath: draft.filePath, mode: 'preview' })).toBe('preview')
+    expect(editorModeOf({ ...md, filePath: '/repo/.cate/tmp/agence/notes.md' }, undefined)).toBe('preview')
+  })
+
   it("follows the client's pick only for the file it was made on", () => {
     expect(editorModeOf(md, { filePath: '/repo/README.md', mode: 'code' })).toBe('code')
     expect(editorModeOf(md, { filePath: '/repo/other.md', mode: 'code' })).toBe('preview')

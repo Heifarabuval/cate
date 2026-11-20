@@ -3,6 +3,7 @@
 // file's buffer (`file.buffer`) for it.
 
 import { pathKey, type BufferResolution, type DocumentType } from '@workspace/files/contract'
+import { isAgenceDraftFile } from './drafts'
 
 /** What a client shows of a text file: its source, or a markdown file's
  *  preview. Each client picks its own (client state); a conflict's diff is
@@ -78,5 +79,5 @@ export function editorModeOf(snapshot: Pick<EditorSnapshot, 'filePath' | 'docume
   const pick = choice as Partial<EditorModeChoice> | null | undefined
   if (pick && typeof pick.filePath === 'string' && pathKey(pick.filePath) === pathKey(snapshot.filePath!)
     && (pick.mode === 'code' || pick.mode === 'preview')) return pick.mode
-  return snapshot.draft ? 'code' : 'preview'
+  return snapshot.draft || isAgenceDraftFile(snapshot.filePath) ? 'code' : 'preview'
 }
