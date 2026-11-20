@@ -3,7 +3,7 @@
 // Pure: the same rules check a folder read from disk and a bundle from a third
 // party, before anything is written. Hashing and base64 are injected.
 
-import { folderFingerprint, type Hash } from './grant'
+import { folderFingerprint, type FolderChanges, type Hash } from './grant'
 import { parseManifest, type AppManifest } from './manifest'
 
 export const BUNDLE_EXTENSION = '.cate-panneau'
@@ -73,7 +73,7 @@ export interface PendingImport {
   at: string
   /** What an install would replace: a panel with no `installed` grant, or an installed one. */
   replaces?: 'local' | 'installed'
-  diff?: { added: string[]; changed: string[]; removed: string[] }
+  diff?: FolderChanges
 }
 
 const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)

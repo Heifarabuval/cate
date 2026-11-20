@@ -1,8 +1,9 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, expect, it } from 'vitest'
-import type { AppEntry } from '../contract'
+import { createHash } from 'node:crypto'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { AppEntry, AppGrant } from '../contract'
 import { createAppScanner, type AppScanner, type FsEvent } from './scan'
 
 let root: string
@@ -11,11 +12,12 @@ let trusted: boolean
 let trustListeners: Array<(state: { trusted: boolean }) => void>
 let push: ((events: FsEvent[]) => Promise<void> | void) | undefined
 let scanner: AppScanner
+let grants: Map<string, AppGrant>
 
 const manifest = (id: string, extra: object = {}) =>
   JSON.stringify({ schema: 1, id, name: `Panneau ${id}`, description: 'Une phrase.', ...extra })
 const write = (id: string, file: string, content: string) => {
-  fs.mkdirSync(path.join(dir, id), { recursive: true })
+  fs.mkdirSync(path.dirname(path.join(dir, id, file)), { recursive: true })
   fs.writeFileSync(path.join(dir, id, file), content)
 }
 const change = (id: string, file: string, type: FsEvent['type'] = 'update') => push?.([{ path: path.join(dir, id, file), type }])
@@ -24,7 +26,8 @@ const create = () => {
   scanner = createAppScanner({
     dir,
     trust: { isTrusted: () => trusted, onChange: (listener) => { trustListeners.push(listener); return () => { trustListeners = trustListeners.filter((l) => l !== listener) } } },
-    watch: async (_dir, onEvents) => { push = onEvents; return () => { push = undefined } }
+    watch: async (_dir, onEvents) => { push = onEvents; return () => { push = undefined } },
+    grants: { get: (id) => grants.get(id) }
   })
   return scanner
 }
@@ -35,6 +38,7 @@ beforeEach(() => {
   trusted = true
   trustListeners = []
   push = undefined
+  grants = new Map()
 })
 afterEach(async () => {
   await scanner.dispose()
@@ -159,4 +163,52 @@ it('stops watching on dispose', async () => {
   await scanner.dispose()
   expect(push).toBeUndefined()
   expect(trustListeners).toEqual([])
+})
+
+const sha = (content: string) => createHash('sha256').update(content).digest('hex')
+const installed = (id: string): AppGrant => ({ appId: id, source: 'installed', manifestFingerprint: 'm', folderFingerprint: 'f', accepted: { files: { read: [], write: [] }, network: [], links: { receive: [], emit: [] } }, at: '2026-11-20T00:00:00.000Z' })
+
+it('says installed for a panel with an installed grant and gives its files; local otherwise, without files (FR-020)', async () => {
+  write('a', 'cate-panel.json', manifest('a'))
+  write('a', 'js/app.js', 'run()')
+  write('b', 'cate-panel.json', manifest('b'))
+  grants.set('a', installed('a'))
+  await create().start()
+  expect(entry('a')).toMatchObject({ status: 'ready', source: 'installed' })
+  expect(entry('b')).toMatchObject({ status: 'ready', source: 'local' })
+  expect(scanner.folderFiles('a')).toEqual([
+    { path: 'cate-panel.json', sha256: sha(manifest('a')) },
+    { path: 'js/app.js', sha256: sha('run()') }
+  ])
+  expect(scanner.folderFiles('b')).toBeUndefined()
+})
+
+it('reads no page byte of a local panel', async () => {
+  write('a', 'cate-panel.json', manifest('a'))
+  write('a', 'index.html', '<p>')
+  const readFile = vi.spyOn(fs.promises, 'readFile')
+  try {
+    await create().start()
+    write('a', 'index.html', '<p>2')
+    await change('a', 'index.html')
+    expect(readFile.mock.calls.map(([file]) => path.basename(String(file)))).toEqual(['cate-panel.json', 'cate-panel.json'])
+  } finally {
+    readFile.mockRestore()
+  }
+})
+
+it('follows a changed byte of an installed panel, and a grant given later on refresh', async () => {
+  write('a', 'cate-panel.json', manifest('a'))
+  write('a', 'app.js', 'run()')
+  await create().start()
+  expect(entry('a')).toMatchObject({ source: 'local' })
+  grants.set('a', installed('a'))
+  const pages: string[] = []
+  scanner.onPage((id) => pages.push(id))
+  await scanner.refresh('a')
+  expect(entry('a')).toMatchObject({ source: 'installed' })
+  expect(pages).toEqual(['a'])
+  write('a', 'app.js', 'run() ')
+  await change('a', 'app.js')
+  expect(scanner.folderFiles('a')).toContainEqual({ path: 'app.js', sha256: sha('run() ') })
 })

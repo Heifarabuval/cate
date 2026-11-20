@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { folderFingerprint, grantSentence, grantStatus, manifestFingerprint, type AppGrant, type CurrentFingerprints } from './grant'
+import { folderChanges, folderFingerprint, grantSentence, grantStatus, manifestFingerprint, type AppGrant, type CurrentFingerprints } from './grant'
 import { parseManifest } from './manifest'
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -80,6 +80,24 @@ describe('grantStatus', () => {
   it('installed: changed when the folder fingerprint is missing on either side', () => {
     expect(grantStatus(installed, current({ folderFingerprint: undefined }))).toBe('changed')
     expect(grantStatus({ ...installed, folderFingerprint: undefined }, current())).toBe('changed')
+  })
+})
+
+describe('folderChanges (FR-020)', () => {
+  it('lists the files added, changed and removed since the accepted list, sorted', () => {
+    const accepted = [
+      { path: 'index.html', sha256: sha('a') },
+      { path: 'app.js', sha256: sha('run()') },
+      { path: 'ancien.js', sha256: sha('x') }
+    ]
+    const current = [
+      { path: 'app.js', sha256: sha('run() ') },
+      { path: 'index.html', sha256: sha('a') },
+      { path: 'z.js', sha256: sha('z') },
+      { path: 'b.js', sha256: sha('b') }
+    ]
+    expect(folderChanges(accepted, current)).toEqual({ added: ['b.js', 'z.js'], changed: ['app.js'], removed: ['ancien.js'] })
+    expect(folderChanges(current, current)).toEqual({ added: [], changed: [], removed: [] })
   })
 })
 

@@ -581,7 +581,10 @@ persisted session and document file. It is created with mode `0700`.
                         delivery target (opaque), the key pushes are sealed with
   trust.json            { trusted, decidedAt }
   grants.json           granted paths outside the root
-  app-grants.json       what the user accepted for each custom panel (fingerprint, permissions)
+  app-grants.json       what the user accepted for each custom panel (fingerprint, permissions;
+                        an installed panel also its origin and accepted files)
+  app-imports/          <importId>/: the quarantine of a shared panel waiting for the
+                        user's click; never served, emptied when the daemon starts
   skills/sources.json   the workspace's skill sources
   browser/              history.json, bookmarks.json, downloads/
   agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps),
@@ -2190,7 +2193,7 @@ Every panel type meets the same contract.
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay; a panel opened on a pull request (`pr` field) reads it through `gh` instead (description, commits, checks, mergeability, files with bounded diff pages), read only: no comment, approval or merge; a visible view sends `prTick` and the session decides whether to re-read the checks |
 | agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("New Orchestrator") or by `cate panel create agence`; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
 | boite | none: a definition alone, no session of its own (the daemon serves it a stateless one) and no `cate` API | none; the client core's store (`client/boite`) reads the agence panels of every workspace the client has open | the inbox (`shells/desktop/ui/panels/boite`) | the human's validation inbox, `unique`: one per workspace (any workspace of the client shows every project); cannot be driven by an agent |
-| app | workspace/files (its page server), workspace lifecycle (trust) | `needs-grant`, `running` (page URL), `missing`, `error` or `blocked`, the card's sentence and fingerprint, a reload counter | webview | one type for every custom panel (a folder of `~/.cate/panneaux/`), no `creation` |
+| app | workspace/files (its page server), workspace lifecycle (trust) | `needs-grant`, `running` (page URL), `missing`, `error` or `blocked`, the card's sentence and fingerprint, the files changed of an installed panel, a reload counter | webview | one type for every custom panel (a folder of `~/.cate/panneaux/`), no `creation` |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
@@ -2210,6 +2213,26 @@ Nothing of the page runs before the user's grant: the session publishes
 `<data>/app-grants.json` (never under `~/.cate/panneaux/`); a local panel
 keeps it while only its pages change, a changed manifest asks again. An
 untrusted workspace (9.2) blocks every panel.
+
+A shared panel (a folder or a `.cate-panneau`, spec 007) is first staged:
+checked by the pure rules of `contract/bundle.ts`, then copied into the
+quarantine `<data>/app-imports/<importId>/`. The quarantine is never served.
+Pending imports are listed by `apps.imports` and `apps.watchImports`, 10 at
+most, 24 h each. `apps.acceptImport {importId, fingerprint, replace?}` is the
+only code that writes into `~/.cate/panneaux/`, and no `cate` API method calls
+it (a registry test guards this). It refuses the runtime itself, a client
+without `webview`, an untrusted workspace, a fingerprint other than the
+card's, and quarantined bytes whose fingerprint no longer matches. It copies
+into a hidden `.import-<importId>/` sibling, then renames it into place. A
+replaced folder steps aside as `.old-<importId>/` until the rename succeeds,
+then is removed. The scanner skips names that start with a dot. It writes an
+`installed` grant: origin, folder fingerprint and the accepted files with
+their SHA-256. The scanner then publishes `source: 'installed'` and hashes the
+folder of that panel only. One changed byte sends it back to `needs-grant`
+before any reload, with `changes` (files added, changed, removed) in the
+snapshot. Its card fingerprint is the folder's. Granting that card accepts
+the folder as it is now and keeps the panel installed. Refusing removes the
+grant and never deletes the folder.
 
 **The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
 writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,

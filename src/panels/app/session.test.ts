@@ -1,11 +1,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLogger } from '@kernel/log/contract'
 import type { Json, PanelRecord } from '@workspace/document/contract'
 import type { OpContext, SessionKit } from '@panels/framework/runtime'
-import type { AppSnapshot } from './contract'
+import { createHash } from 'node:crypto'
+import { folderFingerprint, type AppSnapshot, type FolderFile } from './contract'
 import { createAppGrants, type AppGrants } from './runtime/grants'
 import { createAppScanner, type AppScanner, type FsEvent } from './runtime/scan'
 import { AppSession } from './session'
@@ -22,7 +23,7 @@ let webview: boolean
 
 const manifest = (extra: object = {}) => JSON.stringify({ schema: 1, id: 'fusion', name: 'Fusion', description: 'Une phrase.', ...extra })
 const write = (file: string, content: string) => {
-  fs.mkdirSync(path.join(dir, 'fusion'), { recursive: true })
+  fs.mkdirSync(path.dirname(path.join(dir, 'fusion', file)), { recursive: true })
   fs.writeFileSync(path.join(dir, 'fusion', file), content)
 }
 const touch = (file: string, type: FsEvent['type'] = 'update') => push?.([{ path: path.join(dir, 'fusion', file), type }])
@@ -52,22 +53,24 @@ const kit = (): SessionKit => ({
 const record = (appId: string): PanelRecord => ({ id: 'p1', type: 'app', title: 'Panneau perso', fields: { appId } }) as never
 
 let pageUrl: (id: string, entry: string) => Promise<string>
+const hash = (text: string) => `h:${text.length}:${[...text].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)}`
 
 async function open(appId = 'fusion') {
+  grants ??= createAppGrants({ file: path.join(base, 'data', 'app-grants.json'), panneauxDir: dir })
   scanner = createAppScanner({
     dir,
     trust: trustPort(),
-    watch: async (_d, onEvents) => { push = onEvents; return () => { push = undefined } }
+    watch: async (_d, onEvents) => { push = onEvents; return () => { push = undefined } },
+    grants
   })
   await scanner.start()
-  grants = createAppGrants({ file: path.join(base, 'data', 'app-grants.json'), panneauxDir: dir })
   session = new AppSession(kit(), record(appId), {
     scanner,
     grants,
     server: { urlFor: (id, entry) => pageUrl(id, entry) },
     trust: trustPort(),
     clientHas: (connectionId, feature) => feature !== 'webview' || webview || connectionId === null,
-    hash: (text) => `h:${text.length}:${[...text].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)}`
+    hash
   })
   await session.start()
   await settle()
@@ -86,6 +89,7 @@ beforeEach(() => {
 afterEach(async () => {
   session?.dispose('shutdown')
   grants?.dispose()
+  grants = undefined as never
   await scanner?.dispose()
   fs.rmSync(base, { recursive: true, force: true })
 })
@@ -252,4 +256,73 @@ it('an entry the server cannot find is an error, and runs once the file appears 
   await touch('index.html', 'create')
   await settle()
   expect(snap()).toMatchObject({ state: 'running', url: 'http://127.0.0.1:1/token/fusion/index.html', message: null })
+})
+
+describe('an installed panel (FR-020)', () => {
+  const sha = (content: string) => createHash('sha256').update(content).digest('hex')
+  const files: Array<[string, string]> = [['cate-panel.json', manifest()], ['index.html', '<p>1'], ['js/app.js', 'run()']]
+  const accepted: FolderFile[] = files.map(([file, content]) => ({ path: file, sha256: sha(content) }))
+  const install = async () => {
+    for (const [file, content] of files) write(file, content)
+    grants = createAppGrants({ file: path.join(base, 'data', 'app-grants.json'), panneauxDir: dir })
+    grants.grant({ appId: 'fusion', source: 'installed', origin: 'fusion.cate-panneau', manifestFingerprint: 'm', folderFingerprint: folderFingerprint(accepted, hash), files: accepted, accepted: { files: { read: [], write: [] }, network: [], links: { receive: [], emit: [] } }, at: '2026-11-20T00:00:00.000Z' })
+    await open()
+  }
+
+  it('runs while every byte is the accepted one', async () => {
+    await install()
+    expect(snap()).toMatchObject({ state: 'running', changes: null })
+  })
+
+  for (const [file] of files) {
+    it(`goes back to needs-grant without a reload when one byte of ${file} changes, and names it`, async () => {
+      await install()
+      const before = snap().reload
+      write(file, `${files.find(([name]) => name === file)![1]} `)
+      await touch(file)
+      await settle()
+      expect(snap()).toMatchObject({ state: 'needs-grant', url: null, reload: before, changes: { added: [], changed: [file], removed: [] } })
+    })
+  }
+
+  it('names an added and a removed file', async () => {
+    await install()
+    write('plus.js', '1')
+    await touch('plus.js', 'create')
+    fs.rmSync(path.join(dir, 'fusion', 'js', 'app.js'))
+    await touch('js/app.js', 'delete')
+    await settle()
+    expect(snap()).toMatchObject({ state: 'needs-grant', changes: { added: ['plus.js'], changed: [], removed: ['js/app.js'] } })
+  })
+
+  it('a grant of the changed card accepts the folder as it is now, still installed', async () => {
+    await install()
+    write('js/app.js', 'run() ')
+    await touch('js/app.js')
+    await settle()
+    const card = snap().fingerprint
+    await session.handleOp(grantOp(), ctx())
+    expect(snap()).toMatchObject({ state: 'running', changes: null })
+    expect(grants.get('fusion')).toMatchObject({ source: 'installed', origin: 'fusion.cate-panneau', folderFingerprint: card, files: expect.arrayContaining([{ path: 'js/app.js', sha256: sha('run() ') }]) })
+  })
+
+  it('refuses a grant whose card is older than the folder', async () => {
+    await install()
+    write('js/app.js', 'run() ')
+    await touch('js/app.js')
+    await settle()
+    const card = grantOp()
+    write('js/app.js', 'run()  ')
+    await touch('js/app.js')
+    await settle()
+    await expect(session.handleOp(card, ctx())).rejects.toThrow(/a changé/)
+  })
+
+  it('refusing takes the grant back and leaves the folder in place', async () => {
+    await install()
+    await session.handleOp({ kind: 'refuse' }, ctx())
+    expect(grants.get('fusion')).toBeUndefined()
+    expect(fs.readdirSync(path.join(dir, 'fusion')).sort()).toEqual(['cate-panel.json', 'index.html', 'js'])
+    expect(snap().state).toBe('needs-grant')
+  })
 })
