@@ -21,7 +21,7 @@ Liens :
 
 - Q: Qu'est-ce qui est déjà livré ? → A: sur `origin/main` : PR #85, `cate agent wait` accepte `--wait-timeout` de 5 000 à 600 000 ms (`src/services/agents/contract/api.ts:21`, défaut 30 000), vérifié dans le runtime courant par `cate agent wait --help` ; `contextTokens` dans `cate agent usage` (`b0a6eb15`, `e706b825`) ; l'évaluateur `/compact` de la spec 004 lot 2, en essai à blanc (`4b696ac3`, `tools/agence/declencheurs.json` T1 : seuil 150 000, repos 600 s, plafond 3). Le skill, lui, dit encore `--wait-timeout 60000` (`skills/orchestrateur/SKILL.md:28`).
 - Q: L'attente est-elle le gros poste ? → A: non, et c'est la correction principale de l'issue. Sur 10 sessions d'orchestrateur (1 730 tours, 442,7 M de jetons lus du cache) les tours qui suivent un `cate agent wait` pèsent 50,3 M, soit 11,35 %. Les tours forcés par un Stop hook (`/goal`) en pèsent 61,3 M (13,9 %). Le reste, 66 %, est la boucle d'outils d'un contexte de 220 000 jetons en médiane. Voir `mesure.md`.
-- Q: Le chiffre de l'issue (140 000 par passage) est-il faux ? → A: non, c'est une autre session. L'échantillon donne 370 127 par passage d'attente en moyenne (médiane 364 645) : les sessions mesurées sont plus longues. L'ordre de grandeur et la cause sont les mêmes.
+- Q: Le chiffre de l'issue (140 000 par passage) est-il faux ? → A: non, c'est une autre session. L'échantillon donne 344 252 par passage d'attente en moyenne (médiane 362 028) : les sessions mesurées sont plus longues. L'ordre de grandeur et la cause sont les mêmes.
 - Q: Une notification de tâche de fond réveille-t-elle une session au repos sans tour intermédiaire ? → A: oui pour Claude Code (une commande lancée en fond relance la session à sa fin ; c'est ce que dit le harnais). Non vérifié dans un panneau Cate : sondes T010 et T011 du lot 2.
 - Q: Un message `cate agent send` réveille-t-il un orchestrateur au repos ? → A: oui : « il part dès que l'agent peut en prendre un » (`cate agent send --help`) ; au repos il part tout de suite, en plein tour il attend en file. C'est le canal des rapports de sous-agents (brief du skill, ligne « Fin »).
 
@@ -56,7 +56,7 @@ L'orchestrateur lance une vague, puis **termine son tour**. Les agents lui rappo
 
 Un `/goal` actif renvoie la session au travail à chaque fin de tour tant que sa condition est fausse. Pour un orchestrateur dont la condition dépend d'un clic humain, d'une merge ou d'un agent, chaque fin de tour devient un tour complet. Le skill interdit de poser une condition d'arrêt de ce genre sur l'orchestrateur et dit quoi faire à la place : une carte ou une ligne du suivi qui rappelle ce qui reste.
 
-**Why this priority**: 132 tours, 61,5 M de jetons (13,9 %) dans l'échantillon, plus que l'attente elle-même. Sans cette règle, la User Story 1 ne tient pas : le Stop hook annule la fin de tour.
+**Why this priority**: 131 tours, 61,3 M de jetons (13,9 %) dans l'échantillon, plus que l'attente elle-même. Sans cette règle, la User Story 1 ne tient pas : le Stop hook annule la fin de tour.
 
 **Independent Test**: garde de texte sur le skill ; lot 4 : 0 tour forcé par un Stop hook (I3) sur une session orchestrateur sans `/goal`.
 
@@ -127,7 +127,7 @@ Surface ajoutée : un script qui lit des journaux contenant des conversations. G
 
 - **SC-001**: sur une vague réelle après la règle, au plus 1 passage d'attente par 10 min d'attente (avant : 1 par minute, `--wait-timeout 60000` utilisé 95 fois sur 96). Mesuré au lot 4.
 - **SC-002**: I2 (part des passages d'attente dans les jetons lus) ≤ 2 % après, contre 11,35 % avant. **Hypothèse à mesurer** : elle suppose que le filet ne se déclenche pas plus d'une fois par vague.
-- **SC-003**: I3 = 0 tour forcé par un Stop hook sur une session orchestrateur sans `/goal` posé par l'orchestrateur (avant : 132 tours, 61,5 M).
+- **SC-003**: I3 = 0 tour forcé par un Stop hook sur une session orchestrateur sans `/goal` posé par l'orchestrateur (avant : 131 tours, 61,3 M).
 - **SC-004**: diff du lot 3 = `skills/orchestrateur/SKILL.md` et son test de texte seulement ; 0 ligne dans `src/` ; le skill ne grossit pas de plus de 5 % (FR-009).
 - **SC-005**: sur le journal fixture, le script rend exactement les nombres attendus et aucun mot de la conversation ; sur les 10 journaux de l'échantillon il retrouve 1 730 tours et 442 732 472 jetons lus (reproductibilité de `mesure.md`).
 - **SC-006**: le coût en euros n'est pas chiffré : `cate agent usage` rend `costUsd: null` pour le modèle de l'orchestrateur (tarif inconnu de la table). Les gains se disent en jetons lus.

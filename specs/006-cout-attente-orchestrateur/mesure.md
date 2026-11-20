@@ -23,16 +23,16 @@ Mesure du 2026-11-20, faite sans lancer l'app, en lecture seule, par un script j
 |---|---|---|---|
 | Résultat d'outil (boucle d'outils) | 1 214 | 291,0 M | 65,7 % |
 | Saisie humaine ou autre | 356 | 84,4 M | 19,1 % |
-| Stop hook (`/goal`) | 132 | 61,5 M | 13,9 % |
+| Stop hook (`/goal`) | 131 | 61,3 M | 13,9 % |
 | Message d'agent ou notification | 28 | 5,9 M | 1,3 % |
 | **Total** | **1 730** | **442,7 M** | 100 % |
 
 | Indicateur | Valeur mesurée |
 |---|---|
-| I1 jetons lus par passage d'attente | moyenne 370 127, médiane 364 645 |
+| I1 jetons lus par passage d'attente | moyenne 344 252, médiane 362 028 |
 | Passages d'attente | 97 tours pour 96 appels `cate agent wait` (95 avec `--wait-timeout 60000`, 1 avec 420000, 1 sans) |
 | I2 part des passages d'attente | 50,3 M sur 442,7 M = 11,35 % |
-| I3 tours forcés par un Stop hook | 132 tours, 61,5 M, 13,9 % |
+| I3 tours forcés par un Stop hook | 131 tours, 61,3 M, 13,9 % |
 | I4 contexte médian par tour | 220 140 (moyenne 255 914) |
 | Tours hors attente | 1 633 tours, médiane 208 475, moyenne 249 130 |
 
