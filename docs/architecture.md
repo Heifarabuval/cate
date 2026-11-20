@@ -2100,6 +2100,7 @@ Every panel type meets the same contract.
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay; a panel opened on a pull request (`pr` field) reads it through `gh` instead (description, commits, checks, mergeability, files with bounded diff pages), read only: no comment, approval or merge; a visible view sends `prTick` and the session decides whether to re-read the checks |
 | agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("New Orchestrator") or by `cate panel create agence`; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
+| boite | none: a definition alone, no session and no `cate` API | none; the client core's store (`client/boite`) reads the agence panels of every workspace the client has open | the inbox (`shells/desktop/ui/panels/boite`) | the human's validation inbox, one per client, cannot be driven by an agent |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
@@ -2145,6 +2146,23 @@ the file's mode kept. The regisseur writes `agence hooks status` into the
 state at each turn (`garde`); the panel shows a banner when it is not
 `actif` (`inconnu` after 5 s without a turn), never for an external or
 missing regisseur.
+
+**The boite panel (validation inbox).** It lists what waits for the human in
+every project open in this client, so nothing is polled from the runtime: the
+store in `client/boite` subscribes to the session channel of each agence panel
+(one connection per workspace), `merge.ts` turns their snapshots into rows
+keyed `<root>#<needId>` (sorted Bloquant first, then À faire; one row per root
+even with two agence panels) and the actions (`actions.ts`: show, send,
+answer, merge, perm, open, restart) go back through that panel's session, so
+the regisseur keeps every effect and refusal. The inbox writes nothing itself.
+A workspace that is not open is not watched: the view counts it, and a project
+still read or with an unreadable state is listed with its reason, never hidden
+under « Rien ne t'attend ». The selection is a row's key, never its position.
+Keys are declared with `defineActions` in `ui/panels/boite/keyboard.ts`
+(`boite.next` J, `boite.previous` K, `boite.skip` Down, `boite.open` Enter,
+`boite.send` Cmd+Enter) and reach the view of the focused panel only; Enter
+sends nothing, Cmd+Enter sends only a text already shown. End to end:
+`e2e/boite.spec.ts`.
 
 ## 12. Client
 
