@@ -40,7 +40,7 @@ Manifeste : `id`, `name`, `version`, `description`, `author`, `icon` (nom lucide
 
 ## Thème
 
-Une page a une autre origine que Cate : elle n'hérite pas de ses variables CSS. Le gabarit a donc un `theme.css` qui définit **toutes les variables de Cate** (celles de `globals.css`, `:root`) : `--font-sans`, `--hairline`, `--surface-0` à `--surface-6`, `--border-subtle`, `--border-strong`, `--border-focus`, `--text-primary`, `--text-secondary`, `--text-muted`, `--text-inverse`, `--focus-blue`, `--activity-green`, `--activity-orange`, `--git-*`, `--surface-hover`, `--surface-hover-strong`, `--scrollbar-thumb`, etc. Même résultat que `applyTheme` : base claire ou sombre du thème, surchargée par ses valeurs. `index.html` n'utilise que ces variables : jamais `#...`, `rgb(...)` ou `hsl(...)` en dur. Seule exception : `white` sur le bouton plein, comme `Button.tsx`.
+Une page a une autre origine que Cate : elle n'hérite pas de ses variables CSS. Le gabarit a donc un `theme.css` qui définit **toutes les variables de Cate** (celles de `globals.css`, `:root`) : `--font-sans`, `--hairline`, `--surface-0` à `--surface-6`, `--border-subtle`, `--border-strong`, `--border-focus`, `--text-primary`, `--text-secondary`, `--text-muted`, `--text-inverse`, `--focus-blue`, `--activity-green`, `--activity-orange`, `--git-*`, `--surface-hover`, `--surface-hover-strong`, `--scrollbar-thumb`, etc. Même résultat que `applyTheme` : base claire ou sombre du thème, surchargée par ses valeurs. `index.html` n'utilise que ces variables : jamais `#...`, `rgb(...)` ou `hsl(...)` en dur.
 
 À la création, et chaque fois que la personne change de thème, régénère `theme.css` depuis le thème actif :
 ```bash
@@ -61,7 +61,7 @@ Un panneau doit se lire comme un panneau Cate. Le gabarit reprend les valeurs de
 - Champs : bordure fine, focus = bordure `--border-focus` sans contour autour du texte. `:focus-visible` des boutons : anneau `--border-focus`.
 - États présents : survol, focus, désactivé (opacité 0,4), vide (`.empty`), erreur (`.error`, message en clair, liseré `--git-deleted`), statut en pastilles (`.pill`, point `--activity-green` ou `--activity-orange`).
 - Tableaux denses : lignes fines, en-tête 11 px discret, défilement horizontal dans `.scroll`, 20 lignes d'aperçu puis « N lignes de plus ».
-- Contraste : texte courant en `--text-primary` ou `--text-secondary`. `--text-muted` seulement pour les libellés et en-têtes. Le texte blanc du bouton plein suit Cate (environ 4:1 sur one-light) : ne l'utilise pas pour du texte long.
+- Contraste : texte courant en `--text-primary` ou `--text-secondary`. `--text-muted` seulement pour les libellés et en-têtes. Le bouton plein (`--text-inverse` sur `--focus-blue`) mesure 3,9:1 sur one-light (sous AA 4,5) et 5,4:1 sur dark-cold : libellé court seulement, jamais de texte long.
 - Responsive : vérifie à 375, 834 et 1280 px (`cate browser viewport custom --width 375 --height 800`, puis `cate browser screenshot`). Pas de défilement horizontal de la page.
 
 Limite : en mode page, le panneau est entouré de la barre d'onglets et d'adresse du navigateur Cate, qu'on ne peut pas masquer. Ne cherche pas à la contourner. Seul le futur type `app` (vue sans chrome de navigateur) rendra un panneau 100 % natif.
