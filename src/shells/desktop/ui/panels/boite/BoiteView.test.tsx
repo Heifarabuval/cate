@@ -8,7 +8,8 @@ import type { PanelViewProps } from '../../client/host/views'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const h = vi.hoisted(() => ({ snapshot: null as unknown as BoiteSnapshot }))
-vi.mock('./useBoite', () => ({ useBoite: () => h.snapshot }))
+vi.mock('./useBoite', () => ({ useBoite: () => ({ ...h.snapshot, actions: {}, actionsState: { busy: new Set(), shown: {}, notices: {} } }) }))
+vi.mock('../editor/MarkdownPreview', () => ({ MarkdownPreview: () => null }))
 import BoiteView from './BoiteView'
 
 const NOW = Date.parse('2026-11-19T12:00:00Z')
@@ -62,7 +63,7 @@ it('lists Bloquant first, then À faire; a line is its project, need, expected a
   expect(lines[0].textContent).toContain('Répondre')
   expect(lines[0].textContent).toContain('30 min')
   expect(lines[1].textContent).toContain('lamif')
-  expect(lines[1].textContent).toContain('Envoyer')
+  expect(lines[1].textContent).toContain('Lire et envoyer')
   expect(lines[1].textContent).toContain('2 h')
   expect(lines[2].textContent).toContain('Merger')
   expect(lines[2].textContent).toContain('2 j')

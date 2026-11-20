@@ -6,7 +6,7 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 
 /** The validation inbox: what waits for the human in every project open in this client. */
 export default function BoiteView(_props: PanelViewProps) {
-  const { projects, rows, closedWorkspaces } = useBoite()
+  const { projects, rows, closedWorkspaces, actions, actionsState } = useBoite()
   const now = Date.now()
   const sections = [
     { title: 'Bloquant', dot: 'bg-danger', rows: rows.filter((row) => row.blocking) },
@@ -27,7 +27,7 @@ export default function BoiteView(_props: PanelViewProps) {
             <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${section.dot}`} />
             {section.title}
           </h2>
-          <ul>{section.rows.map((row) => <Ligne key={row.key} ligne={row} now={now} />)}</ul>
+          <ul>{section.rows.map((row) => <Ligne key={row.key} ligne={row} now={now} actions={actions} state={actionsState} />)}</ul>
         </section>
       ))}
       <p className="mt-auto px-3 py-2 text-[11px] text-secondary">{watched}</p>
