@@ -2200,6 +2200,19 @@ edit a draft, answer a question) is a POST to the regisseur, the CLI's own
 refusals (changed text, already sent, closed need); the session hashes the
 draft text the way the CLI does and passes it along.
 
+The developer's workflow policy (spec 005) lives in two files outside any
+repository content: the project's `<root>/.cate/tmp/agence/pratiques.json`
+and the developer's `~/.config/agence/pratiques.json`. Hand-editable JSON,
+written only by `agence pratiques set|unset|preset` (lock, atomic replace,
+the whole policy validated before writing), never committed (`.cate/.gitignore`
+ignores everything but `skills.json`), so a cloned repository imposes nothing.
+The schema, the allowed values and the presets are declared once in
+`tools/agence/pratiques.json`, shipped next to the CLI; the policy is the
+`neutre` preset, then the developer's file, then the project's, key by key.
+`agence watch` publishes the result as `pratiques` in `state.json` (values,
+sources, error) on every round; the `pages` guard refuses agents both files
+and the three writing commands.
+
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a
 reference count and stopped (`SIGTERM`) when the last one lets go and at
