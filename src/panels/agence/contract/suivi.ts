@@ -63,7 +63,13 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
   }
   if (need.unblocks) meta.push(`débloque ${need.unblocks}`)
   if (need.acceptance) meta.push(`acceptation : ${need.acceptance}`)
-  if (need.overBudget) meta.push(`budget de ${need.budgetMin} min dépassé : continuer, réduire ou arrêter ?`)
+  if (need.overBudgetUsd) {
+    const costs = Object.values(need.costByPanel ?? {}).filter((cost): cost is number => cost !== null)
+    const spent = costs.reduce((sum, cost) => sum + cost, 0)
+    meta.push(`budget de ${(need.budgetUsd ?? 0).toFixed(2)} $ dépassé (coût ${spent.toFixed(2).replace('.', ',')} $) : continuer, réduire ou arrêter ?`)
+  } else if (need.overBudget && need.budgetMin) {
+    meta.push(`budget de ${need.budgetMin} min dépassé : continuer, réduire ou arrêter ?`)
+  }
   if (need.agentBlocked) meta.push('agent bloqué sur une permission ou une question')
   if (need.closeFailed) meta.push('fermeture refusée (travail non sauvegardé ou programme en cours) : à fermer à la main')
   const evidence = need.status === 'done' && need.evidence ? need.evidence : null
