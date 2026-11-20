@@ -11,7 +11,14 @@ const h = vi.hoisted(() => {
     setPermissionCheckHandler: vi.fn(),
     webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() },
   }
-  return { app, guestSession, fromPartition: vi.fn(() => guestSession) }
+  const appSession = {
+    getUserAgent: () => 'Mozilla/5.0 Chrome/140.0.0.0 Electron/41.0.0 Cate/2.0.0',
+    setUserAgent: vi.fn(),
+    setPermissionRequestHandler: vi.fn(),
+    setPermissionCheckHandler: vi.fn(),
+    webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() },
+  }
+  return { app, guestSession, appSession, fromPartition: vi.fn((partition: string) => (partition.startsWith('app-') ? appSession : guestSession)) }
 })
 vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition } }))
 vi.mock('@services/browser/desktop', () => ({ isAgentKeyInput: () => false, sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
@@ -29,7 +36,8 @@ describe('web security', () => {
       guestPreload: '/app/preload/shellGuest.js',
       hardeningDisabled: () => false,
       guestKeys: () => [],
-      isPreparedPartition: (partition) => partition === 'persist:ws-abcdefghijklmnop',
+      isPreparedPartition: (partition) => partition === 'persist:ws-abcdefghijklmnop' || partition.startsWith('app-'),
+      guestKinds: [{ id: 'app', matches: (partition) => partition.startsWith('app-'), preload: '/app/preload/appPanel.js', browser: false }],
       platform: 'darwin',
     })
   })
@@ -50,6 +58,30 @@ describe('web security', () => {
     expect(webPreferences).toMatchObject({ preload: '/app/preload/shellGuest.js', nodeIntegration: false, sandbox: true, contextIsolation: true })
     expect(params.allowpopups).toBe('true')
     expect(h.guestSession.setUserAgent).toHaveBeenCalledWith('Mozilla/5.0 Chrome/140.0.0.0', 'en')
+  })
+
+  it('gives a custom panel its own preload and a locked session: no popup, no permission, no browser identity', () => {
+    const { event, webPreferences, params } = attach('app-abcdefghijklmnop-notes', 'http://127.0.0.1:4000/t/notes/index.html')
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(webPreferences).toMatchObject({ preload: '/app/preload/appPanel.js', nodeIntegration: false, sandbox: true, contextIsolation: true, webSecurity: true })
+    expect(params.allowpopups).not.toBe('true')
+    expect(h.appSession.setUserAgent).not.toHaveBeenCalled()
+    const grant = vi.fn()
+    ;(h.appSession.setPermissionRequestHandler.mock.calls[0][0] as (...args: unknown[]) => void)({}, 'cookies', grant)
+    ;(h.appSession.setPermissionRequestHandler.mock.calls[0][0] as (...args: unknown[]) => void)({}, 'media', grant)
+    expect(grant.mock.calls).toEqual([[false], [false]])
+    expect((h.appSession.setPermissionCheckHandler.mock.calls[0][0] as () => boolean)()).toBe(false)
+  })
+
+  it('does not turn a custom panel popup into a browser tab, nor its keys into browser shortcuts', () => {
+    attach('app-abcdefghijklmnop-notes')
+    const guest = Object.assign(contents('webview'), { session: h.appSession })
+    h.app.emit('web-contents-created', {}, guest)
+    const open = guest.setWindowOpenHandler.mock.calls[0][0] as (details: { url: string }) => { action: string }
+    expect(open({ url: 'https://example.com' })).toEqual({ action: 'deny' })
+    const event = { preventDefault: vi.fn() }
+    guest.emit('before-input-event', event, { type: 'keyDown', meta: true, control: false, shift: false, alt: false, code: 'KeyR', key: 'r' })
+    expect(event.preventDefault).not.toHaveBeenCalled()
   })
 
   it('refuses a guest outside a prepared workspace partition (loopback must mean the runtime)', () => {
