@@ -228,3 +228,23 @@ it('keeps what is typed in the free answer and sends it with Répondre', async (
   await click('Répondre')
   expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q1', libre: 'Autre nom' })
 })
+
+it.each(['squash', 'rebase', 'merge'])('names the published method %s on Merger and on Merger quand même, whatever the option says', async (methode) => {
+  render(mergeQuestion({ methode }))
+  expect(button(new RegExp(`^Merger \\(${methode}\\)`))).toBeDefined()
+  render(mergeQuestion({ methode, locks: ['conflit avec la base'], rebase: true }))
+  expect(button(new RegExp(`^Merger quand même \\(${methode}\\)`))).toBeDefined()
+})
+
+it('takes the method from the CLI label when none is published (old CLI), and hardcodes none', () => {
+  render(mergeQuestion({ locks: ['conflit avec la base'] }))
+  expect(host.querySelector('[data-testid="option"] b')!.textContent).toBe('Merger quand même (rebase)')
+  render(mergeQuestion({ locks: ['conflit avec la base'], options: [{ label: 'Merger', detail: '' }] }))
+  const options = [...host.querySelectorAll('[data-testid="option"]')]
+  expect(options[0].querySelector('b')!.textContent).toBe('Merger quand même')
+})
+
+it('leaves the options of a question that is not a merge as they are, even with a method', () => {
+  render(question({ methode: 'squash' }))
+  expect([...host.querySelectorAll('[data-testid="option"] b')].map((b) => b.textContent)).toEqual(['Agence (Recommandé)', 'Suivi'])
+})
