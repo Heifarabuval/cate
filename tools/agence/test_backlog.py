@@ -42,6 +42,15 @@ class Schema(unittest.TestCase):
 		self.assertEqual([backlog.ajouter(b, t, T0)['id'] for t in 'abc'], ['F1', 'F2', 'F3'])
 		self.assertEqual(b['seq'], 3)
 
+	def test_edit_refuse_un_titre_vide(self):
+		b = backlog.vide()
+		backlog.ajouter(b, 'x', T0)
+		for vide in ('', '   '):
+			with self.subTest(titre=vide):
+				with self.assertRaises(backlog.Refus):
+					backlog.modifier(b, 'F1', T0, titre=vide)
+				self.assertEqual(b['fiches'][0]['titre'], 'x')
+
 	def test_prete_exige_chaque_champ_seul(self):
 		vides = {'titre': '', 'type': None, 'preuve': None, 'priorite': None, 'fichiers': [], 'budgetJetons': None,
 		         'vision': ''}

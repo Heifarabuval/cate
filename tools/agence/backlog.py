@@ -156,6 +156,8 @@ def _poser(b, f, champs, maintenant):
 	if inconnus:
 		raise Refus(f'champs non modifiables : {", ".join(sorted(inconnus))}')
 	neuve = {**f, **champs, 'maj': maintenant}
+	if 'titre' in champs and not str(champs['titre']).strip():
+		raise Refus('titre vide')
 	for cle in champs:
 		if not CHAMPS_FICHE[cle](neuve[cle]):
 			raise Refus(f'{cle} invalide : {json.dumps(neuve[cle], ensure_ascii=False)}')
