@@ -23,6 +23,7 @@ Liens :
 - Q: L'accord est-il un réglage de pratique (spec 005, « pratiques réglables ») ? → A: non. Le cap produit (le fork sert n'importe quel dev) rend réglables les pratiques de travail, pas le plancher de sécurité. Aucun réglage, aucun preset ne supprime la carte d'import ni le clic. Ce qui reste réglable : la CLI de l'`app` est gardée par `cliAppEnabled` et `cliAppControlEnabled` comme les autres zones (FR-019).
 - Q: Un registre ou un index « communautaire » ? → A: non, hors périmètre (008 Q1). Le partage est une copie : un dossier ou un fichier `.cate-panneau`. La question « communautaire » reste ouverte (Q8).
 - Q: Menace couverte ? → A: le contenu d'un dossier ou d'un fichier venu de l'extérieur. Pas l'agent de l'utilisateur lui-même, qui écrit déjà dans `~/.cate/panneaux/` avec les droits de l'utilisateur (008 D8, Q3). Un agent qui fait de l'automatisation OS (clic hors de Cate) reste un risque résiduel, le même que pour la boîte de validation.
+- Q: Format du paquet partagé ? (ancienne Q1, décision de Heifara) → A: un **JSON** `.cate-panneau`, pas un zip (0 dépendance, lisible et diffable). La spec Skills 008 (D8, FR-014, qui parle d'un « zip du dossier ») est **à aligner par le dépôt Skills** (son orchestrateur) ; ce dépôt ne la modifie pas.
 
 ## Vocabulaire
 
@@ -179,9 +180,8 @@ Partie 2, partage (lots 2 à 5) :
 
 ## Questions ouvertes
 
-Chaque question a une hypothèse de travail ; aucune ne bloque l'écriture du plan.
+Chaque question a une hypothèse de travail ; aucune ne bloque l'écriture du plan. Q1 est tranchée (Clarifications) ; la numérotation des autres est conservée.
 
-- **Q1. Format du paquet** : JSON seul (hypothèse, 0 dépendance, lisible et diffable) contre zip (008 D11 parle d'un « zip du dossier », il n'y a pas de bibliothèque zip dans `package.json`, et Node n'en lit pas). Hypothèse : JSON. À aligner avec 008 côté Skills.
 - **Q2. Source Git** : Cate ne clone pas (hypothèse). L'utilisateur clone puis importe le dossier ; `.git/` est ignoré. Cloner depuis Cate ajoute un processus externe, des hooks et des sous-modules à traiter.
 - **Q3. Un clic ou deux** : la carte d'import vaut accord (une carte, Installer = copier et autoriser ces permissions, hypothèse). Sinon une deuxième carte s'afficherait à la première ouverture avec les mêmes mots.
 - **Q4. Collision d'`id`** : Remplacer ou Annuler seulement (hypothèse). Renommer exige de réécrire l'`id` du manifeste dans la copie, donc une empreinte différente de celle annoncée par l'expéditeur.

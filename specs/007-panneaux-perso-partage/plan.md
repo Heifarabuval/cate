@@ -110,6 +110,8 @@ Un panneau importé est du code d'un tiers. Il tourne dans une page web avec : u
 
 Les specs 005 (pratiques réglables), 002 (lots macro de l'orchestrateur) et 006 (coût de l'attente) sont écrites en parallèle ; leurs listes de fichiers étaient « prises » mais non publiées au moment de l'écriture (bus, 17 h 45). Ce qui suit est donc une lecture de **ma** zone, à recouper par l'orchestrateur avec les `plan.md` des trois autres.
 
+**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
+
 | Fichier | Mes lots | Risque | Mitigation |
 |---|---|---|---|
 | `docs/architecture.md` | 1 (§12.3), 3 (paragraphe `app`) | Tous les epics y écrivent | Chaque lot ne touche qu'un titre ; rebase avant la PR |
@@ -154,4 +156,4 @@ lot 2 (paquet, export, stage) ┼─> lot 3 (accord, installation) ─┬─> lo
 - **WebRTC et préchargements non prouvés par un test** : seul l'écran de Heifara le prouve ; le lot 6 le dit et le lot 1 ne se déclare pas « vérifié en conditions réelles ».
 - **FR-010 plus grand que prévu** : voir Q7.
 - **Les plafonds** (10 Mio, 200 fichiers) peuvent être trop bas pour un panneau avec une bibliothèque lourde (une bibliothèque minifiée comme SheetJS est de l'ordre du Mio, non mesuré ici) : valeurs de départ, ajustables.
-- **JSON contre zip** : si Skills exige un zip, c'est un lot supplémentaire (une dépendance ou un lecteur de zip à écrire) ; non chiffré.
+- **JSON contre zip** : tranché par Heifara, JSON (spec.md, Clarifications) ; c'est la spec Skills 008 (D8, FR-014) qui s'aligne. Un retour au zip serait un lot supplémentaire (une dépendance ou un lecteur de zip à écrire) ; non chiffré.
