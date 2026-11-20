@@ -57,7 +57,7 @@ Les gardes sont déjà en place (`agence hooks status` rend `actif`). Relancer l
 Avant d'envoyer la ligne à Max, régler le nom (T014) :
 
 ```shell
-git config --global agence.nom Heifara
+git config --global agence.nom "<ton prénom>"
 ```
 
-Contrôle : `agence nom` rend `Heifara (git agence.nom)`.
+Contrôle : `agence nom` rend `<ton prénom> (git agence.nom)`.
