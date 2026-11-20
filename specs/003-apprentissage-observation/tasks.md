@@ -11,7 +11,7 @@ description: "Tâches : apprentissage par observation (issue #76)"
 
 **Interdits à tout agent** (constitution X) : lancer Playwright, Electron, l'app Cate ou `npm run dev`, ouvrir une fenêtre, lancer `npm ci` ou `npm install`, écrire dans le vrai `~/.cate` ou `~/.claude`. Pas de merge, de push sur `main`, de force-push, de suppression de branche. Aucune dépendance ajoutée.
 
-**État** : rien n'est lancé. Cette PR ne contient que la spec. Chaque lot attend la décision de Heifara, et les questions Q1 à Q9 de spec.md attendent sa réponse avant le lot qui en dépend (Q1 : lot 0 et 1 ; Q2 : lot 2 ; Q4 : lot 5 ; Q7 : lot 3 ; Q9 : lot 4).
+**État** : lots 0 et 1 faits sur la branche `feat/observation-journal` (T011 non écrit, T026 attend un vérificateur). Les lots 2 à 5 attendent la décision de Heifara, et les questions Q1 à Q9 de spec.md attendent sa réponse avant le lot qui en dépend (Q1 : tranchée, hors du premier lot ; Q2 : tranchée, 3 fois en 14 jours ; Q4 : lot 5 ; Q5 et Q7 : hypothèses appliquées au lot 1, à confirmer ; Q9 : lot 4).
 
 ## Format: `- [ ] ID [P] [US] Description avec chemin`
 
@@ -23,11 +23,11 @@ description: "Tâches : apprentissage par observation (issue #76)"
 
 ## Lot 0 : sondes (0,5 j, avant tout code)
 
-- [ ] T001 [H] Heifara répond à Q1 (q409) : ligne de commande d'un terminal. Sans réponse, T002 s'exécute quand même et T003 reste fermé.
-- [ ] T002 [P] Sonde terminal : lire `src/services/terminal/runtime/terminalService.ts` et `shellResolver.ts`, noter si un hook de shell (zsh `preexec`, bash `DEBUG`) peut rapporter la ligne **soumise** sans lire d'entrée clavier, et ce que cela demande dans l'environnement du shell (variable, fichier généré dans `terminal-cli/`, jamais un fichier global). Livrable : une page dans le rapport du lot 0 (`specs/003-apprentissage-observation/rapport-lot0.md`), verdict « possible / pas propre ».
-- [ ] T003 Si T001 répond « hook de shell » ou T002 conclut « possible » et que Heifara valide : planifier l'événement `terminal.command` en lot 1b. Sinon : retirer l'événement du FR-002 de la spec par une PR de spec.
-- [ ] T004 [P] Sonde page : lire `src/services/browser/desktop/pageDriver.ts` et `src/services/browser/contract/surface.ts`, noter comment injecter un script dans la page, s'il tourne dans un monde isolé, et comment un événement revient au client. Test jetable jsdom (hors dépôt, scratchpad) : un élément `autocomplete="cc-number"` est bien lisible par `el.autocomplete`. Livrable : rapport du lot 0.
-- [ ] T005 Relire le rapport avec Heifara : les sondes lèvent ou non les risques « terminal » et « script de page » du plan. Aucun lot ne démarre sans cette relecture.
+- [x] T001 [H] Heifara répond à Q1 (q409) : ligne de commande d'un terminal. Sans réponse, T002 s'exécute quand même et T003 reste fermé.
+- [x] T002 [P] Sonde terminal : lire `src/services/terminal/runtime/terminalService.ts` et `shellResolver.ts`, noter si un hook de shell (zsh `preexec`, bash `DEBUG`) peut rapporter la ligne **soumise** sans lire d'entrée clavier, et ce que cela demande dans l'environnement du shell (variable, fichier généré dans `terminal-cli/`, jamais un fichier global). Livrable : une page dans le rapport du lot 0 (`specs/003-apprentissage-observation/rapport-lot-0.md`), verdict « possible / pas propre ».
+- [x] T003 Si T001 répond « hook de shell » ou T002 conclut « possible » et que Heifara valide : planifier l'événement `terminal.command` en lot 1b. Sinon : retirer l'événement du FR-002 de la spec par une PR de spec.
+- [x] T004 [P] Sonde page : lire `src/services/browser/desktop/pageDriver.ts` et `src/services/browser/contract/surface.ts`, noter comment injecter un script dans la page, s'il tourne dans un monde isolé, et comment un événement revient au client. Test jetable jsdom (hors dépôt, scratchpad) : un élément `autocomplete="cc-number"` est bien lisible par `el.autocomplete`. Livrable : rapport du lot 0.
+- [x] T005 Relire le rapport avec Heifara : les sondes lèvent ou non les risques « terminal » et « script de page » du plan. Aucun lot ne démarre sans cette relecture.
 
 ## Lot 1 : journal du socle (3 j, US1)
 
@@ -35,22 +35,22 @@ description: "Tâches : apprentissage par observation (issue #76)"
 
 ### Tests d'abord (à voir rouges)
 
-- [ ] T010 [P] [US1] `src/workspace/observation/contract/rules.test.ts` : `stripUrl` (requête, fragment, identifiants retirés ; `https://example.com/a/b?token=abc#x` donne `https://example.com/a/b`), `isSensitiveField` (`type=password`, `autocomplete` valant `cc-*`, `one-time-code`, `current-password`, `new-password`, et casse mixte, et valeurs composées « section-x cc-number »), `isExcludedDomain` (catégories par défaut, sous-domaines, domaine proche non exclu : `banque-exemple.fr` n'est pas `exemple.fr`). Vu rouge : fonctions absentes.
-- [ ] T011 [P] [US1] `src/workspace/observation/contract/redact.test.ts` : corpus de lignes de commande avec et sans secret (`--password`, `Authorization: Bearer`, `API_KEY=`, URL avec identifiants, jeton collé) ; attendu : `***` ou ligne écartée en cas de doute. À écrire seulement si T003 valide l'événement.
-- [ ] T012 [US1] `src/workspace/observation/runtime/journal.test.ts` : état neuf, aucun dossier `observations/` ; sans accord, `append` n'écrit rien ; en pause, rien ; avec accord, une ligne `{ts, kind, panelType, ref}` dans `<AAAA-MM-JJ>.jsonl`, modes `0700`/`0600`, ajout seul ; une ligne invalide (kind inconnu, champ en trop, `ref` trop long) est rejetée.
-- [ ] T013 [P] [US1] `src/workspace/observation/runtime/purge.test.ts` : horloge simulée J-13 reste, J-14 reste, J-15 supprimé ; un fichier au nom invalide est ignoré, jamais supprimé ; la purge se base sur le nom, pas sur `mtime`.
-- [ ] T014 [P] [US1] `src/workspace/observation/runtime/sources.test.ts` : une création, une fermeture et une liaison de panneau du document produisent `panel.created`, `panel.closed`, `panel.linked` ; une navigation produit `navigate` avec l'URL sans paramètres ; une URL d'un domaine exclu ne produit rien.
-- [ ] T015 [P] [US1] `tools/agence/test_observe.py` : `agence observe list` sort une ligne par observation et le total, refuse sans réglage `cliObservationEnabled`, tolère une ligne illisible, sans écrire.
-- [ ] T016 [P] [US1] `src/workspace/observation/runtime/network.test.ts` : le module n'importe ni `ws`, ni `http`, ni `fetch`, ni un SDK de modèle (FR-018).
+- [x] T010 [P] [US1] `src/workspace/observation/contract/rules.test.ts` : `stripUrl` (requête, fragment, identifiants retirés ; `https://example.com/a/b?token=abc#x` donne `https://example.com/a/b`), `isSensitiveField` (`type=password`, `autocomplete` valant `cc-*`, `one-time-code`, `current-password`, `new-password`, et casse mixte, et valeurs composées « section-x cc-number »), `isExcludedDomain` (catégories par défaut, sous-domaines, domaine proche non exclu : `banque-exemple.fr` n'est pas `exemple.fr`). Vu rouge : fonctions absentes.
+- [ ] T011 [P] [US1] (non écrit : T003 n'a pas validé l'événement, voir `rapport-lot-0.md`) `src/workspace/observation/contract/redact.test.ts` : corpus de lignes de commande avec et sans secret (`--password`, `Authorization: Bearer`, `API_KEY=`, URL avec identifiants, jeton collé) ; attendu : `***` ou ligne écartée en cas de doute. À écrire seulement si T003 valide l'événement.
+- [x] T012 [US1] `src/workspace/observation/runtime/journal.test.ts` : état neuf, aucun dossier `observations/` ; sans accord, `append` n'écrit rien ; en pause, rien ; avec accord, une ligne `{ts, kind, panelType, ref}` dans `<AAAA-MM-JJ>.jsonl`, modes `0700`/`0600`, ajout seul ; une ligne invalide (kind inconnu, champ en trop, `ref` trop long) est rejetée.
+- [x] T013 [P] [US1] `src/workspace/observation/runtime/purge.test.ts` : horloge simulée J-13 reste, J-14 reste, J-15 supprimé ; un fichier au nom invalide est ignoré, jamais supprimé ; la purge se base sur le nom, pas sur `mtime`.
+- [x] T014 [P] [US1] `src/workspace/observation/runtime/sources.test.ts` : une création, une fermeture et une liaison de panneau du document produisent `panel.created`, `panel.closed`, `panel.linked` ; une navigation produit `navigate` avec l'URL sans paramètres ; une URL d'un domaine exclu ne produit rien.
+- [x] T015 [P] [US1] `tools/agence/test_observe.py` : `agence observe list` sort une ligne par observation et le total, refuse sans réglage `cliObservationEnabled`, tolère une ligne illisible, sans écrire.
+- [x] T016 [P] [US1] `src/workspace/observation/runtime/network.test.ts` : le module n'importe ni `ws`, ni `http`, ni `fetch`, ni un SDK de modèle (FR-018).
 
 ### Implémentation
 
-- [ ] T020 [US1] `src/workspace/observation/contract.ts` et `contract/{rules,exclusions,settings,capability,api}.ts` : types (`Observation`, `kind`), règles pures, catégories par défaut, slice `observation` (accord, pause, ajouts et retraits d'exclusions), capability, méthode `cate.observe.list` (read, gardée par `cliObservationEnabled`). Rend T010 vert.
-- [ ] T021 [US1] `src/workspace/observation/runtime/{journal,purge,index}.ts` : `createObservationRuntime(deps)`, ajout asynchrone par file mémoire bornée, garde d'accord et de pause, purge au démarrage puis une fois par jour. Rend T012 et T013 verts.
-- [ ] T022 [US1] Câblage dans `src/runtime/daemon/compose/` : sources document (créé, fermé, relié) et navigation par un port `observe(event)` ; ajouter `observations/` à `docs/architecture.md` section 7.2. Rend T014 vert. Les services n'importent que le contrat du module.
-- [ ] T023 [US1] `tools/agence/agence.py` : `observe list [--jours N] [--json]` appelle `cate observe list`. Rend T015 vert. Mise à jour de l'aide et de `skills/orchestrateur`.
-- [ ] T024 [US1] Registre `src/panels/api.ts` et `src/panels/runtime.ts` : l'entrée du module. `npm run lint:deps` vert (SC-006).
-- [ ] T025 [US1] [Mesure] SC-007 : écriture d'une ligne par événement, aucune lecture du journal dans le chemin critique ; chiffrer le surcoût sur 1000 créations simulées. Résultat dans le message de la PR.
+- [x] T020 [US1] `src/workspace/observation/contract.ts` et `contract/{rules,exclusions,settings,capability,api}.ts` : types (`Observation`, `kind`), règles pures, catégories par défaut, slice `observation` (accord, pause, ajouts et retraits d'exclusions), capability, méthode `cate.observe.list` (read, gardée par `cliObservationEnabled`). Rend T010 vert.
+- [x] T021 [US1] `src/workspace/observation/runtime/{journal,purge,index}.ts` : `createObservationRuntime(deps)`, ajout asynchrone par file mémoire bornée, garde d'accord et de pause, purge au démarrage puis une fois par jour. Rend T012 et T013 verts.
+- [x] T022 [US1] Câblage dans `src/runtime/daemon/compose/` : sources document (créé, fermé, relié) et navigation par un port `observe(event)` ; ajouter `observations/` à `docs/architecture.md` section 7.2. Rend T014 vert. Les services n'importent que le contrat du module.
+- [x] T023 [US1] `tools/agence/agence.py` : `observe list [--jours N] [--json]` appelle `cate observe list`. Rend T015 vert. Mise à jour de l'aide et de `skills/orchestrateur`.
+- [x] T024 [US1] Registre `src/panels/api.ts` et `src/panels/runtime.ts` : l'entrée du module. `npm run lint:deps` vert (SC-006).
+- [x] T025 [US1] [Mesure] SC-007 : écriture d'une ligne par événement, aucune lecture du journal dans le chemin critique ; chiffrer le surcoût sur 1000 créations simulées. Résultat dans le message de la PR.
 
 ### Vérification du lot
 
@@ -116,7 +116,7 @@ description: "Tâches : apprentissage par observation (issue #76)"
 - [ ] T067 [US3] Op `recording.start/stop` dans `src/panels/browser/` (`definePanel` : `commands` ou `chrome`, pas de menu écrit à la main) et opération `page.*` vers le client qui pilote la page (`contract/surface.ts`). Rend T062 vert.
 - [ ] T068 [US3] `RecordButton` et la pastille dans `src/shells/desktop/ui/panels/browser/`. Rend T063 et T064 verts.
 - [ ] T069 [US3] Liste d'exclusion : ajouts et retraits par l'utilisateur dans le panneau agence (retrait d'un domaine par défaut : confirmation). Test `exclusions.test.ts` d'abord.
-- [ ] T070 Vérificateur : même contrôle que T026, plus un grep : aucun écouteur `key*` ni `clipboard` dans `src/services/browser/desktop/`.
+- [ ] T070 Vérificateur : même contrôle que T026, plus un grep : aucun écouteur `key*` ni `clipboard` dans `src/services/browser/desktop/recorder.ts` (pas dans le dossier : `preload/guest.ts:80` écoute déjà `keydown` pour un signal sans contenu, voir `rapport-lot-0.md`).
 - [ ] T071 [H] X001 : Heifara essaie sur son poste, sur une page de test locale (champs de tous types) puis sur un site de la liste d'exclusion : lire le journal avec `agence observe list`, confirmer 0 valeur, 0 champ sensible. Aucun agent ne lance l'app.
 
 ## Lot 5 : recette depuis un enregistrement ou une proposition (2 j, US5)
