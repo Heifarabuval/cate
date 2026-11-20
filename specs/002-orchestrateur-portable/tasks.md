@@ -123,8 +123,8 @@ Retirées, sans case : L2-01 (fixture d'un vrai état) et L2-04 (compatibilité 
 
 ### Transversal (0 sur 3)
 
-- [ ] X001 Parcours en faux HOME. Ouverte : T047 (lot 5-A).
-- [ ] X002 Relecture finale. Ouverte : T048 (lot 5-B).
+- [x] X001 Parcours en faux HOME. Preuve : `tools/agence/test_quickstart.py`, PR #114.
+- [x] X002 Relecture finale. Preuve : `rapport-final.md`.
 - [ ] X003 [H] Essai réel par Max. Ouverte : T049 (lot 5-C).
 
 ### Ce que Heifara doit faire (1 sur 3)
@@ -163,7 +163,7 @@ Retirées, sans case : L2-01 (fixture d'un vrai état) et L2-04 (compatibilité 
 
 **Fichiers touchés** : `tools/agence/test_quickstart.py` (nouveau). **Dépend de** : rien. **Parallélisable avec** : 5-B, 5-D. Modèle : sonnet ; vérificateur : un autre agent, qui relance la suite une fois sur le HEAD annoncé.
 
-- [ ] T047 [US1] Écrire `tools/agence/test_quickstart.py` (cas 1 à 6) ; preuve : sortie rouge de la copie sans `hooks install`, puis `npm run test:agence` vert (sortie citée) et `shasum` du vrai `~/.claude/settings.json` identique avant et après.
+- [x] T047 [US1] Écrire `tools/agence/test_quickstart.py` (cas 1 à 6) ; preuve : sortie rouge de la copie sans `hooks install`, puis `npm run test:agence` vert (sortie citée) et `shasum` du vrai `~/.claude/settings.json` identique avant et après.
 
 ### Lot 5-B : relecture finale (X002, L1-17)
 
@@ -179,7 +179,7 @@ Retirées, sans case : L2-01 (fixture d'un vrai état) et L2-04 (compatibilité 
 
 **Fichiers touchés** : `specs/002-orchestrateur-portable/rapport-final.md` (nouveau), `specs/002-orchestrateur-portable/quickstart.md`. **Dépend de** : 5-A pour FR-013 et SC-003. **Parallélisable avec** : 5-A, 5-D. Modèle : opus ; vérificateur différent de l'implémenteur de 5-A.
 
-- [ ] T048 [US1] Écrire `rapport-final.md`, relire `quickstart.md` contre les commandes réelles, citer la sortie de L1-17 (case L1-17 cochée avec cette sortie).
+- [x] T048 [US1] Écrire `rapport-final.md`, relire `quickstart.md` contre les commandes réelles, citer la sortie de L1-17 (case L1-17 cochée avec cette sortie).
 
 ### Lot 5-C : recette réelle de Max (X003, T014)
 

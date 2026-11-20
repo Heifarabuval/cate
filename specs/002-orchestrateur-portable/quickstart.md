@@ -50,7 +50,7 @@ La liste complète est dans `tasks.md`, lot 5-C : prérequis P1 à P7, parcours 
 4. Fermer et rouvrir Cate : `agence need list` répond dans le terminal restauré.
 5. Deuxième passage : un commit sur `origin/main` du fork, attendre l'installation (Cate fermé), rouvrir Cate : le workspace est sur le nouveau build sans `pkill`.
 
-## Chez Heifara
+## Chez le propriétaire
 
 Les gardes sont déjà en place (`agence hooks status` rend `actif`). Relancer l'amorçage chez lui ne les double pas ; `sh -s -- --sans-gardes` ne sert que pour qui a ses propres gardes sur les mêmes outils.
 
