@@ -49,6 +49,11 @@ export type NeedAction =
   /** `rebase`: Merger is greyed by a conflict, « Demander le rebase » is offered. */
   | { type: 'question'; questionId: string; rebase: boolean }
 
+/** The permission an agent waits on, as the regisseur read it from the agent's
+ *  screen. `choix`: Oui and Non can be sent from here (readable screen, not
+ *  answered yet); otherwise only the agent's own panel answers. */
+export type NeedPerm = { genre: string; commande: string; motif: string; choix: boolean }
+
 export type NeedRow = {
   id: string
   title: string
@@ -62,6 +67,8 @@ export type NeedRow = {
   link: { label: string; href: string } | null
   links: NeedLink[]
   action: NeedAction | null
+  /** Set while an agent is blocked on a permission the regisseur could read. */
+  perm?: NeedPerm | null
 }
 
 export type SuiviSections = {
@@ -109,6 +116,9 @@ export type AgenceOp =
    *  has the PR rebased); `force`: « Merger quand même » over the locks. */
   | { kind: 'answer'; questionId: string; choice?: number | 'rebase'; libre?: string; force?: boolean }
   | { kind: 'orchestrator.restart' }
+  /** Oui or Non to the permission an agent waits on (need `needId`): the
+   *  regisseur re-reads the agent's screen before it types. */
+  | { kind: 'perm'; needId: string; reponse: 'oui' | 'non' }
 
 /** Why an op was refused. */
 export type AgenceOpError = 'busy' | 'conflict' | 'unavailable' | 'invalid'
@@ -151,6 +161,10 @@ export interface StateNeed {
   /** ISO time `add_need` wrote. */
   created?: string
   agentBlocked: boolean
+  /** The permission read from the blocked agent's screen (`set_perm`); `choix` lists the keys when Oui/Non can be sent. */
+  perm?: { genre: string; commande: string; motif: string; choix: string[]; panel: string } | null
+  /** Signature of the permission already answered: its buttons are gone. */
+  permAnswered?: string | null
   /** True for a minutes overrun and for a dollar one. */
   overBudget: boolean
   overBudgetUsd?: boolean

@@ -88,7 +88,10 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
     if (merge?.locks.length) meta.push(`Merger grisé : ${merge.locks.join(' ; ')}`)
     action = { type: 'question', questionId: need.ref, rebase: merge?.rebase ?? false }
   }
-  return { id: need.id, title: need.title, kind: need.kind, meta, evidence, created: need.created, link, links, action }
+  // As the regisseur's buttons: only a blocked agent's readable, unanswered request.
+  const perm = need.status === 'open' && need.agentBlocked && need.perm ? need.perm : null
+  const asked = perm && { genre: perm.genre, commande: perm.commande, motif: perm.motif, choix: perm.choix.length > 0 && !need.permAnswered }
+  return { id: need.id, title: need.title, kind: need.kind, meta, evidence, created: need.created, link, links, action, perm: asked }
 }
 
 export function classify(state: AgenceState, titles: PanelTitles, now: number): SuiviSections {
