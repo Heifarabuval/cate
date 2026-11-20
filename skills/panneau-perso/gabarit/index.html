@@ -6,48 +6,90 @@
 <title>Mon panneau</title>
 <link rel="stylesheet" href="theme.css">
 <style>
-  /* Seules les variables de theme.css donnent des couleurs. Aucune valeur en dur. */
-  :root { --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --radius: 6px; }
+  /* Identité Cate : variables de theme.css seulement, aucune couleur en dur.
+     Valeurs reprises de globals.css, de Button.tsx et des vues review de Cate :
+     texte 12 à 13 px, rayon 6 px (rounded-md), bordure fine var(--hairline), survol surface-hover. */
+  :root { --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --radius: 6px; }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: var(--s4); background: var(--surface-0); color: var(--text-primary);
-    font: 13px/1.5 system-ui, -apple-system, sans-serif; }
-  h1 { margin: 0 0 var(--s4); font-size: 16px; font-weight: 600; }
-  h2 { margin: 0 0 var(--s2); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-  .bar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s3); margin-bottom: var(--s4); }
-  label { display: grid; gap: var(--s1); color: var(--text-secondary); }
-  input, button { font: inherit; color: var(--text-primary); background: var(--surface-1);
-    border: 1px solid var(--border-strong); border-radius: var(--radius); padding: var(--s1) var(--s3); min-height: 32px; }
-  button { cursor: pointer; background: var(--text-primary); color: var(--text-inverse); border-color: var(--text-primary); }
-  button.secondary { background: var(--surface-1); color: var(--text-primary); border-color: var(--border-strong); }
-  button:hover:not(:disabled) { opacity: .88; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  :focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-  .status { margin: 0 0 var(--s4); color: var(--text-secondary); }
-  .error { padding: var(--s2) var(--s3); border: 1px solid var(--border-strong);
-    border-left: 4px solid var(--git-deleted); border-radius: var(--radius); background: var(--surface-1); }
-  .empty { padding: var(--s5); text-align: center; color: var(--text-secondary);
-    border: 1px dashed var(--border-strong); border-radius: var(--radius); }
-  .scroll { overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-1); color: var(--text-primary); font: 12px/1.45 var(--font-sans);
+    -webkit-font-smoothing: antialiased; }
+  .head { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+    background: var(--titlebar-bg); border-bottom: var(--hairline) solid var(--border-subtle); }
+  .head h1 { margin: 0; font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .head .sub { color: var(--text-muted); font-size: 11px; }
+  main { padding: var(--s3); display: grid; gap: var(--s3); }
+  h2 { margin: 0 0 var(--s1); font-size: 11px; font-weight: 500; color: var(--text-muted); }
+
+  /* Boutons : primary = plein à l'accent, secondary = bordure fine, comme Button.tsx */
+  .bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s2); }
+  label { display: grid; gap: var(--s1); font-size: 11px; color: var(--text-muted); }
+  button, input, select, textarea { font: inherit; font-size: 13px; }
+  button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px;
+    padding: 0 var(--s3); border-radius: var(--radius); font-weight: 500; cursor: pointer;
+    border: var(--hairline) solid var(--border-subtle); background: transparent; color: var(--text-secondary); }
+  button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+  button.primary { background: var(--focus-blue); border-color: var(--focus-blue); color: white; }
+  button.primary:hover:not(:disabled) { background: var(--focus-blue); color: white; opacity: .9; }
+  button:disabled { opacity: .4; cursor: default; }
+  :where(button, input[type='file']):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+  /* Champs : bordure fine, focus = bordure border-focus, sans contour autour du texte */
+  input:not([type='file']), select, textarea { height: 32px; padding: 0 var(--s2); border-radius: var(--radius);
+    border: var(--hairline) solid var(--border-strong); background: var(--surface-2); color: var(--text-primary); }
+  input::placeholder { color: var(--text-muted); }
+  input:not([type='file']):focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); }
+  input[type='file'] { height: 32px; padding: 0 var(--s2) 0 0; border-radius: var(--radius); max-width: 240px;
+    border: var(--hairline) solid var(--border-strong); background: var(--surface-2); color: var(--text-secondary); }
+  input[type='file']::file-selector-button { height: 100%; margin: 0 var(--s2) 0 0; padding: 0 var(--s3); border: 0;
+    border-right: var(--hairline) solid var(--border-strong); background: var(--surface-3); color: var(--text-primary);
+    font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+  input[type='file']::file-selector-button:hover { background: var(--surface-hover-strong); }
+
+  /* Statut : pastilles, point activity-green (ok) ou activity-orange (à regarder) */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px var(--s2); border-radius: 9999px;
+    border: var(--hairline) solid var(--border-subtle); background: var(--surface-2); color: var(--text-secondary);
+    font-size: 11px; font-variant-numeric: tabular-nums; }
+  .pill::before { content: ''; width: 6px; height: 6px; border-radius: 9999px; background: var(--text-muted); }
+  .pill.ok::before { background: var(--activity-green); }
+  .pill.warn::before { background: var(--activity-orange); }
+
+  .error { padding: var(--s2) var(--s3); border-radius: var(--radius); font-size: 12px;
+    border: var(--hairline) solid var(--border-subtle); border-left: 3px solid var(--git-deleted);
+    background: color-mix(in srgb, var(--git-deleted) 14%, transparent); }
+  .empty { padding: var(--s4); text-align: center; color: var(--text-muted); font-size: 12px;
+    border: var(--hairline) dashed var(--border-strong); border-radius: var(--radius); }
+
+  /* Tableaux denses : lignes fines, en-tête discret, 12 px */
+  .scroll { overflow-x: auto; border: var(--hairline) solid var(--border-subtle); border-radius: var(--radius);
+    background: var(--surface-0); }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { padding: var(--s1) var(--s3); text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border-subtle); }
-  th { position: sticky; top: 0; background: var(--surface-2); color: var(--text-secondary); font-weight: 600; }
+  th, td { padding: 3px var(--s2); text-align: left; white-space: nowrap; border-bottom: var(--hairline) solid var(--border-subtle); }
+  th { position: sticky; top: 0; background: var(--surface-2); color: var(--text-muted); font-size: 11px; font-weight: 500; }
   tbody tr:hover { background: var(--surface-hover); }
   tbody tr:last-child td { border-bottom: 0; }
-  @media (prefers-reduced-motion: no-preference) { button { transition: opacity .12s; } }
+
+  /* Barre de défilement de Cate : pastille fine */
+  ::-webkit-scrollbar { width: 13px; height: 13px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb); border-radius: 9999px;
+    border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
 </style>
 </head>
 <body>
-<h1>Mon panneau</h1>
-<div class="bar">
-  <button type="button" id="go">Action</button>
-</div>
-<p class="status" id="status" role="status">Prêt.</p>
-<div class="empty" id="empty">Rien à afficher pour l'instant.</div>
+<header class="head"><h1>Mon panneau</h1><span class="sub">une phrase sur ce qu'il fait</span></header>
+<main>
+  <div class="bar"><button type="button" class="primary" id="go">Action</button></div>
+  <div class="pills" role="status" id="status"><span class="pill ok">Prêt</span></div>
+  <div class="empty">Rien à afficher pour l'instant.</div>
+</main>
 <!-- Bibliothèque : fichier local copié dans ce dossier, jamais d'URL externe.
 <script src="lib.min.js"></script> -->
 <script>
   document.getElementById('go').onclick = () => {
-    document.getElementById('status').textContent = 'Action lancée.'
+    document.getElementById('status').innerHTML = '<span class="pill ok">Action lancée</span>'
   }
 </script>
 </body>

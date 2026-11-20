@@ -40,7 +40,7 @@ Manifeste : `id`, `name`, `version`, `description`, `author`, `icon` (nom lucide
 
 ## Thème
 
-Une page a une autre origine que Cate : elle n'hérite pas de ses variables CSS. Le gabarit a donc un `theme.css` avec les **mêmes noms de variables que Cate** (`--surface-0` à `--surface-6`, `--border-subtle`, `--border-strong`, `--border-focus`, `--text-primary`, `--text-secondary`, `--text-muted`, `--text-inverse`, `--focus-blue` pour l'accent, `--surface-hover`, `--surface-hover-strong`, `--activity-green`, `--activity-orange`, `--git-deleted`). `index.html` n'utilise que ces variables : jamais `#...`, `rgb(...)` ou `hsl(...)` en dur.
+Une page a une autre origine que Cate : elle n'hérite pas de ses variables CSS. Le gabarit a donc un `theme.css` qui définit **toutes les variables de Cate** (celles de `globals.css`, `:root`) : `--font-sans`, `--hairline`, `--surface-0` à `--surface-6`, `--border-subtle`, `--border-strong`, `--border-focus`, `--text-primary`, `--text-secondary`, `--text-muted`, `--text-inverse`, `--focus-blue`, `--activity-green`, `--activity-orange`, `--git-*`, `--surface-hover`, `--surface-hover-strong`, `--scrollbar-thumb`, etc. Même résultat que `applyTheme` : base claire ou sombre du thème, surchargée par ses valeurs. `index.html` n'utilise que ces variables : jamais `#...`, `rgb(...)` ou `hsl(...)` en dur. Seule exception : `white` sur le bouton plein, comme `Button.tsx`.
 
 À la création, et chaque fois que la personne change de thème, régénère `theme.css` depuis le thème actif :
 ```bash
@@ -50,17 +50,21 @@ Le script lit `activeThemeId` dans `~/Library/Application Support/cate/settings.
 
 Le suivi en direct du thème viendra avec le type `app` (SDK). En mode page, le thème est figé à la génération : après un changement de thème, relance le script puis `cate browser reload`.
 
-## Checklist design
+## Identité Cate : checklist design
 
-Un panneau est un outil (mode Operate du skill `impeccable`, archivé dans `~/.claude/archive/skills/impeccable/SKILL.md` : précision et retenue, pas de décor). Avant d'ouvrir le panneau :
+Un panneau doit se lire comme un panneau Cate. Le gabarit reprend les valeurs de `Button.tsx`, de `globals.css` et des vues review ; garde-les. Mode Operate du skill `impeccable` (archivé dans `~/.claude/archive/skills/impeccable/SKILL.md`) : précision et retenue, pas de décor.
 
-- Hiérarchie : un titre, une barre d'actions, l'état, puis le contenu. Une action principale, les autres en `secondary`.
-- Espacement : l'échelle `--s1` à `--s5` du gabarit (4, 8, 12, 16, 24 px). Pas d'autre valeur.
-- Typographie : `system-ui`, 13 px de corps, 16 px de titre, `tabular-nums` dans les tableaux.
-- États présents : survol, `:focus-visible` (anneau `--border-focus`), désactivé, vide (`.empty`), erreur (`.error`, message écrit en clair), chargement (texte dans `.status`).
-- Tableaux : en-tête collant, lignes séparées, défilement horizontal dans `.scroll`, 20 lignes d'aperçu puis « N lignes de plus ».
-- Contraste AA : texte courant en `--text-primary` ou `--text-secondary`. `--text-muted` ni pour du texte utile ni sur fond coloré. Pas de texte coloré par `--git-deleted`, `--activity-*` ou `--focus-blue` (trop faible sur thème clair) : ces couleurs vont sur des bordures et des anneaux.
+- Fond `--surface-1`, bandeau de titre `--titlebar-bg` avec un titre de 13 px, `font-weight: 500`. Pas de `h1` géant. Titres de section en 11 px, `--text-muted`.
+- Texte de 12 px (13 px pour boutons et champs), `var(--font-sans)`, `tabular-nums` dans les tableaux. Espacement `--s1` à `--s4` (4, 8, 12, 16 px), rayon 6 px, bordures `var(--hairline)`.
+- Aucun élément natif non stylé : boutons, champs, `input type=file` (`::file-selector-button`), `select`, barre de défilement, tout vient du gabarit.
+- Bouton principal : plein, `--focus-blue`. Les autres : bordure fine `--border-subtle`, survol `--surface-hover`.
+- Champs : bordure fine, focus = bordure `--border-focus` sans contour autour du texte. `:focus-visible` des boutons : anneau `--border-focus`.
+- États présents : survol, focus, désactivé (opacité 0,4), vide (`.empty`), erreur (`.error`, message en clair, liseré `--git-deleted`), statut en pastilles (`.pill`, point `--activity-green` ou `--activity-orange`).
+- Tableaux denses : lignes fines, en-tête 11 px discret, défilement horizontal dans `.scroll`, 20 lignes d'aperçu puis « N lignes de plus ».
+- Contraste : texte courant en `--text-primary` ou `--text-secondary`. `--text-muted` seulement pour les libellés et en-têtes. Le texte blanc du bouton plein suit Cate (environ 4:1 sur one-light) : ne l'utilise pas pour du texte long.
 - Responsive : vérifie à 375, 834 et 1280 px (`cate browser viewport custom --width 375 --height 800`, puis `cate browser screenshot`). Pas de défilement horizontal de la page.
+
+Limite : en mode page, le panneau est entouré de la barre d'onglets et d'adresse du navigateur Cate, qu'on ne peut pas masquer. Ne cherche pas à la contourner. Seul le futur type `app` (vue sans chrome de navigateur) rendra un panneau 100 % natif.
 
 ## Limites du mode page
 
