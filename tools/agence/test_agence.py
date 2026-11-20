@@ -1485,6 +1485,14 @@ class Tour(Base):
 		self.assertEqual(self.state()['agentsActive'], 4)
 		self.assertTrue(self.places(self.tick({'o1', 'r1'}, self.rows(3, extra=('o1', 'r1')))))
 
+	def test_interlocuteur_compte_dans_le_plafond(self):
+		# Spec 010, plan.md:64 : place = agents.max - agents vivants ; seuls l'orchestrateur et le régisseur en sortent.
+		self.booted()
+		with agence.tx() as st:
+			st['panels']['interlocuteur'] = 'i1'
+		self.tick({'o1', 'i1'}, self.rows(3, extra=('o1', 'i1')))
+		self.assertEqual(self.state()['agentsActive'], 4)
+
 	def test_une_place_libre_une_fois_par_liberation(self):
 		self.booted()
 		self.tick({'o1'}, self.rows(4))

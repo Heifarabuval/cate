@@ -1989,7 +1989,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 			else:
 				continue
 			effects.append(('toast', n['id'], (st['repo'], f"{prefixe}{n['id']} {n['title']} : {action_attendue(st, n)}")))
-	mine = [a for a in agents if a['panelId'] not in st['panels'].values()]  # orchestrateur, régisseur, interlocuteur : pas des places
+	mine = [a for a in agents if a['panelId'] not in (orch, st['panels'].get('regisseur'))]  # l'interlocuteur prend une place (spec 010, plan.md:64)
 	active = len([a for a in mine if a.get('state') == 'running'])
 	waiting = len([a for a in mine if a.get('state') == 'waitingForInput'])
 	vivants = active + waiting
