@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import type { ActionsState, BoiteActions, Ligne as LigneData } from '@client/boite'
 import { Button, InlineNotice } from '../../kernel/interaction'
@@ -25,6 +25,8 @@ interface LigneProps {
   now: number
   actions: BoiteActions
   state: ActionsState
+  /** The line the keyboard acts on. */
+  selected?: boolean
 }
 
 /** A question an agent asked: its options (the first one recommended), then a free answer. */
@@ -92,15 +94,17 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
 
 /** One line: project and age above, the need and its action below, then the
  *  card of the action. Every click goes through `actions` by the line's key. */
-export default function Ligne({ ligne, now, actions, state }: LigneProps) {
+export default function Ligne({ ligne, now, actions, state, selected = false }: LigneProps) {
   const [open, setOpen] = useState(false)
+  const element = useRef<HTMLLIElement>(null)
+  useEffect(() => { if (selected) element.current?.scrollIntoView?.({ block: 'nearest' }) }, [selected])
   const { action, key } = ligne
   const age = ageLabel(ligne.waitingSince, now)
   const busy = state.busy.has(key)
   const notice = state.notices[key]
   const shown = state.shown[key] !== undefined && action.type === 'draft' && state.shown[key] === action.hash
   return (
-    <li data-testid="ligne" className="flex min-w-0 flex-col gap-0.5 border-b border-subtle px-3 py-2 text-[12px]">
+    <li ref={element} data-testid="ligne" aria-selected={selected || undefined} className={`flex min-w-0 flex-col gap-0.5 border-b border-subtle px-3 py-2 text-[12px] ${selected ? 'bg-hover shadow-[inset_2px_0_0] shadow-agent' : ''}`}>
       <div className="flex min-w-0 items-baseline gap-2 text-secondary">
         <span className="min-w-0 truncate">{ligne.repo}</span>
         {age && <span className="ml-auto shrink-0 whitespace-nowrap">{age === "à l'instant" ? age : `depuis ${age}`}</span>}

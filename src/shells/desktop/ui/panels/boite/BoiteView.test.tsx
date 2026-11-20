@@ -4,11 +4,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { BoiteSnapshot, Ligne } from '@client/boite'
 import { installMockClientUi } from '../../../../../test/clientUi'
 import type { PanelViewProps } from '../../client/host/views'
+import { createMemoryShortcutRegistry, installShortcutRegistry } from '@kernel/interaction'
+import { registerBoiteActions, runBoiteCommand } from './keyboard'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const h = vi.hoisted(() => ({ snapshot: null as unknown as BoiteSnapshot }))
-vi.mock('./useBoite', () => ({ useBoite: () => ({ ...h.snapshot, actions: {}, actionsState: { busy: new Set(), shown: {}, notices: {} } }) }))
+const h = vi.hoisted(() => ({
+  snapshot: null as unknown as BoiteSnapshot,
+  actions: {} as Record<string, unknown>,
+  shown: {} as Record<string, string>,
+}))
+vi.mock('./useBoite', () => ({ useBoite: () => ({ ...h.snapshot, actions: h.actions, actionsState: { busy: new Set(), shown: h.shown, notices: {} } }) }))
 vi.mock('../editor/MarkdownPreview', () => ({ MarkdownPreview: () => null }))
 import BoiteView from './BoiteView'
 
@@ -21,9 +27,10 @@ const ligne = (key: string, extra: Partial<Ligne> = {}): Ligne => ({
 const project = (repo: string) => ({ workspaceId: `w-${repo}`, panelId: 'p', root: `/a/${repo}`, repo })
 
 // The view reads the store, not its props.
-const props = {} as PanelViewProps
+const props = { panelId: 'pb' } as PanelViewProps
 let host: HTMLDivElement
 let root: Root
+let offActions: () => void
 const render = (snapshot: BoiteSnapshot) => {
   h.snapshot = snapshot
   act(() => root.render(<BoiteView {...props} />))
@@ -34,6 +41,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
   installMockClientUi()
+  offActions = registerBoiteActions()
+  installShortcutRegistry(createMemoryShortcutRegistry())
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -41,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
+  offActions()
   vi.useRealTimers()
 })
 
@@ -97,4 +107,54 @@ it('has no button to overflow: a title is truncated, nothing is clickable but pa
 it('says when no project is watched at all', () => {
   render({ projects: [], closedWorkspaces: 0, rows: [] })
   expect(text()).toContain('Aucun projet orchestré')
+})
+
+const draft = (hash = 'h1'): Ligne['action'] => ({ type: 'draft', draftId: 'd1', kind: 'slack', hash, texte: 'Salut', inFlight: false })
+const selected = () => [...host.querySelectorAll('[data-testid="ligne"]')].map((line) => line.getAttribute('aria-selected'))
+const keyboard = (...commands: Parameters<typeof runBoiteCommand>[1][]) => act(() => { for (const command of commands) runBoiteCommand('pb', command) })
+
+it('moves the selection with J, K and arrow down, by key', () => {
+  h.actions = {}
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1'), ligne('/a/cate#n2'), ligne('/a/cate#n3')] })
+  expect(selected()).toEqual([null, null, null])
+  keyboard('next')
+  expect(selected()).toEqual(['true', null, null])
+  keyboard('next', 'skip')
+  expect(selected()).toEqual([null, null, 'true'])
+  keyboard('previous')
+  expect(selected()).toEqual([null, 'true', null])
+  // A line arrives above: the selection stays on the same line.
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n0'), ligne('/a/cate#n1'), ligne('/a/cate#n2'), ligne('/a/cate#n3')] })
+  expect(selected()).toEqual([null, null, 'true', null])
+})
+
+it('Enter shows the selected draft, Cmd+Enter sends it only once shown, and it targets the key', () => {
+  const show = vi.fn(() => ({ ok: true, texte: 'Salut' }))
+  const send = vi.fn(async () => ({ ok: true }))
+  h.actions = { show, send }
+  h.shown = {}
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1', { action: draft() }), ligne('/a/cate#n2', { action: draft() })] })
+  keyboard('next', 'next', 'send')
+  expect(send).not.toHaveBeenCalled()
+  expect(show).toHaveBeenCalledWith('/a/cate#n2')
+  h.shown = { '/a/cate#n2': 'h1' }
+  // A new line reorders the list before the second press.
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n0', { action: draft() }), ligne('/a/cate#n1', { action: draft() }), ligne('/a/cate#n2', { action: draft() })] })
+  keyboard('send')
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(send).toHaveBeenCalledWith('/a/cate#n2')
+  h.shown = {}
+})
+
+it('shows the keys on the inbox', () => {
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1')] })
+  expect(text()).toMatch(/J.*K/)
+  expect(text()).toContain('\u21A9')
+})
+
+it('no longer runs a command once the view is gone', () => {
+  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1')] })
+  act(() => root.unmount())
+  expect(runBoiteCommand('pb', 'next')).toBe(false)
+  root = createRoot(host)
 })
