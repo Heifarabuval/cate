@@ -64,7 +64,7 @@ Les quatre specs (005, 002, 006, 007) sont écrites en parallèle ; leurs implé
 
 Lots 1 et 2 ne partagent aucun fichier : ils partent ensemble. Le lot 3 (règle) part quand le rapport de sonde du lot 2 est lu. Le lot 4 attend les lots 1 et 3 et une vague réelle.
 
-**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
+**Ordre de merge et conflits entre les 4 specs** : voir `specs/recoupement-2026-11-20.md` (PR #110) (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
 
 ## Estimation de coût
 
