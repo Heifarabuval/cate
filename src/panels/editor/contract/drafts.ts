@@ -14,3 +14,8 @@ export function isEditorDraft(path: string | undefined): boolean {
 export function editorDraftPath(root: string, id: string): string {
   return `${cateTempDir(root)}${pathSeparatorOf(root)}${id}.md`
 }
+
+/** A draft of the agence panel: `.cate/tmp/agence/drafts/<id>.md`, opened to be edited. */
+export function isAgenceDraftFile(path: string | null | undefined): boolean {
+  return !!path && /[/\\]\.cate[/\\]tmp[/\\]agence[/\\]drafts[/\\][^/\\]+\.md$/i.test(path)
+}
