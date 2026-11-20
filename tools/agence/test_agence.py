@@ -2121,10 +2121,15 @@ class TransportSlack(Base):
 	def test_http_error_fermee(self):
 		for code in (429, 502):  # une réponse d'erreur garde sa connexion ouverte tant qu'on ne la ferme pas
 			with self.subTest(code=code):
-				err = urllib.error.HTTPError('u', code, 'x', {}, None)
+				err = urllib.error.HTTPError('u', code, 'x', {}, io.BytesIO(b''))
 				with self.assertRaises(agence.Refus):
 					self.call(err)
 				self.assertTrue(err.fp.closed)
+
+	def test_http_error_sans_corps(self):
+		err = urllib.error.HTTPError('u', 429, 'x', {}, None)  # sous Python 3.9, close() y lève KeyError
+		with self.assertRaises(agence.Refus):
+			self.call(err)
 
 	def test_slack_token_lit_la_cle_et_les_guillemets(self):
 		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\nSLACK_USER_TOKEN="xoxp-user"\n')

@@ -893,7 +893,8 @@ def _slack(method, payload, token):
 		with urllib.request.urlopen(req, timeout=30) as r:
 			return json.load(r)
 	except urllib.error.HTTPError as e:
-		e.close()  # la réponse d'erreur tient la connexion : fermée ici, pas au ramasse-miettes
+		if e.fp is not None:  # sans corps, close() lève KeyError sous Python 3.9
+			e.close()  # la réponse d'erreur tient la connexion : fermée ici, pas au ramasse-miettes
 		raise (Refus if e.code < 500 else Incertain)(f'Slack : HTTP {e.code}')  # 4xx : refusé, rien posté
 	except urllib.error.URLError as e:
 		if isinstance(e.reason, (socket.gaierror, ConnectionRefusedError)):  # rien n'a été émis
