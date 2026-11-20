@@ -17,6 +17,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence guard --mode send|pages     hook PreToolUse (JSON sur stdin) ; --mode obligatoire ; send échoue fermé (ask), pages échoue ouvert
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
+  agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -161,7 +162,7 @@ def draft_path(did):
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
 	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
-	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None}
+	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None}
 
 
 def plafond(st):
@@ -1990,12 +1991,15 @@ def un_tour():
 	mesures = lire_mesures()  # idem : une lecture par tour, None si Cate la refuse
 	usage = couts(mesures)
 	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
+	import pratiques  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
+	pol = pratiques.charger(root(), os.environ.get('HOME'))  # invalide : neutre et erreur publiée, le tour continue
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
 		st['garde'] = garde
+		st['pratiques'] = pol
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage)
 		apply(st, effects)
 		orch = st['panels'].get('orchestrator')
@@ -2398,6 +2402,9 @@ FETCH_RE = re.compile(r'\b(curl|wget|http|https|xh|nc|python3?|node|ruby|perl|op
 WRITE_RE = re.compile(r'(>|sed -i|\btee\b|\bmv\b|\bcp\b|\brm\b|python|perl|truncate|\bjq\b.*>)')
 PAGE_DENY = "Les pages du régisseur sont pour l'humain : un agent ne clique pas à sa place."
 STATE_DENY = "state.json s'écrit seulement par la CLI agence."
+PRATIQUES_DENY = "La politique (pratiques.json) se règle seulement par l'humain : agence pratiques set, unset ou preset."
+PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+pratiques\s+(set|unset|preset)\b')
+POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json')
 
 
 def send_match(st, tool, ti):
@@ -2464,12 +2471,45 @@ def guard(payload, mode):
 				return decision('deny', PAGE_DENY)
 		if 'state.json' in cmd and WRITE_RE.search(cmd) and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or '')):
 			return decision('deny', STATE_DENY)
+		if PRATIQUES_RE.search(cmd) or ('pratiques.json' in cmd and WRITE_RE.search(cmd) and 'agence' in cmd):
+			return decision('deny', PRATIQUES_DENY)
 		return None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
 	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith('.cate/tmp/agence/state.json'):
 		return decision('deny', STATE_DENY)
+	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith(POLITIQUES):
+		return decision('deny', PRATIQUES_DENY)
 	return None
+
+
+def cmd_pratiques(a):
+	"""Politique de flux (spec 005). set, unset et preset écrivent le fichier du projet (--dev : celui du dev) après
+	validation de la politique entière ; show, check et brief lisent. Politique refusée : code 2, rien d'écrit."""
+	import pratiques  # voir un_tour
+	racine, home = root(), os.environ.get('HOME')
+	try:
+		if a.action == 'set':
+			print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev)}')
+		elif a.action == 'unset':
+			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev)}')
+		elif a.action == 'preset':
+			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev)}')
+		pol = pratiques.verifier(racine, home)
+	except pratiques.Invalide as err:
+		raise Env(f'pratiques : {err}')
+	if a.action == 'show' and a.json:
+		print(json.dumps(pol, ensure_ascii=False, indent=1))
+	elif a.action == 'show':
+		print(f"Pratiques : {pol['preset']} ({pol['sources']['preset']})")
+		for k, v in pol['valeurs'].items():
+			texte = ', '.join(v) if isinstance(v, list) else v if isinstance(v, str) else json.dumps(v)
+			print(f"  {k:<22} {texte:<26} {pol['sources'][k]}")
+	elif a.action == 'brief':
+		print(pratiques.brief(pol, nom()))
+	elif a.action == 'check':
+		print(f"pratiques : valide, preset {pol['preset']} ({pol['sources']['preset']})")
+	return 0
 
 
 def cmd_guard(a):
@@ -2852,6 +2892,17 @@ def parser():
 	db.add_argument('--jours', type=jours_bilan, default=JOURS_BILAN, metavar='N', help=f"aujourd'hui et N jours avant (1 à {JOURS_JOURNAL_DECL}, défaut {JOURS_BILAN})")
 	db.add_argument('--json', action='store_true', help='le bilan en JSON')
 	dc.set_defaults(fn=cmd_declencheurs)
+	pr = sub.add_parser('pratiques', help="politique de flux du dev (spec 005) : show, check et brief lisent ; set, unset et preset sont à l'humain")
+	prs = pr.add_subparsers(dest='action', required=True)
+	prs.add_parser('show', help='valeurs effectives et leur source (défaut, dev, projet)').add_argument('--json', action='store_true')
+	prs.add_parser('check', help='valide les deux fichiers, sans rien écrire')
+	prs.add_parser('brief', help='bloc de pratiques à coller dans un brief : invariants, puis les exigences actives')
+	for action, args in (('set', ('cle', 'valeur')), ('unset', ('cle',)), ('preset', ('nom',))):
+		x = prs.add_parser(action, help=f'{action} dans le fichier du projet (--dev : ~/.config/agence/pratiques.json)')
+		for arg in args:
+			x.add_argument(arg, help='JSON (4, null, ["ci-verte"]) ou texte' if arg == 'valeur' else None)
+		x.add_argument('--dev', action='store_true')
+	pr.set_defaults(fn=cmd_pratiques)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p

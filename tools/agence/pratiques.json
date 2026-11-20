@@ -1,0 +1,43 @@
+{
+ "cles": {
+  "livraison.mode": {"valeurs": ["pr", "main"], "dit": "pr : branche dédiée et pull request ; main : commit sur la branche de base, push par l'humain"},
+  "livraison.merge": {"valeurs": ["clic", "dehors"], "dit": "clic : l'humain merge par le bouton du panneau ; dehors : il merge hors de l'agence (agence ask --merge refusé)"},
+  "livraison.methode": {"valeurs": ["squash", "rebase", "merge"], "dit": "méthode passée à gh pr merge"},
+  "issue": {"valeurs": ["libre", "obligatoire"], "dit": "obligatoire : toute tâche porte une issue",
+   "exige": {"obligatoire": "Une issue par tâche : une PR qui la règle entièrement écrit « Closes #N », une PR partielle « Réf. #N »."}},
+  "tests": {"valeurs": ["libre", "tdd"], "dit": "tdd : test rouge d'abord pour toute logique",
+   "exige": {"tdd": "Tests d'abord : pour toute logique, un test rouge vu en échec avant le code, sortie citée, puis le vert."}},
+  "speckit": {"valeurs": ["non", "au-dela-d-une-journee", "toujours"], "dit": "quand une fonctionnalité passe par spec-kit",
+   "exige": {"au-dela-d-une-journee": "Une fonctionnalité de plus d'une journée passe par spec-kit (specify, clarify, plan, tasks, implement).",
+             "toujours": "Toute fonctionnalité passe par spec-kit (specify, clarify, plan, tasks, implement)."}},
+  "verification": {"valeurs": ["libre", "differente"], "dit": "differente : un vérificateur différent de l'implémenteur",
+   "exige": {"differente": "Vérification croisée : un vérificateur différent de l'implémenteur relit et relance les preuves avant la livraison."}},
+  "preuve": {"liste": ["pr-mergee", "ci-verte", "tests-locaux", "rapport"], "nul": true, "dit": "preuves de fin d'une tâche ; null : dérivée du mode (pr : pr-mergee, main : rapport)"},
+  "agents.max": {"entier": [1, 16], "dit": "plafond d'agents vivants du projet"},
+  "declencheurs.actifs": {"parmi": "declencheurs.json", "dit": "identifiants des déclencheurs actifs (table declencheurs.json)"},
+  "envoi.slack.variable": {"motif": "^[A-Za-z_][A-Za-z0-9_]*$", "dit": "nom de la variable d'environnement qui porte le jeton Slack (jamais le jeton)"},
+  "envoi.slack.fichier": {"motif": "^[~/]", "nul": true, "dit": "chemin d'un fichier .env qui porte cette variable, ou null (jamais le jeton)"}
+ },
+ "coherences": [
+  {"si": {"livraison.mode": ["main"], "preuve": ["pr-mergee", "ci-verte"]}, "message": "une preuve de PR n'a pas de sens sans PR"},
+  {"si": {"verification": ["differente"], "agents.max": [1]}, "message": "un vérificateur différent demande au moins deux agents"}
+ ],
+ "invariants": [
+  "Seul le clic de {humain} envoie en son nom (Slack, mail, issue, review, PR) : un agent prépare un brouillon.",
+  "Aucun agent ne merge, ne pousse ni ne force-push (sauf le --force-with-lease d'un rebase demandé).",
+  "Aucun secret dans un brief, un commit, un message ou la politique.",
+  "Une tâche ne passe en fait que sur preuve (commande et résultat, lien de PR)."
+ ],
+ "presets": {
+  "neutre": {
+   "livraison.mode": "pr", "livraison.merge": "clic", "livraison.methode": "squash", "issue": "libre", "tests": "libre",
+   "speckit": "non", "verification": "libre", "preuve": null, "agents.max": 4, "declencheurs.actifs": ["T1"],
+   "envoi.slack.variable": "SLACK_USER_TOKEN", "envoi.slack.fichier": null
+  },
+  "pr-tdd": {
+   "livraison.mode": "pr", "livraison.merge": "clic", "livraison.methode": "rebase", "issue": "obligatoire", "tests": "tdd",
+   "speckit": "au-dela-d-une-journee", "verification": "differente", "preuve": ["ci-verte", "pr-mergee"], "agents.max": 4,
+   "declencheurs.actifs": ["T1", "T2", "T3"], "envoi.slack.variable": "SLACK_USER_TOKEN", "envoi.slack.fichier": null
+  }
+ }
+}
