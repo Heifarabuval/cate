@@ -25,6 +25,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
+import pratiques  # noqa: E402
 
 
 class FakeRun:
@@ -59,7 +60,8 @@ class FakeRun:
 class Base(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.mkdtemp(prefix='agence-test-')
-		self.env = {k: os.environ.get(k) for k in ('AGENCE_ROOT', 'CATE_SOCKET', 'CLAUDE_PROJECT_DIR', 'AGENCE_NOM')}
+		self.env = {k: os.environ.get(k) for k in ('AGENCE_ROOT', 'CATE_SOCKET', 'CLAUDE_PROJECT_DIR', 'AGENCE_NOM', 'SLACK_USER_TOKEN')}
+		os.environ.pop('SLACK_USER_TOKEN', None)  # jamais le vrai jeton Slack (variable par défaut de envoi.slack)
 		os.environ['AGENCE_ROOT'] = self.tmp
 		os.environ['CATE_SOCKET'] = '/tmp/x.sock'
 		os.environ['AGENCE_NOM'] = 'Max'  # jamais le gitconfig de la machine dans les attendus
@@ -68,9 +70,15 @@ class Base(unittest.TestCase):
 		self.run = FakeRun()
 		self.old_run = agence.RUN
 		agence.RUN = self.run
-		self.old_slack, self.old_hermes = agence.SLACK, os.environ.get('HERMES_ENV')
-		os.environ['HERMES_ENV'] = os.path.join(self.tmp, 'absent.env')  # jamais le vrai ~/.hermes/.env
+		self.old_slack = agence.SLACK
 		agence.SLACK = self.no_network
+
+	def write_env(self, text):
+		"""Fichier .env jetable nommé par envoi.slack.fichier (politique du dev, faux HOME)."""
+		self.slack_env = os.path.join(self.tmp, 'slack.env')
+		with open(self.slack_env, 'w') as f:
+			f.write(text)
+		pratiques.regler(self.tmp, os.environ['HOME'], 'envoi.slack.fichier', self.slack_env, dev=True)
 
 	def no_network(self, method, payload, token):
 		raise AssertionError(f'appel Slack réel {method} dans un test')
@@ -78,10 +86,6 @@ class Base(unittest.TestCase):
 	def tearDown(self):
 		agence.RUN = self.old_run
 		agence.SLACK = self.old_slack
-		if self.old_hermes is None:
-			os.environ.pop('HERMES_ENV', None)
-		else:
-			os.environ['HERMES_ENV'] = self.old_hermes
 		for k, v in self.env.items():
 			if v is None:
 				os.environ.pop(k, None)
@@ -849,7 +853,7 @@ class Questions(Base):
 		agence.click(f'/ask/{qid}', {'choice': ['0']})
 		merge = self.run.ran('gh', 'pr', 'merge')
 		self.assertEqual(len(merge), 1)
-		self.assertIn('--rebase', merge[0])
+		self.assertIn('--squash', merge[0])  # méthode du preset neutre (livraison.methode) ; les autres : test_retrait.py
 		self.assertIn('4', merge[0])
 
 	def test_merge_demander_changements_ne_merge_pas(self):
@@ -1058,7 +1062,7 @@ class MergeVerrou(Base):
 		page = agence.page_ask(self.state(), qid)
 		self.assertNotIn('card reco', page)  # plus de bordure verte de l'option sélectionnée
 		self.assertNotIn('Recommandé', page)
-		force = re.search(r'<button class="card[^"]*">[^<]*<b>Merger quand même \(rebase\)</b>', page)
+		force = re.search(r'<button class="card[^"]*">[^<]*<b>Merger quand même \(squash\)</b>', page)
 		self.assertTrue(force, 'bouton de même classe que les cartes')
 		self.assertLess(page.index('Mettre à jour le corps de la PR #4'), force.start())  # verrous au-dessus
 		self.assertLess(force.start(), page.index('name="libre"'))
@@ -1493,20 +1497,19 @@ class Tour(Base):
 
 	def test_plafond_reglable(self):
 		self.booted()
-		with agence.tx() as st:
-			st['maxAgents'] = 2
+		pratiques.regler(self.tmp, os.environ['HOME'], 'agents.max', 2)
 		self.tick({'o1'}, self.rows(2))
 		self.assertTrue(self.places(self.tick({'o1'}, self.rows(1))))
 
 	def test_start_max_agents(self):
 		self.assertEqual(self.cli('start', '--max-agents', '3')[0], 0)
-		self.assertEqual(self.state()['maxAgents'], 3)
+		self.assertEqual(agence.plafond(self.state()), 3)
 		self.cli('start')
-		self.assertEqual(self.state()['maxAgents'], 3)  # sans option, le réglage ne bouge pas
+		self.assertEqual(agence.plafond(self.state()), 3)  # sans option, le réglage ne bouge pas
 		for bad in ('0', '-1', 'x'):
 			with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
 				agence.main(['start', '--max-agents', bad])
-		self.assertEqual(self.state()['maxAgents'], 3)
+		self.assertEqual(agence.plafond(self.state()), 3)
 
 	def test_etat_ancien_plafond_par_defaut(self):
 		path = agence.state_file()
@@ -1528,7 +1531,7 @@ class Tour(Base):
 		with redirect_stdout(out), self.assertRaises(SystemExit):
 			agence.main(['start', '--help'])
 		aide = ' '.join(out.getvalue().split())
-		self.assertIn('défaut 4', aide)
+		self.assertIn('agents.max', aide)
 		self.assertIn('en attente de saisie comptent', aide)
 
 	def test_suivi_dit_en_cours_et_en_attente(self):
@@ -2108,10 +2111,6 @@ class TransportSlack(Base):
 				self.call(outcome)
 			self.assertNotIsInstance(cm.exception, agence.Incertain, repr(outcome))
 
-	def write_env(self, text):
-		with open(os.environ['HERMES_ENV'], 'w') as f:
-			f.write(text)
-
 	def test_slack_token_lit_la_cle_et_les_guillemets(self):
 		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\nSLACK_USER_TOKEN="xoxp-user"\n')
 		self.assertEqual(agence.slack_token(), 'xoxp-user')
@@ -2124,13 +2123,13 @@ class TransportSlack(Base):
 			agence.slack_token()
 		self.assertIn('SLACK_USER_TOKEN', str(cm.exception))
 		self.assertNotIn('xoxb', str(cm.exception))
-		os.remove(os.environ['HERMES_ENV'])
+		os.remove(self.slack_env)
 		with self.assertRaises(agence.Refus):
 			agence.slack_token()
 
 
 class EnvoiSlack(Base):
-	"""Slack part du régisseur au clic (token utilisateur de Hermes), sans outil MCP : le connecteur ajoute « Envoyé avec Claude »."""
+	"""Slack part du régisseur au clic (jeton de l'utilisateur, réglage envoi.slack), sans outil MCP : le connecteur ajoute « Envoyé avec Claude »."""
 
 	def setUp(self):
 		super().setUp()
@@ -2139,10 +2138,6 @@ class EnvoiSlack(Base):
 		agence.SLACK = lambda method, payload, token: (self.http.append((method, payload, token)), self.reply)[1]
 		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\nSLACK_USER_TOKEN="xoxp-user"\n')
 		self.booted()
-
-	def write_env(self, text):
-		with open(os.environ['HERMES_ENV'], 'w') as f:
-			f.write(text)
 
 	def new_draft(self, texte='Salut'):
 		return self.cli('draft', 'new', '--cible', 'slack:C123', '--from', 'a1', texte)[1].strip()

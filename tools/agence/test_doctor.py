@@ -16,6 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
+import pratiques  # noqa: E402
 from test_agence import Base  # noqa: E402
 from test_hooks import VRAI_HOME  # noqa: E402
 
@@ -199,6 +200,50 @@ class Prerequis(Base):
 		p = self.point(points, 'nom')
 		self.assertEqual((code, p['etat'], p['bloquant']), (0, 'info', False))
 		self.assertIn('git config --global agence.nom', p['commande'])
+
+	# ---- politique (spec 005, lot 2) ----
+
+	def politique(self, contenu):
+		chemin = pratiques.fichier_projet(self.tmp)
+		os.makedirs(os.path.dirname(chemin), exist_ok=True)
+		with open(chemin, 'w') as f:
+			f.write(contenu if isinstance(contenu, str) else json.dumps(contenu))
+
+	def test_pratiques_info_sans_fichier(self):
+		code, points = self.doctor()
+		p = self.point(points, 'pratiques')
+		self.assertEqual((code, p['etat']), (0, 'info'))
+		self.assertIn('neutre (aucun fichier)', p['detail'])
+		self.assertIn('agence pratiques preset', p['commande'])
+
+	def test_pratiques_ok_avec_un_fichier(self):
+		self.politique({'preset': 'pr-tdd'})
+		code, points = self.doctor()
+		p = self.point(points, 'pratiques')
+		self.assertEqual((code, p['etat']), (0, 'ok'))
+		self.assertIn('pr-tdd (projet)', p['detail'])
+
+	def test_pratiques_invalide_bloque_en_citant_l_erreur(self):
+		self.politique({'livraison': {'methode': 'fast-forward'}})
+		p = self.manque('pratiques')
+		self.assertTrue(p['bloquant'])
+		self.assertIn('livraison.methode', p['detail'])
+		self.assertIn('agence pratiques check', p['commande'])
+
+	def test_gh_bloquant_sous_neutre_et_pr_tdd(self):
+		self.run.reply(['gh', 'auth', 'status'], '', code=1, err='not logged in')
+		self.assertTrue(self.manque('gh')['bloquant'])
+		self.politique({'preset': 'pr-tdd'})
+		self.assertTrue(self.manque('gh')['bloquant'])
+
+	def test_gh_info_en_mode_main_sans_besoin_de_github(self):
+		self.run.reply(['gh', 'auth', 'status'], '', code=1, err='not logged in')
+		self.politique({'livraison': {'mode': 'main'}})
+		code, points = self.doctor()
+		p = self.point(points, 'gh')
+		self.assertEqual((code, p['etat'], p['bloquant']), (0, 'info', False))
+		self.politique({'livraison': {'mode': 'main'}, 'issue': 'obligatoire'})
+		self.assertTrue(self.manque('gh')['bloquant'])
 
 	# ---- lecture seule, comportements gardés ----
 
