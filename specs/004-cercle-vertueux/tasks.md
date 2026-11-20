@@ -11,7 +11,7 @@ description: "Tâches : cercle vertueux (issue #103)"
 
 **Interdits à tout agent** (constitution X) : lancer Playwright, Electron, l'app Cate ou `npm run dev`, ouvrir une fenêtre, lancer `npm ci` ou `npm install`, écrire dans le vrai `~/.cate` ou `~/.claude`, éditer `~/.claude/settings.json`, lancer `agence hooks`. Pas de merge, de push sur `main`, de force-push, de suppression de branche. Aucune dépendance ajoutée. Jamais `cate terminal type` ni `press` sur un panneau d'agent (hors du panneau jetable que le lot 0 a créé lui-même).
 
-**État** : spec écrite, aucune tâche commencée. Les questions Q1 (q469) et Q2 (q471) de spec.md attendent Heifara : le lot 3 en dépend (Q1), le choix des trois déclencheurs aussi (Q2). Q3 à Q9 ont une hypothèse de travail.
+**État** : spec écrite, aucune tâche commencée. Q1 (q469) est tranchée : `/compact` seul, le reste par carte. Q2 (q471) est tranchée : `/compact`, `/learn` après merge, `/audit-config` hebdomadaire (lots 3 et 4). Q3 à Q9 ont une hypothèse de travail.
 
 ## Format: `- [ ] ID [P] [US] Description avec chemin`
 
@@ -25,7 +25,7 @@ description: "Tâches : cercle vertueux (issue #103)"
 
 **But** : savoir, par l'essai, ce que le code laisse supposer.
 
-- [ ] T001 [H] Heifara répond à Q1 (q469, autonomie) et Q2 (q471, trois déclencheurs). Sans réponse, T002 à T005 s'exécutent quand même ; le lot 3 ne démarre pas.
+- [x] T001 [H] Heifara répond à Q1 (q469 : `/compact` seul, le reste par carte) et Q2 (q471 : `/compact`, `/learn` après merge, `/audit-config` hebdomadaire). Preuve : `spec.md`, Clarifications.
 - [ ] T002 [P] Sonde d'envoi : démarrer **un agent jetable** (`cate agent start`, panneau, modèle le moins cher, titre `#n466 sonde`), lui envoyer successivement `/context`, `/compact`, `/clear` par `cate agent send`, lire l'état (`cate agent list --json`, `cate agent read`). Noter pour chaque commande : le prompt est-il pris, la commande s'exécute-t-elle, un dialogue reste-t-il ouvert (`cate terminal read`, lecture seule), l'agent revient-il à `waitingForInput`. Fermer le panneau. Livrable : `specs/004-cercle-vertueux/rapport-lot-0.md`, verdict « sans dialogue / dialogue / non pris » par commande. Interdit : l'orchestrateur ou un panneau de travail comme cible.
 - [ ] T003 [P] Sonde des skills : sur le même agent jetable, `/learn` puis `/audit-config` par `cate agent send`. Noter ce qui part (pas d'écriture : répondre « abandonner » ou fermer avant), où s'affiche la question de confirmation en projet orchestré, et si le skill exige l'outil de question (bloqué par `cate-guard` en projet orchestré). Même livrable.
 - [ ] T004 [P] Sonde de la donnée : sur 3 sessions vivantes, lire `contextTokens` calculé à la main depuis le journal de session (dernier message `assistant` : entrée, création de cache, lecture de cache) ; **[H]** Heifara compare au chiffre de `/context` dans le panneau. Noter l'écart. Mesurer aussi la durée d'un passage de `usage.py --days 7` (lecture seule) et la forme de sa sortie texte (pour Q9). Même livrable.
@@ -72,7 +72,7 @@ description: "Tâches : cercle vertueux (issue #103)"
 
 ## Lot 3 : envoi de T1 et cartes (2 j, US1)
 
-**But** : `/compact` part au bon moment ; les commandes de classe B passent par une carte. Dépend de Q1 et de la décision de T005 sur la sonde de `/compact`.
+**But** : `/compact` part au bon moment ; les commandes de classe B passent par une carte. Dépend de la décision de T005 sur la sonde de `/compact`.
 
 ### Tests d'abord
 
