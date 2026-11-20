@@ -24,7 +24,7 @@ export default function AppPanel({ workspaceId, panelId, snapshot, send }: Panel
     case 'running':
       return frame(snapshot.url && <AppWebview workspaceId={workspaceId} panelId={panelId} appId={snapshot.appId} url={snapshot.url} reload={snapshot.reload} />)
     case 'needs-grant':
-      return frame(<GrantCard name={snapshot.name} sentence={snapshot.sentence ?? ''} onGrant={() => void send({ kind: 'grant' })} onRefuse={() => void send({ kind: 'refuse' })} />)
+      return frame(<GrantCard name={snapshot.name} sentence={snapshot.sentence ?? ''} onGrant={() => void send({ kind: 'grant', fingerprint: snapshot.fingerprint ?? '' })} onRefuse={() => void send({ kind: 'refuse' })} />)
     case 'missing':
       return frame(<PanelCenteredState title="Panneau perso introuvable" description={`Le dossier ${snapshot.appId} n’existe plus dans ~/.cate/panneaux/.`} />)
     case 'blocked':

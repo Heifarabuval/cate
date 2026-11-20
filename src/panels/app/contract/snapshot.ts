@@ -15,6 +15,8 @@ export type AppSnapshot = {
   url: string | null
   /** One sentence the view shows for `needs-grant` (what the panel may do). */
   sentence: string | null
+  /** The manifest fingerprint of the card shown while `needs-grant`: the grant op must echo it. */
+  fingerprint: string | null
   /** Why the panel is not running (`missing`, `error`, `blocked`). */
   message: string | null
   /** Counts page changes: a view reloads its webview when it moves. */

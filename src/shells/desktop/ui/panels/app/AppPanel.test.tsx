@@ -12,7 +12,7 @@ vi.mock('./AppsPage', () => ({ AppsPage: () => <div data-testid="apps-page" /> }
 const snapshot = (patch: Partial<AppSnapshot> = {}): AppSnapshot => ({
   appId: 'fusion-excel', name: 'Fusion Excel', state: 'needs-grant', url: null,
   sentence: '« Fusion Excel » s’exécute dans un cadre isolé, sans accès à vos fichiers. Il ne peut pas utiliser internet.',
-  message: null, reload: 0, ...patch
+  message: null, reload: 0, fingerprint: 'fp-1', ...patch
 })
 
 let host: HTMLDivElement
@@ -43,7 +43,7 @@ it('shows the grant card and mounts no page until Autoriser', () => {
   expect(text()).toContain('Il ne peut pas utiliser internet.')
   expect(host.querySelector('[data-testid="webview"]')).toBeNull()
   act(() => button('Autoriser').click())
-  expect(send).toHaveBeenCalledWith({ kind: 'grant' })
+  expect(send).toHaveBeenCalledWith({ kind: 'grant', fingerprint: 'fp-1' })
 })
 
 it('Refuser sends the refuse op and mounts nothing', () => {

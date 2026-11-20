@@ -28,6 +28,8 @@ const write = (file: string, content: string) => {
 const touch = (file: string, type: FsEvent['type'] = 'update') => push?.([{ path: path.join(dir, 'fusion', file), type }])
 const ctx = (connectionId: number | null = 1): OpContext => ({ clientId: 'c1', connectionId })
 const snap = (): AppSnapshot => session.snapshot()
+// The grant op carries the fingerprint of the card the user read.
+const grantOp = () => ({ kind: 'grant' as const, fingerprint: snap().fingerprint ?? 'none' })
 const settle = async () => {
   await scanner.idle()
   await session.idle()
@@ -49,6 +51,8 @@ const kit = (): SessionKit => ({
 })
 const record = (appId: string): PanelRecord => ({ id: 'p1', type: 'app', title: 'Panneau perso', fields: { appId } }) as never
 
+let pageUrl: (id: string, entry: string) => Promise<string>
+
 async function open(appId = 'fusion') {
   scanner = createAppScanner({
     dir,
@@ -60,7 +64,7 @@ async function open(appId = 'fusion') {
   session = new AppSession(kit(), record(appId), {
     scanner,
     grants,
-    server: { urlFor: async (id, entry) => `http://127.0.0.1:1/token/${id}/${entry}`},
+    server: { urlFor: (id, entry) => pageUrl(id, entry) },
     trust: trustPort(),
     clientHas: (connectionId, feature) => feature !== 'webview' || webview || connectionId === null,
     hash: (text) => `h:${text.length}:${[...text].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)}`
@@ -75,6 +79,7 @@ beforeEach(() => {
   fs.mkdirSync(dir, { recursive: true })
   trusted = true
   webview = true
+  pageUrl = async (id, entry) => `http://127.0.0.1:1/token/${id}/${entry}`
   trustListeners = []
   push = undefined
 })
@@ -95,7 +100,7 @@ it('without a grant: needs-grant with the one-sentence card and no URL', async (
 it('after the grant op: running with the page URL, and the grant is stored', async () => {
   write('cate-panel.json', manifest({ entry: 'pages/accueil.html' }))
   await open()
-  await session.handleOp({ kind: 'grant' }, ctx())
+  await session.handleOp(grantOp(), ctx())
   expect(snap()).toMatchObject({ state: 'running', url: 'http://127.0.0.1:1/token/fusion/pages/accueil.html', sentence: null })
   expect(grants.get('fusion')).toMatchObject({ appId: 'fusion', source: 'local', accepted: { network: [] } })
 })
@@ -103,7 +108,7 @@ it('after the grant op: running with the page URL, and the grant is stored', asy
 it('the refuse op takes the grant back: nothing runs again', async () => {
   write('cate-panel.json', manifest())
   await open()
-  await session.handleOp({ kind: 'grant' }, ctx())
+  await session.handleOp(grantOp(), ctx())
   await session.handleOp({ kind: 'refuse' }, ctx())
   expect(snap()).toMatchObject({ state: 'needs-grant', url: null })
   expect(grants.get('fusion')).toBeUndefined()
@@ -113,7 +118,7 @@ it('a grant is refused for a client without the webview feature (FR-016)', async
   write('cate-panel.json', manifest())
   await open()
   webview = false
-  await expect(session.handleOp({ kind: 'grant' }, ctx(2))).rejects.toThrow(/webview/)
+  await expect(session.handleOp(grantOp(), ctx(2))).rejects.toThrow(/webview/)
   expect(snap().state).toBe('needs-grant')
   expect(grants.get('fusion')).toBeUndefined()
 })
@@ -126,7 +131,7 @@ it('a missing folder is missing, and the record stays', async () => {
 it('a folder deleted while running becomes missing; it runs again when it comes back', async () => {
   write('cate-panel.json', manifest())
   await open()
-  await session.handleOp({ kind: 'grant' }, ctx())
+  await session.handleOp(grantOp(), ctx())
   fs.rmSync(path.join(dir, 'fusion'), { recursive: true })
   await touch('', 'delete')
   await settle()
@@ -148,7 +153,7 @@ it('an untrusted workspace blocks the panel, and trust releases it', async () =>
   write('cate-panel.json', manifest())
   await open()
   expect(snap()).toMatchObject({ state: 'blocked', url: null })
-  await expect(session.handleOp({ kind: 'grant' }, ctx())).rejects.toThrow(/approuvé/)
+  await expect(session.handleOp(grantOp(), ctx())).rejects.toThrow(/approuvé/)
   trusted = true
   for (const listener of trustListeners) listener({ trusted: true })
   await settle()
@@ -159,7 +164,7 @@ it('a page change while running reloads; the grant holds for a local panel', asy
   write('cate-panel.json', manifest())
   write('index.html', '<p>1')
   await open()
-  await session.handleOp({ kind: 'grant' }, ctx())
+  await session.handleOp(grantOp(), ctx())
   const before = snap().reload
   write('index.html', '<p>2')
   await touch('index.html')
@@ -170,7 +175,7 @@ it('a page change while running reloads; the grant holds for a local panel', asy
 it('wider permissions send a local panel back to needs-grant, without a reload', async () => {
   write('cate-panel.json', manifest())
   await open()
-  await session.handleOp({ kind: 'grant' }, ctx())
+  await session.handleOp(grantOp(), ctx())
   const before = snap().reload
   write('cate-panel.json', manifest({ permissions: { network: ['api.exemple.fr'] } }))
   await touch('cate-panel.json')
@@ -181,19 +186,55 @@ it('wider permissions send a local panel back to needs-grant, without a reload',
 it('a broken edit of the manifest keeps the running page and shows the error', async () => {
   write('cate-panel.json', manifest())
   await open()
-  await session.handleOp({ kind: 'grant' }, ctx())
+  await session.handleOp(grantOp(), ctx())
   write('cate-panel.json', '{ "schema": 1, ')
   await touch('cate-panel.json')
   await settle()
   expect(snap()).toMatchObject({ state: 'running', message: expect.stringContaining('JSON') })
 })
 
-it('the reload op bumps the counter only while running', async () => {
+it('shows the fingerprint of the card while it asks, and none while the page runs', async () => {
   write('cate-panel.json', manifest())
   await open()
-  await session.handleOp({ kind: 'reload' }, ctx())
-  expect(snap().reload).toBe(0)
-  await session.handleOp({ kind: 'grant' }, ctx())
-  await session.handleOp({ kind: 'reload' }, ctx())
-  expect(snap().reload).toBe(1)
+  expect(snap().fingerprint).toEqual(expect.any(String))
+  await session.handleOp(grantOp(), ctx())
+  expect(snap().fingerprint).toBeNull()
+})
+
+it('refuses a grant that does not carry the fingerprint of the card on screen', async () => {
+  write('cate-panel.json', manifest())
+  await open()
+  const shown = snap().fingerprint!
+  write('cate-panel.json', manifest({ permissions: { network: ['api.exemple.fr'] } }))
+  await touch('cate-panel.json')
+  // The user clicks on the card they read, which no longer matches the manifest.
+  await expect(session.handleOp({ kind: 'grant', fingerprint: shown }, ctx())).rejects.toThrow(/a changé/)
+  expect(grants.get('fusion')).toBeUndefined()
+  await settle()
+  expect(snap().fingerprint).not.toBe(shown)
+  await session.handleOp(grantOp(), ctx())
+  expect(grants.get('fusion')?.accepted.network).toEqual(['api.exemple.fr'])
+})
+
+it('an existing grant stops applying when the workspace stops being trusted, and applies again on trust', async () => {
+  write('cate-panel.json', manifest())
+  await open()
+  await session.handleOp(grantOp(), ctx())
+  expect(snap().state).toBe('running')
+  trusted = false
+  for (const listener of trustListeners) listener({ trusted: false })
+  await settle()
+  expect(snap()).toMatchObject({ state: 'blocked', url: null })
+  trusted = true
+  for (const listener of trustListeners) listener({ trusted: true })
+  await settle()
+  expect(snap().state).toBe('running')
+})
+
+it('says so when the page server cannot serve the entry, instead of storing a grant for nothing', async () => {
+  write('cate-panel.json', manifest())
+  await open()
+  pageUrl = async () => { throw new Error('entry outside the panels folder') }
+  await session.handleOp(grantOp(), ctx())
+  expect(snap()).toMatchObject({ state: 'error', url: null, message: expect.stringContaining('entry outside the panels folder') })
 })
