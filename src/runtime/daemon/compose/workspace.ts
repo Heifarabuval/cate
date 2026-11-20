@@ -59,6 +59,8 @@ import { AGENTS, agentsCapability } from '@services/agents/contract'
 import { agentApi } from '@services/agents/contract/api'
 import { notificationsCapability } from '@workspace/notifications/contract'
 import { createNotifications, notificationsCapabilityImpl } from '@workspace/notifications/runtime'
+import { observationCapability, observeApi } from '@workspace/observation/contract'
+import { createObservationRuntime, observationApiHandlers, observationCapabilityImpl } from '@workspace/observation/runtime'
 import { CATE_API } from '@panels/api'
 import {
   createAgentsRuntime,
@@ -117,6 +119,9 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const files = createFilesRuntime({ root, dataPaths: paths, trust, log: log.child('files') })
   const document = createDocumentService({ file: paths.document, log: log.child('document') })
   const presence = createPresence({ lifecycle: deps.lifecycle })
+  // The journal of observations: nothing is written until the person accepts (spec 003).
+  const observation = createObservationRuntime({ dir: paths.observations, settings, log: log.child('observation') })
+  offs.push(observation.watchDocument(document))
   const prepareCateDir = (cateDir: string) => ensureCateGitignore(path.dirname(cateDir))
 
   const checkoutKeys = async (): Promise<Map<string, string>> => {
@@ -340,6 +345,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
 
   offs.push(registerKernelApi(router))
   offs.push(router.registerService(agentApi, agentsRuntime.apiHandlers()))
+  offs.push(router.registerService(observeApi, observationApiHandlers(observation)))
 
   // ---- Panels -----------------------------------------------------------------
 
@@ -352,6 +358,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     connectedEditors,
     terminal,
     browserData,
+    observation,
     agents: agentsRuntime,
     cliEnv: (panelId) => cliEnv.cliEnv(panelId),
     trust,
@@ -400,6 +407,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(browserDataCapability, browserDataCapabilityImpl(browserData))
   rpc.register(agentsCapability, agentsRuntime.capability())
   rpc.register(notificationsCapability, notificationsCapabilityImpl(notifications))
+  rpc.register(observationCapability, observationCapabilityImpl(observation))
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
   rpc.register(surfaceCapability, broker.capability())
   rpc.register(apiCapability, apiCapabilityImpl(router))
@@ -455,12 +463,14 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       await sessions.restore()
       connectedEditors.reconcile()
       void seedSkills()
+      void observation.start()
     },
     /** Disposes sessions, then modules, then flushes state files. The rpc
      *  server has stopped accepting by now. */
     async shutdown(): Promise<void> {
       for (const off of offs.splice(0).reverse()) off()
       sessions.dispose()
+      await observation.dispose()
       await Promise.all(modules.map((module) => module.dispose?.()))
       broker.dispose()
       connectedEditors.dispose()

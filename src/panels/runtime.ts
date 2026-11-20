@@ -11,6 +11,7 @@ import type { DocumentService } from '@workspace/document/runtime'
 import type { FilesRuntime } from '@workspace/files/runtime'
 import type { RepositoryRuntime } from '@workspace/repository/runtime'
 import type { ConnectedEditors } from '@workspace/relations/runtime'
+import type { ObservationRuntime } from '@workspace/observation/runtime'
 import type { TerminalService } from '@services/terminal/runtime'
 import type { BrowserDataRuntime } from '@services/browser/runtime'
 import type { AgentStartPorts, AgentsRuntime } from '@services/agents/runtime'
@@ -39,6 +40,8 @@ export interface PanelServices {
   connectedEditors: ConnectedEditors
   terminal: TerminalService
   browserData: BrowserDataRuntime
+  /** What the browser panel tells the workspace's observation. */
+  observation: Pick<ObservationRuntime, 'navigated'>
   agents: AgentsRuntime
   /** The `cate` CLI env for a process the panel starts without a PTY: the
    *  socket, a token in the panel's name, `cate` on PATH. The session
@@ -145,9 +148,10 @@ const review: PanelRuntime<'root' | 'repository' | 'agents'> = (services) => {
   })
 }
 
-const browser: PanelRuntime<'browserData' | 'settings' | 'files' | 'document'> = (services) => ({
+const browser: PanelRuntime<'browserData' | 'observation' | 'settings' | 'files' | 'document'> = (services) => ({
   ...browserPanel({
     browserData: services.browserData,
+    observation: services.observation,
     settings: { get: (key) => services.settings.get(key as never) },
     files: { serveUrl: (p) => services.files.serveUrl(p), servedPath: (url) => services.files.servedPath(url) },
   }),

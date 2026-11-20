@@ -128,7 +128,7 @@ its session.
  │ services   terminal · browser · agents                                   │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ workspace  document · lifecycle · canvas · files · repository ·          │
- │            skills · relations · notifications                            │
+ │            skills · relations · notifications · observation              │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ runtime    daemon · data · transports · security · pairing · connect ·   │
  │            push · host capabilities                                      │
@@ -586,6 +586,9 @@ persisted session and document file. It is created with mode `0700`.
   terminal-logs/
   terminal-cli/         private, generated CLI launchers, stable per panel
   screenshots/
+  observations/         the journal of observations (9.8): one <AAAA-MM-JJ>.jsonl
+                        a day, kept 14 days; 0700, 0600 files; absent until the
+                        person accepts the observation
   logs/                 daemon.log (the daemon's log, rotated) and
                         daemon.out.log (the detached daemon's stdout and
                         stderr)
@@ -1213,6 +1216,7 @@ or that changes shared state, is a **workspace** setting.
 | Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
+| Observation (`workspace/observation`) | | `observationAccord` (the time the person accepted, empty before), `observationPause`, `observationExclusionsAjoutees`, `observationExclusionsRetirees` (domains), `cliObservationEnabled`, `cliObservationControlEnabled` (the `cate observe` area, off by default) |
 | Machines (`shells/desktop`) | `sshMachines` | |
 | Shortcuts (`kernel/interaction`) | `customShortcuts` | |
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
@@ -1514,6 +1518,54 @@ and jobs alive, and views reattach to their existing state when remounted.
   forget) over a client's settings.
 - **Desktop UI** (`shells/desktop/ui/workspace/relations`): the relation handle, selector and context toggle. Relation drawing
   is in the desktop UI (`shells/desktop/ui/client/layout/canvas`).
+
+### 9.8 Observation
+
+**`workspace/observation`** (spec `specs/003-apprentissage-observation`): a
+local journal of the gestures Cate sees in its own panels. It sees facts, never
+contents. Nothing in it is a keystroke, a field value, a page content or the
+output of a terminal.
+
+- **contract**: the line `{ts, kind, panelType, ref}` and its strict parser
+  (`cleanInput` on the way in, `parseObservation` on the way out: a line with
+  another field, an unknown kind or a navigation that carries a parameter is
+  refused whole); the rules that say what is never captured (`stripUrl`: no
+  query, fragment or credential, a token-like path segment becomes `*`, and
+  only http and https pages leave a trace; `isSensitiveField`: `type=password`
+  and the `cc-*`, `one-time-code`, `current-password`, `new-password`
+  autocomplete words; `isExcludedDomain`: the exclusion list and its
+  subdomains, failing closed); the default exclusion list (bank, mail, health,
+  HR, payroll, password managers); the retention (14 days, by the day in the
+  file name); the settings slice, the `observation` capability (`state`) and
+  `cate.observe.list`. It imports only contracts.
+- **runtime**: the journal (`<data>/observations/<AAAA-MM-JJ>.jsonl`, append
+  only, one file a day by the local date, folder `0700`, files `0600`, created
+  with the first line). Facts wait in a bounded in-memory queue and are written
+  together, so a panel never waits for the disk. A write that fails stops the
+  journal and says why (`state().erreur`); the app goes on. The purge runs at
+  start and then every day, from the day in the file name. `list` reads the
+  journal back, read only.
+- **Sources**: the document (a panel created, closed or linked, read from the
+  document before and after an op that can do it; a surface is the picker and
+  never a fact) and the browser panel, which tells `navigated(url)` through
+  `PanelServices.observation` for each page a tab goes to (not a reload, not a
+  hash change). A source gives a type and an id, or an address; the journal
+  cleans it again.
+- **Off until the person accepts.** `observationAccord` (the time of the
+  accord, empty before) and `observationPause` are workspace settings, read at
+  every fact and again before every write: a pause stops the writes at once and
+  drops what waited. A workspace that never accepted has no `observations/`
+  folder. The default exclusion list and the person's additions and removals
+  apply to a navigation before anything is written.
+- **Reading.** `cate observe list [--jours N]` (`agence observe list`) lists
+  the journal read only. It runs behind `cliObservationEnabled`, off by default
+  (an agent that reads the journal could send it to a model), and the handler
+  serves a terminal of the machine only: a client, a paired device included,
+  never gets the raw journal. No file of the module imports the network or a
+  model SDK (`network.test.ts`).
+- Not in this version: the recorder (clicks and field names), the detector and
+  its card, the accord screen, `erase`, and the line of a terminal command
+  (the shell hook is not clean, `specs/003-apprentissage-observation/rapport-lot-0.md`).
 
 ## 10. Services
 
@@ -2725,6 +2777,7 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`listTabs`) / session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
 | `cate.agent.*` | `start` (`linkFrom`/`relation`: relates a panel to the new agent; a refusal comes back as `relationError`, the agent still runs), `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
+| `cate.observe.*` | `list` (`--jours N`, read only; a terminal of the machine, behind `cliObservationEnabled`; a client gets `observation-list-local-only`) | workspace/observation | service |
 
 There is no `cate.panel.focus`: focus is client state. Every browser method
 is a CLI command (`cate browser snapshot`, `find`, `click`, `fill`, `type`,
@@ -2908,6 +2961,7 @@ src/
     skills/                 contract runtime/
     relations/              contract runtime/ client/
     notifications/          contract runtime/ client/   events, the gate
+    observation/            contract runtime/           the journal of gestures
   services/
     terminal/               contract runtime/ client/
     browser/                contract runtime/ client/ desktop/

@@ -48,6 +48,8 @@ export interface BrowserSessionDeps {
       subscribe(panelId: string, cb: (entries: BrowserDownloadEntry[]) => void): () => void
     }
   }
+  /** The workspace's observation (`workspace/observation`): told of each page a tab goes to. */
+  observation: { navigated(url: string): void }
   /** Workspace settings: `browserSearchEngine`, `browserNewTabBehavior`,
    *  `browserHomepage`. */
   settings: { get(key: string): unknown }
@@ -453,6 +455,8 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     if (url !== tab.url) Object.assign(patch, { url, nav: tab.nav + 1, navSource: ctx.clientId })
     if (!inPage && typeof op.title === 'string' && op.title) patch.title = op.title
     if (Object.keys(patch).length) this.patchTab(tabId, patch)
+    // A page the tab was not on: not a reload, not a restored tab, not a hash change.
+    if (!inPage && url !== tab.url) this.deps.observation.navigated(url)
     if (!inPage && isRecordableBrowserUrl(url)) this.deps.browserData.history.recordVisit(url, op.title ?? tab.title)
     if (tabId === this.state.activeTabId) {
       this.publish({ canGoBack: !!canGoBack, canGoForward: !!canGoForward, ...(inPage ? {} : { isLoading: false, loadError: null }) })
