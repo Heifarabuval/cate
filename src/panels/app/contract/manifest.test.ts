@@ -60,7 +60,7 @@ describe('parseManifest', () => {
   })
 
   it('refuses an entry that leaves the folder', () => {
-    for (const entry of ['../index.html', 'a/../../b.html', '/etc/passwd', 'C:\\x.html', 'a\\..\\b.html', '']) {
+    for (const entry of ['.', './', 'a/./b.html', '../index.html', 'a/../../b.html', '/etc/passwd', 'C:\\x.html', 'a\\..\\b.html', '']) {
       expect(error({ ...full, entry }), entry).toMatch(/entry/)
     }
     expect(parseManifest({ ...full, entry: 'pages/accueil.html' }, 'fusion-excel').ok).toBe(true)
@@ -69,6 +69,9 @@ describe('parseManifest', () => {
   it('refuses a name over 40 characters, or empty', () => {
     expect(error({ ...full, name: 'x'.repeat(41) })).toMatch(/name/)
     expect(error({ ...full, name: '' })).toMatch(/name/)
+    expect(error({ ...full, name: '   ' })).toMatch(/name/)
+    expect(error({ ...full, name: 'Deux\nlignes' })).toMatch(/name/)
+    expect(error({ ...full, name: 'Fusion\u202eXLSX' })).toMatch(/name/)
     expect(parseManifest({ ...full, name: 'x'.repeat(40) }, 'fusion-excel').ok).toBe(true)
   })
 

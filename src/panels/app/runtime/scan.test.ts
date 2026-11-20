@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import type { AppEntry } from '../contract'
 import { createAppScanner, type AppScanner, type FsEvent } from './scan'
 
+let root: string
 let dir: string
 let trusted: boolean
 let trustListeners: Array<(state: { trusted: boolean }) => void>
@@ -29,14 +30,15 @@ const create = () => {
 }
 
 beforeEach(() => {
-  dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'app-scan-')), 'panneaux')
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-scan-'))
+  dir = path.join(root, 'panneaux')
   trusted = true
   trustListeners = []
   push = undefined
 })
 afterEach(async () => {
   await scanner.dispose()
-  fs.rmSync(path.dirname(dir), { recursive: true, force: true })
+  fs.rmSync(root, { recursive: true, force: true })
 })
 
 it('lists a valid folder present at start as ready, and creates the folder when absent', async () => {
@@ -65,13 +67,33 @@ it('reports an invalid manifest as an error entry with the sentence, the others 
   expect(entry('casse')).toMatchObject({ status: 'error', error: expect.stringContaining('JSON') })
 })
 
-it('ignores hidden folders, plain files and symlinked folders', async () => {
+it('ignores hidden folders and plain files, and reports a symlinked folder instead of hiding it', async () => {
   write('.cache', 'cate-panel.json', manifest('.cache'))
   fs.writeFileSync(path.join(dir, 'notes.txt'), 'x')
   write('reel', 'cate-panel.json', manifest('reel'))
   fs.symlinkSync(path.join(dir, 'reel'), path.join(dir, 'lien'))
   await create().start()
-  expect(scanner.list().map((item) => item.id)).toEqual(['reel'])
+  expect(scanner.list().map((item) => item.id)).toEqual(['lien', 'reel'])
+  expect(entry('lien')).toMatchObject({ status: 'error', error: expect.stringContaining('lien symbolique') })
+  expect(entry('reel')?.status).toBe('ready')
+})
+
+it('follows the real paths the watcher reports when the panels folder is reached through a symlink', async () => {
+  fs.mkdirSync(path.join(root, 'vrai', 'panneaux', 'a'), { recursive: true })
+  const real = fs.realpathSync(path.join(root, 'vrai'))
+  fs.writeFileSync(path.join(real, 'panneaux', 'a', 'cate-panel.json'), manifest('a'))
+  fs.symlinkSync(real, path.join(root, 'lien-racine'))
+  dir = path.join(root, 'lien-racine', 'panneaux')
+  await create().start()
+  const pages: string[] = []
+  scanner.onPage((id) => pages.push(id))
+  fs.writeFileSync(path.join(real, 'panneaux', 'a', 'index.html'), '<p>2')
+  await push?.([{ path: fs.realpathSync(path.join(dir, 'a', 'index.html')), type: 'update' }])
+  expect(pages).toEqual(['a'])
+  fs.mkdirSync(path.join(real, 'panneaux', 'b'))
+  fs.writeFileSync(path.join(real, 'panneaux', 'b', 'cate-panel.json'), manifest('b'))
+  await push?.([{ path: path.join(real, 'panneaux', 'b', 'cate-panel.json'), type: 'create' }])
+  expect(entry('b')?.status).toBe('ready')
 })
 
 it('adds a folder created while running and tells the subscribers', async () => {

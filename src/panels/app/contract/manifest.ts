@@ -34,6 +34,8 @@ export type ManifestResult =
 export const DEFAULT_APP_ICON: IconName = 'layout-dashboard'
 const DEFAULT_SIZE = { width: 900, height: 600 }
 
+// Control characters and the bidirectional overrides: a name is drawn in the menus and the frame.
+const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/
 // A host source of a CSP: no scheme, path, space or `;`, so a value can never
 // add a directive. `*.host` and `host:port` are allowed.
@@ -58,7 +60,7 @@ function strings(value: unknown, field: string, each?: (item: string) => boolean
 
 function entryPath(value: unknown): string {
   if (value === undefined) return 'index.html'
-  const bad = typeof value !== 'string' || !value || value.startsWith('/') || /^[a-z]:/i.test(value) || value.includes('\\') || value.split('/').some((part) => part === '..' || part === '')
+  const bad = typeof value !== 'string' || !value || value.startsWith('/') || /^[a-z]:/i.test(value) || value.includes('\\') || value.split('/').some((part) => part === '..' || part === '.' || part === '')
   return bad ? refuse('entry doit être un chemin relatif au dossier, sans « .. »') : (value as string)
 }
 
@@ -80,7 +82,7 @@ export function parseManifest(raw: unknown, folderName: string): ManifestResult 
     if (raw.schema !== 1) refuse('version de format inconnue')
     if (typeof raw.id !== 'string' || !KEBAB.test(raw.id)) refuse('id doit être en kebab-case (a-z, 0-9, tirets)')
     if (raw.id !== folderName) refuse(`id « ${String(raw.id)} » différent du nom du dossier « ${folderName} »`)
-    if (typeof raw.name !== 'string' || raw.name.length < 1 || raw.name.length > 40) refuse('name doit faire de 1 à 40 caractères')
+    if (typeof raw.name !== 'string' || !raw.name.trim() || raw.name.length > 40 || UNSAFE_TEXT.test(raw.name)) refuse('name doit faire de 1 à 40 caractères, sans retour à la ligne ni caractère de contrôle')
     if (typeof raw.description !== 'string' || !raw.description.trim()) refuse('description doit être une phrase')
 
     let icon: IconName = DEFAULT_APP_ICON
