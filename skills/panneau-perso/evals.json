@@ -1,0 +1,36 @@
+{
+  "skill_name": "panneau-perso",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "fais-moi un panneau qui prévisualise un Excel",
+      "expected_output": "Un dossier ~/.cate/panneaux/apercu-excel/ avec cate-panel.json (schema 1, id égal au nom du dossier, name, description, permissions.network vide), index.html, app.js, theme.css et xlsx.full.min.js copié une seule fois. Aucun script en ligne, aucun CDN dans la page, aucun dossier créé dans .cate/panels. L'agent dit que le panneau est dans le menu du canvas et qu'il demande une autorisation au premier lancement.",
+      "expected_manifest": {
+        "schema": 1,
+        "id": "apercu-excel",
+        "name": "Aperçu Excel",
+        "description": "Affiche les premières lignes d'un fichier Excel choisi à la main.",
+        "icon": "table",
+        "entry": "index.html",
+        "size": { "width": 900, "height": 600 },
+        "permissions": { "files": { "read": [] }, "network": [], "links": { "receive": [], "emit": [] } },
+        "tasks": []
+      },
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "ajoute un panneau qui convertit une date en jour de la semaine",
+      "expected_output": "Un dossier ~/.cate/panneaux/jour-de-la-semaine/ avec un manifeste valide, sans bibliothèque ni réseau, une page et un app.js.",
+      "expected_manifest": {
+        "schema": 1,
+        "id": "jour-de-la-semaine",
+        "name": "Jour de la semaine",
+        "description": "Donne le jour de la semaine d'une date saisie.",
+        "icon": "calendar",
+        "permissions": { "network": [] }
+      },
+      "files": []
+    }
+  ]
+}
