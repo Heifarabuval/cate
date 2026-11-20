@@ -2414,9 +2414,17 @@ the runtime's machine on every client.
   (`answerSignIn`). Grants live in the snapshot only (never persisted), are
   copied again after a remount, and end with the panel: the view clears the
   partition on unmount. No cookie value crosses the runtime protocol, the CLI
-  or the logs (only counts and the domain). Any other partition (a custom
-  panel's `app-<name>`) gets shared sign-ins only if its creator calls
-  `beforeFirstMount`; the workspace partition is the only one that does.
+  or the logs (only counts and the domain). The workspace partition is the
+  only one that gets `beforeFirstMount`.
+  A custom panel (`app` type, spec 008) mounts its page in its own in-memory
+  partition, `app-<runtimeId>-<appId>`: prepared by main with the workspace's
+  network policy (`appPartitionFor`, same proxy, re-prepared on every policy
+  change and on refresh), never given `beforeFirstMount`, never `persist:`.
+  `webSecurity` declares it as a guest kind (`guestKinds`: the partition
+  prefix, its own preload `appPanel.js`, `browser: false`): its session denies
+  every permission, opens no popup, keeps no browser user agent and sends no
+  browser shortcut. The runtime serves its page from `~/.cate/panneaux/<id>/`
+  under a strict content security policy.
 - **iOS.** WebKit connects to loopback hosts directly and never through a
   proxy, so there is no web proxy: before a page of the workspace loads a
   loopback URL (any frame), the app listens on the phone's own loopback at

@@ -203,10 +203,10 @@ describe('web partitions', () => {
 
 describe('custom panel partitions (spec 008)', () => {
   function appSetup() {
-    const sessions = new Map<string, { setProxy: ReturnType<typeof vi.fn<(config: Electron.ProxyConfig) => Promise<void>>>; closeAllConnections: ReturnType<typeof vi.fn<() => Promise<void>>> }>()
+    const sessions = new Map<string, { setProxy: ReturnType<typeof vi.fn<(config: Electron.ProxyConfig) => Promise<void>>>; closeAllConnections: ReturnType<typeof vi.fn<() => Promise<void>>>; clearStorageData: () => Promise<void> }>()
     const partitions = createWebPartitions({
       session: (name) => {
-        if (!sessions.has(name)) sessions.set(name, { setProxy: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}) })
+        if (!sessions.has(name)) sessions.set(name, { setProxy: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}), clearStorageData: async () => {} })
         return sessions.get(name)!
       },
       upstream: () => undefined,
@@ -250,7 +250,10 @@ describe('custom panel partitions (spec 008)', () => {
     const { partitions, sessions } = appSetup()
     const name = await partitions.appPartitionFor(RUNTIME, 'notes', dialer(1, vi.fn()), false)
     const calls = sessions.get(name)!.setProxy.mock.calls.length
+    await partitions.close()
+    expect(partitions.isPrepared(name)).toBe(false)
     await partitions.refresh()
+    expect(partitions.isPrepared(name)).toBe(true)
     expect(sessions.get(name)!.setProxy.mock.calls.length).toBeGreaterThan(calls)
     await expect(partitions.appPartitionFor('not a runtime', 'notes', dialer(1, vi.fn()), false)).rejects.toThrow()
     await expect(partitions.appPartitionFor(RUNTIME, '../notes', dialer(1, vi.fn()), false)).rejects.toThrow()
