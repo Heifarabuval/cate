@@ -141,7 +141,7 @@ Total restant : environ 1,25 j d'agent, dont 0,5 j dans le fork. 5-A et 5-B part
 
 Les specs 003 (observation, lots 0 et 1 mergés), 004 (cercle vertueux, lot 2 mergé), 005 (pratiques réglables), 006 (coût et attente) et 007 (panneaux perso partagés) s'écrivent ou s'implémentent en parallèle. Les lots de cette spec écrivent trois fichiers seulement : `tools/agence/test_quickstart.py` (nouveau), `specs/002-orchestrateur-portable/rapport-final.md` (nouveau) et `specs/002-orchestrateur-portable/quickstart.md`. Aucun n'est touché par une autre epic. Le risque est dans ce que le test du lot 5-A **lit** :
 
-**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
+**Ordre de merge et conflits entre les 4 specs** : voir `specs/recoupement-2026-11-20.md` (PR #110) (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
 
 | Fichier lu par le lot 5-A | Autre epic qui peut le changer | Effet | Règle |
 |---|---|---|---|
