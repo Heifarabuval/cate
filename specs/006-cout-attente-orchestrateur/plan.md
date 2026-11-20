@@ -4,7 +4,7 @@
 
 ## Résumé
 
-L'issue #100 pose cinq pistes. La mesure (mesure.md) dit que l'attente passive pèse 8,1 % des jetons lus d'un orchestrateur, que les retours de Stop hook (`/goal`) en pèsent 13,9 %, et que la taille du contexte (médiane 220 000) multiplie tout le reste. Le plan retient **la piste 2, avec la piste 1 comme filet, plus une règle sur `/goal`**, écrites dans le skill `orchestrateur`. Aucun code produit. Un script de mesure en lecture seule, avant et après.
+L'issue #100 pose cinq pistes. La mesure (mesure.md) dit que l'attente passive pèse 11,35 % des jetons lus d'un orchestrateur, que les retours de Stop hook (`/goal`) en pèsent 13,9 %, et que la taille du contexte (médiane 220 000) multiplie tout le reste. Le plan retient **la piste 2, avec la piste 1 comme filet, plus une règle sur `/goal`**, écrites dans le skill `orchestrateur`. Aucun code produit. Un script de mesure en lecture seule, avant et après.
 
 ## Comparaison des pistes
 
@@ -12,8 +12,8 @@ Gain = borne haute sur l'échantillon de 442,7 M de jetons lus (mesure.md). Coû
 
 | # | Piste | Gain mesuré (borne haute) | Coût d'implémentation | Cas chiffré | Verdict |
 |---|---|---|---|---|---|
-| 1 | `cate agent wait` en fond | 35,9 M (8,1 %), moins un passage par 10 min | 1 ligne de skill | 25 min d'attente : 25 passages à 60 s (cas de l'issue, ~3,5 M) contre au plus 3 passages à 600 s (~0,4 M à 140 000 par passage) | Retenue comme **filet** |
-| 2 | Ne pas attendre : finir le tour, les rapports arrivent par `cate agent send` | 35,9 M (8,1 %), plus les retours de Stop hook s'il n'y a pas de `/goal` (jusqu'à 61,5 M, 13,9 %) | 2 lignes de skill, aucun code : le canal existe, c'est la ligne « Fin » du brief | 25 min d'attente : 0 passage ; 1 tour utile par rapport (3 agents = 3 tours) | **Retenue** |
+| 1 | `cate agent wait` en fond | 50,3 M (11,35 %), moins un passage par 10 min | 1 ligne de skill | 25 min d'attente : 25 passages à 60 s (cas de l'issue, ~3,5 M) contre au plus 3 passages à 600 s (~0,4 M à 140 000 par passage) | Retenue comme **filet** |
+| 2 | Ne pas attendre : finir le tour, les rapports arrivent par `cate agent send` | 50,3 M (11,35 %), plus les retours de Stop hook s'il n'y a pas de `/goal` (jusqu'à 61,3 M, 13,9 %) | 2 lignes de skill, aucun code : le canal existe, c'est la ligne « Fin » du brief | 25 min d'attente : 0 passage ; 1 tour utile par rapport (3 agents = 3 tours) | **Retenue** |
 | 3 | `/compact` avant l'attente, session neuve par vague | non mesuré ; borne théorique : contexte ÷ 2 = jetons lus ÷ 2 sur tous les tours suivants (65,7 % sont de la boucle d'outils) | déjà écrit : spec 004, T1 (`/compact`, seuil 150 000) et T4 (`/clear`, inactif) | contexte 220 000 → 110 000 : 110 000 jetons de moins par tour, sur 1 730 tours | **Hors de cette spec** : fait par la spec 004, à mesurer par son bilan |
 | 4 | `agence wait` côté régisseur | égal à la piste 1 (même plafond 600 s, même blocage) | code dans `tools/agence/agence.py` : sous-commande, tests, doc, conflit avec les specs 004 et 005 | inchangé : un appel bloquant d'au plus 600 s reste un passage | **Rejetée** : depuis la PR #85 `cate agent wait` fait déjà ce plafond ; la reprendre si I1 reste haut au lot 4 |
 | 5 | Modèle moins cher pour l'attente | non mesuré ; coût par jeton inconnu (`costUsd` null) | changer de modèle en cours de session : le choix est celui de l'humain (mémoire du projet : le modèle de l'orchestrateur n'est pas décidé par un agent) | n/a | **Rejetée** : on retire le passage plutôt que de le rendre moins cher |
@@ -68,4 +68,4 @@ Lots 1 et 2 ne partagent aucun fichier : ils partent ensemble. Le lot 3 (règle)
 
 ## Estimation de coût
 
-Jetons de l'implémentation : **non chiffré** (aucune mesure d'un lot de ce type). Gain : en jetons lus, borne haute 97,4 M sur 442,7 M (22 %) = 35,9 M de passages d'attente + 61,5 M de retours de Stop hook, **si** aucun `/goal` n'est posé ; en euros : non chiffré (`costUsd` null, SC-006).
+Jetons de l'implémentation : **non chiffré** (aucune mesure d'un lot de ce type). Gain : en jetons lus, borne haute 111,6 M sur 442,7 M (25,2 %) = 50,3 M de passages d'attente + 61,3 M de retours de Stop hook, **si** aucun `/goal` n'est posé ; en euros : non chiffré (`costUsd` null, SC-006).
