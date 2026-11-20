@@ -18,7 +18,15 @@ const h = vi.hoisted(() => {
     setPermissionCheckHandler: vi.fn(),
     webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() },
   }
-  return { app, guestSession, appSession, fromPartition: vi.fn((partition: string) => (partition.startsWith('app-') ? appSession : guestSession)) }
+  // A session of its own for the partitions named `-fresh<n>`: a locked session registers its handlers once.
+  const fresh = new Map<string, typeof appSession>()
+  const freshSession = (partition: string) => {
+    if (!fresh.has(partition)) {
+      fresh.set(partition, { ...appSession, setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn(), onBeforeRequest: vi.fn() } })
+    }
+    return fresh.get(partition)!
+  }
+  return { app, guestSession, appSession, fresh, fromPartition: vi.fn((partition: string) => (partition.includes('-fresh') ? freshSession(partition) : partition.startsWith('app-') ? appSession : guestSession)) }
 })
 vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition } }))
 vi.mock('@services/browser/desktop', () => ({ isAgentKeyInput: () => false, sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
@@ -71,6 +79,57 @@ describe('web security', () => {
     ;(h.appSession.setPermissionRequestHandler.mock.calls[0][0] as (...args: unknown[]) => void)({}, 'media', grant)
     expect(grant.mock.calls).toEqual([[false], [false]])
     expect((h.appSession.setPermissionCheckHandler.mock.calls[0][0] as () => boolean)()).toBe(false)
+  })
+
+  describe('a custom panel page never leaves the origin that serves it', () => {
+    const SRC = 'http://127.0.0.1:4000/token/notes/index.html'
+    let n = 0
+    const open = () => {
+      const partition = `app-abcdefghijklmnop-fresh${++n}`
+      attach(partition, SRC)
+      const session = h.fresh.get(partition)!
+      const guest = Object.assign(contents('webview'), { session })
+      h.app.emit('web-contents-created', {}, guest)
+      const request = (resourceType: string, url: string) => {
+        const callback = vi.fn()
+        const handler = session.webRequest.onBeforeRequest.mock.calls[0][0] as (details: unknown, callback: (response: { cancel?: boolean }) => void) => void
+        handler({ resourceType, url }, callback)
+        return callback.mock.calls[0][0] as { cancel?: boolean }
+      }
+      return { guest, request }
+    }
+
+    it('cancels a main frame request to another site or port, redirects included, and keeps its own origin', () => {
+      const { request } = open()
+      expect(request('mainFrame', SRC).cancel).toBeFalsy()
+      expect(request('mainFrame', 'http://127.0.0.1:4000/token/notes/pages/b.html').cancel).toBeFalsy()
+      for (const url of ['https://evil.example/?d=secret', 'http://127.0.0.1:4001/x', 'http://localhost:4000/x', 'data:text/html,hi', 'about:blank', 'file:///etc/passwd']) {
+        expect(request('mainFrame', url).cancel, url).toBe(true)
+      }
+    })
+
+    it('lets a script request to a declared host through: the policy of the page decides', () => {
+      const { request } = open()
+      expect(request('xhr', 'https://api.exemple.fr/data').cancel).toBeFalsy()
+    })
+
+    it('stops will-navigate and will-redirect to another origin before the request leaves', () => {
+      const { guest } = open()
+      for (const eventName of ['will-navigate', 'will-redirect']) {
+        const bad = { preventDefault: vi.fn() }
+        guest.emit(eventName, bad, 'https://evil.example/?d=secret')
+        expect(bad.preventDefault, eventName).toHaveBeenCalled()
+        const good = { preventDefault: vi.fn() }
+        guest.emit(eventName, good, 'http://127.0.0.1:4000/token/notes/b.html')
+        expect(good.preventDefault, eventName).not.toHaveBeenCalled()
+      }
+    })
+
+    it('opens no window from the page', () => {
+      const { guest } = open()
+      const handler = guest.setWindowOpenHandler.mock.calls[0][0] as (details: { url: string }) => { action: string }
+      expect(handler({ url: 'https://evil.example' })).toEqual({ action: 'deny' })
+    })
   })
 
   it('does not turn a custom panel popup into a browser tab, nor its keys into browser shortcuts', () => {
