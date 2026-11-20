@@ -31,7 +31,7 @@ import { BrowserPasswordManagerPage, useBrowserData } from '../../services/brows
 import type { BrowserOp, BrowserSnapshot, BrowserViewport } from '@panels/browser/contract'
 import { BROWSER_HISTORY_URL, BROWSER_PASSWORD_MANAGER_URL, isBrowserInternalPage, stepBrowserZoom } from '@panels/browser/contract'
 import { BrowserPageHost, type BrowserGuest } from '@panels/browser/desktop'
-import { registerSurface } from '@client/host'
+import { registerSurface, SurfaceStaleError } from '@client/host'
 import { runPageOp } from './surfaces'
 import { AgentCursorOverlay } from './parts/AgentCursorOverlay'
 import { BrowserDownloadsPopover, type BrowserPanelDownload } from './parts/BrowserDownloadsPopover'
@@ -187,13 +187,15 @@ export default function BrowserView({ workspaceId, panelId, snapshot, send, visi
   const agent = useAgentPartition(workspacePartition, panelId, agentDriven)
   const partition = agentDriven ? agent : workspacePartition
   if (!snapshot || !partition) return <PanelCenteredState icon={<Spinner size={18} />} title="Loading" />
-  return <BrowserContent workspaceId={workspaceId} panelId={panelId} partition={partition} snapshot={snapshot} send={send} visible={visible} focused={focused} />
+  return <BrowserContent workspaceId={workspaceId} panelId={panelId} partition={partition} isAgentPartition={agentDriven} snapshot={snapshot} send={send} visible={visible} focused={focused} />
 }
 
-function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visible, focused }: {
+function BrowserContent({ workspaceId, panelId, partition, isAgentPartition, snapshot, send, visible, focused }: {
   workspaceId: string
   panelId: string
   partition: string
+  /** The partition is the panel's own in-memory one, not the workspace's. */
+  isAgentPartition: boolean
   snapshot: BrowserSnapshot
   send: (op: BrowserOp) => Promise<unknown>
   visible: boolean
@@ -271,8 +273,15 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   }, [host])
   useEffect(() => {
     if (!ops) return
-    return registerSurface(workspaceId, panelId, (request) => runPageOp({ host, ops }, request))
-  }, [workspaceId, panelId, host, ops])
+    return registerSurface(workspaceId, panelId, (request) => {
+      // An agent operation never runs on the shared partition, whatever order
+      // the snapshot and the request arrived in: it waits for the swap.
+      if ((request.args as { agentDriven?: boolean } | undefined)?.agentDriven === true && !isAgentPartition) {
+        throw new SurfaceStaleError('agent operation on the shared partition')
+      }
+      return runPageOp({ host, ops }, request)
+    })
+  }, [workspaceId, panelId, host, ops, isAgentPartition])
   useSyncExternalStore(host.subscribe, host.getVersion)
 
   useLayoutEffect(() => { host.update(snapshot) }, [host, snapshot])

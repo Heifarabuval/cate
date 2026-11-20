@@ -5,7 +5,7 @@ import { COMPATIBILITY_VERSION, createMemoryPortPair } from '@kernel/rpc/contrac
 import { RpcServer, type StreamSink } from '@kernel/rpc/runtime'
 import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
 import { surfaceCapability, type SurfaceRequest } from '@panels/framework/contract'
-import { registerSurface, serveSurfaces } from './surfaces'
+import { registerSurface, runSurfaceRequest, serveSurfaces, SurfaceStaleError } from './surfaces'
 
 describe('serveSurfaces', () => {
   it('serves page requests after an incompatible runtime is replaced, and after reconnecting', async () => {
@@ -51,5 +51,20 @@ describe('serveSurfaces', () => {
       rpc.close()
       for (const server of servers) server.close()
     }
+  })
+})
+
+describe('runSurfaceRequest', () => {
+  it('moves a request a handler calls stale to the next handler of that panel', async () => {
+    const stop = registerSurface('stale-ws', 'p1', () => { throw new SurfaceStaleError('on the wrong partition') })
+    const request = { requestId: 1, panelId: 'p1', op: 'page.ready' } as SurfaceRequest
+    let settled = false
+    const result = runSurfaceRequest('stale-ws', request).finally(() => { settled = true })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    const stopNext = registerSurface('stale-ws', 'p1', () => 'on the right one')
+    await expect(result).resolves.toBe('on the right one')
+    stop()
+    stopNext()
   })
 })

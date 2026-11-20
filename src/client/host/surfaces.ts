@@ -27,31 +27,48 @@ export function registerSurface(workspaceId: string, panelId: string | null, han
   return () => { if (handlers.get(key) === handler) handlers.delete(key) }
 }
 
+/** A handler throws this when the request cannot run on its surface as it is
+ *  now (a view about to be replaced): the request waits for the panel's next
+ *  handler instead of failing. */
+export class SurfaceStaleError extends Error {}
+
 /** Runs one request on its surface, mounting the panel's view if needed. */
 export async function runSurfaceRequest(workspaceId: string, request: SurfaceRequest): Promise<unknown> {
   const key = keyOf(workspaceId, request.panelId)
-  const existing = handlers.get(key)
-  if (existing) return existing(request)
-  if (request.panelId === null) throw new RpcError('no-renderer', `This client cannot run ${request.op}`)
-  const release = demandSurface(workspaceId, request.panelId)
+  let stale: SurfaceHandler | null = null
+  let release: (() => void) | null = null
+  const nextHandler = () => new Promise<void>((resolve, reject) => {
+    const check = () => {
+      const found = handlers.get(key)
+      if (!found || found === stale) return
+      clearTimeout(timer)
+      waiters.delete(check)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      waiters.delete(check)
+      reject(new RpcError('no-renderer', stale ? 'The panel did not move to the partition this operation needs' : 'The panel is not open on this client'))
+    }, MOUNT_WAIT_MS)
+    waiters.add(check)
+  })
   try {
-    const handler = await new Promise<SurfaceHandler>((resolve, reject) => {
-      const check = () => {
-        const found = handlers.get(key)
-        if (!found) return
-        clearTimeout(timer)
-        waiters.delete(check)
-        resolve(found)
+    for (;;) {
+      const existing = handlers.get(key)
+      if (existing && existing !== stale) {
+        try {
+          return await existing(request)
+        } catch (err) {
+          if (!(err instanceof SurfaceStaleError)) throw err
+          stale = existing
+          continue
+        }
       }
-      const timer = setTimeout(() => {
-        waiters.delete(check)
-        reject(new RpcError('no-renderer', 'The panel is not open on this client'))
-      }, MOUNT_WAIT_MS)
-      waiters.add(check)
-    })
-    return await handler(request)
+      if (request.panelId === null) throw new RpcError('no-renderer', `This client cannot run ${request.op}`)
+      release ??= demandSurface(workspaceId, request.panelId)
+      await nextHandler()
+    }
   } finally {
-    release()
+    release?.()
   }
 }
 
