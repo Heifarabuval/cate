@@ -104,3 +104,12 @@ it('forgets every ref when the tab or panel closes its page', async () => {
   for (const [event, listener] of contents.once.mock.calls as [string, () => void][]) if (event === 'destroyed') listener()
   expect({ registered: runtime.isRegistered(80), refs: driver.refs.size, stableIds: driver.stableIds.size }).toEqual({ registered: false, refs: 0, stableIds: 0 })
 })
+
+it('keeps every id of one large snapshot: a read never evicts its own elements', async () => {
+  const { runtime, observe, execute, state } = await setupGuest()
+  const COUNT = 6000
+  state.nodes = Array.from({ length: COUNT }, (_, i) => ({ backendDOMNodeId: 1_000 + i, role: { value: 'button' }, name: { value: `Item ${i}` } }))
+  const read = await observe()
+  expect(retainedRefs(runtime)).toEqual({ refs: COUNT, stableIds: COUNT })
+  expect(await execute('click', { observationId: read.observationId, target: read.elements[0].id })).toHaveProperty('result')
+})
