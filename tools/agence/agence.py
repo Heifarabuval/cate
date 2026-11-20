@@ -5,7 +5,7 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents règle le plafond d'agents vivants (défaut 4)
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
   agence need add|panel|done|drop|list   add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
@@ -51,7 +51,6 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-MAX_AGENTS = 4  # plafond par défaut d'agents vivants (en plein tour ou en attente) ; agence start --max-agents le change pour le projet
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')  # ceux que cate agent start --effort déclare
 JOURS_JOURNAL = 14  # rétention du journal d'observation (RETENTION_DAYS dans src/workspace/observation/contract/retention.ts)
 AVERTISSEMENT_REFS = ('agence : attention, un terminal Cate enregistre la sortie de ses commandes (terminal-logs/) : '
@@ -165,8 +164,22 @@ def empty():
 	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None}
 
 
+def politique(agir=False):
+	"""Politique effective (pratiques.py). agir : une commande qui agit selon elle refuse (Env) une politique en erreur."""
+	import pratiques  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
+	pol = pratiques.charger(root(), os.environ.get('HOME'))
+	if agir and pol['erreur']:
+		raise Env(f"pratiques invalides, rien fait : {pol['erreur']} (agence pratiques check)")
+	return pol
+
+
+def valeurs(st):
+	"""Valeurs publiées par le dernier tour du régisseur, sinon lues dans les fichiers."""
+	return (st.get('pratiques') or politique())['valeurs']
+
+
 def plafond(st):
-	return st.get('maxAgents', MAX_AGENTS)  # clé absente d'un état ancien : plafond par défaut
+	return valeurs(st)['agents.max']  # agents vivants, en plein tour ou en attente ; la clé maxAgents d'un état ancien est ignorée
 
 
 def load(path=None):
@@ -448,14 +461,18 @@ def jours_valides(v):
 
 def cmd_start(a):
 	require_cate()
+	if a.max_agents is not None:
+		import pratiques  # voir politique()
+		try:
+			pratiques.regler(root(), os.environ.get('HOME'), 'agents.max', a.max_agents)
+		except pratiques.Invalide as err:
+			raise Env(f'pratiques : {err}')
 	live = live_rows()
 	if live is None:
 		raise Refus('cate panel list illisible')
 	with tx() as st:
 		if a.notify is not None:
 			st['notify'] = a.notify
-		if a.max_agents is not None:
-			st['maxAgents'] = a.max_agents
 		p = st['panels']
 		orch = p.get('orchestrator')
 		if orch not in live:
@@ -666,16 +683,17 @@ def drop_draft(st, did):
 
 
 def slack_token():
-	"""SLACK_USER_TOKEN de Hermes (~/.hermes/.env), jamais affiché ni copié."""
-	path = os.environ.get('HERMES_ENV') or os.path.expanduser('~/.hermes/.env')
-	try:
-		with open(path) as f:
+	"""Jeton Slack de l'utilisateur (réglage envoi.slack) : la variable nommée, sinon le fichier .env nommé ; jamais affiché ni copié."""
+	v = politique()['valeurs']
+	var, fichier = v['envoi.slack.variable'], v['envoi.slack.fichier']
+	if os.environ.get(var):
+		return os.environ[var]
+	if fichier:
+		with contextlib.suppress(OSError), open(os.path.expanduser(fichier)) as f:
 			for line in f:
-				if line.startswith('SLACK_USER_TOKEN='):
+				if line.startswith(var + '='):
 					return line.split('=', 1)[1].strip().strip('"\'')
-	except OSError:
-		pass
-	raise Refus(f'SLACK_USER_TOKEN absent de {path}')
+	raise Refus(f"{var} absent de l'environnement" + (f' et de {fichier}' if fichier else ' (réglage envoi.slack.fichier pour un fichier .env)'))
 
 
 def _slack(method, payload, token):
@@ -698,7 +716,7 @@ SLACK = _slack
 
 
 def send_slack(d):
-	"""Poste le texte figé avec le token utilisateur de Hermes (le connecteur MCP ajoute « Envoyé avec Claude ») ; rend le lien."""
+	"""Poste le texte figé avec le jeton Slack de l'utilisateur, réglage envoi.slack (le connecteur MCP ajoute « Envoyé avec Claude ») ; rend le lien."""
 	channel = d['cible'].split(':', 1)[1]
 	token = slack_token()
 	r = SLACK('chat.postMessage', {'channel': channel, 'text': d['texte'], 'unfurl_links': 'false', 'unfurl_media': 'false'}, token)
@@ -736,8 +754,12 @@ def send_gh(d):
 
 # ---------- questions ----------
 
-MERGE_OPTIONS = [{'label': 'Merger (rebase)', 'detail': 'gh pr merge --rebase'},
-                 {'label': 'Demander des changements', 'detail': "l'agent reprend la PR"}]
+def merge_options(methode):
+	"""Options d'une question de merge ; methode : livraison.methode de la politique."""
+	return [{'label': f'Merger ({methode})', 'detail': f'gh pr merge --{methode}'},
+	        {'label': 'Demander des changements', 'detail': "l'agent reprend la PR"}]
+
+
 CONFLIT = 'conflit avec la base'
 MOTIFS = {'DIRTY': CONFLIT, 'BLOCKED': 'revue ou checks requis', 'UNSTABLE': 'checks non verts'}
 CHECK_ECHEC = ('FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED')
@@ -845,7 +867,12 @@ def cmd_ask(a):
 	if a.merge:
 		if not re.match(r'^[\w.-]+/[\w.-]+#\d+$', a.merge):
 			raise Refus('--merge attend owner/repo#N')
-		options = MERGE_OPTIONS
+		v = politique(agir=True)['valeurs']
+		for cle, interdit, motif in (('livraison.mode', 'main', 'pas de PR à merger'),
+		                             ('livraison.merge', 'dehors', "l'humain merge hors de l'agence")):
+			if v[cle] == interdit:
+				raise Env(f'pratiques : {cle} = {interdit} : {motif} ; pose la question sans --merge')
+		options = merge_options(v['livraison.methode'])
 	else:
 		options = [dict(zip(('label', 'detail'), (o.split('|', 1) + [''])[:2])) for o in a.option or []]
 		if not 2 <= len(options) <= 4:
@@ -1022,8 +1049,12 @@ def click(path, form):
 				if locks and (form.get('force') or [''])[0] != '1':
 					return 409, 'Merge grisé : ' + ' ; '.join(locks) + ' (« Merger quand même » pour passer outre).'
 				forced = locks
+				try:
+					methode = politique(agir=True)['valeurs']['livraison.methode']
+				except Env as err:
+					return 409, f'Merge refusé : {err}'
 				repo, num = q['action'][len('merge:'):].split('#')
-				code, out, err = RUN(['gh', 'pr', 'merge', num, '-R', repo, '--rebase'])
+				code, out, err = RUN(['gh', 'pr', 'merge', num, '-R', repo, f'--{methode}'])
 				if code != 0:
 					return 409, f"Merge refusé : {(err or out).strip()}"
 				evidence = f'https://github.com/{repo}/pull/{num}'
@@ -1284,7 +1315,7 @@ def page_ask(st, qid):
 			force = i == 0 and locks
 			confirm = ' onsubmit="return confirm(' + e(json.dumps('Merger quand même, malgré :\n' + '\n'.join(f'- {x}' for x in locks), ensure_ascii=False)) + ')"'
 			reco = '' if force else ' reco' if i == 0 else ''
-			label = 'Merger quand même (rebase)' if force else o['label'] + (' (Recommandé)' if i == 0 else '')
+			label = f"Merger quand même ({valeurs(st)['livraison.methode']})" if force else o['label'] + (' (Recommandé)' if i == 0 else '')
 			return ((('<p class="meta">Merger grisé :</p><ul>' + ''.join(f'<li>{e(x)}</li>' for x in locks) + '</ul>') if force else '')
 			        + f'<form method="post" action="/ask/{qid}" style="display:block"{confirm if force else ""}><input type="hidden" name="token" value="{TOKEN}">'
 			        f'<input type="hidden" name="choice" value="{i}">{FORCE if force else ""}'
@@ -1916,8 +1947,19 @@ def prerequis(hors_cate=False):
 	except (OSError, ValueError) as err:
 		coupes, detail, commande = [None], f'{fichier or "réglages du workspace"} illisible : {err}', SETTINGS_HINT
 	point('réglages CLI', not coupes, True, detail, commande)
+	import pratiques  # voir politique()
+	pol = politique()
+	if pol['erreur']:
+		point('pratiques', False, True, pol['erreur'], 'agence pratiques check')
+	else:
+		fichiers = [c for c in (pratiques.fichier_dev(os.environ.get('HOME')), pratiques.fichier_projet(root())) if c and os.path.isfile(c)]
+		point('pratiques', bool(fichiers), True, f"{pol['preset']} ({pol['sources']['preset'] if fichiers else 'aucun fichier'})",
+		      'agence pratiques preset <nom> --dev', info=True)
+	v = pol['valeurs']
+	gh_requis = v['livraison.mode'] == 'pr' or v['issue'] == 'obligatoire' or bool({'pr-mergee', 'ci-verte'} & set(v['preuve'] or ()))
 	code, _, err = RUN(['gh', 'auth', 'status'], timeout=10)
-	point('gh', code == 0, True, 'gh auth status' + ('' if code == 0 else f' : {" ".join(err.split())[:120]}'), 'gh auth login')
+	point('gh', code == 0, gh_requis, 'gh auth status' + ('' if code == 0 else f' : {" ".join(err.split())[:120]}')
+	      + ('' if gh_requis else ' (la politique ne demande pas GitHub)'), 'gh auth login', info=not gh_requis)
 	code, out, _ = RUN(['claude', '--version'], timeout=10)
 	point('claude', code == 0, True, f'claude --version : {out.strip() or "code " + str(code)}',
 	      'installeur officiel de Claude Code : curl -fsSL https://claude.ai/install.sh | bash')
@@ -1991,8 +2033,7 @@ def un_tour():
 	mesures = lire_mesures()  # idem : une lecture par tour, None si Cate la refuse
 	usage = couts(mesures)
 	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
-	import pratiques  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
-	pol = pratiques.charger(root(), os.environ.get('HOME'))  # invalide : neutre et erreur publiée, le tour continue
+	pol = politique()  # invalide : neutre et erreur publiée, le tour continue
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
@@ -2486,7 +2527,7 @@ def guard(payload, mode):
 def cmd_pratiques(a):
 	"""Politique de flux (spec 005). set, unset et preset écrivent le fichier du projet (--dev : celui du dev) après
 	validation de la politique entière ; show, check et brief lisent. Politique refusée : code 2, rien d'écrit."""
-	import pratiques  # voir un_tour
+	import pratiques  # voir politique()
 	racine, home = root(), os.environ.get('HOME')
 	try:
 		if a.action == 'set':
@@ -2790,7 +2831,7 @@ def parser():
 	s.add_argument('--notify', action=argparse.BooleanOptionalAction, default=None,
 	               help="notification système quand une ligne attend l'humain (activée par défaut ; --no-notify la coupe pour ce projet, relue à chaque tour)")
 	s.add_argument('--max-agents', type=entier_positif, metavar='N',
-	               help=f"plafond d'agents vivants pour ce projet (défaut {MAX_AGENTS} ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
+	               help="plafond d'agents vivants pour ce projet : écrit agents.max dans sa politique (agence pratiques show ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
 	s.set_defaults(fn=cmd_start)
 	b = sub.add_parser('boot')
 	b.add_argument('--from', dest='frm')
