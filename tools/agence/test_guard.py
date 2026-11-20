@@ -255,27 +255,19 @@ class Pages(Garde):
 		self.vide(self.hook(self.pages_cmd, 'Bash', {'command': 'agence need list'}))
 
 
-class GuardSansMode(Garde):
-	"""`agence guard` sans --mode : comportement d'avant le lot 3 (hooks de Skills branchés dessus jusqu'au lot 5)."""
+class ModeObligatoire(Garde):
+	"""`agence guard` sans --mode : refusé par argparse (code 2), aucune décision sur stdout, même pour un envoi cliqué.
+	Les entrées de `agence hooks install` passent toujours send ou pages (agence-hook)."""
 
-	def guard(self, tool, ti):
-		payload = json.dumps({'tool_name': tool, 'tool_input': ti, 'cwd': self.projet})
-		return subprocess.run([sys.executable, AGENCE_PY, 'guard'], input=payload, env=dict(self.env, CLAUDE_PROJECT_DIR=self.projet),
-		                      capture_output=True, text=True, timeout=30)
-
-	def test_envoi_sans_clic_rien(self):
-		self.orchestre(clic=False)
-		r = self.guard(GMAIL, {'to': ['dg@exemple.fr'], 'body': 'Bonjour'})
-		self.assertEqual((r.returncode, r.stdout), (0, ''))
-
-	def test_envoi_clique_allow(self):
+	def test_sans_mode_refuse(self):
 		self.orchestre(clic=True)
-		r = self.guard(GMAIL, {'to': ['dg@exemple.fr'], 'body': 'Bonjour'})
-		self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['permissionDecision'], 'allow')
-
-	def test_stdin_illisible_rien(self):
-		r = subprocess.run([sys.executable, AGENCE_PY, 'guard'], input='x', env=self.env, capture_output=True, text=True, timeout=30)
-		self.assertEqual((r.returncode, r.stdout), (0, ''))
+		envoi = json.dumps({'tool_name': GMAIL, 'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}, 'cwd': self.projet})
+		for stdin in (envoi, ''):
+			with self.subTest(stdin=stdin[:12]):
+				r = subprocess.run([sys.executable, AGENCE_PY, 'guard'], input=stdin, env=dict(self.env, CLAUDE_PROJECT_DIR=self.projet),
+				                   capture_output=True, text=True, timeout=30)
+				self.assertEqual((r.returncode, r.stdout), (2, ''), r.stderr)
+				self.assertIn('--mode', r.stderr)
 
 
 if __name__ == '__main__':

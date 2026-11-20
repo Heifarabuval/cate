@@ -14,7 +14,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence watch                       régisseur : boucle de suivi + pages (127.0.0.1:<port>)
   agence doctor [--relance]          peut-on relancer Cate sans rien perdre ? oui ou non en première ligne, puis les raisons (lecture seule ; code 0 oui, 1 non)
   agence doctor --prerequis [--hors-cate] [--json] ce qui manque pour orchestrer, une ligne par point avec la commande qui règle (code 1 si un bloquant manque)
-  agence guard [--mode send|pages]   hook PreToolUse (JSON sur stdin) ; send échoue fermé (ask), pages échoue ouvert
+  agence guard --mode send|pages     hook PreToolUse (JSON sur stdin) ; --mode obligatoire ; send échoue fermé (ask), pages échoue ouvert
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
@@ -2046,13 +2046,13 @@ def envoi_ask(tool):
 	                       "(seul un brouillon agence cliqué, cible et texte identiques, passe sans question).")
 
 
-def guard(payload, mode=None):
+def guard(payload, mode):
 	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
-	de canal) ; 'pages' : pages du régisseur et state.json seulement ; None : les deux, sans ask (hooks d'avant le lot 3)."""
+	de canal) ; 'pages' : pages du régisseur et state.json seulement."""
 	tool = payload.get('tool_name') or ''
 	ti = payload.get('tool_input') or {}
 	refus = envoi_ask(tool) if mode == 'send' else None
-	if mode and (mode == 'send') != est_envoi(tool):
+	if (mode == 'send') != est_envoi(tool):
 		return refus
 	base = os.environ.get('CLAUDE_PROJECT_DIR') or payload.get('cwd') or os.getcwd()
 	if not os.path.isfile(state_file(base)):
@@ -2106,7 +2106,7 @@ def cmd_guard(a):
 		payload = json.loads(sys.stdin.read() or '{}')
 	except json.JSONDecodeError:
 		return 0
-	res = guard(payload, a.mode) if isinstance(payload, dict) else None
+	res = guard(payload, 'pages') if isinstance(payload, dict) else None
 	if res:
 		print(json.dumps(res, ensure_ascii=False))
 	return 0
@@ -2400,8 +2400,8 @@ def parser():
 	d.add_argument('--hors-cate', action='store_true', help="avec --prerequis : hors d'un terminal Cate (amorçage), les points de Cate sortent en info")
 	d.set_defaults(fn=cmd_doctor)
 	g = sub.add_parser('guard', help='hook PreToolUse (JSON sur stdin)')
-	g.add_argument('--mode', choices=('send', 'pages'),
-	               help="send : envois Slack et Gmail, ask sauf brouillon cliqué identique ; pages : pages du régisseur et state.json ; sans : les deux (hooks d'avant le lot 3)")
+	g.add_argument('--mode', choices=('send', 'pages'), required=True,
+	               help='send : envois Slack et Gmail, ask sauf brouillon cliqué identique ; pages : pages du régisseur et state.json')
 	g.set_defaults(fn=cmd_guard)
 	h = sub.add_parser('hooks', help='gardes agence dans ~/.claude/settings.json (sur commande de l\'humain ; Cate ne la lance jamais)')
 	h.add_argument('action', choices=('install', 'uninstall', 'status'))

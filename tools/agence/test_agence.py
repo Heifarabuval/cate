@@ -279,7 +279,7 @@ class NomDansLesTextes(Base):
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
 		out = agence.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
-		                    'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}})
+		                    'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}}, 'send')
 		self.assert_nomme([out['hookSpecificOutput']['permissionDecisionReason']], 'validé par le clic de')
 
 	def test_rebase_demande(self):
@@ -718,13 +718,13 @@ class Revue(Base):
 		args = ['draft', 'new', '--cible', cible, '--from', 'a1'] + (['--titre', titre] if titre else []) + [texte]
 		return self.cli(*args)[1].strip()
 
-	def guard(self, payload):
+	def guard(self, payload, mode):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		return agence.guard(payload)
+		return agence.guard(payload, mode)
 
 	def mail(self, msg='Bonjour'):
 		return self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
-		                   'tool_input': {'to': ['dg@exemple.fr'], 'body': msg}})
+		                   'tool_input': {'to': ['dg@exemple.fr'], 'body': msg}}, 'send')
 
 	def test_texte_modifie_apres_affichage_refuse(self):
 		did = self.draft(cible='issue:o/r', texte='Lu par Heifara')
@@ -754,14 +754,14 @@ class Revue(Base):
 		did = self.draft()
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		self.assertEqual(self.mail()['hookSpecificOutput']['permissionDecision'], 'allow')
-		self.assertIsNone(self.mail())
+		self.assertEqual(self.mail()['hookSpecificOutput']['permissionDecision'], 'ask')
 
 	def test_garde_refuse_si_besoin_clos(self):
 		did = self.draft()
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		with agence.tx() as st:
 			agence.close_need(st, st['needs'][0]['id'], 'dropped')
-		self.assertIsNone(self.mail())
+		self.assertEqual(self.mail()['hookSpecificOutput']['permissionDecision'], 'ask')
 
 	def test_besoin_clos_a_part_pas_d_envoi(self):
 		did = self.draft(cible='issue:o/r')
@@ -775,23 +775,23 @@ class Revue(Base):
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		base = {'to': ['dg@exemple.fr'], 'subject': 'Point', 'body': 'Corps'}
 		for extra in ({'cc': ['x@y.fr']}, {'bcc': ['x@y.fr']}, {'to': ['dg@exemple.fr', 'x@y.fr']}, {'to': 'dg@exemple.fr'}):
-			self.assertIsNone(self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
-			                              'tool_input': {**base, **extra}}), extra)
+			res = self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message', 'tool_input': {**base, **extra}}, 'send')
+			self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'ask', extra)
 
 	def test_garde_curl_par_agence_url(self):
 		self.booted()
-		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'curl -X POST "$(agence url)draft/d1/send"'}})
+		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'curl -X POST "$(agence url)draft/d1/send"'}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
 
 	def test_garde_cate_browser_sur_page_agence(self):
 		self.draft()
 		page = self.state()['needs'][0]['panels'][0]
-		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': f"cate browser run --panel {page} 'tab.click(1)'"}})
+		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': f"cate browser run --panel {page} 'tab.click(1)'"}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
 
 	def test_garde_ecriture_state_depuis_le_dossier(self):
 		self.booted()
-		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'cd .cate/tmp/agence && echo {} > state.json'}})
+		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'cd .cate/tmp/agence && echo {} > state.json'}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
 
 	def test_pr_fermee_sans_merge_abandonnee(self):
@@ -981,7 +981,7 @@ class Journal(Base):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
 		mail = {'tool_name': 'mcp__claude_ai_Gmail__send_message',
 		        'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}}
-		self.assertIsNone(agence.guard(mail))
+		self.assertEqual(agence.guard(mail, 'send')['hookSpecificOutput']['permissionDecision'], 'ask')
 		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
 		self.assertEqual(self.cli('draft', 'sent', did, '--evidence', 'x')[0], 1)
 
@@ -2334,52 +2334,54 @@ class EnvoiSlack(Base):
 			d = agence.find(st, 'drafts', did)
 			d.update(statut='envoyer', texte='Salut', hash=agence.sha('Salut'))
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		self.assertIsNone(agence.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                                'tool_input': {'channel_id': 'C123', 'message': 'Salut'}}))
+		res = agence.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
+		                    'tool_input': {'channel_id': 'C123', 'message': 'Salut'}}, 'send')
+		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'ask')
 
 
 class Garde(Base):
-	def guard(self, payload):
+	def guard(self, payload, mode):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		return agence.guard(payload)
+		return agence.guard(payload, mode)
 
 	def test_brouillon_non_clique_ne_passe_pas(self):
 		self.booted()
 		self.cli('draft', 'new', '--cible', 'mail:dg@exemple.fr', '--from', 'a1', 'Bonjour')
-		self.assertIsNone(self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
-		                              'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}}))
+		res = self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
+		                  'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}}, 'send')
+		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'ask')
 
 	def test_mail_identique_passe(self):
 		self.booted()
 		_, out = self.cli('draft', 'new', '--cible', 'mail:dg@exemple.fr', '--titre', 'Point', '--from', 'a1', 'Corps')
 		agence.click(f'/draft/{out.strip()}/send', self.shown(out.strip()))
 		res = self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
-		                  'tool_input': {'to': ['dg@exemple.fr'], 'subject': 'Point', 'body': 'Corps'}})
+		                  'tool_input': {'to': ['dg@exemple.fr'], 'subject': 'Point', 'body': 'Corps'}}, 'send')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'allow')
 
 	def test_agent_ne_peut_pas_cliquer(self):
 		self.booted()
-		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'curl -X POST http://127.0.0.1:8765/draft/d1/send'}})
+		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'curl -X POST http://127.0.0.1:8765/draft/d1/send'}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
-		res = self.guard({'tool_name': 'WebFetch', 'tool_input': {'url': 'http://localhost:8765/'}})
+		res = self.guard({'tool_name': 'WebFetch', 'tool_input': {'url': 'http://localhost:8765/'}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
 
 	def test_agent_ne_peut_pas_ecrire_l_etat(self):
 		self.booted()
 		path = os.path.join(self.tmp, '.cate/tmp/agence/state.json')
-		res = self.guard({'tool_name': 'Write', 'tool_input': {'file_path': path, 'content': '{}'}})
+		res = self.guard({'tool_name': 'Write', 'tool_input': {'file_path': path, 'content': '{}'}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
-		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': f"sed -i '' s/x/y/ {path}"}})
+		res = self.guard({'tool_name': 'Bash', 'tool_input': {'command': f"sed -i '' s/x/y/ {path}"}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
 
 	def test_lecture_et_commandes_normales_passent(self):
 		self.booted()
-		self.assertIsNone(self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'agence need list'}}))
-		self.assertIsNone(self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'cat .cate/tmp/agence/state.json'}}))
+		self.assertIsNone(self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'agence need list'}}, 'pages'))
+		self.assertIsNone(self.guard({'tool_name': 'Bash', 'tool_input': {'command': 'cat .cate/tmp/agence/state.json'}}, 'pages'))
 
 	def test_projet_sans_agence_rien(self):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		self.assertIsNone(agence.guard({'tool_name': 'Bash', 'tool_input': {'command': 'curl http://127.0.0.1:8765/'}}))
+		self.assertIsNone(agence.guard({'tool_name': 'Bash', 'tool_input': {'command': 'curl http://127.0.0.1:8765/'}}, 'pages'))
 
 
 class Regisseur(Base):
@@ -3120,7 +3122,7 @@ class Permission(Base):
 
 	def test_le_garde_refuse_le_clic_d_un_agent(self):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		res = agence.guard({'tool_name': 'Bash', 'tool_input': {'command': f'curl -d x http://127.0.0.1:8765/perm/{self.nid}/oui'}})
+		res = agence.guard({'tool_name': 'Bash', 'tool_input': {'command': f'curl -d x http://127.0.0.1:8765/perm/{self.nid}/oui'}}, 'pages')
 		self.assertEqual(res['hookSpecificOutput']['permissionDecision'], 'deny')
 
 
