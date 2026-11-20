@@ -127,7 +127,7 @@ export const agentApi = defineCateApi(
           .flag('wait-timeout', 'ms')
           .parseCli(parseWaitTimeoutMs)
           .helpDefault(String(AGENT_WAIT_DEFAULT_SECONDS * 1_000))
-          .help('Give up after this many milliseconds, 5000 to 60000'),
+          .help(`Give up after this many milliseconds, ${AGENT_WAIT_MIN_SECONDS * 1_000} to ${AGENT_WAIT_MAX_SECONDS * 1_000}`),
       },
       timeoutMs: waitTimeoutMs,
       format: 'agentWait',

@@ -200,6 +200,7 @@ describe('help', () => {
   it('prints synopses from the argument schemas, wrapped at argument boundaries', () => {
     expect(commandHelp(find('agent send'))).toContain('  cate agent send <panelId>|--panel <panelId> <prompt...>')
     expect(commandHelp(find('agent wait'))).toContain('[<panelId...>] [--wait-timeout <ms>]')
+    expect(commandHelp(find('agent wait'))).toContain('5000 to 600000')
   })
 
   it('describes every argument and flag with its default, and nothing more', () => {
