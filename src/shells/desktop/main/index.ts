@@ -395,7 +395,11 @@ app.whenReady().then(() => {
     return { browser, imported: await sharedSignIns().importCookies(await readDefaultBrowserCookies(browser)) }
   })
   registerCapture(registry)
-  registerTransportIpc({ host, partitions })
+  registerTransportIpc({
+    host,
+    partitions,
+    grantSignIn: (partition, domain) => sharedSignIns().grant(session.fromPartition(partition).cookies, domain),
+  })
   registerMachineIpc(machines, installs)
   const perf = startPerfMonitor(featureFlags.perf())
   startMemoryLog()

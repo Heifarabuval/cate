@@ -78,7 +78,9 @@ export const AGENT_CURSOR_IDLE_MS = 10_000
 /** Methods whose own effect on the tabs is their result, not a notice. */
 const TAB_METHODS = new Set(['selectTab', 'createTab', 'closeTab'])
 
-const isStartPage = (url: string) => url === BROWSER_NEW_TAB_URL
+const SIGN_IN_DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+
+const isStartPage =(url: string) => url === BROWSER_NEW_TAB_URL
 const hasPage = (url: string) => !isStartPage(url) && !isBrowserInternalPage(url)
 
 /** `result` with `notices` added: on the object itself, or around a plain value. */
@@ -116,6 +118,8 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private activeCause: string | null = null
   /** Each caller's view of the tabs, for the notices of its next call. */
   private readonly seenTabs = new Map<string, TabsSeen>()
+  /** Settles the agent's pending sign-in request with the person's answer. */
+  private signInAnswer: ((allow: boolean) => void) | null = null
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: BrowserSessionDeps) {
     const id = 't1'
@@ -132,6 +136,8 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       crashed: false,
       downloads: [],
       agentCursor: null,
+      agentDriven: false,
+      signIns: { granted: [], request: null },
     })
     this.tabCounter = 1
     this.control = createPageControl({
@@ -197,6 +203,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     this.stopDownloads?.()
     this.stopDownloads = undefined
     clearTimeout(this.cursorIdle)
+    this.signInAnswer?.(false)
   }
 
   // ---- State ---------------------------------------------------------------
@@ -396,9 +403,32 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       return ok
     },
     setViewport: ({ viewport }) => { this.setViewport(viewport) },
+    answerSignIn: ({ allow }) => { this.signInAnswer?.(allow === true) },
     releaseAgentCursor: () => {
       if (this.state.agentCursor && this.state.agentCursor.event.kind !== 'done') this.showAgentCursor({ kind: 'done', label: '' })
     },
+  }
+
+  /** An agent asks for the person's signed-in session on one domain. Waits
+   *  for the answer in the view (views ask, sessions act); a grant lasts
+   *  until the panel closes. The agent hears the outcome, never a cookie. */
+  private requestSignIn(args: { domain: string; reason: string }, caller: string): Promise<{ granted: boolean; domain: string }> {
+    const domain = args.domain.trim().toLowerCase()
+    if (!SIGN_IN_DOMAIN.test(domain)) throw new RpcError('rejected', 'invalid-sign-in-domain: pass a bare domain such as github.com')
+    const reason = args.reason.trim()
+    if (!reason) throw new RpcError('rejected', 'sign-in-reason-required: say why the task needs this sign-in')
+    if (this.state.signIns.request) throw new RpcError('rejected', 'sign-in-request-pending: the person has not answered the earlier request')
+    if (this.state.signIns.granted.includes(domain)) return Promise.resolve({ granted: true, domain })
+    return new Promise((resolve) => {
+      this.signInAnswer = (allow) => {
+        this.signInAnswer = null
+        const { granted } = this.state.signIns
+        this.publish({ signIns: { granted: allow ? [...granted, domain] : granted, request: null } })
+        this.kit.log.info('browser %s: sign-in for %s %s by the person (asked by %s: %s)', this.panelId, domain, allow ? 'granted' : 'refused', caller, reason)
+        resolve({ granted: allow, domain })
+      }
+      this.publish({ signIns: { granted: this.state.signIns.granted, request: { domain, reason } } })
+    })
   }
 
   private reportNavigation(op: Extract<BrowserOp, { kind: 'reportNavigation' }>, ctx: OpContext): void {
@@ -460,9 +490,12 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
         return { preset, width, height, observation }
       },
       resize: (args, ctx) => this.resize(args, ctx),
+      requestSignIn: (args, ctx) => this.requestSignIn(args, ctx.caller.id),
     })
     return async (method, args, ctx) => {
       const caller = ctx.caller.id
+      // From the first call on, the panel's pages leave the shared partition.
+      if (!this.state.agentDriven) this.publish({ agentDriven: true })
       const start = this.tabsSeen()
       const earlier = this.tabNotices(this.seenTabs.get(caller) ?? start, caller)
       try {

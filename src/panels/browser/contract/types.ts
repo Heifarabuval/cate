@@ -78,6 +78,17 @@ export type BrowserSnapshot = {
   /** The panel's downloads (from `browserData`), newest first. */
   downloads: BrowserDownload[]
   agentCursor: BrowserAgentCursor | null
+  /** True once a `cate.browser.*` call drove this panel: its pages then load
+   *  in their own in-memory partition, with no shared sign-in. */
+  agentDriven: boolean
+  signIns: BrowserSignIns
+}
+
+/** Sign-ins an agent asked for. `granted` domains hold until the panel closes
+ *  (never persisted); `request` waits for the person's answer. */
+export type BrowserSignIns = {
+  granted: string[]
+  request: { domain: string; reason: string } | null
 }
 
 export type BrowserHistoryAction = 'back' | 'forward' | 'reload' | 'reloadHard'
@@ -101,6 +112,8 @@ export type BrowserOp =
   /** Back, forward or reload on the driving client's page (palette commands). */
   | { kind: 'history'; action: BrowserHistoryAction; tabId?: string }
   | { kind: 'setViewport'; viewport: BrowserViewport }
+  /** The person's answer to the pending sign-in request. */
+  | { kind: 'answerSignIn'; allow: boolean }
   /** User input takes the page back from the agent. */
   | { kind: 'releaseAgentCursor' }
 

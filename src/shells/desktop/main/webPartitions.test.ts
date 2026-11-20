@@ -11,8 +11,11 @@ function setup() {
   let upstream: string | undefined
   let proxyOptions: LoopbackProxyOptions | null = null
   const close = vi.fn(async () => {})
+  const clearStorageData = vi.fn(async () => {})
+  const beforeFirstMount = vi.fn(async (_partition: string) => {})
   const partitions = createWebPartitions({
-    session: () => ({ setProxy, closeAllConnections }),
+    session: () => ({ setProxy, closeAllConnections, clearStorageData }),
+    beforeFirstMount,
     upstream: () => upstream,
     startProxy: async (options) => {
       proxyOptions = options
@@ -20,7 +23,7 @@ function setup() {
     },
   })
   return {
-    partitions, setProxy, close, closeAllConnections,
+    partitions, setProxy, close, closeAllConnections, clearStorageData, beforeFirstMount,
     setUpstream: (value: string | undefined) => { upstream = value },
     hasProxy: () => proxyOptions !== null,
     dialLoopback: (port: number) => proxyOptions!.dialLoopback(port),
@@ -170,5 +173,30 @@ describe('web partitions', () => {
     await partitions.refresh()
     expect(partitions.isPrepared(`persist:ws-${RUNTIME}`)).toBe(true)
     expect(setProxy).toHaveBeenLastCalledWith({ mode: 'system' })
+  })
+
+  it('prepares an agent partition with the workspace network policy and no shared sign-ins', async () => {
+    const { partitions, setProxy, beforeFirstMount } = setup()
+    await partitions.partitionFor(RUNTIME, dialer(1, vi.fn()), false)
+    expect(beforeFirstMount).toHaveBeenCalledWith(`persist:ws-${RUNTIME}`)
+    const agent = await partitions.agentPartitionFor(RUNTIME, 'panel1')
+    expect(agent).toBe(`ws-${RUNTIME}-a-panel1`)
+    expect(agent.startsWith('persist:')).toBe(false)
+    expect(partitions.isPrepared(agent)).toBe(true)
+    expect(setProxy).toHaveBeenCalledTimes(2)
+    expect(setProxy).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'fixed_servers' }))
+    expect(beforeFirstMount).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an agent partition for a runtime nothing connected to, and forgets it on release', async () => {
+    const { partitions, clearStorageData } = setup()
+    await expect(partitions.agentPartitionFor(RUNTIME, 'panel1')).rejects.toThrow()
+    await partitions.partitionFor(RUNTIME, dialer(1, vi.fn()), true)
+    const agent = await partitions.agentPartitionFor(RUNTIME, 'panel1')
+    await partitions.releaseAgentPartition(agent)
+    expect(clearStorageData).toHaveBeenCalledOnce()
+    expect(partitions.isPrepared(agent)).toBe(false)
+    await partitions.releaseAgentPartition(`persist:ws-${RUNTIME}`)
+    expect(clearStorageData).toHaveBeenCalledOnce()
   })
 })

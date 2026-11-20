@@ -25,7 +25,7 @@ import { runSurfaceRequest } from '@client/host'
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'cate://newtab', title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null, ...patch })
 const snapshotOf = (tabs: BrowserTab[], patch: Partial<BrowserSnapshot> = {}): BrowserSnapshot => ({
   tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' },
-  canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
+  canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null, agentDriven: false, signIns: { granted: [], request: null },
   ...patch,
 })
 
@@ -38,6 +38,9 @@ const session = {} as SessionHandle<BrowserSnapshot>
 /** Workspaces whose partition the shell is still preparing. */
 let preparing = new Set<string>()
 const partitionListeners = new Set<() => void>()
+const agentPartition = vi.fn(async (partition: string, panelId: string) => `${partition.replace(/^persist:/, '')}-a-${panelId}`)
+const grantSignIn = vi.fn(async (_partition: string, _domain: string) => 2)
+const releaseAgentPartition = vi.fn(async (_partition: string) => {})
 
 function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean; strict?: boolean } = {}) {
   const view = (
@@ -49,6 +52,9 @@ function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean; st
 
 beforeEach(() => {
   send.mockClear()
+  agentPartition.mockClear()
+  grantSignIn.mockClear()
+  releaseAgentPartition.mockClear()
   installMockClientUi()
   installClientIdentity(createClientIdentity({ device: { name: 'test', publicKey: 'f' }, features: ['webview', 'pageDriver'] }))
   preparing = new Set()
@@ -59,6 +65,9 @@ beforeEach(() => {
       partitionListeners.add(listener)
       return () => { partitionListeners.delete(listener) }
     },
+    agentPartition,
+    grantSignIn,
+    releaseAgentPartition,
   })
   installBrowserPageBridge({
     protectPage: vi.fn(async () => {}),
@@ -106,6 +115,42 @@ describe('BrowserView', () => {
     preparing.delete('ws')
     act(() => { for (const listener of [...partitionListeners]) listener() })
     expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
+  })
+
+  it('keeps a panel an agent drives off the workspace partition, and clears its partition on close', async () => {
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], { agentDriven: true }))
+    expect(host.querySelector('[data-browser-webview-slot]')).toBeNull()
+    await act(async () => {})
+    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('ws-ws-runtime-a-p1')
+    expect(grantSignIn).not.toHaveBeenCalled()
+    act(() => root.render(<div />))
+    expect(releaseAgentPartition).toHaveBeenCalledWith('ws-ws-runtime-a-p1')
+  })
+
+  it('asks the person for an agent sign-in request, copies that domain, then answers', async () => {
+    const confirm = vi.fn(async () => true)
+    installMockClientUi({ confirm })
+    const pending = { agentDriven: true, signIns: { granted: [], request: { domain: 'github.com', reason: 'open the PR' } } }
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], pending))
+    await act(async () => {})
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('github.com'))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('open the PR'))
+    expect(grantSignIn).toHaveBeenCalledWith('ws-ws-runtime-a-p1', 'github.com')
+    expect(send).toHaveBeenCalledWith({ kind: 'answerSignIn', allow: true })
+  })
+
+  it('copies nothing when the person refuses', async () => {
+    installMockClientUi({ confirm: vi.fn(async () => false) })
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], { agentDriven: true, signIns: { granted: [], request: { domain: 'github.com', reason: 'r' } } }))
+    await act(async () => {})
+    expect(grantSignIn).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalledWith({ kind: 'answerSignIn', allow: false })
+  })
+
+  it('copies the granted domains again into a partition made after a remount', async () => {
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], { agentDriven: true, signIns: { granted: ['github.com'], request: null } }))
+    await act(async () => {})
+    expect(grantSignIn).toHaveBeenCalledWith('ws-ws-runtime-a-p1', 'github.com')
   })
 
   it('defers the start guest until navigation, then retains it on return', () => {

@@ -118,6 +118,13 @@ export const BROWSER_GUEST_CHANNELS = {
   dialog: 'cate-browser-dialog',
 } as const
 
+/** The in-memory partition of an agent-driven browser panel: the workspace
+ *  partition's name without `persist:`, so nothing is kept and no shared
+ *  sign-in reaches it. */
+export function agentPartition(workspacePartitionName: string, panelId: string): string {
+  return `${workspacePartitionName.replace(/^persist:/, '')}-a-${panelId.replace(/[^A-Za-z0-9_-]/g, '_')}`
+}
+
 /** The partition of a workspace's webviews: `persist:ws-<runtimeId>`. */
 export function workspacePartition(runtimeId: string): string {
   return `persist:ws-${runtimeId}`

@@ -303,6 +303,12 @@ export interface DesktopApi {
      *  `reachesClientNetwork`: the connection's (12.3). */
     partitionFor(workspace: { runtimeId: string; reachesClientNetwork: boolean }): Promise<string>
     release(workspace: { runtimeId: string }): Promise<void>
+    /** The in-memory partition of an agent-driven browser panel (no shared sign-ins), prepared with the workspace's network policy. `partition` is the workspace's. */
+    agentPartition(agent: { partition: string; panelId: string }): Promise<string>
+    /** Copies the shared sign-in cookies of `domain` into that agent partition; the count, never a value. */
+    grantSignIn(grant: { partition: string; domain: string }): Promise<number>
+    /** Clears and forgets an agent partition when its panel closes. */
+    releaseAgentPartition(agent: { partition: string }): Promise<void>
   }
   webgl: {
     request(panelId: string): Promise<boolean>

@@ -64,6 +64,7 @@ cate browser dialog accept         # see "Dialogs"
 cate browser login                 # see "Signing in and signing up"
 cate browser signup --user me@x.io
 cate browser signup --user me@x.io --password 'existing-password'
+cate browser signin github.com --reason "open the PR to read its checks"   # ask for the person's session on one site
 
 # Logs and downloads
 cate browser console --level error # console messages and uncaught errors
@@ -191,6 +192,15 @@ prompt's answer. The person sees the same dialog in the panel and may answer
 it first.
 
 ## Signing in and signing up
+
+A panel you drive has none of the person's signed-in sessions: its pages run
+in their own partition, empty. When the task needs a site the person is signed
+in to, run `cate browser signin <domain> --reason "<why>"`. It waits for the
+person's answer in Cate and returns `granted: true` or `false`. A grant copies
+that domain's cookies (never their values to you) into this panel only, until
+the panel closes; ask again for another domain. On `false`, do not retry:
+tell the person what you could not do. Note each grant in the need's journal
+(`agence need log`).
 
 `cate browser login` fills the login saved in Cate's browser for the current
 site into its sign-in form; the password never reaches you, and snapshots
