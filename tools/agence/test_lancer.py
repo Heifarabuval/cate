@@ -107,6 +107,15 @@ class Clic(Lancer):
 				self.assertEqual(self.backlog()['F1']['etat'], 'prête')
 		self.assertEqual(self.envois(), [])
 
+	def test_ref_fiche_reservee_au_clic(self):
+		self.fiches(('A', ['src/a.ts']))
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err):
+			code, _ = self.cli('need', 'add', '--kind', 'task', '--ref', 'fiche:F1', 'A la main')
+		self.assertNotEqual(code, 0)
+		self.assertIn('fiche:', err.getvalue())
+		self.assertEqual(self.state()['needs'], [])
+
 	def test_ids_mal_formes_400(self):
 		self.fiches(('A', ['src/a.ts']))
 		for ids in ('', 'F1;rm', 'n1'):

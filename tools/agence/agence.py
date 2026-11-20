@@ -637,6 +637,8 @@ def shq(s):
 
 def cmd_need(a):
 	if a.action == 'add':
+		if (a.ref or '').startswith('fiche:'):  # seul le clic « Lancer » crée le besoin d'une fiche (lancer_fiches)
+			raise Refus('la référence fiche: est réservée au clic « Lancer » : agence fiche, puis le clic de l\'humain.')
 		panels = load()['panels']
 		me = caller_panel() if a.panel or panels.get('interlocuteur') else None  # une seule sonde pour les deux usages
 		if me is not None and me == panels.get('interlocuteur'):
