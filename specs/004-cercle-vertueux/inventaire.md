@@ -155,3 +155,4 @@ Dernier passage connu de `usage.py` (2026-11-11, 45 jours, 319 transcripts) : 97
 3. **Aucun hook ne peut taper une commande.** Les hooks servent à mesurer ou à cadrer (`PreCompact`), pas à lancer ; installer un hook est de plus un changement de `~/.claude/settings.json`, que Cate n'écrit jamais.
 4. **La taille du contexte n'est pas dans `cate agent usage`.** Elle est dans le journal de session ; il faut un champ de plus côté Cate (lot 1).
 5. **`measure.py` coûte un appel ; `usage.py` et `check.py` n'en coûtent aucun.** Un déclencheur décide avec les deux derniers et lance `measure.py` seulement à l'intérieur d'une commande acceptée.
+6. **La mesure de consommation (`common/tools/conso.py`, dépôt Skills) coûte 0 jeton et sort des nombres seulement.** Dépendance externe, non inventoriée ici : un déclencheur hebdomadaire (T11, q488) la lance au clic, sans la lire.
