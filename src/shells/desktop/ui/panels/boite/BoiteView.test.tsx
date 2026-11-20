@@ -22,9 +22,9 @@ const NOW = Date.parse('2026-11-19T12:00:00Z')
 
 const ligne = (key: string, extra: Partial<Ligne> = {}): Ligne => ({
   key, workspaceId: 'w', panelId: 'p', root: '/a/cate', repo: 'cate', needId: key.split('#')[1], title: `Besoin ${key}`,
-  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action: { type: 'link' }, links: [], ...extra,
+  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action: { type: 'link' }, links: [], enabled: true, reason: null, ...extra,
 })
-const project = (repo: string) => ({ workspaceId: `w-${repo}`, panelId: 'p', root: `/a/${repo}`, repo })
+const project = (repo: string) => ({ workspaceId: `w-${repo}`, panelId: 'p', root: `/a/${repo}`, repo, state: 'live' as const, error: null })
 
 // The view reads the store, not its props.
 const props = { panelId: 'pb' } as PanelViewProps
@@ -98,10 +98,10 @@ it('keeps the count of unwatched workspaces under a list too, singular included'
   expect(text()).toContain('1 workspace non ouvert')
 })
 
-it('has no button to overflow: a title is truncated, nothing is clickable but panel links', () => {
+it('has no button to overflow: a title is truncated, nothing is clickable but the project', () => {
   render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1', { title: 'x'.repeat(300) })] })
   expect(host.querySelector('[data-testid="ligne-titre"]')?.className).toContain('truncate')
-  expect(host.querySelectorAll('button')).toHaveLength(0)
+  expect([...host.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['cate'])
 })
 
 it('says when no project is watched at all', () => {

@@ -7,6 +7,7 @@ import { MarkdownPreview } from '../editor/MarkdownPreview'
 /** The action to take (accent tint, primary text), and the plain one: readable in every theme, never wrapped. */
 const ACTION = 'shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary disabled:!opacity-100'
 const PLAIN = 'shrink-0 whitespace-nowrap !text-primary'
+const LINK = 'min-w-0 truncate text-left hover:underline'
 const OPTION = 'flex w-full items-start gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] text-primary hover:bg-hover disabled:opacity-60'
 
 /** How long it has waited, coarse: « 30 min », « 2 h », « 2 j »; empty when the time is unknown. */
@@ -96,34 +97,59 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
  *  card of the action. Every click goes through `actions` by the line's key. */
 export default function Ligne({ ligne, now, actions, state, selected = false }: LigneProps) {
   const [open, setOpen] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [restarting, setRestarting] = useState(false)
   const element = useRef<HTMLLIElement>(null)
   useEffect(() => { if (selected) element.current?.scrollIntoView?.({ block: 'nearest' }) }, [selected])
   const { action, key } = ligne
   const age = ageLabel(ligne.waitingSince, now)
   const busy = state.busy.has(key)
   const notice = state.notices[key]
+  const live = ligne.enabled
+  /** A jump or a restart that was refused says so on the line, in the answer's own words. */
+  const settle = async (done: Promise<{ ok: boolean; error?: string; message?: string }>) => {
+    const result = await done
+    setRefusal(result.ok ? null : result.message ?? result.error ?? null)
+  }
+  const restart = async () => {
+    setRestarting(true)
+    try { await settle(actions.restart({ workspaceId: ligne.workspaceId, panelId: ligne.panelId })) } finally { setRestarting(false) }
+  }
   const shown = state.shown[key] !== undefined && action.type === 'draft' && state.shown[key] === action.hash
   return (
-    <li ref={element} data-testid="ligne" aria-selected={selected || undefined} className={`flex min-w-0 flex-col gap-0.5 border-b border-subtle px-3 py-2 text-[12px] ${selected ? 'bg-hover shadow-[inset_2px_0_0] shadow-agent' : ''}`}>
+    <li ref={element} data-testid="ligne" aria-selected={selected || undefined} className={`flex min-w-0 flex-col gap-0.5 border-b border-subtle px-3 py-2 text-[12px] ${selected ? 'bg-hover shadow-[inset_2px_0_0] shadow-agent' : ''} ${live ? '' : 'opacity-70'}`}>
       <div className="flex min-w-0 items-baseline gap-2 text-secondary">
-        <span className="min-w-0 truncate">{ligne.repo}</span>
+        <button type="button" className={LINK} title={ligne.root} onClick={() => void settle(actions.open(key))}>{ligne.repo}</button>
         {age && <span className="ml-auto shrink-0 whitespace-nowrap">{age === "à l'instant" ? age : `depuis ${age}`}</span>}
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <span data-testid="ligne-titre" title={ligne.title} className="min-w-0 flex-1 truncate text-primary">{ligne.title}</span>
-        {action.type === 'question' && (
+        {live && action.type === 'question' && (
           <Button size="sm" className={ACTION} aria-expanded={open} disabled={busy} onClick={() => setOpen((value) => !value)}>
             {action.isMerge ? 'Merger' : 'Répondre'}
           </Button>
         )}
-        {action.type === 'draft' && !action.inFlight && !shown && (
+        {live && action.type === 'draft' && !action.inFlight && !shown && (
           <Button size="sm" className={ACTION} disabled={busy} onClick={() => actions.show(key)}>Lire et envoyer</Button>
         )}
-        {action.type === 'draft' && action.inFlight && <span className="shrink-0 whitespace-nowrap text-secondary">En cours d&apos;envoi</span>}
+        {live && action.type === 'draft' && action.inFlight && <span className="shrink-0 whitespace-nowrap text-secondary">En cours d&apos;envoi</span>}
       </div>
+      {ligne.links.length > 0 && (
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] text-secondary">
+          {ligne.links.map((link) => link.closed
+            ? <span key={link.panelId} className="min-w-0 truncate">{`${link.title} · fermé`}</span>
+            : <button key={link.panelId} type="button" className={LINK} onClick={() => void settle(actions.open(key, link.panelId))}>{link.title}</button>)}
+        </div>
+      )}
+      {!live && (
+        <div className="flex min-w-0 items-center gap-2 text-[11px] text-secondary">
+          <span className="min-w-0 flex-1 break-words">{ligne.reason}</span>
+          <Button size="sm" className={PLAIN} disabled={restarting} onClick={() => void restart()}>Relancer</Button>
+        </div>
+      )}
       {busy && <div className="text-[11px] text-secondary">Envoi en cours</div>}
-      {action.type === 'question' && open && <QuestionCard ligne={ligne} actions={actions} busy={busy} />}
-      {action.type === 'draft' && !action.inFlight && shown && (
+      {live && action.type === 'question' && open && <QuestionCard ligne={ligne} actions={actions} busy={busy} />}
+      {live && action.type === 'draft' && !action.inFlight && shown && (
         <div className="mt-1 flex flex-col gap-1.5">
           <div className="relative max-h-64 min-h-[96px] overflow-auto rounded-lg border border-subtle bg-surface-2">
             <MarkdownPreview content={action.texte} workspaceId={ligne.workspaceId} panelId={ligne.panelId} filePath={`${action.draftId}.md`} noImages />
@@ -133,7 +159,7 @@ export default function Ligne({ ligne, now, actions, state, selected = false }: 
           </div>
         </div>
       )}
-      {action.type === 'perm' && (
+      {live && action.type === 'perm' && (
         <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-subtle bg-surface-1 p-2">
           <code className="block whitespace-pre-wrap break-all text-[11px] text-primary">{action.command}</code>
           {action.reason && <div className="break-words text-[11px] text-secondary">{action.reason}</div>}
@@ -143,7 +169,7 @@ export default function Ligne({ ligne, now, actions, state, selected = false }: 
           </div>
         </div>
       )}
-      {notice && <InlineNotice tone="error" className="mt-1 !text-primary">{notice}</InlineNotice>}
+      {(notice ?? refusal) && <InlineNotice tone="error" className="mt-1 !text-primary">{notice ?? refusal}</InlineNotice>}
     </li>
   )
 }

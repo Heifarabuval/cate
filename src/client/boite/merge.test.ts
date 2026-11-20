@@ -146,4 +146,63 @@ describe('merge', () => {
   it('falls back to the root folder name when no state was read', () => {
     expect(merge([{ workspaceId: 'w', panelId: 'p', root: '/a/b/cate', snapshot: null }]).projects[0].repo).toBe('cate')
   })
+
+  describe('a project whose regisseur does not run', () => {
+    const regisseur = (state: AgenceSnapshot['regisseur']['state'], error: string | null = null, settingsHint: string | null = null) => {
+      const base = snapshot({ aFaire: [need('n1')] })
+      base.regisseur = { state, error, settingsHint }
+      return base
+    }
+    const view = (snap: AgenceSnapshot | null) => merge([{ workspaceId: 'w', panelId: 'p', root: '/a/cate', snapshot: snap }])
+
+    it('keeps its rows, greyed with the reason, and the project unavailable', () => {
+      const { projects, rows } = view(regisseur('stopped', 'port pris'))
+      expect(projects[0]).toMatchObject({ state: 'unavailable', error: 'régisseur arrêté : port pris' })
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ key: '/a/cate#n1', enabled: false, reason: 'régisseur arrêté : port pris' })
+    })
+
+    it.each([
+      ['starting', null, null, 'régisseur en démarrage'],
+      ['stopped', null, null, 'régisseur arrêté'],
+      ['external', 'pid 12', null, 'régisseur externe : pid 12'],
+      ['missing', 'trop ancien', null, 'agence absente : trop ancien'],
+      ['stopped', null, 'activer les réglages CLI', 'activer les réglages CLI'],
+    ] as const)('says why: %s', (state, error, hint, reason) => {
+      expect(view(regisseur(state, error, hint)).projects[0]).toMatchObject({ state: 'unavailable', error: reason })
+    })
+
+    it('says so, and lists nothing false, when agence is missing and nothing was read', () => {
+      const snap = regisseur('missing', 'introuvable')
+      snap.suivi = null
+      const { projects, rows } = view(snap)
+      expect(rows).toEqual([])
+      expect(projects[0]).toMatchObject({ state: 'unavailable', error: 'agence absente : introuvable' })
+    })
+
+    it('is unavailable, not an error, before its first snapshot', () => {
+      expect(view(null).projects[0]).toMatchObject({ state: 'unavailable', error: 'état en cours de lecture' })
+    })
+  })
+
+  describe('a project whose state is unreadable', () => {
+    it('is an error with the reason, keeps the last valid rows greyed, and leaves the other projects intact', () => {
+      const bad = snapshot({ aFaire: [need('n1', { title: 'Dernier état' })] })
+      bad.suivi!.error = 'JSON illisible'
+      const result = merge([
+        { workspaceId: 'w1', panelId: 'p1', root: '/a/cate', snapshot: bad },
+        project('/a/lamif', { aFaire: [need('n2')] }),
+      ])
+      expect(result.projects.map((view) => [view.repo, view.state, view.error])).toEqual([['cate', 'error', 'JSON illisible'], ['lamif', 'live', null]])
+      const byKey = Object.fromEntries(result.rows.map((row) => [row.key, row]))
+      expect(byKey['/a/cate#n1']).toMatchObject({ title: 'Dernier état', enabled: false, reason: 'JSON illisible' })
+      expect(byKey['/a/lamif#n2']).toMatchObject({ enabled: true, reason: null })
+    })
+  })
+
+  it('marks a live project live, with its rows enabled', () => {
+    const result = merge([project('/a/cate', { aFaire: [need('n1')] })])
+    expect(result.projects[0]).toMatchObject({ state: 'live', error: null })
+    expect(result.rows[0]).toMatchObject({ enabled: true, reason: null })
+  })
 })

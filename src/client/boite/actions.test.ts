@@ -1,25 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgenceOp } from '@panels/agence/contract'
 import { createBoiteActions } from './actions'
-import type { Ligne, LigneAction } from './types'
+import type { Ligne, LigneAction, ProjectView } from './types'
+
+const host = vi.hoisted(() => ({ calls: [] as string[], revealed: true }))
+vi.mock('@client/host', () => ({
+  revealPanel: vi.fn(async (workspaceId: string, panelId: string) => { host.calls.push(`reveal ${workspaceId} ${panelId}`); return host.revealed }),
+  focusPanel: vi.fn((workspaceId: string, panelId: string) => { host.calls.push(`focus ${workspaceId} ${panelId}`) }),
+}))
 
 const ligne = (key: string, action: LigneAction, extra: Partial<Ligne> = {}): Ligne => ({
   key, workspaceId: 'w1', panelId: 'p1', root: key.split('#')[0], repo: 'cate', needId: key.split('#')[1], title: key,
-  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action, links: [], ...extra,
+  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action, links: [], enabled: true, reason: null, ...extra,
 })
 const question = (isMerge = false, extra: Partial<Extract<LigneAction, { type: 'question' }>> = {}): LigneAction => ({ type: 'question', questionId: 'q1', options: [{ label: 'Merger', detail: '' }, { label: 'Non', detail: '' }], isMerge, locks: [], ghUnknown: false, rebase: false, ...extra })
 const draft = (hash = 'h1', extra: Partial<Extract<LigneAction, { type: 'draft' }>> = {}): LigneAction => ({ type: 'draft', draftId: 'd1', kind: 'slack', hash, texte: 'Salut', inFlight: false, ...extra })
 const perm: LigneAction = { type: 'perm', command: 'rm -rf build', reason: 'nettoyage', genre: 'hook' }
 
 /** A store the test drives: rows, and the ops it would relay. */
-function fakeStore(initial: Ligne[]) {
+function fakeStore(initial: Ligne[], projects: ProjectView[] = []) {
   let rows = initial
   const listeners = new Set<() => void>()
   const sent: Array<{ workspaceId: string; panelId: string; op: AgenceOp }> = []
   let reply: (op: AgenceOp) => Promise<unknown> | null = async () => ({ ok: true })
   return {
     store: {
-      getSnapshot: () => ({ projects: [], rows, closedWorkspaces: 0 }),
+      getSnapshot: () => ({ projects, rows, closedWorkspaces: 0 }),
       subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
       send(workspaceId: string, panelId: string, op: AgenceOp) {
         sent.push({ workspaceId, panelId, op })
@@ -33,8 +39,8 @@ function fakeStore(initial: Ligne[]) {
 }
 
 let fake: ReturnType<typeof fakeStore>
-const start = (rows: Ligne[]) => {
-  fake = fakeStore(rows)
+const start = (rows: Ligne[], projects: ProjectView[] = []) => {
+  fake = fakeStore(rows, projects)
   const actions = createBoiteActions(fake.store)
   actions.subscribe(() => {})
   return actions
@@ -261,5 +267,116 @@ describe('state', () => {
     const stop = actions.subscribe(() => {})
     expect(spy).toHaveBeenCalledTimes(1)
     stop()
+  })
+})
+
+const project = (extra: Partial<ProjectView> = {}): ProjectView => ({ workspaceId: 'w1', panelId: 'p1', root: '/a/cate', repo: 'cate', state: 'live', error: null, ...extra })
+
+describe('open', () => {
+  beforeEach(() => { host.calls = []; host.revealed = true })
+
+  it("reveals the panel in the line's workspace, then focuses it", async () => {
+    const actions = start([ligne('/a/cate#n1', { type: 'link' }, { links: [{ panelId: 'x1', title: 'Impl', closed: false }, { panelId: 'x2', title: 'Rev', closed: false }] })])
+    await expect(actions.open('/a/cate#n1', 'x2')).resolves.toEqual({ ok: true })
+    expect(host.calls).toEqual(['reveal w1 x2', 'focus w1 x2'])
+    expect(fake.sent).toEqual([])
+  })
+
+  it("opens the project's agence panel when no panel is named", async () => {
+    const actions = start([ligne('/a/cate#n1', { type: 'link' }, { workspaceId: 'w2', panelId: 'agence2' })])
+    await actions.open('/a/cate#n1')
+    expect(host.calls).toEqual(['reveal w2 agence2', 'focus w2 agence2'])
+  })
+
+  it('refuses a closed panel or one the line does not link, and never focuses', async () => {
+    const actions = start([ligne('/a/cate#n1', { type: 'link' }, { links: [{ panelId: 'x1', title: 'Impl', closed: true }] })])
+    await expect(actions.open('/a/cate#n1', 'x1')).resolves.toMatchObject({ ok: false, error: 'unavailable', message: 'panneau fermé' })
+    await expect(actions.open('/a/cate#n1', 'other')).resolves.toMatchObject({ ok: false, error: 'invalid' })
+    expect(host.calls).toEqual([])
+  })
+
+  it('does not focus a panel that is no longer in the workspace', async () => {
+    host.revealed = false
+    const actions = start([ligne('/a/cate#n1', { type: 'link' }, { links: [{ panelId: 'x1', title: 'Impl', closed: false }] })])
+    await expect(actions.open('/a/cate#n1', 'x1')).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    expect(host.calls).toEqual(['reveal w1 x1'])
+  })
+
+  it('works on a greyed line: opening is always allowed', async () => {
+    const actions = start([ligne('/a/cate#n1', { type: 'link' }, { enabled: false, reason: 'régisseur arrêté' })])
+    await expect(actions.open('/a/cate#n1')).resolves.toEqual({ ok: true })
+  })
+
+  it('finds the line by its key: an unknown key opens nothing', async () => {
+    const actions = start([])
+    await expect(actions.open('/a/cate#n9')).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    expect(host.calls).toEqual([])
+  })
+})
+
+describe('a greyed line', () => {
+  it('takes no answer, send, show or permission: nothing leaves, the reason is the refusal', async () => {
+    const off = { enabled: false, reason: 'régisseur arrêté' }
+    const actions = start([
+      ligne('/a/cate#n1', question(), off),
+      ligne('/a/cate#n2', draft('h1'), off),
+      ligne('/a/cate#n3', perm, off),
+    ])
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toEqual({ ok: false, error: 'unavailable', message: 'régisseur arrêté' })
+    await expect(actions.merge('/a/cate#n1', { questionId: 'q1' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    expect(actions.show('/a/cate#n2')).toMatchObject({ ok: false, error: 'unavailable' })
+    await expect(actions.send('/a/cate#n2')).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    await expect(actions.perm('/a/cate#n3', 'oui')).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    expect(fake.sent).toEqual([])
+  })
+})
+
+describe('restart', () => {
+  const stopped = { state: 'unavailable', error: 'régisseur arrêté' } as const
+
+  it("sends orchestrator.restart to the project's own agence session, and nothing else", async () => {
+    const actions = start([], [project({ workspaceId: 'w2', panelId: 'p2', ...stopped }), project(stopped)])
+    await expect(actions.restart({ workspaceId: 'w2', panelId: 'p2' })).resolves.toEqual({ ok: true })
+    expect(fake.sent).toEqual([{ workspaceId: 'w2', panelId: 'p2', op: { kind: 'orchestrator.restart' } }])
+  })
+
+  it('also works on an error project (unreadable state)', async () => {
+    const actions = start([], [project({ state: 'error', error: 'JSON illisible' })])
+    await expect(actions.restart({ workspaceId: 'w1', panelId: 'p1' })).resolves.toEqual({ ok: true })
+  })
+
+  it('is busy, and sends nothing, when everything runs: no second regisseur', async () => {
+    const actions = start([], [project()])
+    await expect(actions.restart({ workspaceId: 'w1', panelId: 'p1' })).resolves.toEqual({ ok: false, error: 'busy' })
+    expect(fake.sent).toEqual([])
+  })
+
+  it("relays the session's busy as is", async () => {
+    const actions = start([], [project(stopped)])
+    fake.reply(async () => ({ ok: false, error: 'busy' }))
+    await expect(actions.restart({ workspaceId: 'w1', panelId: 'p1' })).resolves.toEqual({ ok: false, error: 'busy' })
+  })
+
+  it('takes one click as one restart', async () => {
+    const actions = start([], [project(stopped)])
+    let release: (value: unknown) => void = () => {}
+    fake.reply(() => new Promise((resolve) => { release = resolve }))
+    const first = actions.restart({ workspaceId: 'w1', panelId: 'p1' })
+    await expect(actions.restart({ workspaceId: 'w1', panelId: 'p1' })).resolves.toEqual({ ok: false, error: 'busy' })
+    release({ ok: true })
+    await first
+    expect(fake.sent).toHaveLength(1)
+  })
+
+  it('refuses a project the inbox does not watch', async () => {
+    const actions = start([], [project(stopped)])
+    await expect(actions.restart({ workspaceId: 'w9', panelId: 'p9' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    expect(fake.sent).toEqual([])
+  })
+
+  it('never restarts by itself when a project turns unavailable', () => {
+    start([], [project()])
+    fake.set([])
+    expect(fake.sent).toEqual([])
   })
 })
