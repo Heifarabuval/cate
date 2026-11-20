@@ -199,4 +199,4 @@ Un geste fait 2 ou 3 fois est proposé comme recette (spec 003) ; l'humain valid
 4. **Premier cobaye non-dev** : deux candidats, un media planner et un intégrateur d'une agence marketing. Hypothèse : le media planner d'abord (validateur chiffré), l'intégrateur ensuite (validateur visuel).
 5. **Connecteurs du data manager** : existe-t-il un MCP ou une API pour le tag manager, le test A/B et la bannière de consentement ? Hypothèse : API officielle en lecture seule d'abord ; la bannière exacte reste à confirmer.
 6. **Zoetrope** (flux de données animé entre blocs) : hors périmètre, question ouverte (décision du 19/11). Hypothèse : traitée après les couches 1 et 2.
-7. **Numérotation** : 009 = cette spec, 010 = interlocuteur, 011 = mesure. Hypothèse : à confirmer avec l'orchestrateur du projet pour éviter une collision.
+7. **Numérotation** : 009 = cette spec, 010 = interlocuteur, 011 = mesure. Confirmé le 2026-11-20 par l'orchestrateur du projet : aucune branche distante ne porte de spec 009 à 019 hors celle-ci. Résolue.
