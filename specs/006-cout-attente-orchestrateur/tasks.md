@@ -11,7 +11,7 @@ description: "Tâches : coût en jetons de l'attente d'un orchestrateur (issue #
 
 **Interdits à tout agent** (constitution X) : lancer Playwright, Electron, l'app Cate ou `npm run dev`, ouvrir une fenêtre, lancer `npm ci` ou `npm install`, écrire dans le vrai `~/.cate` ou `~/.claude`, relancer des tests sans édition depuis leur dernière exécution verte, merge, push sur `main`, force-push. Les sondes du lot 2 utilisent des agents jetables dans l'app déjà ouverte (`cate agent start`), jamais un second lancement de l'app.
 
-**État** : spec écrite, aucune tâche commencée. Aucune décision de Heifara n'est attendue avant les lots 1 et 2 (Q1 à Q6 ont une hypothèse de travail).
+**État** : lots 1 et 2 faits (rapport-sonde.md : T011 et T012 font tomber deux hypothèses, plan corrigé), lot 3 fait (T022 : `skills/cate-cli/references/agents.md:15` laissé, Q1). Aucune décision de Heifara n'est attendue avant les lots 1 et 2 (Q1 à Q6 ont une hypothèse de travail).
 
 ## Format: `- [ ] ID [P] [US] Description avec chemin`
 
@@ -56,10 +56,10 @@ Lots 1 et 2 ne partagent aucun fichier : ils partent ensemble. Le lot 3 ne touch
 
 **But** : vérifier dans l'app, avec des agents jetables, ce que la spec n'a pu que lire : (1) une session qui finit son tour est réveillée par un `cate agent send` sans tour intermédiaire ; (2) un `cate agent wait` en fond la réveille une fois à sa sortie ; (3) la commande ne sort pas tout de suite quand les agents viennent d'être lancés ; (4) un Stop hook de `/goal` annule (1) et (2) comme la mesure le suggère.
 
-- [ ] T010 [P] [US1] Sonde A (agent jetable, modèle le moins cher, titre `#n497 sonde`, un seul à la fois) : un « orchestrateur de sonde » lance un agent B jetable (« attends 90 s puis envoie `ok` par `cate agent send` à ton parent ») et termine son tour sans rien d'autre. Relever par `cate agent usage` (jetons d'entrée avant et après) et `cate agent list` : nombre de tours de l'orchestrateur de sonde pendant les 90 s (attendu : 0), et son réveil à l'arrivée de `ok` (attendu : 1 tour).
-- [ ] T011 [P] [US1] Sonde B : même montage, mais l'orchestrateur de sonde lance `cate agent wait <B> --wait-timeout 600000` en tâche de fond et termine son tour. Relever : réveil à la sortie (attendu : 1), sortie immédiate ou non quand B vient d'être lancé (attendu : non, après la fin de B), passages entre-temps (attendu : 0).
-- [ ] T012 [US2] Sonde C : même montage que A, avec un `/goal` dont la condition est fausse. Relever le nombre de tours forcés pendant 90 s (attendu : au moins 1 par fin de tour). Fermer les panneaux jetables ensuite (`cate panel close`, sans `--discard` sauf refus sur un panneau jetable).
-- [ ] T013 [US1] `specs/006-cout-attente-orchestrateur/rapport-sonde.md` : une ligne par sonde (montage, nombre mesuré, attendu, écart). Une hypothèse de la spec qui tombe est dite et le plan corrigé (Q3, mécanisme du filet) avant le lot 3.
+- [x] T010 [P] [US1] Sonde A (agent jetable, modèle le moins cher, titre `#n497 sonde`, un seul à la fois) : un « orchestrateur de sonde » lance un agent B jetable (« attends 90 s puis envoie `ok` par `cate agent send` à ton parent ») et termine son tour sans rien d'autre. Relever par `cate agent usage` (jetons d'entrée avant et après) et `cate agent list` : nombre de tours de l'orchestrateur de sonde pendant les 90 s (attendu : 0), et son réveil à l'arrivée de `ok` (attendu : 1 tour).
+- [x] T011 [P] [US1] Sonde B : même montage, mais l'orchestrateur de sonde lance `cate agent wait <B> --wait-timeout 600000` en tâche de fond et termine son tour. Relever : réveil à la sortie (attendu : 1), sortie immédiate ou non quand B vient d'être lancé (attendu : non, après la fin de B), passages entre-temps (attendu : 0).
+- [x] T012 [US2] Sonde C : même montage que A, avec un `/goal` dont la condition est fausse. Relever le nombre de tours forcés pendant 90 s (attendu : au moins 1 par fin de tour). Fermer les panneaux jetables ensuite (`cate panel close`, sans `--discard` sauf refus sur un panneau jetable).
+- [x] T013 [US1] `specs/006-cout-attente-orchestrateur/rapport-sonde.md` : une ligne par sonde (montage, nombre mesuré, attendu, écart). Une hypothèse de la spec qui tombe est dite et le plan corrigé (Q3, mécanisme du filet) avant le lot 3.
 
 **Test d'acceptation** : les trois sondes ont un nombre mesuré écrit ; 0 panneau jetable restant ; pas de plus de 4 agents Claude vivants à la fois (mémoire du projet : plafond du Mac).
 
@@ -75,12 +75,12 @@ Lots 1 et 2 ne partagent aucun fichier : ils partent ensemble. Le lot 3 ne touch
 
 ### Tests d'abord (à voir rouges)
 
-- [ ] T020 [P] [US1] `tools/agence/test_regle_attente.py` : lit `skills/orchestrateur/SKILL.md` et vérifie (a) aucune occurrence de `--wait-timeout 60000` ; (b) le filet : `--wait-timeout 600000` et `run_in_background` ; (c) la règle de fin de tour (la phrase sur les rapports par `cate agent send`) ; (d) la règle `/goal` ; (e) aucune valeur propre à un dev (nom, chemin personnel, modèle imposé) ; (f) le skill pèse au plus 105 % de 13 936 octets. Résultat attendu : rouge sur le skill actuel (il contient `--wait-timeout 60000`, `SKILL.md:28`).
+- [x] T020 [P] [US1] `tools/agence/test_regle_attente.py` : lit `skills/orchestrateur/SKILL.md` et vérifie (a) aucune occurrence de `--wait-timeout 60000` ; (b) le filet : `--wait-timeout 600000`, `run_in_background` et quand le lancer (« jamais juste après un envoi » : la sonde T011 l'a vu sortir en 5 s) ; (c) la règle de fin de tour (la phrase sur les rapports par `cate agent send`) ; (d) la règle `/goal` (clic, merge, agent), sans la cause non reproduite par T012 (« chaque fin de tour redevient ») ; (e) aucune valeur propre à un dev (nom, chemin personnel, modèle imposé) ; (f) le skill pèse au plus 105 % de 13 936 octets, plafond relevé de l'ajout des lots passés avant sur ce fichier (spec 009 T011) ; (g) la ligne de mesure cite `attente_mesure.py`. Résultat attendu : rouge sur le skill actuel (il contient `--wait-timeout 60000`, `SKILL.md:28`).
 
 ### Code
 
-- [ ] T021 [US1][US2] `skills/orchestrateur/SKILL.md` : remplacer la ligne 28 (étape 5, « Suis ») par la règle du plan (fin de tour, filet en fond, `cate agent list` puis `cate agent read` au réveil) ; ajouter la règle `/goal` (deux lignes dans la liste de ce qui ne se fait pas, ou sous « Pour chaque tâche ») ; ajouter une ligne de mesure vers `attente_mesure.py` (FR-005). Ne pas toucher aux autres lignes : le fichier est aussi l'objet des specs 002 et 005.
-- [ ] T022 [US1] Chercher les autres sources de la règle : `skills/cate-cli/references/agents.md:15` (« repeat while it exits 1 ») dit déjà la commande, pas la politique ; la laisser (Q1) sauf décision contraire de Heifara. Dire le résultat dans la PR.
+- [x] T021 [US1][US2] `skills/orchestrateur/SKILL.md` : remplacer la ligne 28 (étape 5, « Suis ») par la règle du plan (fin de tour, filet en fond, `cate agent list` puis `cate agent read` au réveil) ; ajouter la règle `/goal` (deux lignes dans la liste de ce qui ne se fait pas, ou sous « Pour chaque tâche ») ; ajouter une ligne de mesure vers `attente_mesure.py` (FR-005), livré à côté de `agence`. Texte : `plan.md`, corrigé après le lot 2. Ne pas toucher aux autres lignes : le fichier est aussi l'objet des specs 002 et 005.
+- [x] T022 [US1] Chercher les autres sources de la règle : `skills/cate-cli/references/agents.md:15` (« repeat while it exits 1 ») dit déjà la commande, pas la politique ; la laisser (Q1) sauf décision contraire de Heifara. Dire le résultat dans la PR.
 
 **Test d'acceptation** : `test_regle_attente.py` vu rouge puis vert ; `git diff --stat` ne montre que `SKILL.md` et le test (SC-004), 3 hunks au plus dans le skill.
 

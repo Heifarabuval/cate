@@ -24,14 +24,15 @@ Gain = borne haute sur l'échantillon de 442,7 M de jetons lus (mesure.md). Coû
 
 Texte à écrire (lot 3, version de travail) :
 
-1. Suivi (remplace `SKILL.md:28`) : « Suis : après avoir lancé et rattaché la vague, termine ton tour. Les rapports arrivent par `cate agent send` et chacun relance un tour. Filet : un seul `cate agent wait <ids> --wait-timeout 600000` en tâche de fond pour la vague ; à son réveil `cate agent list`, puis `cate agent read <id>` pour un agent au repos sans rapport. Jamais d'attente en avant-plan en boucle. »
-2. `/goal` : « Ne pose pas de `/goal` dont la condition dépend d'un clic humain, d'une merge ou d'un agent : chaque fin de tour redevient un tour complet. Le suivi et les cartes disent ce qui reste. »
-3. Mesure : « `python3 tools/agence/attente_mesure.py` donne le coût d'une vague en nombres. »
+1. Suivi (remplace `SKILL.md:28`) : « Suis : après avoir lancé et rattaché la vague, termine ton tour. Les rapports arrivent par `cate agent send` et chacun relance un tour. Filet, au premier rapport si d'autres agents tournent encore : un seul `cate agent wait <ids restants> --wait-timeout 600000` en tâche de fond (`run_in_background`), jamais juste après un envoi (il sort en 5 s : un tour perdu) ; à son réveil `cate agent list`, puis `cate agent read <id>` pour un agent au repos sans rapport. Jamais d'attente en avant-plan en boucle. »
+2. `/goal` : « Ne pose pas de `/goal` dont la condition dépend d'un clic humain, d'une merge ou d'un agent : les tours de Stop hook pèsent 13,9 % des jetons lus. Le suivi et les cartes disent ce qui reste. » La cause (« chaque fin de tour redevient un tour complet ») n'est pas écrite : la sonde T012 ne l'a pas reproduite (rapport-sonde.md).
+3. Mesure : « Coût d'une vague : `attente_mesure.py` (à côté de `agence`). » Le chemin `tools/agence/` n'existe que dans le dépôt du fork, pas dans le projet orchestré.
 
 ## Mécanisme
 
 - **Fin de tour** : une session Claude Code qui termine son tour sans Stop hook actif n'est relancée que par un prompt. `cate agent send` en envoie un à l'orchestrateur dès qu'il peut le prendre (`cate agent send --help`). Aucun tour n'a lieu entre-temps.
-- **Filet** : une commande Bash `run_in_background` relance la session à sa sortie (comportement du harnais). `cate agent wait` sort quand tous les panneaux listés sont prêts pour un prompt, ou au plafond (d'après `cate agent wait --help`). Une commande qui sortirait aussitôt parce que les agents sont déjà « prêts » ferait un tour pour rien : la sonde T011 du lot 2 le vérifie sur une vague réelle avant d'écrire la règle.
+- **Filet** : une commande Bash `run_in_background` relance la session à sa sortie (comportement du harnais). `cate agent wait` sort quand tous les panneaux listés sont prêts pour un prompt, ou au plafond (d'après `cate agent wait --help`). **Sonde T011 (rapport-sonde.md)** : lancé juste après le `cate agent send` à l'agent, `wait` sort en 5 s (l'agent est encore « prêt » quand la commande le lit) et coûte 3 tours au lieu de 1. Le filet ne se lance donc qu'une fois les agents entrés dans leur tour : au premier rapport, pour les agents qui tournent encore. Non vérifié : `wait` sur un agent déjà `running` depuis plusieurs secondes ; cause inférée (ordre des deux commandes), non prouvée.
+- **`/goal`** : la sonde T012 n'a forcé aucun tour en 107 s avec une condition fausse, alors que les journaux comptent 131 tours de Stop hook (13,9 %). L'interdit reste (il s'appuie sur la mesure) ; son mécanisme n'est pas reproduit et le skill ne l'écrit pas comme un fait.
 - **Pas de poll** : aucune boucle, aucune planification récurrente.
 
 ## Modules touchés
