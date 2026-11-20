@@ -29,8 +29,8 @@
     padding: 0 var(--s3); border-radius: var(--radius); font-weight: 500; cursor: pointer;
     border: var(--hairline) solid var(--border-subtle); background: transparent; color: var(--text-secondary); }
   button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
-  button.primary { background: var(--focus-blue); border-color: var(--focus-blue); color: white; }
-  button.primary:hover:not(:disabled) { background: var(--focus-blue); color: white; opacity: .9; }
+  button.primary { background: var(--focus-blue); border-color: var(--focus-blue); color: var(--text-inverse); }
+  button.primary:hover:not(:disabled) { background: var(--focus-blue); color: var(--text-inverse); opacity: .9; }
   button:disabled { opacity: .4; cursor: default; }
   :where(button, input[type='file']):focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 
