@@ -112,7 +112,7 @@ skills/orchestrateur/SKILL.md # lot 6 : une ligne
 |---|---|---|---|
 | `tools/agence/attente_mesure.py`, `test_attente_mesure.py` | lot 1 | 006 lot 4 (mesure après : lit, ne modifie pas) | aucun conflit attendu ; si 006 rouvre le script, rebase |
 | `tools/agence/benchmark.py`, `test_benchmark.py`, `fixtures/bench/` | lots 2, 3, 6 | aucun | seul propriétaire ; lots en série sur ce fichier |
-| `skills/orchestrateur/SKILL.md` | lot 6, une ligne | 005 lot 4, 006 lot 3, 010 (interlocuteur) | dernier sur ce fichier ; l'orchestrateur sérialise |
+| `skills/orchestrateur/SKILL.md` | lot 6, une ligne | 006 lot 3, 005 lot 4, 010 lot 4 (section « Lancer »), puis 004 lot 5 | après 010-L4 et avant 004-L5 (ordre de 009 T011) ; l'orchestrateur sérialise |
 | `specs/011-mesure-benchmark/**` | tous | aucun | seul propriétaire |
 | `specs/009-vision-v2/spec.md` | non touché | tenu par un autre panneau | le verdict est référencé par son propriétaire, pas par cette epic |
 

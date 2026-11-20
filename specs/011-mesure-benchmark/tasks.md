@@ -30,7 +30,7 @@ description: "Tâches : mesure par benchmark, critère de passage de la couche 1
 | **3. Mesure de rejeu, revue, seuil, rapport** | US1 | 1 j | 1, 2 | aucun (même `benchmark.py` que 2 et 6) |
 | **4. Pilote** | US1 | 0,5 j agent + [H] ~4 h (hypothèse) | 3 | 6 |
 | **5. Campagne et verdict de couche 1** | US1 | 0,5 j agent + [H] 10 à 30 h (hypothèse) | 4 ; MVP de la spec 010 (hypothèse Q3) | 6 |
-| **6. Comparaison et règle d'économie** | US2 | 1 j | 1, 2 ; après 3 sur `benchmark.py` ; `SKILL.md` après 005-L4 et 006-L3 | 4, 5 |
+| **6. Comparaison et règle d'économie** | US2 | 1 j | 1, 2 ; après 3 sur `benchmark.py` ; `SKILL.md` après 006-L3, 005-L4 et 010-L4 | 4, 5 |
 
 Ordre conseillé : {1, 2} ensemble, puis 3, puis {4 puis 5} et {6} ensemble. Les lots 2, 3 et 6 partagent `tools/agence/benchmark.py` et `test_benchmark.py` : une PR à la fois, rebase de la suivante.
 
@@ -170,13 +170,13 @@ Ordre conseillé : {1, 2} ensemble, puis 3, puis {4 puis 5} et {6} ensemble. Les
 
 **Fichiers touchés** : `tools/agence/benchmark.py` (sous-commande `comparer`), `tools/agence/test_benchmark.py`, `tools/agence/fixtures/bench/claude/` (faux `claude`), `tools/agence/test_regle_economie.py` (nouveau), `skills/orchestrateur/SKILL.md` (une ligne), `specs/011-mesure-benchmark/comparaisons/` (rapports de comparaison, à l'usage).
 
-**Dépend de** : lots 1 et 2 ; après le lot 3 sur `benchmark.py` ; `SKILL.md` après 005-L4 et 006-L3 (ou rebase). **Parallélisable avec** : lots 4 et 5. **Critère de fin** : checkpoint et PR ouverte.
+**Dépend de** : lots 1 et 2 ; après le lot 3 sur `benchmark.py` ; `SKILL.md` après 006-L3, 005-L4 et 010-L4 (ordre de 009 T011, ou rebase). **Parallélisable avec** : lots 4 et 5. **Critère de fin** : checkpoint et PR ouverte.
 
 ### Tests d'abord
 
 - [ ] T060 [P] [US2] `test_benchmark.py` : **comparer** (FR-011) : le faux `claude -p` écrit un diff et un journal connus selon la ref ; avant vert, après rouge : « annuler », code 1, l'issue nommée ; tous verts : jetons avant, après, rapport, code 0 ; sous-ensemble lu dans `selection.json` (pilotes et issue de comparaison), jamais une issue de campagne. Modèle : opus.
 - [ ] T061 [P] [US2] `test_benchmark.py` : `comparer` lance `claude` avec `-p` et `--output-format json`, sans aucune option qui ouvre une interface ; les gardes de T015 restent vertes. Modèle : haiku.
-- [ ] T062 [P] [US2] `tools/agence/test_regle_economie.py` : lit `skills/orchestrateur/SKILL.md` : il cite `benchmark.py comparer` et exige son rapport dans une PR qui annonce une économie de jetons ; le skill ne grossit pas de plus de 2 % (chaque octet se relit à chaque tour, 006 FR-009). Modèle : sonnet.
+- [ ] T062 [P] [US2] `tools/agence/test_regle_economie.py` : lit `skills/orchestrateur/SKILL.md` : il cite `benchmark.py comparer` et exige son rapport dans une PR qui annonce une économie de jetons ; le skill ne grossit pas de plus de 2 % par rapport au HEAD d'avant ce lot (règle propre à 011, plus stricte que les 5 % de 006 FR-009 ; chaque octet se relit à chaque tour) ; la constante du test de taille de 006 est relevée de ce seul ajout (009 T011). Modèle : sonnet.
 
 ### Implémentation
 
