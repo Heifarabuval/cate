@@ -12,8 +12,21 @@ import { DESKTOP_CHANNELS as C, type MenuModel } from '../contract'
 
 const log = createLogger('security')
 
+/** A kind of guest other than the browser's (spec 008): its own preload and
+ *  a locked session, declared by the module that mounts it. The partition
+ *  names the kind; `browser: false` means no popup-to-tab, no permission
+ *  grant, no browser user agent and no browser shortcut for its pages. */
+export interface GuestKind {
+  id: string
+  matches(partition: string): boolean
+  preload: string
+  browser: false
+}
+
 interface WebSecurityOptions {
+  /** The browser guest's preload, for every partition no `guestKinds` entry claims. */
   guestPreload: string
+  guestKinds?: readonly GuestKind[]
   /** The dev server origin, when running under electron-vite dev. */
   rendererUrl?: string
   hardeningDisabled(): boolean
@@ -69,6 +82,7 @@ export function forwardedActionForInput(input: Pick<Electron.Input, 'type' | 'ke
 }
 
 const guestSessions = new WeakSet<Session>()
+const lockedSessions = new WeakSet<Session>()
 
 function browserUserAgent(target: Session): string {
   const product = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -108,6 +122,20 @@ function configureGuestSession(target: Session, platform: NodeJS.Platform): void
   })
 }
 
+/** The session of a custom panel: no permission, no navigation off the web. */
+function lockGuestSession(target: Session): void {
+  if (lockedSessions.has(target)) return
+  lockedSessions.add(target)
+  target.setPermissionRequestHandler((_contents, permission, callback) => {
+    log.warn('denied custom panel permission %s', permission)
+    callback(false)
+  })
+  target.setPermissionCheckHandler(() => false)
+  target.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: details.resourceType === 'mainFrame' && !isAllowedGuestUrl(details.url) })
+  })
+}
+
 function hardenGuest(contents: WebContents, options: WebSecurityOptions, platform: NodeJS.Platform): void {
   contents.on('will-navigate', (event, url) => {
     if (!isAllowedGuestUrl(url)) {
@@ -129,7 +157,7 @@ function hardenGuest(contents: WebContents, options: WebSecurityOptions, platfor
       host.send(C.menuAction, forwarded)
       return
     }
-    const action = browserActionForInput(input, platform)
+    const action = guestSessions.has(contents.session) ? browserActionForInput(input, platform) : null
     if (!action) return
     event.preventDefault()
     sendBrowserShortcut(host, action)
@@ -169,13 +197,19 @@ export function installWebSecurity(options: WebSecurityOptions): void {
         return
       }
       // Pin the guest preload; never trust one the renderer supplied.
-      ;(webPreferences as { preload?: string }).preload = options.guestPreload
+      const kind = options.guestKinds?.find((candidate) => candidate.matches(partition))
+      ;(webPreferences as { preload?: string }).preload = kind?.preload ?? options.guestPreload
       delete (webPreferences as { preloadURL?: string }).preloadURL
       webPreferences.nodeIntegration = false
       webPreferences.contextIsolation = true
       webPreferences.sandbox = true
       webPreferences.webSecurity = true
       ;(webPreferences as { allowRunningInsecureContent?: boolean }).allowRunningInsecureContent = false
+      if (kind) {
+        delete params.allowpopups
+        lockGuestSession(electronSession.fromPartition(partition))
+        return
+      }
       // Popups reach the window-open handler, which turns them into tabs.
       params.allowpopups = 'true'
       configureGuestSession(electronSession.fromPartition(partition), platform)

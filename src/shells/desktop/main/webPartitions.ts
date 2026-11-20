@@ -22,6 +22,8 @@ const APP_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
  *  `persist:`), so no cookie, storage or sign-in survives it or reaches
  *  another panel or the user's browsing. The runtime is part of the name: the
  *  partition routes through that runtime's loopback proxy. */
+export const isAppPartition = (partition: string): boolean => partition.startsWith('app-')
+
 export const appPartition = (runtimeId: string, appId: string): string => `app-${runtimeId}-${appId}`
 
 export interface LoopbackDialer {

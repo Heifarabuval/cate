@@ -43,7 +43,7 @@ import { installBundledRuntime, machineRuntimeTarball } from './updater/runtimeI
 import { createMachinePrompts, registerMachineIpc } from './machineIpc'
 import { createInstallProgress } from './installProgress'
 import { DEFAULT_UPDATE_RECORD, normalizeUpdateRecord } from './updater/updateState'
-import { createWebPartitions } from './webPartitions'
+import { createWebPartitions, isAppPartition } from './webPartitions'
 import { createSharedSignIns } from './sharedSignIns'
 import { readDefaultBrowserCookies } from './browserCookies'
 import { handle } from './ipc'
@@ -145,6 +145,7 @@ process.on('unhandledRejection', (reason) => {
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 const paths = shellPaths(__dirname)
 const guestPreload = path.join(__dirname, '../preload/shellGuest.js')
+const appPanelPreload = path.join(__dirname, '../preload/appPanel.js')
 
 let started = false
 const focusWindow = (win: BrowserWindow) => {
@@ -270,6 +271,7 @@ app.whenReady().then(() => {
   })
   installWebSecurity({
     guestPreload,
+    guestKinds: [{ id: 'app', matches: isAppPartition, preload: appPanelPreload, browser: false }],
     rendererUrl,
     hardeningDisabled: featureFlags.disableWebviewHardening,
     guestKeys: () => menu.guestKeys(),
