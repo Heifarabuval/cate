@@ -202,9 +202,12 @@ describe('web partitions', () => {
 })
 
 describe('custom panel partitions (spec 008)', () => {
+  const beforeFirstMount = vi.fn(async (_partition: string) => {})
   function appSetup() {
+    beforeFirstMount.mockClear()
     const sessions = new Map<string, { setProxy: ReturnType<typeof vi.fn<(config: Electron.ProxyConfig) => Promise<void>>>; closeAllConnections: ReturnType<typeof vi.fn<() => Promise<void>>>; clearStorageData: () => Promise<void> }>()
     const partitions = createWebPartitions({
+      beforeFirstMount,
       session: (name) => {
         if (!sessions.has(name)) sessions.set(name, { setProxy: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}), clearStorageData: async () => {} })
         return sessions.get(name)!
@@ -227,6 +230,15 @@ describe('custom panel partitions (spec 008)', () => {
       expect(partitions.isPrepared(name)).toBe(true)
       expect(sessions.get(name)!.setProxy).toHaveBeenCalledWith({ mode: 'fixed_servers', proxyRules: 'http://127.0.0.1:41234', proxyBypassRules: '<-loopback>' })
     }
+  })
+
+  it('never gives a custom panel the shared sign-ins: beforeFirstMount runs for the workspace partition only', async () => {
+    const { partitions } = appSetup()
+    await partitions.partitionFor(RUNTIME, dialer(1, vi.fn()), false)
+    await partitions.appPartitionFor(RUNTIME, 'notes', dialer(1, vi.fn()), false)
+    await partitions.appPartitionFor(RUNTIME, 'fusion-excel', dialer(1, vi.fn()), false)
+    await partitions.refresh()
+    expect(beforeFirstMount.mock.calls.map(([partition]) => partition)).toEqual([ws])
   })
 
   it('shares the runtime proxy and leaves the workspace partition untouched', async () => {
