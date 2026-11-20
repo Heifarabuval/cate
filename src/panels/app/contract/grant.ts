@@ -21,6 +21,8 @@ export interface AppGrant {
   manifestFingerprint: string
   /** Installed panels only. */
   folderFingerprint?: string
+  /** Installed panels only: the files accepted, to name what changed since. */
+  files?: FolderFile[]
   accepted: AppManifest['permissions']
   at: string
 }
@@ -44,6 +46,24 @@ const canonical = (value: unknown): string =>
     : value && typeof value === 'object'
       ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(',')}}`
       : JSON.stringify(value)
+
+/** Files added, changed and removed from `before` to `after`, by SHA-256, sorted by path. */
+export type FolderChanges = {
+  added: string[]
+  changed: string[]
+  removed: string[]
+}
+
+export function folderChanges(before: readonly FolderFile[], after: readonly FolderFile[]): FolderChanges {
+  const was = new Map(before.map((file) => [file.path, file.sha256]))
+  const now = new Map(after.map((file) => [file.path, file.sha256]))
+  const sorted = (paths: string[]) => paths.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  return {
+    added: sorted([...now.keys()].filter((key) => !was.has(key))),
+    changed: sorted([...now.keys()].filter((key) => was.has(key) && was.get(key) !== now.get(key))),
+    removed: sorted([...was.keys()].filter((key) => !now.has(key)))
+  }
+}
 
 /** What a user accepts in a manifest: id, entry, permissions and tasks. */
 export function manifestFingerprint(manifest: AppManifest, hash: Hash): string {

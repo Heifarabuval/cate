@@ -21,7 +21,8 @@ function isGrant(value: unknown): value is AppGrant {
     (value.source === 'local' || value.source === 'installed') &&
     typeof value.manifestFingerprint === 'string' &&
     isObject(value.accepted) &&
-    typeof value.at === 'string'
+    typeof value.at === 'string' &&
+    (value.files === undefined || (Array.isArray(value.files) && value.files.every((file) => isObject(file) && typeof file.path === 'string' && typeof file.sha256 === 'string')))
   )
 }
 

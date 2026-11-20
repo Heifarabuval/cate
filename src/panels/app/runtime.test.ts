@@ -27,3 +27,15 @@ it('logs a panels folder that cannot be created instead of swallowing it, and th
   expect(String(log.warn.mock.calls[0].join(' '))).toMatch(/panneaux/)
   await panels.dispose()
 })
+
+it('serves the pending imports and their install on apps, the quarantine next to the grants file', async () => {
+  const register = vi.fn()
+  const data = path.join(base, 'data')
+  const panels = createAppPanels({ dir: path.join(base, 'panneaux'), grantsFile: path.join(data, 'app-grants.json'), trust, clientHas: () => true })
+  panels.attach({ rpc: { register } })
+  const impl = register.mock.calls[0][1]
+  await vi.waitFor(() => expect(fs.existsSync(path.join(data, 'app-imports'))).toBe(true))
+  expect(impl.imports()).toEqual([])
+  await expect(impl.acceptImport({ importId: 'inconnu', fingerprint: 'f' }, { connection: { id: 1 } })).rejects.toMatchObject({ code: 'rejected' })
+  await panels.dispose()
+})
