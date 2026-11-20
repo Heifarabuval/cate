@@ -22,3 +22,17 @@ it('declares the agence panel: an execution panel with no cate api', () => {
   expect(creatableDefinitions().map((definition) => definition.creation?.title ?? definition.label)).toContain('New Orchestrator')
   expect(PANEL_TYPES).toContain('agence')
 })
+
+it('declares the boite panel: a client view with no session and no cate api', async () => {
+  const boite = panelDefinition('boite')
+  expect(boite).toBeDefined()
+  expect(boite?.api).toBeUndefined()
+  expect(PANEL_TYPES).toContain('boite')
+  const { PANEL_RUNTIMES } = await import('./runtime')
+  // Services are read only by the entries that use them: any value serves here.
+  const anything: unknown = new Proxy(() => {}, { get: () => anything, apply: () => anything })
+  const entries = PANEL_RUNTIMES.map((runtime) => runtime(anything as never))
+  const entry = entries.find((module) => module.definition.type === 'boite')
+  expect(entry).toBeDefined()
+  expect(entry?.session).toBeUndefined()
+})
