@@ -54,6 +54,10 @@ export interface CommandSources {
   inWorktree: readonly AnyPanelDefinition[]
   worktrees: readonly { id: string; path: string; label: string }[]
   create(type: string, options: { worktreeId: string; cwd: string }): void
+  /** The canvas menu's extra entries (custom panels, agents): one command each. */
+  menuEntries: readonly { id: string; label: string; icon?: IconName; run(position: { x: number; y: number }): void }[]
+  /** Where an entry creates its panel: the centre of the view, in canvas coordinates. */
+  viewCenter(): { x: number; y: number }
 }
 
 const matches = (query: string, ...texts: (string | undefined)[]): boolean =>
@@ -85,6 +89,9 @@ export function commandItems(src: CommandSources, query: string): CommandItem[] 
         })
       }
     }
+  }
+  for (const entry of src.menuEntries) {
+    out.push({ kind: 'command', id: `entry:${entry.id}`, title: entry.label, icon: entry.icon ?? null, run: () => entry.run(src.viewCenter()) })
   }
   return out.filter((item) => matches(query, item.title))
 }

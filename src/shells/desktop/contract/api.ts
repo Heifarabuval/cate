@@ -309,6 +309,9 @@ export interface DesktopApi {
     grantSignIn(grant: { partition: string; domain: string }): Promise<number>
     /** Clears and forgets an agent partition when its panel closes. */
     releaseAgentPartition(agent: { partition: string }): Promise<void>
+    /** The partition of custom panel `appId`: its own and never persisted,
+     *  behind the same proxy or native networking as the workspace's. */
+    appPartitionFor(panel: { runtimeId: string; appId: string; reachesClientNetwork: boolean }): Promise<string>
   }
   webgl: {
     request(panelId: string): Promise<boolean>

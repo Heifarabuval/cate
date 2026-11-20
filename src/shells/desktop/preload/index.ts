@@ -258,6 +258,7 @@ const api: DesktopApi = {
     agentPartition: (workspace) => invoke(C.webAgentPartition, workspace),
     grantSignIn: (grant) => invoke(C.webGrantSignIn, grant),
     releaseAgentPartition: (agent) => invoke(C.webReleaseAgent, agent),
+    appPartitionFor: (panel) => invoke(C.webAppPartition, panel),
   },
   webgl: {
     request: (panelId) => invoke(C.webglRequest, panelId),

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ByteDuplex } from '@kernel/rpc/contract'
-import { createWebPartitions, type LoopbackDialer } from './webPartitions'
+import { appPartition, createWebPartitions, type LoopbackDialer } from './webPartitions'
 import type { LoopbackProxyOptions } from './loopbackProxy'
 
 const RUNTIME = 'abcdefghijklmnop'
@@ -200,3 +200,61 @@ describe('web partitions', () => {
     expect(clearStorageData).toHaveBeenCalledOnce()
   })
 })
+
+describe('custom panel partitions (spec 008)', () => {
+  function appSetup() {
+    const sessions = new Map<string, { setProxy: ReturnType<typeof vi.fn<(config: Electron.ProxyConfig) => Promise<void>>>; closeAllConnections: ReturnType<typeof vi.fn<() => Promise<void>>> }>()
+    const partitions = createWebPartitions({
+      session: (name) => {
+        if (!sessions.has(name)) sessions.set(name, { setProxy: vi.fn(async () => {}), closeAllConnections: vi.fn(async () => {}) })
+        return sessions.get(name)!
+      },
+      upstream: () => undefined,
+      startProxy: async () => ({ port: 41234, close: async () => {} }),
+    })
+    return { partitions, sessions }
+  }
+  const ws = `persist:ws-${RUNTIME}`
+
+  it('gives each custom panel its own non persistent partition behind the workspace proxy', async () => {
+    const { partitions, sessions } = appSetup()
+    const a = await partitions.appPartitionFor(RUNTIME, 'fusion-excel', dialer(1, vi.fn()), false)
+    const b = await partitions.appPartitionFor(RUNTIME, 'notes', dialer(1, vi.fn()), false)
+    expect(a).toBe(appPartition(RUNTIME, 'fusion-excel'))
+    expect(new Set([a, b, ws]).size).toBe(3)
+    for (const name of [a, b]) {
+      expect(name.startsWith('persist:')).toBe(false)
+      expect(partitions.isPrepared(name)).toBe(true)
+      expect(sessions.get(name)!.setProxy).toHaveBeenCalledWith({ mode: 'fixed_servers', proxyRules: 'http://127.0.0.1:41234', proxyBypassRules: '<-loopback>' })
+    }
+  })
+
+  it('shares the runtime proxy and leaves the workspace partition untouched', async () => {
+    const { partitions, sessions } = appSetup()
+    await partitions.partitionFor(RUNTIME, dialer(1, vi.fn()), false)
+    const before = sessions.get(ws)!.setProxy.mock.calls.length
+    await partitions.appPartitionFor(RUNTIME, 'notes', dialer(1, vi.fn()), false)
+    expect(sessions.get(ws)!.setProxy.mock.calls.length).toBe(before)
+    expect(sessions.get(ws)!.closeAllConnections).not.toHaveBeenCalled()
+  })
+
+  it('follows the connection policy: native networking once every connection reaches this machine', async () => {
+    const { partitions, sessions } = appSetup()
+    const name = await partitions.appPartitionFor(RUNTIME, 'notes', dialer(1, vi.fn()), true)
+    expect(sessions.get(name)!.setProxy).toHaveBeenLastCalledWith({ mode: 'system' })
+    await partitions.appPartitionFor(RUNTIME, 'notes', dialer(2, vi.fn()), false)
+    expect(sessions.get(name)!.setProxy).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'fixed_servers' }))
+  })
+
+  it('applies them again on refresh, and rejects an id that is not a runtime or a panel', async () => {
+    const { partitions, sessions } = appSetup()
+    const name = await partitions.appPartitionFor(RUNTIME, 'notes', dialer(1, vi.fn()), false)
+    const calls = sessions.get(name)!.setProxy.mock.calls.length
+    await partitions.refresh()
+    expect(sessions.get(name)!.setProxy.mock.calls.length).toBeGreaterThan(calls)
+    await expect(partitions.appPartitionFor('not a runtime', 'notes', dialer(1, vi.fn()), false)).rejects.toThrow()
+    await expect(partitions.appPartitionFor(RUNTIME, '../notes', dialer(1, vi.fn()), false)).rejects.toThrow()
+    await expect(partitions.appPartitionFor(RUNTIME, 'Notes Perso', dialer(1, vi.fn()), false)).rejects.toThrow()
+  })
+})
+

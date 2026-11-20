@@ -2,6 +2,7 @@
 // menu), so the canvas never imports them.
 
 import type React from 'react'
+import type { IconName } from '@kernel/interaction/contract'
 
 export interface CanvasToolbarItemProps {
   workspaceId: string
@@ -96,6 +97,8 @@ export function subscribeSpawnFlyouts(listener: () => void): () => void {
 export interface CanvasMenuEntry {
   id: string
   label: string
+  /** An icon name, for the menus that draw one. */
+  icon?: IconName
   /** Creates at the canvas point the menu opened on. */
   run(position: { x: number; y: number }): void
 }

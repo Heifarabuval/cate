@@ -92,6 +92,7 @@ export const DESKTOP_CHANNELS = {
   webAgentPartition: 'cate-desktop:web:agent-partition',
   webGrantSignIn: 'cate-desktop:web:grant-sign-in',
   webReleaseAgent: 'cate-desktop:web:release-agent',
+  webAppPartition: 'cate-desktop:web:app-partition',
 
   webglRequest: 'cate-desktop:webgl:request',
   webglRelease: 'cate-desktop:webgl:release',

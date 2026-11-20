@@ -86,14 +86,19 @@ export function registerTransportIpc(deps: {
     }
   })
 
+  const trackDialer = (contents: Electron.WebContents) => {
+    if (releasing.has(contents)) return
+    releasing.add(contents)
+    const id = contents.id
+    contents.once('destroyed', () => partitions.releaseDialer(id))
+  }
   handle(C.webPartition, (event, workspace: { runtimeId: string; reachesClientNetwork: boolean }) => {
-    const contents = event.sender
-    if (!releasing.has(contents)) {
-      releasing.add(contents)
-      const id = contents.id
-      contents.once('destroyed', () => partitions.releaseDialer(id))
-    }
-    return partitions.partitionFor(String(workspace?.runtimeId ?? ''), rendererDialer(contents), workspace?.reachesClientNetwork === true)
+    trackDialer(event.sender)
+    return partitions.partitionFor(String(workspace?.runtimeId ?? ''), rendererDialer(event.sender), workspace?.reachesClientNetwork === true)
+  })
+  handle(C.webAppPartition, (event, panel: { runtimeId: string; appId: string; reachesClientNetwork: boolean }) => {
+    trackDialer(event.sender)
+    return partitions.appPartitionFor(String(panel?.runtimeId ?? ''), String(panel?.appId ?? ''), rendererDialer(event.sender), panel?.reachesClientNetwork === true)
   })
   handle(C.webAgentPartition, (_event, agent: { partition: string; panelId: string }) => {
     const workspace = String(agent?.partition ?? '')
