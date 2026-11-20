@@ -6,7 +6,7 @@
 
 **Rapatriée**: 2026-11-19 dans le fork, devenue `specs/002-orchestrateur-portable`. Issue : Heifarabuval/cate#29.
 
-**Status**: Replanifiée. Lots 0, 1, 4b livrés ; lot 4 livré en partie ; lots 2, 3, 5 ouverts.
+**Status**: Livrée sauf la recette. Lots 0, 1, 2, 3, 4, 4b et 5 livrés (état relu sur `origin/main` `455a23b2` le 2026-11-20) ; reste le lot 5-A (parcours en faux HOME avec la vraie CLI), 5-B (rapport final), 5-C (premier passage réel de Max) et 5-D (suites côté Skills). Voir `tasks.md`, partie B.
 
 **Input**: besoin #n159. Max, collègue de Heifara, doit avoir le même système d'orchestration : panneau agence (PR #18), CLI `agence`, skill `orchestrateur`, gardes d'envoi. Décision de Heifara : le code de l'orchestrateur vit dans le fork Cate, pas dans le dépôt Skills ; Max l'obtient en buildant le fork, un seul dépôt. Max a son propre Cate et son propre `~/.claude`.
 
@@ -26,17 +26,19 @@
 - Q: Où vit la vérification des prérequis ? → A: `agence doctor --prerequis` ; `agence doctor` sans option reste le contrôle de relance de la spec 001. Décision de Heifara (q305, besoin n306).
 - Q: `cliTerminalInputEnabled` activé par défaut dans le fork ? → A: non, il reste coupé (réglage de sécurité) ; Max garde un clic par workspace orchestré, nommé par `doctor --prerequis`. Décision de Heifara (q307, besoin n308).
 
-## État livré au 2026-11-19
+## État livré au 2026-11-20
 
 | Lot | Contenu | Preuve |
 |---|---|---|
 | 0. Risques | rapport des quatre sondes | `rapport-lot0.md` (Skills `78a8fd3`) |
 | 1. CLI dans le runtime | `tools/agence/`, tarball, lanceurs `agence` des terminaux et du régisseur, `--version`, CI Python 3.9 | PR #30 (`332b3815`) |
-| 2. Portable, en partie | `nom()`, `agence nom`, textes au nom de l'humain, alias `--owner heifara` retiré | PR #41 (`8ec4d5ad`) |
-| 4. Mise à jour et amorçage, en partie | une ligne `curl \| sh`, agent launchd, build quand `origin/main` avance, installation Cate fermé, désinstallation | PR #40 (`5c6678c7`) |
+| 2. Portable | `nom()`, `agence nom`, textes au nom de l'humain, alias `--owner heifara` retiré (PR #41) ; skill `orchestrateur` livré, `watch` écrit `humain`, panneau « À faire par <nom> », plus de page sous `--token-stdin`, test de pureté (PR #63) | PR #41 (`8ec4d5ad`), PR #63 (`bcb0ca6a`) |
+| 3. Gardes et prérequis | `agence hooks install\|uninstall\|status`, `agence guard --mode send\|pages`, lanceur `agence-hook`, `agence doctor --prerequis`, `garde` dans l'état et bannière du panneau | PR #65 (`c23a5c0d`) |
+| 4. Mise à jour et amorçage | une ligne `curl \| sh`, agent launchd, build quand `origin/main` avance, installation Cate fermé, désinstallation (PR #40) ; gardes et `doctor --prerequis --hors-cate` dans l'amorçage, `--sans-gardes`, `--gardes` (PR #68) ; le script de mise à jour reste si la purge échoue (PR #70) | PR #40 (`5c6678c7`), PR #68 (`5a85aca4`), PR #70 (`684034d2`) |
 | 4b. Le daemon suit l'app | mise à jour du runtime d'un autre build de même version | PR #27 (`dd4c3c9f`), Closes #26 |
+| 5. Bascule de Skills | Skills ne livre plus la CLI, le skill ni les gardes ; `agence guard` exige `--mode` | Skills#36 et Skills#37 (mergée le 2026-11-20), fork PR #96 (`7b41cd32`) ; relevé chez Heifara le 2026-11-20 : `agence hooks status` = `actif` |
 
-Reste : skill livré, panneau au nom de l'humain, notification (lot 2) ; gardes, `doctor` des prérequis, bannière (lot 3) ; gardes et `doctor` appelés par l'amorçage (lot 4) ; bascule de Skills (lot 5) ; recette réelle par Max.
+Reste (`tasks.md`, partie B) : un test qui rejoue l'amorçage avec la vraie CLI (lot 5-A), le rapport final (5-B), le premier passage réel de Max (5-C), `measure.py` et l'exception du DM de Heifara côté Skills (5-D), et le réglage `agence.nom` de Heifara (T014). Aucun code produit à écrire dans le fork.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -52,9 +54,9 @@ Max colle la ligne d'amorçage (`scripts/cate-fork-install.md`). Le script const
 
 1. **Given** le fork installé, **When** Max tape `agence --help` dans un terminal Cate, **Then** l'aide s'affiche sans rien installer d'autre. Livré (PR #30).
 2. **Given** un terminal Cate restauré après relance de l'app, **When** Max tape `agence need list`, **Then** la commande est trouvée. Livré par le code (PR #30, lanceur réécrit à chaque spawn) ; non vérifié sur un vrai terminal restauré.
-3. **Given** `git config user.name` = « Max Croquet » et aucun réglage, **When** le suivi s'affiche, **Then** la section s'appelle « À faire par Max ». CLI livrée (PR #41) ; panneau ouvert (`SuiviList.tsx:12` dit encore « Heifara »).
-4. **Given** `agence doctor --prerequis`, **When** un prérequis manque, **Then** chaque manque sort sur une ligne avec la commande qui le règle, et le code de sortie est 1.
-5. **Given** un dépôt avec un dossier `.claude/`, **When** Max ouvre le workspace, **Then** `.claude/skills/orchestrateur/SKILL.md` est semé comme `cate-cli`.
+3. **Given** `git config user.name` = « Max Croquet » et aucun réglage, **When** le suivi s'affiche, **Then** la section s'appelle « À faire par Max ». Livré : CLI (PR #41), panneau (PR #63, `SuiviList.tsx:12`).
+4. **Given** `agence doctor --prerequis`, **When** un prérequis manque, **Then** chaque manque sort sur une ligne avec la commande qui le règle, et le code de sortie est 1. Livré (PR #65, `test_doctor.py`).
+5. **Given** un dépôt avec un dossier `.claude/`, **When** Max ouvre le workspace, **Then** `.claude/skills/orchestrateur/SKILL.md` est semé comme `cate-cli`. Livré (PR #63, `scripts/build-runtime-tarball.mjs:161`) ; tarball réel non listé, semis non vérifié sur un vrai dépôt (lot 5-C, R7).
 
 ---
 
@@ -104,7 +106,7 @@ Un agent launchd lance `cate-fork-update` : il récupère le fork, construit en 
 
 1. **Given** des agents en cours dans un workspace, **When** l'app passe sur un nouveau build de même version, **Then** le workspace demande avant d'arrêter quoi que ce soit ; s'il est partagé avec un autre client, il ne bouge pas. Livré (PR #27).
 2. **Given** un build qui échoue ou un Node hors plage, **When** le script s'arrête, **Then** l'app installée n'a pas changé et le message dit pourquoi. Livré (PR #40).
-3. **Given** un Mac sans rien d'installé, **When** Max colle la ligne d'amorçage, **Then** il n'a aucune autre commande à taper, sauf pour installer un prérequis nommé par le script. Livré pour l'app (PR #40) ; gardes et `doctor` à brancher (lot 4).
+3. **Given** un Mac sans rien d'installé, **When** Max colle la ligne d'amorçage, **Then** il n'a aucune autre commande à taper, sauf pour installer un prérequis nommé par le script. Livré (PR #40 pour l'app, PR #68 pour les gardes et `doctor`) ; jamais rejoué avec la vraie CLI ni sur un Mac vierge (lots 5-A et 5-C).
 
 ### Edge Cases
 
@@ -116,25 +118,25 @@ Un agent launchd lance `cate-fork-update` : il récupère le fork, construit en 
 - `settings.json` en lecture seule (fichier ou dossier) : refus, rien écrit, mode d'origine conservé (rapport du lot 0).
 - Deux runtimes de builds différents ouverts : chaque terminal voit la CLI de son runtime ; le hook utilise `~/.cate/runtime/current`.
 - Max sur Cate upstream : `agence` introuvable ; `scripts/cate-fork-install.md` le dit.
-- Amorçage chez Heifara avant le lot 5 : deux jeux de gardes sur un même outil ; l'amorçage doit pouvoir sauter les gardes (`--sans-gardes`).
+- Amorçage chez Heifara : le lot 5 est livré, un seul jeu de gardes (`agence hooks status` = `actif`, relevé le 2026-11-20). `--sans-gardes` reste pour qui a déjà ses propres gardes.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
 - **FR-001**: Le runtime du fork MUST livrer la CLI `agence` (`agence.py`, Python 3.9 stdlib) et la mettre sur le PATH de tout terminal Cate et du régisseur, sans installation par l'utilisateur. **Livré** (PR #30).
-- **FR-002**: Le fork MUST livrer le skill `orchestrateur` parmi ses skills livrés (`skills/`), semé dans les dépôts par le mécanisme existant.
-- **FR-003**: Le nom de l'humain MUST se lire, dans l'ordre : `AGENCE_NOM`, `git config agence.nom`, premier mot de `git config user.name`, « L'humain ». **Livré côté CLI** (PR #41) ; le panneau MUST afficher ce nom.
+- **FR-002**: Le fork MUST livrer le skill `orchestrateur` parmi ses skills livrés (`skills/`), semé dans les dépôts par le mécanisme existant. **Livré** (PR #63).
+- **FR-003**: Le nom de l'humain MUST se lire, dans l'ordre : `AGENCE_NOM`, `git config agence.nom`, premier mot de `git config user.name`, « L'humain ». **Livré côté CLI** (PR #41) ; le panneau affiche ce nom. **Livré** (PR #63).
 - **FR-004**: L'état MUST rester compatible : la valeur stockée reste `heifara`, clé opaque jamais affichée (la CLI affiche `humain`, le panneau le nom). Aucune migration. **Livré côté CLI** (PR #41).
 - **FR-005**: Le dépôt GitHub MUST venir de `gh repo view` (existant), jamais d'un nom fixe ; aucun chemin `/Users/...` dans le code livré.
 - **FR-006**: La notification système MUST ne jamais faire échouer une commande quand `osascript` manque. **Satisfait par le code existant** : `toast()` journalise l'échec (`agence.py:315-321`) et `_run` rend 127 sur `OSError`.
-- **FR-007**: `agence hooks install|uninstall|status` MUST fusionner les gardes dans `~/.claude/settings.json` de façon idempotente, avec sauvegarde, sans toucher aux autres entrées. Cate ne l'appelle jamais.
-- **FR-008**: Le garde d'envoi MUST échouer fermé (`ask`) quand la CLI est introuvable ; le garde des pages et de `state.json` peut échouer ouvert (sans CLI, pas de projet orchestré).
-- **FR-009**: `agence doctor --prerequis` MUST vérifier python3, `gh auth status`, `claude`, la version de Cate (CLI livrée, `--model`, `agent usage`, type `agence`), les réglages CLI du workspace, les gardes, le skill, le nom ; une ligne par point, code 1 si un point bloque. Avec `--hors-cate`, les points qui exigent un terminal Cate sortent en `info`.
-- **FR-010**: Le panneau agence MUST afficher l'état du garde (actif, inactif, partiel) lu dans l'état écrit par le régisseur, et le nom de l'humain.
+- **FR-007**: `agence hooks install|uninstall|status` MUST fusionner les gardes dans `~/.claude/settings.json` de façon idempotente, avec sauvegarde, sans toucher aux autres entrées. Cate ne l'appelle jamais. **Livré** (PR #65).
+- **FR-008**: Le garde d'envoi MUST échouer fermé (`ask`) quand la CLI est introuvable ; le garde des pages et de `state.json` peut échouer ouvert (sans CLI, pas de projet orchestré). **Livré** (PR #65, `test_guard.py`) ; les décisions `ask` en réel : lot 5-C, R9.
+- **FR-009**: `agence doctor --prerequis` MUST vérifier python3, `gh auth status`, `claude`, la version de Cate (CLI livrée, `--model`, `agent usage`, type `agence`), les réglages CLI du workspace, les gardes, le skill, le nom ; une ligne par point, code 1 si un point bloque. Avec `--hors-cate`, les points qui exigent un terminal Cate sortent en `info`. **Livré** (PR #65 et #68).
+- **FR-010**: Le panneau agence MUST afficher l'état du garde (actif, inactif, partiel) lu dans l'état écrit par le régisseur, et le nom de l'humain. **Livré** (PR #63 et #65).
 - **FR-011**: `scripts/cate-fork-update.sh` MUST construire le fork quand la branche suivie avance, installer l'app seulement Cate fermé, vérifier la version de Node avant de construire, n'arrêter aucun daemon, et s'arrêter sans rien changer à la première erreur. Le client MUST traiter un runtime de même version et de build différent comme un runtime plus ancien. **Livré** (PR #40, PR #27).
 - **FR-012**: Rien de personnel à Heifara ne part dans le fork (Slack, Gmail, Google Tasks, rules, `CLAUDE.md`, bus, ID de son DM Slack).
-- **FR-013**: Après la ligne d'amorçage, Max MUST n'avoir aucune commande à taper : `scripts/cate-fork-install.sh` branche aussi les gardes (sauf `--sans-gardes`) et lance `agence doctor --prerequis --hors-cate` ; `scripts/cate-fork-uninstall.sh --gardes` les retire. **Livré pour l'app** (PR #40) ; gardes et `doctor` ouverts.
+- **FR-013**: Après la ligne d'amorçage, Max MUST n'avoir aucune commande à taper : `scripts/cate-fork-install.sh` branche aussi les gardes (sauf `--sans-gardes`) et lance `agence doctor --prerequis --hors-cate` ; `scripts/cate-fork-uninstall.sh --gardes` les retire. **Livré** (PR #40 et #68) ; rejoué en faux HOME avec la vraie CLI au lot 5-A, sur un Mac vierge au lot 5-C.
 
 ### Key Entities
 
