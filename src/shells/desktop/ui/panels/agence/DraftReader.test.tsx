@@ -141,3 +141,12 @@ it('says Modifier was taken, then is ready again', async () => {
     vi.useRealTimers()
   }
 })
+
+it('offers Envoyer quand même instead of Envoyer on an incertain draft, and sends confirme only on that click', async () => {
+  render(draft({ kind: 'slack', cible: 'slack:C1', incertain: true }))
+  expect(button('Envoyer')).toBeUndefined()
+  expect(send).not.toHaveBeenCalled()
+  await click('Envoyer quand même')
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(send).toHaveBeenCalledWith({ kind: 'draft.send', draftId: 'd1', hash: 'hash-affiché', confirme: true })
+})

@@ -24,6 +24,8 @@ export type DraftView = {
   texte: string
   /** sha256 hex of `texte.trim()`; `draft.send` carries the one the view showed. */
   hash: string
+  /** Slack send of unknown outcome: the regisseur refuses a plain send; only `confirme` resends. */
+  incertain?: true
 }
 
 export type QuestionView = {
@@ -98,7 +100,7 @@ export type AgenceSnapshot = {
 export type GardeState = 'actif' | 'inactif' | 'partiel' | 'inconnu'
 
 export type AgenceOp =
-  | { kind: 'draft.send'; draftId: string; hash: string }
+  | { kind: 'draft.send'; draftId: string; hash: string; confirme?: boolean }
   | { kind: 'draft.drop'; draftId: string }
   | { kind: 'draft.edit'; draftId: string }
   /** `choice`: an option's index, or `rebase` (a conflict: the orchestrator
@@ -162,6 +164,8 @@ export interface StateDraft {
   url: string | null
   /** `HH:MM` of the last edit through Modifier. */
   modifie?: string | null
+  /** Slack send of unknown outcome (`confirme=1` resends). */
+  incertain?: boolean
 }
 
 export interface StateQuestion {

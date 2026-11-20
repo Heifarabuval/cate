@@ -101,7 +101,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
 
   private handlers(): Partial<OpHandlers<AgenceOp>> {
     return {
-      'draft.send': ({ draftId, hash }) => this.draftOp(draftId, 'send', { h: hash }),
+      'draft.send': ({ draftId, hash, confirme }) => this.draftOp(draftId, 'send', { h: hash, ...(confirme ? { confirme: '1' } : {}) }),
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
       'orchestrator.restart': () => this.restart(),
@@ -279,7 +279,7 @@ function drafts(state: AgenceState, texts: Record<string, string>): Record<strin
     if (texte === undefined) continue
     const kind = draft.cible.split(':', 1)[0]
     if (!DRAFT_KINDS.has(kind)) continue
-    out[draft.id] = { id: draft.id, cible: draft.cible, kind: kind as DraftKind, titre: draft.titre, statut: draft.statut, texte, hash: draftHash(texte) }
+    out[draft.id] = { id: draft.id, cible: draft.cible, kind: kind as DraftKind, titre: draft.titre, statut: draft.statut, texte, hash: draftHash(texte), ...(draft.incertain ? { incertain: true as const } : {}) }
   }
   return out
 }
