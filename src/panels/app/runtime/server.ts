@@ -55,7 +55,7 @@ export function createAppServer(deps: AppServerDeps): AppServer {
     },
     responseHeaders: (file) => {
       const id = path.relative(realBase, file).split(path.sep)[0]
-      return { 'Content-Security-Policy': contentSecurityPolicy(deps.networkHosts(id)) }
+      return { 'Content-Security-Policy': contentSecurityPolicy(deps.networkHosts(id)), 'X-DNS-Prefetch-Control': 'off' }
     }
   })
 
@@ -66,6 +66,9 @@ export function createAppServer(deps: AppServerDeps): AppServer {
       if (path.dirname(folder) !== base || !relative || relative.startsWith('..') || path.isAbsolute(relative)) {
         throw new Error(`${id}/${entry} is not inside the panels folder`)
       }
+      // A missing entry is an error before any URL, not a 404 page (FR-002).
+      const stat = await fs.promises.stat(path.join(folder, relative)).catch(() => null)
+      if (!stat?.isFile()) throw new Error(`${entry} est absent du dossier`)
       realBase = await fs.promises.realpath(base)
       // The token's scope is the panel's folder, so an entry in a subfolder keeps its relative links.
       const url = await server.urlFor(folder)

@@ -91,14 +91,18 @@ describe('describe: no accidental pass', () => {
   })
 })
 
-describe('grantSentence (jalon 1: one sentence)', () => {
-  it('says the page runs isolated, with no internet when no host is declared', () => {
-    expect(grantSentence(manifestOf())).toBe('« Fusion » s’exécute dans un cadre isolé, sans accès à vos fichiers. Il ne peut pas utiliser internet.')
+describe('grantSentence (FR-001)', () => {
+  it('says the files the user picks may be sent to every declared host, and promises nothing about files', () => {
+    const sentence = grantSentence(manifestOf({ network: ['api.exemple.fr', '*.cdn.fr'] }))
+    expect(sentence).toMatch(/les fichiers que vous choisissez/i)
+    expect(sentence).toContain('api.exemple.fr, *.cdn.fr')
+    expect(sentence).not.toContain('sans accès à vos fichiers')
+    expect(sentence).toBe('« Fusion » s’exécute dans un cadre isolé. Les fichiers que vous choisissez ici peuvent être envoyés à api.exemple.fr, *.cdn.fr.')
   })
 
-  it('names every declared host', () => {
-    expect(grantSentence(manifestOf({ network: ['api.exemple.fr', '*.cdn.fr'] }))).toBe(
-      '« Fusion » s’exécute dans un cadre isolé, sans accès à vos fichiers. Il peut contacter api.exemple.fr, *.cdn.fr.'
-    )
+  it('says it cannot use the internet when no host is declared, still without a promise about files', () => {
+    const sentence = grantSentence(manifestOf())
+    expect(sentence).toBe('« Fusion » s’exécute dans un cadre isolé. Il ne peut pas utiliser internet.')
+    expect(sentence).not.toContain('sans accès à vos fichiers')
   })
 })

@@ -238,3 +238,18 @@ it('says so when the page server cannot serve the entry, instead of storing a gr
   await session.handleOp(grantOp(), ctx())
   expect(snap()).toMatchObject({ state: 'error', url: null, message: expect.stringContaining('entry outside the panels folder') })
 })
+
+it('an entry the server cannot find is an error, and runs once the file appears (FR-002)', async () => {
+  write('cate-panel.json', manifest())
+  pageUrl = async (_id, entry) => {
+    if (!fs.existsSync(path.join(dir, 'fusion', entry))) throw new Error(`${entry} est absent du dossier`)
+    return `http://127.0.0.1:1/token/fusion/${entry}`
+  }
+  await open()
+  await session.handleOp(grantOp(), ctx())
+  expect(snap()).toMatchObject({ state: 'error', url: null, message: expect.stringContaining('index.html est absent du dossier') })
+  write('index.html', '<p>')
+  await touch('index.html', 'create')
+  await settle()
+  expect(snap()).toMatchObject({ state: 'running', url: 'http://127.0.0.1:1/token/fusion/index.html', message: null })
+})

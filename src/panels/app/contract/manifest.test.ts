@@ -75,6 +75,18 @@ describe('parseManifest', () => {
     expect(parseManifest({ ...full, name: 'x'.repeat(40) }, 'fusion-excel').ok).toBe(true)
   })
 
+  it('refuses a name with an invisible or line-breaking character (FR-003), and keeps refusing the old ones', () => {
+    const nameError = error({ ...full, name: 'x\n' })
+    for (const char of ['​', ' ', ' ', '⁠', '⁡', '⁢', '⁣', '⁤', '﻿', '­', '‎', '‮', '⁦', '\u0007']) {
+      expect(error({ ...full, name: `Fusion${char}Excel` }), `U+${char.charCodeAt(0).toString(16)}`).toBe(nameError)
+    }
+  })
+
+  it('accepts a zero width joiner inside a composed emoji (Q6)', () => {
+    expect(parseManifest({ ...full, name: 'Équipe 👩‍💻' }, 'fusion-excel').ok).toBe(true)
+    expect(parseManifest({ ...full, name: 'می‌خواهم' }, 'fusion-excel').ok).toBe(true)
+  })
+
   it('requires a description', () => {
     expect(error({ ...full, description: undefined })).toMatch(/description/)
   })

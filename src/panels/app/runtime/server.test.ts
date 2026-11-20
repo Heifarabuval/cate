@@ -101,6 +101,17 @@ it('keeps one token per panel: a token of b never reaches a', async () => {
   expect((await raw(urlB, `/${tokenB}/${encoded}`)).status).toBe(404)
 })
 
+it('refuses an entry that is not a file of the folder, before any URL (FR-002)', async () => {
+  await expect(server.urlFor('a', 'absent.html')).rejects.toThrow('absent.html est absent du dossier')
+  await expect(server.urlFor('a', 'pages')).rejects.toThrow('pages est absent du dossier')
+  await expect(server.urlFor('a', 'pages/accueil.html')).resolves.toMatch(/\/pages\/accueil\.html$/)
+})
+
+it('turns DNS prefetching off on every page (FR-004)', async () => {
+  const res = await fetch(await server.urlFor('a', 'index.html'))
+  expect(res.headers.get('x-dns-prefetch-control')).toBe('off')
+})
+
 it('refuses a panel that is not a folder of the panels directory', async () => {
   await expect(server.urlFor('../dehors', 'secret.txt')).rejects.toThrow()
   await expect(server.urlFor('a', '../../dehors/secret.txt')).rejects.toThrow()

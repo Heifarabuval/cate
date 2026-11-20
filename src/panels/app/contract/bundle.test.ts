@@ -29,9 +29,13 @@ describe('parseBundle', () => {
     expect(result.panel.files.map((file) => file.path)).toEqual(['cate-panel.json', 'index.html', 'js/app.js'])
   })
 
+  it('builds the 10 Mio + 1 fixture one byte over the total limit', () => {
+    const files = HOSTILE.find((item) => item.name === '10 Mio + 1')!.files
+    expect(files.reduce((sum, file) => sum + Buffer.byteLength(file.data), 0)).toBe(10 * 1024 * 1024 + 1)
+  })
+
   for (const fixture of HOSTILE.filter((item) => item.only !== 'folder')) {
-    const test = fixture.needsLot1 ? it.fails : it
-    test(`refuses ${fixture.name} with one sentence`, () => {
+    it(`refuses ${fixture.name} with one sentence`, () => {
       const result = parseBundle(bundleText(fixture), codec)
       expect(result.ok).toBe(false)
       if (!result.ok) expect(result.error).toMatch(fixture.error)
@@ -60,8 +64,7 @@ describe('validateFolder', () => {
 
   for (const fixture of HOSTILE.filter((item) => item.only !== 'bundle' && !item.tamper)) {
     // Manifest checks need the bytes: checkPanel runs them after validateFolder.
-    const test = fixture.needsLot1 ? it.fails : it
-    test(`refuses ${fixture.name} (folder)`, () => {
+    it(`refuses ${fixture.name} (folder)`, () => {
       const error = validateFolder(asFolder(fixture.files)) ?? (() => {
         const result = checkPanel(fixture.id, fixture.files.map((file) => ({ path: file.path, bytes: Buffer.from(file.data) })), codec)
         return result.ok ? null : result.error

@@ -98,8 +98,7 @@ describe('stage', () => {
   })
 
   for (const fixture of HOSTILE) {
-    const test = fixture.needsLot1 ? it.fails : it
-    test(`refuses ${fixture.name} and leaves the data and panels folders intact`, async () => {
+    it(`refuses ${fixture.name} and leaves the data and panels folders intact`, async () => {
       const before = { data: tree(data), panneaux: tree(panneaux) }
       const source = fixture.only === 'folder' || (!fixture.tamper && fixture.only !== 'bundle')
         ? writeFolder(path.join(sources, `${count++}`, fixture.id), fixture.files)
