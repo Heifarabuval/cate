@@ -10,7 +10,7 @@ import type { Session } from 'electron'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
 import { isRuntimeId } from '@runtime/data/contract'
-import { workspacePartition } from '@services/browser/contract'
+import { agentPartition, workspacePartition } from '@services/browser/contract'
 import { createProxyCredentials, startLoopbackProxy, type LoopbackProxy, type ProxyCredentials } from './loopbackProxy'
 import { authenticatedBrowserProxy, browserProxyConfig } from './browserProxy'
 
@@ -24,7 +24,7 @@ export interface LoopbackDialer {
 }
 
 export interface WebPartitionsDeps {
-  session(partition: string): Pick<Session, 'setProxy' | 'closeAllConnections'>
+  session(partition: string): Pick<Session, 'setProxy' | 'closeAllConnections' | 'clearStorageData'>
   /** The client's `browserProxyUrl`. */
   upstream(): string | undefined
   /** Seam for tests. */
@@ -44,6 +44,13 @@ export interface WebPartitions {
   releaseDialer(dialerId: number): void
   /** True for a workspace partition whose network policy is in place. */
   isPrepared(partition: string): boolean
+  /** True for a partition made by `agentPartitionFor` and not released. */
+  isAgentPartition(partition: string): boolean
+  /** Prepares the in-memory partition of an agent-driven panel, with the
+   *  workspace's network policy and no shared sign-ins; its name. */
+  agentPartitionFor(runtimeId: string, panelId: string): Promise<string>
+  /** Forgets an agent partition and clears what it holds; other names are ignored. */
+  releaseAgentPartition(partition: string): Promise<void>
   /** Reapply changed client proxy settings to every prepared partition. */
   refresh(): Promise<void>
   /** Answers Chromium's proxy auth challenge for our proxies. */
@@ -63,6 +70,8 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
   const reaches = new Map<string, boolean>()
   const configuring = new Map<string, Promise<void>>()
   const configured = new Map<string, string>()
+  // Agent partitions and the runtime each belongs to.
+  const agents = new Map<string, string>()
 
   const dialLoopback = async (runtimeId: string, port: number): Promise<ByteDuplex> => {
     const live = (dialers.get(runtimeId) ?? []).filter((d) => !d.isDestroyed())
@@ -94,17 +103,17 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
     return proxy
   }
 
-  const prepare = (runtimeId: string): Promise<void> => {
+  const prepare = (runtimeId: string, agent?: string): Promise<void> => {
     // Serialize settings changes and stricter connection policies. A later
     // caller must never inherit an in-flight, less restrictive configuration.
-    const task = (configuring.get(runtimeId) ?? Promise.resolve()).catch(() => {}).then(async () => {
-      const partition = workspacePartition(runtimeId)
+    const partition = agent ?? workspacePartition(runtimeId)
+    const task = (configuring.get(partition) ?? Promise.resolve()).catch(() => {}).then(async () => {
       const session = deps.session(partition)
       for (;;) {
         const native = reaches.get(runtimeId) === true
         const upstream = deps.upstream()
         const key = JSON.stringify([native, upstream ?? ''])
-        if (configured.get(runtimeId) === key && prepared.has(partition)) return
+        if (configured.get(partition) === key && prepared.has(partition)) return
         prepared.delete(partition)
         const proxy = native ? null : await ensureProxy(runtimeId)
         await session.setProxy(proxy ? {
@@ -114,18 +123,19 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
         } : browserProxyConfig(upstream))
         // Do not reuse direct sockets after a policy downgrade, or sockets to
         // a previous upstream proxy after a settings change.
-        if (configured.has(runtimeId)) await session.closeAllConnections()
-        configured.set(runtimeId, key)
+        if (configured.has(partition)) await session.closeAllConnections()
+        configured.set(partition, key)
         // Policy or settings may have changed during setProxy. Finish applying
         // them before allowing even the first caller to mount a webview.
         if (native !== (reaches.get(runtimeId) === true) || upstream !== deps.upstream()) continue
-        await deps.beforeFirstMount?.(partition)
+        // An agent partition never receives the shared sign-ins.
+        if (!agent) await deps.beforeFirstMount?.(partition)
         prepared.add(partition)
         log.info('partition %s uses %s networking', partition, proxy ? 'protected workspace proxy' : 'Chromium')
         return
       }
     })
-    configuring.set(runtimeId, task)
+    configuring.set(partition, task)
     return task
   }
 
@@ -140,6 +150,22 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
       await prepare(runtimeId)
       return workspacePartition(runtimeId)
     },
+    async agentPartitionFor(runtimeId, panelId) {
+      if (!isRuntimeId(runtimeId)) throw new Error('invalid runtime id')
+      if (!reaches.has(runtimeId)) throw new Error('no connection prepared this runtime')
+      const partition = agentPartition(workspacePartition(runtimeId), panelId)
+      agents.set(partition, runtimeId)
+      await prepare(runtimeId, partition)
+      return partition
+    },
+    async releaseAgentPartition(partition) {
+      if (!agents.delete(partition)) return
+      await configuring.get(partition)?.catch(() => {})
+      prepared.delete(partition)
+      configured.delete(partition)
+      configuring.delete(partition)
+      await deps.session(partition).clearStorageData()
+    },
     release(runtimeId, dialerId) {
       const list = dialers.get(runtimeId)
       if (list) dialers.set(runtimeId, list.filter((d) => d.id !== dialerId))
@@ -148,7 +174,13 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
       for (const [runtimeId, list] of dialers) dialers.set(runtimeId, list.filter((d) => d.id !== dialerId))
     },
     isPrepared: (partition) => prepared.has(partition),
-    refresh: async () => { await Promise.all([...reaches.keys()].map(prepare)) },
+    isAgentPartition: (partition) => agents.has(partition),
+    refresh: async () => {
+      await Promise.all([
+        ...[...reaches.keys()].map((runtimeId) => prepare(runtimeId)),
+        ...[...agents].map(([partition, runtimeId]) => prepare(runtimeId, partition)),
+      ])
+    },
     credentialsFor(host, port) {
       if (host === '127.0.0.1' && ports.has(port)) return credentials
       const upstream = authenticatedBrowserProxy(deps.upstream())

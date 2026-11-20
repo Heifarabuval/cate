@@ -2374,6 +2374,21 @@ the runtime's machine on every client.
   mounts. Other cookies stay per workspace. "Import" in the browser settings
   reads those cookies from the system's default browser (macOS: Chromium
   browsers, Firefox, Safari with Full Disk Access).
+  **Agent-driven panels have none of them.** The session sets `agentDriven`
+  on a browser panel's first `cate.browser.*` call; its view then mounts its
+  webviews in an in-memory partition (`ws-<runtimeId>-a-<panelId>`, no
+  `persist:`), prepared by main with the workspace's network policy but never
+  given `beforeFirstMount`. The agent asks for a site with
+  `cate.browser.requestSignIn {domain, reason}`; the session publishes the
+  request, the view asks the person through `ClientUi` and, on yes, main
+  copies the hub's cookies of that domain (`sharedSignIns.grant`, a one-off
+  copy with no sync) into that partition before the view answers
+  (`answerSignIn`). Grants live in the snapshot only (never persisted), are
+  copied again after a remount, and end with the panel: the view clears the
+  partition on unmount. No cookie value crosses the runtime protocol, the CLI
+  or the logs (only counts and the domain). Any other partition (a custom
+  panel's `app-<name>`) gets shared sign-ins only if its creator calls
+  `beforeFirstMount`; the workspace partition is the only one that does.
 - **iOS.** WebKit connects to loopback hosts directly and never through a
   proxy, so there is no web proxy: before a page of the workspace loads a
   loopback URL (any frame), the app listens on the phone's own loopback at

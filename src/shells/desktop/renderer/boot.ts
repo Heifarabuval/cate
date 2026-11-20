@@ -226,7 +226,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
 
   // Webviews: partitions before any guest mounts.
   const bridge = options.pageBridge
-  stops.push(installWebviewHosts(partitions, bridge))
+  stops.push(installWebviewHosts(api, partitions, bridge))
 
   quitBlockers.install((labels) => api.app.setQuitBlockers(labels))
   if (info.e2e) stops.push(installE2eHarness({ canvas: createCanvasE2E() }))

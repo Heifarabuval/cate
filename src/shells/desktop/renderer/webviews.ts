@@ -87,10 +87,16 @@ export function useWebviewReadyWorkspaces(partitions: WebviewPartitions): readon
 }
 
 /** Browser partitions and the page bridge. */
-export function installWebviewHosts(partitions: WebviewPartitions, bridge: BrowserPageBridge | undefined): () => void {
+export function installWebviewHosts(api: DesktopApi, partitions: WebviewPartitions, bridge: BrowserPageBridge | undefined): () => void {
   // Browser views wait for their partition (a reconnect or a re-run boot
   // can briefly leave a mounted view without one).
-  installBrowserPartitions({ partition: (workspaceId) => partitions.partition(workspaceId), subscribe: partitions.subscribe })
+  installBrowserPartitions({
+    partition: (workspaceId) => partitions.partition(workspaceId),
+    subscribe: partitions.subscribe,
+    agentPartition: (partition, panelId) => api.web.agentPartition({ partition, panelId }),
+    grantSignIn: (partition, domain) => api.web.grantSignIn({ partition, domain }),
+    releaseAgentPartition: (partition) => api.web.releaseAgentPartition({ partition }),
+  })
   installBrowserPageBridge(bridge ?? null)
   return () => {
     installBrowserPartitions(null)

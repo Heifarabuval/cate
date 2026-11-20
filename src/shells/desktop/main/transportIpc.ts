@@ -49,7 +49,12 @@ function rendererDialer(contents: WebContents): LoopbackDialer {
   }
 }
 
-export function registerTransportIpc(deps: { host: ShellTransportHost; partitions: WebPartitions }): void {
+export function registerTransportIpc(deps: {
+  host: ShellTransportHost
+  partitions: WebPartitions
+  /** Copies the shared sign-ins of one domain into an agent partition; the count. */
+  grantSignIn(partition: string, domain: string): Promise<number>
+}): void {
   const { host, partitions } = deps
 
   handle(C.dialLocal, async (event, pipe: unknown, root: unknown) => {
@@ -90,6 +95,17 @@ export function registerTransportIpc(deps: { host: ShellTransportHost; partition
     }
     return partitions.partitionFor(String(workspace?.runtimeId ?? ''), rendererDialer(contents), workspace?.reachesClientNetwork === true)
   })
+  handle(C.webAgentPartition, (_event, agent: { partition: string; panelId: string }) => {
+    const workspace = String(agent?.partition ?? '')
+    if (!workspace.startsWith('persist:ws-')) throw new Error('not a workspace partition')
+    return partitions.agentPartitionFor(workspace.slice('persist:ws-'.length), String(agent?.panelId ?? ''))
+  })
+  handle(C.webGrantSignIn, (_event, grant: { partition: string; domain: string }) => {
+    const partition = String(grant?.partition ?? '')
+    if (!partitions.isAgentPartition(partition)) throw new Error('not an agent partition')
+    return deps.grantSignIn(partition, String(grant?.domain ?? ''))
+  })
+  handle(C.webReleaseAgent, (_event, agent: { partition: string }) => partitions.releaseAgentPartition(String(agent?.partition ?? '')))
   handle(C.webRelease, (event, workspace: { runtimeId: string }) => {
     partitions.release(String(workspace?.runtimeId ?? ''), event.sender.id)
   })

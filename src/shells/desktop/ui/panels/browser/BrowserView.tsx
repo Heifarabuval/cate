@@ -24,7 +24,7 @@ import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { stageSurface } from '../../client/host/surfaceRegistry'
 import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
-import { browserLocalDownloads, browserPageBridge, browserPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
+import { browserAgentPartition, browserGrantSignIn, browserLocalDownloads, browserPageBridge, browserPartition, browserReleaseAgentPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
 import { fsClient } from '@workspace/files/client'
 import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { BrowserPasswordManagerPage, useBrowserData } from '../../services/browser'
@@ -132,8 +132,60 @@ function ErrorOverlay({ title, description, buttonLabel, onRetry }: { title: str
 const noSubscribe = () => () => {}
 const noVersion = () => 0
 
+/** The in-memory partition of a panel an agent drives (null until main
+ *  prepared it, or while the panel is not agent-driven). It is cleared when
+ *  the panel closes. */
+function useAgentPartition(workspacePartition: string | null, panelId: string, enabled: boolean): string | null {
+  const [agent, setAgent] = useState<string | null>(null)
+  useEffect(() => {
+    if (!enabled || !workspacePartition) return
+    let name: string | null = null
+    let gone = false
+    browserAgentPartition(workspacePartition, panelId).then((made) => {
+      name = made
+      if (gone) void browserReleaseAgentPartition(made).catch(() => {})
+      else setAgent(made)
+    }).catch(() => { /* the view keeps its spinner */ })
+    return () => {
+      gone = true
+      setAgent(null)
+      if (name) void browserReleaseAgentPartition(name).catch(() => {})
+    }
+  }, [enabled, workspacePartition, panelId])
+  return enabled ? agent : null
+}
+
+/** An agent's sign-in request: the person decides here; only then does main
+ *  copy that domain's cookies into this panel's partition, and the session
+ *  hears the answer. Granted domains are copied again after a remount. */
+function useSignInGrants(partition: string, agentDriven: boolean, signIns: BrowserSnapshot['signIns'], send: (op: BrowserOp) => Promise<unknown>) {
+  const asked = useRef<string | null>(null)
+  const request = signIns.request
+  useEffect(() => {
+    if (!request || !agentDriven) { asked.current = null; return }
+    const key = `${request.domain}\n${request.reason}`
+    if (asked.current === key) return
+    asked.current = key
+    void (async () => {
+      const allow = await clientUi().confirm(
+        `An agent asks to use your signed-in session on ${request.domain} in this panel.\n\nReason: ${request.reason}\n\nOnly ${request.domain} cookies, only this panel, until it closes.`,
+      )
+      if (allow) await browserGrantSignIn(partition, request.domain).catch(() => 0)
+      await send({ kind: 'answerSignIn', allow }).catch(() => { /* shown by the next snapshot */ })
+    })()
+  }, [request, agentDriven, partition, send])
+  const granted = signIns.granted.join(' ')
+  useEffect(() => {
+    if (!agentDriven) return
+    for (const domain of granted.split(' ').filter(Boolean)) void browserGrantSignIn(partition, domain).catch(() => 0)
+  }, [agentDriven, partition, granted])
+}
+
 export default function BrowserView({ workspaceId, panelId, snapshot, send, visible, focused }: PanelViewProps<BrowserSnapshot, BrowserOp>) {
-  const partition = useSyncExternalStore(subscribeBrowserPartitions, () => browserPartition(workspaceId))
+  const workspacePartition = useSyncExternalStore(subscribeBrowserPartitions, () => browserPartition(workspaceId))
+  const agentDriven = snapshot?.agentDriven === true
+  const agent = useAgentPartition(workspacePartition, panelId, agentDriven)
+  const partition = agentDriven ? agent : workspacePartition
   if (!snapshot || !partition) return <PanelCenteredState icon={<Spinner size={18} />} title="Loading" />
   return <BrowserContent workspaceId={workspaceId} panelId={panelId} partition={partition} snapshot={snapshot} send={send} visible={visible} focused={focused} />
 }
@@ -152,6 +204,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const localDownloads = browserLocalDownloads()
   const { store: browserData, state: { bookmarks, history } } = useBrowserData(workspaceId)
   const quietly = useCallback((op: BrowserOp) => { void send(op).catch(() => { /* shown by the next snapshot */ }) }, [send])
+  useSignInGrants(partition, snapshot.agentDriven, snapshot.signIns, send)
 
   // Page zoom is client state: each client zooms the pages it shows.
   const [zoom, setZoom] = usePanelView<number>(workspaceId, panelId, 'zoom', 1)

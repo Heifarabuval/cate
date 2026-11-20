@@ -67,7 +67,7 @@ const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({
 })
 const browserSnapshot = (tabs: BrowserTab[]): BrowserSnapshot => ({
   tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' } as never,
-  canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
+  canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null, agentDriven: false, signIns: { granted: [], request: null },
 })
 
 describe('mobile browser views', () => {

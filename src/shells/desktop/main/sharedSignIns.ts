@@ -21,6 +21,10 @@ export interface SharedSignIns {
   attach(jar: CookieJar): Promise<void>
   /** Writes `cookies` of shared domains to the hub and every attached jar; the count written. */
   importCookies(cookies: Cookie[]): Promise<number>
+  /** One-off copy of the hub's cookies of `domain` into `jar` (an agent's
+   *  partition): no sync in either direction; the count copied. A domain
+   *  outside the shared list copies nothing. */
+  grant(jar: CookieJar, domain: string): Promise<number>
 }
 
 /** True when `domain` (a cookie domain, maybe with a leading dot) is one of
@@ -107,6 +111,12 @@ export function createSharedSignIns(deps: { hub: CookieJar; domains(): readonly 
       })()
       attached.set(jar, ready)
       return ready
+    },
+    async grant(jar, domain) {
+      if (!isSharedDomain(domain, deps.domains())) return 0
+      const granted = (await deps.hub.get({})).filter((c) => isSharedDomain(c.domain, [domain.replace(/^\./, '').toLowerCase()]))
+      await Promise.all(granted.map((c) => write(jar, c, false)))
+      return granted.length
     },
     async importCookies(cookies) {
       const kept = cookies.filter(shared)

@@ -521,6 +521,66 @@ describe('browser tabs for agents', () => {
   })
 })
 
+describe('browser sign-in grants', () => {
+  it('marks the panel agent-driven on its first cate call, never before', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    expect(w.snapshot(id)).toMatchObject({ agentDriven: false, signIns: { granted: [], request: null } })
+    await w.api(id, 'downloads')
+    expect(w.snapshot(id).agentDriven).toBe(true)
+    w.dispose()
+  })
+
+  it('holds the agent request until the person answers, and grants that domain only', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    const pending = w.api(id, 'requestSignIn', { domain: 'GitHub.com', reason: 'open the PR page' })
+    await Promise.resolve()
+    expect(w.snapshot(id).signIns).toEqual({ granted: [], request: { domain: 'github.com', reason: 'open the PR page' } })
+    await w.op(id, { kind: 'answerSignIn', allow: true })
+    await expect(pending).resolves.toMatchObject({ granted: true, domain: 'github.com' })
+    expect(w.snapshot(id).signIns).toEqual({ granted: ['github.com'], request: null })
+    w.dispose()
+  })
+
+  it('tells the agent when the person refuses, and grants nothing', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    const pending = w.api(id, 'requestSignIn', { domain: 'google.com', reason: 'read a doc' })
+    await Promise.resolve()
+    await w.op(id, { kind: 'answerSignIn', allow: false })
+    await expect(pending).resolves.toMatchObject({ granted: false })
+    expect(w.snapshot(id).signIns.granted).toEqual([])
+    w.dispose()
+  })
+
+  it('rejects a bad domain, a missing reason and a second request while one waits', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await expect(w.api(id, 'requestSignIn', { domain: 'https://github.com/x', reason: 'r' })).rejects.toThrow('invalid-sign-in-domain')
+    await expect(w.api(id, 'requestSignIn', { domain: 'github.com', reason: ' ' })).rejects.toThrow('sign-in-reason-required')
+    const first = w.api(id, 'requestSignIn', { domain: 'github.com', reason: 'r' })
+    await Promise.resolve()
+    await expect(w.api(id, 'requestSignIn', { domain: 'google.com', reason: 'r' })).rejects.toThrow('sign-in-request-pending')
+    await w.op(id, { kind: 'answerSignIn', allow: false })
+    await first
+    w.dispose()
+  })
+
+  it('answers nothing when no request waits', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await w.op(id, { kind: 'answerSignIn', allow: true })
+    expect(w.snapshot(id).signIns.granted).toEqual([])
+    w.dispose()
+  })
+})
+
 describe('browser service handlers', () => {
   it('lists tabs of browser sessions', () => {
     const snapshot = { tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, nav: 2, navSource: null, openedBy: { page: 't0' } }], activeTabId: 't1' }

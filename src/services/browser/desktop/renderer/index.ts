@@ -32,6 +32,12 @@ export function browserLocalDownloads(): LocalDownloads | null {
 export interface BrowserPartitionSource {
   partition(workspaceId: string): string | null
   subscribe(listener: () => void): () => void
+  /** The in-memory partition of an agent-driven panel (no shared sign-ins). */
+  agentPartition(workspacePartition: string, panelId: string): Promise<string>
+  /** Copies the shared sign-ins of `domain` into an agent partition; the count. */
+  grantSignIn(agentPartition: string, domain: string): Promise<number>
+  /** Clears an agent partition when its panel closes. */
+  releaseAgentPartition(agentPartition: string): Promise<void>
 }
 
 let source: BrowserPartitionSource | null = null
@@ -54,6 +60,22 @@ export function installBrowserPartitions(next: BrowserPartitionSource | null): v
 export function browserPartition(workspaceId: string): string | null {
   if (source) return source.partition(workspaceId)
   return workspacePartition(workspaceId.replace(/[^A-Za-z0-9_-]/g, '_'))
+}
+
+/** Prepares the in-memory partition of an agent-driven panel of the workspace
+ *  whose partition is `workspacePartition`. */
+export function browserAgentPartition(workspacePartition: string, panelId: string): Promise<string> {
+  if (!source) return Promise.reject(new Error('no shell prepares browser partitions'))
+  return source.agentPartition(workspacePartition, panelId)
+}
+
+export function browserGrantSignIn(agentPartition: string, domain: string): Promise<number> {
+  if (!source) return Promise.reject(new Error('no shell prepares browser partitions'))
+  return source.grantSignIn(agentPartition, domain)
+}
+
+export function browserReleaseAgentPartition(agentPartition: string): Promise<void> {
+  return source ? source.releaseAgentPartition(agentPartition) : Promise.resolve()
 }
 
 export function subscribeBrowserPartitions(listener: () => void): () => void {

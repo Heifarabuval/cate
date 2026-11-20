@@ -167,6 +167,9 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
     web: {
       partitionFor: async ({ runtimeId }) => `persist:ws-${runtimeId}`,
       release: async () => {},
+      agentPartition: async ({ partition, panelId }) => `${partition.replace(/^persist:/, '')}-a-${panelId}`,
+      grantSignIn: async () => 0,
+      releaseAgentPartition: async () => {},
     },
     webgl: { request: async () => false, release: () => {} },
   }

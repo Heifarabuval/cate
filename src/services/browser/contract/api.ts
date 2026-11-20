@@ -28,6 +28,9 @@ import {
  *  reports the driver's error and hint rather than an RPC timeout. */
 export const BROWSER_PAGE_TIMEOUT_MS = BROWSER_WAIT_MAX_MS + 15_000
 
+/** How long `requestSignIn` waits for the person's answer. */
+export const SIGN_IN_ANSWER_MS = 5 * 60_000
+
 type Point = [number, number]
 
 const isPoint = (value: unknown): value is Point =>
@@ -107,7 +110,7 @@ export const browserCliArea = defineCliArea({
     key: 'cliBrowserReadEnabled',
     code: 'browser-read-disabled',
     detail:
-      'Accessibility state, element attributes, screenshots, tabs and waits: inspect the page in the built-in browser panel, which shows your live logged-in sessions.',
+      'Accessibility state, element attributes, screenshots, tabs and waits: inspect the page in the built-in browser panel (it holds none of your signed-in sessions unless you grant one site with `cate browser signin`).',
   },
   control: {
     key: 'cliBrowserControlEnabled',
@@ -257,6 +260,18 @@ export const browserApi = defineCateApi(
     }, command('network', 'Print the page\'s network requests')), format: 'browserNetwork' },
     download: page('control', { url: opt(str).pos('url').help('URL to download, relative to the page (default: the page itself)') }, command('download', 'Download a URL through the tab')),
     downloads: { ...page('read', {}, command('downloads', 'List the panel\'s downloads')), format: 'browserDownloads' },
+
+    requestSignIn: {
+      access: 'control',
+      handler: 'session',
+      concurrent: true,
+      args: {
+        domain: str.nonEmpty().pos('domain').help('The site to sign in to (github.com), no scheme or path'),
+        reason: str.nonEmpty().flag('reason', 'why').help('Why the task needs it; the person reads this before answering'),
+      },
+      timeoutMs: SIGN_IN_ANSWER_MS,
+      ...command('signin', 'Ask the person to share their signed-in session for one domain with this panel (it has none by default)'),
+    },
 
     setViewport: page('control', {
       preset: oneOf('compact', 'mobile', 'desktop', 'custom').pos('preset').help('compact follows the panel size; custom takes --width and --height'),

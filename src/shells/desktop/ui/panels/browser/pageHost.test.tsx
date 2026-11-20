@@ -34,7 +34,7 @@ function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(typ
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'https://a.test/', title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null, ...patch })
 const snapshot = (tabs: BrowserTab[]): BrowserSnapshot => ({
   tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' },
-  canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
+  canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null, agentDriven: false, signIns: { granted: [], request: null },
 })
 
 function setup(bridge: Partial<BrowserPageBridge> | null = null) {
