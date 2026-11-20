@@ -1076,6 +1076,24 @@
    "p1": "Impl C002",
    "p2": "Review lot C",
    "p3": "Agence : cate"
+  },
+  "pratiques": {
+   "preset": "pr-tdd",
+   "valeurs": {
+    "livraison.merge": "clic",
+    "livraison.methode": "squash",
+    "preuve": [
+     "pr-mergee",
+     "ci-verte"
+    ]
+   },
+   "sources": {
+    "preset": "dev",
+    "livraison.merge": "défaut",
+    "livraison.methode": "projet",
+    "preuve": "dev"
+   },
+   "erreur": null
   }
  }
 }
