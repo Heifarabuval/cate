@@ -2234,6 +2234,14 @@ The schema, the allowed values and the presets are declared once in
 `agence watch` publishes the result as `pratiques` in `state.json` (values,
 sources, error) on every round; the `pages` guard refuses agents both files
 and the three writing commands.
+The backlog of cards and the decision register (spec 010) live next to it,
+in `<root>/.cate/tmp/agence/backlog.json` and `decisions.json`: hand-editable
+JSON, never committed, validated on every read (an invalid file refuses every
+write), written only by `agence fiche` and `agence decision` under the state
+lock (schema in `tools/agence/backlog.py`, shipped next to the CLI); the
+`pages` guard refuses agents any direct write of both files. A card moves
+`discussion` <-> `prête` through the CLI; `lancée`, `faite` and `abandonnée`,
+like a decision becoming `active`, come from a click only.
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger

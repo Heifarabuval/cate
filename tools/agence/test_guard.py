@@ -278,6 +278,26 @@ class Pages(Garde):
 		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'pratiques.json'), 'content': '{}'}))
 
 
+	def test_backlog_et_registre_refuses_aux_agents(self):
+		"""Spec 010, FR-004 : backlog.json et decisions.json s'écrivent seulement par agence fiche et agence decision."""
+		self.installe()
+		self.orchestre()
+		for nom in ('backlog.json', 'decisions.json'):
+			f = os.path.join(self.projet, '.cate', 'tmp', 'agence', nom)
+			for tool in ('Write', 'Edit', 'MultiEdit'):
+				with self.subTest(tool=tool, f=f):
+					r = self.hook(self.pages_cmd, tool, {'file_path': f, 'content': '{}'})
+					self.assertEqual(self.decision(r), 'deny')
+					self.assertIn('agence fiche', r.stdout)
+			for cmd in (f'echo {{}} > {f}', f'echo {{}} | tee {f}', f"sed -i '' s/prête/lancée/ {f}"):
+				with self.subTest(cmd=cmd):
+					self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+			self.vide(self.hook(self.pages_cmd, 'Bash', {'command': f'cat {f}'}))
+		for cmd in ('agence fiche list', 'agence fiche add "x" --type idee', 'agence decision list --active'):
+			with self.subTest(cmd=cmd):
+				self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'backlog.json'), 'content': '{}'}))
+
 	def test_plafond_agents_refuse_aux_agents(self):
 		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
 		self.installe()

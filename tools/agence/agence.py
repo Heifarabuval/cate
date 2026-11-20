@@ -18,6 +18,8 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
+  agence fiche add|edit|etat|note|list|show [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic
+  agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) ; active, rejetée, révoquée au clic
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -197,15 +199,21 @@ def load(path=None):
 def tx(base=None):
 	"""Lit l'état sous verrou ; l'écrit seulement si le bloc finit sans exception.
 	Les effets de apply() (cate, git) sont joués après, verrou libre : un cate lent ne bloque ni clics ni régisseur."""
-	d = adir(base)
-	with open(os.path.join(d, '.lock'), 'w') as lock:
-		fcntl.flock(lock, fcntl.LOCK_EX)
+	with verrou(base):
 		st = load(state_file(base))
 		yield st
 		after = st.pop('_after', [])
 		dump(st, base)
 	if after:
 		run_after(after, base)
+
+
+@contextlib.contextmanager
+def verrou(base=None):
+	"""Verrou de l'état : tx() et les écrivains de backlog.json et decisions.json le partagent."""
+	with open(os.path.join(adir(base), '.lock'), 'w') as lock:
+		fcntl.flock(lock, fcntl.LOCK_EX)
+		yield
 
 
 def dump(st, base=None):
@@ -666,6 +674,93 @@ def cmd_need(a):
 				continue
 			print(need_text(n).split('\n')[0])
 	return 0
+
+
+# ---------- fiches et décisions (spec 010) ----------
+
+@contextlib.contextmanager
+def registres():
+	"""Backlog et registre validés, sous le verrou de l'état ; chacun réécrit à la sortie s'il a changé.
+	Un fichier invalide (édité à la main) : Env, rien écrit."""
+	import backlog  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
+	racine = root()
+	with verrou():
+		try:
+			r = backlog.charger(racine)
+		except backlog.Invalide as err:
+			raise Env(f'{err} ; rien écrit, corriger le fichier à la main')
+		avant = {k: json.dumps(v) for k, v in r.items()}
+		try:
+			yield r
+		except backlog.Refus as err:
+			raise Refus(str(err))
+		for k, v in r.items():
+			if json.dumps(v) != avant[k]:
+				backlog.ecrire(racine, f'{k}.json', v)
+
+
+def fiche_texte(f, long=False):
+	ligne = f"{f['id']}  {f['etat']:<10} {f['priorite'] or '-':<3} {f['type'] or '-':<7} {f['titre']}"
+	if not long:
+		return ligne
+	champs = [(c, ', '.join(f[c]) if isinstance(f[c], list) else f[c]) for c in
+	          ('preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin', 'creee', 'maj')]
+	return '\n'.join([ligne] + [f'  {c} : {v}' for c, v in champs if v not in (None, '')] +
+	                 [f"  {j['ts']} {j['by']} : {j['text']}" for j in f['journal']])
+
+
+def decision_texte(x, long=False):
+	ligne = f"{x['id']}  {x['statut']:<9} {'structurante ' if x['structurante'] else ''}{x['objet']}"
+	if not long:
+		return ligne
+	return '\n'.join([ligne, f"  pourquoi : {x['pourquoi']}", f"  date : {x['date']}"] +
+	                 [f'  {c} : {", ".join(x[c])}' for c in ('alternatives', 'invalide') if x[c]] +
+	                 ([f"  révoquée par : {x['revoqueePar']}"] if x['revoqueePar'] else []))
+
+
+def sortie(objet, json_, texte):
+	print(json.dumps(objet, ensure_ascii=False, indent=1) if json_ else texte)
+
+
+def cmd_fiche(a):
+	"""Fiches du backlog : add, edit, etat et note écrivent ; list et show lisent. Lancée, faite, abandonnée : au clic."""
+	import backlog  # voir registres()
+	champs = {'titre': getattr(a, 'titre_opt', None), 'type': a.type, 'preuve': a.preuve, 'priorite': a.priorite,
+	          'fichiers': a.fichier, 'dependances': a.dependance, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
+	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
+	champs = {k: v for k, v in champs.items() if v is not None}
+	with registres() as r:
+		b = r['backlog']
+		if a.action == 'add':
+			f = backlog.ajouter(b, a.titre, now_iso(), **champs)
+		elif a.action == 'edit':
+			f = backlog.modifier(b, a.id, now_iso(), **champs)
+		elif a.action == 'etat':
+			f = backlog.transition(b, a.id, a.etat, now_iso())
+		elif a.action == 'note':
+			f = backlog.noter(b, a.id, a.texte, now_iso())
+		elif a.action == 'show':
+			f = backlog.trouver(b['fiches'], a.id)
+			return sortie(f, a.json, fiche_texte(f, long=True))
+		else:
+			fiches = [f for f in b['fiches'] if not a.etat or f['etat'] == a.etat]
+			return sortie(fiches, a.json, '\n'.join(fiche_texte(f) for f in fiches)) if fiches or a.json else 0
+	sortie(f, a.json, f['id'])
+
+
+def cmd_decision(a):
+	"""Registre : add écrit une décision proposée ; list et show lisent. Active, rejetée, révoquée : au clic (lot 6)."""
+	import backlog  # voir registres()
+	with registres() as r:
+		d = r['decisions']
+		if a.action == 'add':
+			x = backlog.decision_ajouter(d, a.objet, a.pourquoi, now_iso(), a.alternative or (), a.invalide or (), a.structurante)
+			return sortie(x, a.json, x['id'])
+		if a.action == 'show':
+			x = backlog.trouver(d['decisions'], a.id)
+			return sortie(x, a.json, decision_texte(x, long=True))
+		xs = backlog.decisions_actives(d) if a.active else d['decisions']
+		return sortie(xs, a.json, '\n'.join(decision_texte(x) for x in xs)) if xs or a.json else 0
 
 
 # ---------- brouillons ----------
@@ -2509,6 +2604,8 @@ STATE_DENY = "state.json s'écrit seulement par la CLI agence."
 PRATIQUES_DENY = "La politique (pratiques.json) se règle seulement par l'humain : agence pratiques set, unset ou preset."
 PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+(pratiques\s+(set|unset|preset)\b|start\b.*--max-agents\b)')
 POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json')
+BACKLOG_DENY = "backlog.json et decisions.json s'écrivent seulement par la CLI : agence fiche, agence decision."
+REGISTRES = ('.cate/tmp/agence/backlog.json', '.cate/tmp/agence/decisions.json')
 
 
 def send_match(st, tool, ti):
@@ -2577,6 +2674,9 @@ def guard(payload, mode):
 			return decision('deny', STATE_DENY)
 		if PRATIQUES_RE.search(cmd) or ('pratiques.json' in cmd and WRITE_RE.search(cmd) and 'agence' in cmd):
 			return decision('deny', PRATIQUES_DENY)
+		if (re.search(r'\b(backlog|decisions)\.json', cmd) and WRITE_RE.search(cmd)
+				and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or ''))):
+			return decision('deny', BACKLOG_DENY)
 		return None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
@@ -2584,6 +2684,8 @@ def guard(payload, mode):
 		return decision('deny', STATE_DENY)
 	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith(POLITIQUES):
 		return decision('deny', PRATIQUES_DENY)
+	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith(REGISTRES):
+		return decision('deny', BACKLOG_DENY)
 	return None
 
 
@@ -2937,6 +3039,49 @@ def parser():
 	li = ns.add_parser('list')
 	li.add_argument('--open', action='store_true')
 	n.set_defaults(fn=cmd_need)
+
+	fi = sub.add_parser('fiche', help="backlog de fiches (spec 010) : discussion <-> prête par la CLI ; lancée, faite, abandonnée au clic")
+	fis = fi.add_subparsers(dest='action', required=True)
+	fa = fis.add_parser('add')
+	fa.add_argument('titre')
+	fe = fis.add_parser('edit')
+	fe.add_argument('id')
+	fe.add_argument('--titre', dest='titre_opt')
+	for x in (fa, fe):
+		x.add_argument('--type', help='bug, idee, retour, audit ou tache')
+		x.add_argument('--preuve', help='forme de --done-when (agence need add)')
+		x.add_argument('--priorite', help='P1, P2 ou P3')
+		x.add_argument('--fichier', action='append', help='chemin ou dossier probable, relatif (répétable ; edit : remplace la liste)')
+		x.add_argument('--dependance', action='append', help='id de fiche (répétable)')
+		x.add_argument('--budget-jetons', type=int)
+		x.add_argument('--vision', help='point de la vision servi (couche ou FR de la spec 009)')
+		x.add_argument('--modele')
+		x.add_argument('--decision', action='append', help='id de décision liée (répétable)')
+	fet = fis.add_parser('etat')
+	fet.add_argument('id')
+	fet.add_argument('etat', help='discussion ou prête')
+	fn = fis.add_parser('note')
+	fn.add_argument('id')
+	fn.add_argument('texte')
+	fl = fis.add_parser('list')
+	fl.add_argument('--etat')
+	fis.add_parser('show').add_argument('id')
+	for x in fis.choices.values():
+		x.add_argument('--json', action='store_true')
+	fi.set_defaults(fn=cmd_fiche)
+	de = sub.add_parser('decision', help="registre de décisions (spec 010) : add les propose ; active, rejetée, révoquée au clic")
+	des = de.add_subparsers(dest='action', required=True)
+	da = des.add_parser('add')
+	da.add_argument('objet')
+	da.add_argument('--pourquoi', required=True)
+	da.add_argument('--alternative', action='append', help='alternative écartée (répétable)')
+	da.add_argument('--invalide', action='append', help="ce qu'elle invalide (répétable)")
+	da.add_argument('--structurante', action='store_true')
+	des.add_parser('list').add_argument('--active', action='store_true')
+	des.add_parser('show').add_argument('id')
+	for x in des.choices.values():
+		x.add_argument('--json', action='store_true')
+	de.set_defaults(fn=cmd_decision)
 
 	d = sub.add_parser('draft')
 	ds = d.add_subparsers(dest='action', required=True)
