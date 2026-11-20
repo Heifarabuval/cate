@@ -22,7 +22,17 @@ Pourquoi ce fork :
 - Le modèle est celui d'une agence de services : découper, clarifier, spécifier, lier chaque spec à ses issues et pull requests, implémenter, tester, relire. Une validation centrale. L'humain fait le merge final.
 - Le fork reste branché sur upstream, pour suivre ses changements et y contribuer selon ses besoins.
 
-À venir (pas encore livré) : le système visuel de liens et la validation centrale restent généraux. Chaque utilisateur règle ses interactions (quand un panneau s'ouvre ou se ferme), ses panneaux et ses connecteurs. L'outil est pensé aujourd'hui pour les développeurs. Il vise aussi d'autres métiers, comme le marketing digital, le media planning, la gestion de projet et le SEO.
+À venir (direction, pas encore livré). Le système visuel de liens et la validation centrale restent généraux ; chaque utilisateur règle le reste :
+
+- **Validation centrale.** Un écran montre ce qui bloque, ce qui est en cours et ce qui est fait. Les décisions se parcourent une par une, avec la recommandation du modèle.
+- **Validateurs par métier.** Ce qui prouve qu'une tâche est finie se règle : une pull request mergée pour un développeur, un fichier exporté ou une page en ligne pour un profil marketing.
+- **Panneaux perso.** Chacun crée ses panneaux sans recompiler Cate, les garde en local sur sa machine et peut les partager, à la façon des noeuds communautaires de n8n. Un agent écrit le panneau à partir d'une demande. Premier pas en cours : un skill qui génère un panneau en page HTML.
+- **Liens qui portent des données.** Un lien entre deux panneaux transporte des messages, pas seulement un trait.
+- **Installation guidée.** Le produit reste nu. Au premier lancement, quelques questions montent l'univers de l'utilisateur : métier, outils, validateurs, panneaux.
+- **Apprentissage par observation (à l'étude).** L'outil repère les gestes répétés dans ses propres panneaux et propose une recette que l'utilisateur valide. L'enregistrement se démarre à la main, reste en local et ne garde jamais les valeurs saisies.
+- **Sobriété en jetons.** Le coût est mesuré par besoin et réduit en continu.
+
+L'outil est pensé aujourd'hui pour les développeurs. Il vise aussi d'autres métiers, comme le marketing digital, le media planning, la gestion de projet et le SEO.
 
 Upstream est un IDE à canevas infini où vous pilotez vous-même plusieurs agents, sur macOS, Windows et Linux, avec des workspaces partagés entre appareils et une app iOS. Ce fork ajoute un orchestrateur : un agent découpe le travail, lance les autres agents et les relie comme panneaux du canevas. Vous validez par clic. Seul votre clic fait partir un message ou merger une pull request. Le fork vise macOS Apple silicon seul, écrit les tests d'abord, et s'installe en une ligne pour un collègue (issue #29).
 

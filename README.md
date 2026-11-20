@@ -20,7 +20,17 @@ Why this fork:
 - The model is a service agency: split, clarify, specify, link each spec to its issues and pull requests, implement, test, review. One central validation. The human does the final merge.
 - The fork stays connected to upstream, to follow its changes and to contribute back where needed.
 
-Where it is heading (not shipped yet): the visual link system and the central validation stay general. Each user sets their own interactions (when a panel opens or closes), panels and connectors. The tool is built for developers today. It also aims at other trades such as digital marketing, media planning, project management and SEO.
+Where it is heading (direction, not shipped yet). The visual link system and the central validation stay general; each user sets the rest:
+
+- **Central validation.** One screen shows what is blocked, what is in progress and what is done. Decisions are reviewed one by one, with the model's recommendation.
+- **Validators per job.** What proves a task is done is configurable: a merged pull request for a developer, an exported file or a live page for a marketing profile.
+- **Custom panels.** Everyone builds their own panels without recompiling Cate, keeps them local on their machine and can share them, like n8n community nodes. An agent writes the panel from a request. First step in progress: a skill that generates a panel as an HTML page.
+- **Links that carry data.** A link between two panels carries messages, not just a line.
+- **Guided setup.** The product stays bare. On first launch, a few questions build the user's world: job, tools, validators, panels.
+- **Learning by observation (under study).** The tool spots repeated gestures in its own panels and proposes a recipe the user approves. Recording is started by hand, stays local and never keeps typed values.
+- **Token frugality.** Cost is measured per need and reduced continuously.
+
+The tool is built for developers today. It also aims at other trades, such as digital marketing, media planning, project management and SEO.
 
 Upstream is an infinite canvas IDE where you run several agents yourself, on macOS, Windows and Linux, with workspaces shared across devices and an iOS app. This fork adds an orchestrator: one agent splits the work, starts the other agents and links them as panels on the canvas. You validate by click. Only your click sends a message or merges a pull request. The fork targets macOS Apple silicon only, writes tests first, and installs for a colleague with one line (issue #29).
 
