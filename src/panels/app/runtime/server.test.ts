@@ -84,6 +84,16 @@ it('answers 404 outside the folder: after .., through a symlink, in another pane
   expect(secret.body).not.toContain('SECRET')
 })
 
+it('answers 404 for a link from one panel to another, and to the panels folder itself', async () => {
+  fs.symlinkSync(path.join(panneaux, 'b'), path.join(panneaux, 'a', 'vers-b'))
+  fs.symlinkSync(panneaux, path.join(panneaux, 'a', 'racine'))
+  const url = await server.urlFor('a', 'index.html')
+  const token = new URL(url).pathname.split('/')[1]
+  const encoded = (p: string) => p.split('/').map(encodeURIComponent).join('/').slice(1)
+  expect((await raw(url, `/${token}/${encoded(path.join(panneaux, 'a', 'vers-b', 'index.html'))}`)).status).toBe(404)
+  expect((await raw(url, `/${token}/${encoded(path.join(panneaux, 'a', 'racine', 'b', 'index.html'))}`)).status).toBe(404)
+})
+
 it('keeps one token per panel: a token of b never reaches a', async () => {
   const urlB = await server.urlFor('b', 'index.html')
   const tokenB = new URL(urlB).pathname.split('/')[1]
