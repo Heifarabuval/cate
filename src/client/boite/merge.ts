@@ -12,10 +12,12 @@ function actionOf(row: NeedRow, snapshot: AgenceSnapshot): LigneAction {
   const { action } = row
   if (action?.type === 'draft') {
     const draft = snapshot.drafts[action.draftId]
-    if (draft) return { type: 'draft', draftId: draft.id, kind: draft.kind, hash: draft.hash, inFlight: action.inFlight }
+    if (draft) return { type: 'draft', draftId: draft.id, kind: draft.kind, hash: draft.hash, texte: draft.texte, inFlight: action.inFlight }
   } else if (action?.type === 'question') {
     const question = snapshot.questions[action.questionId]
     if (question) return { type: 'question', questionId: question.id, options: question.options, isMerge: question.isMerge }
+  } else if (row.perm?.choix) {
+    return { type: 'perm', command: row.perm.commande, reason: row.perm.motif, genre: row.perm.genre }
   }
   return { type: 'link' }
 }

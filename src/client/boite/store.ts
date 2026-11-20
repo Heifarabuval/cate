@@ -3,7 +3,7 @@
 // merges their snapshots into rows. It writes nothing. Nothing runs until the
 // first subscriber; the last one to leave releases every session handle.
 
-import type { AgenceSnapshot } from '@panels/agence/contract'
+import type { AgenceOp, AgenceSnapshot } from '@panels/agence/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { SessionHandle } from '@client/connections'
 import { workspaceLocation, type WorkspaceEntry } from '@client/workspaces'
@@ -36,6 +36,10 @@ export interface BoiteDeps {
 export interface BoiteStore {
   getSnapshot(): BoiteSnapshot
   subscribe(listener: () => void): () => void
+  /** Runs one op on the agence session of a project the inbox watches; null when
+   *  none is (the workspace closed, the inbox stopped). The only write path, and it
+   *  goes through the session: the regisseur's token never reaches the client. */
+  send(workspaceId: string, panelId: string, op: AgenceOp): Promise<unknown> | null
 }
 
 const EMPTY: BoiteSnapshot = { projects: [], rows: [], closedWorkspaces: 0 }
@@ -126,6 +130,7 @@ export function createBoiteStore(deps: BoiteDeps): BoiteStore {
 
   return {
     getSnapshot: () => state,
+    send: (workspaceId, panelId, op) => active?.watches.get(`${workspaceId}/${panelId}`)?.handle.send(op) ?? null,
     subscribe(listener) {
       listeners.add(listener)
       if (!active) start()
