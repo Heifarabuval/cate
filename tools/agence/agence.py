@@ -27,6 +27,7 @@ import fcntl
 import glob
 import hashlib
 import html
+import http.client
 import http.server
 import json
 import math
@@ -41,7 +42,9 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 
 MAX_AGENTS = 4  # plafond par défaut d'agents vivants (en plein tour ou en attente) ; agence start --max-agents le change pour le projet
@@ -57,6 +60,10 @@ TOKEN = secrets.token_urlsafe(18)  # jeton des formulaires, en mémoire du régi
 
 class Refus(Exception):
 	code = 1
+
+
+class Incertain(Refus):
+	"""Issue inconnue d'un envoi : le message est peut-être parti, ne jamais renvoyer sans confirmation."""
 
 
 class Env(Exception):
@@ -176,12 +183,17 @@ def tx(base=None):
 		st = load(state_file(base))
 		yield st
 		after = st.pop('_after', [])
-		fd, tmp = tempfile.mkstemp(dir=d, prefix='tmp-state-')
-		with os.fdopen(fd, 'w') as f:
-			json.dump(st, f, ensure_ascii=False, indent=1)
-		os.replace(tmp, state_file(base))
+		dump(st, base)
 	if after:
 		run_after(after, base)
+
+
+def dump(st, base=None):
+	"""Écrit l'état (atomique). Appelé sous verrou ; tx le fait à la sortie, un clic peut le faire avant un appel externe."""
+	fd, tmp = tempfile.mkstemp(dir=adir(base), prefix='tmp-state-')
+	with os.fdopen(fd, 'w') as f:
+		json.dump({k: v for k, v in st.items() if k != '_after'}, f, ensure_ascii=False, indent=1)
+	os.replace(tmp, state_file(base))
 
 
 def new_id(st, prefix):
@@ -640,6 +652,55 @@ def drop_draft(st, did):
 	apply(st, [('close', p, n['id']) for p in n['panels']])
 
 
+def slack_token():
+	"""SLACK_USER_TOKEN de Hermes (~/.hermes/.env), jamais affiché ni copié."""
+	path = os.environ.get('HERMES_ENV') or os.path.expanduser('~/.hermes/.env')
+	try:
+		with open(path) as f:
+			for line in f:
+				if line.startswith('SLACK_USER_TOKEN='):
+					return line.split('=', 1)[1].strip().strip('"\'')
+	except OSError:
+		pass
+	raise Refus(f'SLACK_USER_TOKEN absent de {path}')
+
+
+def _slack(method, payload, token):
+	req = urllib.request.Request(f'https://slack.com/api/{method}', data=urllib.parse.urlencode(payload).encode(),
+	                             headers={'Authorization': f'Bearer {token}'})
+	try:
+		with urllib.request.urlopen(req, timeout=30) as r:
+			return json.load(r)
+	except urllib.error.HTTPError as e:
+		raise (Refus if e.code < 500 else Incertain)(f'Slack : HTTP {e.code}')  # 4xx : refusé, rien posté
+	except urllib.error.URLError as e:
+		if isinstance(e.reason, (socket.gaierror, ConnectionRefusedError)):  # rien n'a été émis
+			raise Refus(f'Slack injoignable : {e.reason.__class__.__name__}')
+		raise Incertain(f'Slack injoignable : {e.reason.__class__.__name__}')
+	except (OSError, ValueError, http.client.HTTPException) as e:  # délai, coupure, réponse tronquée ou illisible
+		raise Incertain(f'Slack injoignable : {e.__class__.__name__}')
+
+
+SLACK = _slack
+
+
+def send_slack(d):
+	"""Poste le texte figé avec le token utilisateur de Hermes (le connecteur MCP ajoute « Envoyé avec Claude ») ; rend le lien."""
+	channel = d['cible'].split(':', 1)[1]
+	token = slack_token()
+	r = SLACK('chat.postMessage', {'channel': channel, 'text': d['texte'], 'unfurl_links': 'false', 'unfurl_media': 'false'}, token)
+	if not isinstance(r, dict):
+		raise Incertain('Slack : réponse illisible')
+	if not r.get('ok'):
+		err = r.get('error', 'réponse sans ok')
+		# internal_error et fatal_error : Slack dit qu'une partie de l'opération a pu réussir
+		raise (Incertain if err in ('internal_error', 'fatal_error') else Refus)(f'Slack : {err}')
+	link_url = None
+	with contextlib.suppress(Refus):
+		link_url = SLACK('chat.getPermalink', {'channel': r.get('channel', channel), 'message_ts': r.get('ts', '')}, token).get('permalink')
+	return link_url or f"slack:{channel}:{r.get('ts', '')}"
+
+
 def send_gh(d):
 	"""Envoie par gh le texte figé ; rend l'URL créée."""
 	kind, rest = d['cible'].split(':', 1)
@@ -800,6 +861,11 @@ def token_ok(form):
 	return secrets.compare_digest((form.get('token') or [''])[0], TOKEN)
 
 
+def incertain_msg(st, did):
+	return ("Envoi Slack incertain : Slack n'a pas répondu clairement, le message est peut-être parti : vérifie le canal avant de renvoyer. "
+	        f"Pour renvoyer, ouvre la page du brouillon {url(st, f'/draft/{did}')} : « Envoyer quand même » demande une confirmation distincte.")
+
+
 def click(path, form):
 	"""Effet d'un bouton. Rend (code HTTP, redirection ou message). Le jeton est vérifié par le serveur."""
 	m = re.match(r'^/draft/(d\d+)/(send|drop|edit)$', path)
@@ -825,19 +891,39 @@ def click(path, form):
 				texte = f.read().strip()
 			if (form.get('h') or [''])[0] != sha(texte):
 				return 409, 'Le texte a changé depuis son affichage : recharge la page, relis, puis Envoyer.'
-			d.update(statut='envoyer', texte=texte, hash=sha(texte), allowed=False)
 			kind = d['cible'].split(':', 1)[0]
-			if kind in ('slack', 'mail'):
+			if kind == 'slack' and d.get('incertain') and (form.get('confirme') or [''])[0] != '1':
+				return 409, incertain_msg(st, did)
+			avant = bool(d.get('incertain'))
+			if kind == 'slack':  # marqueur écrit AVANT l'appel : un régisseur tué pendant l'appel laisse le brouillon incertain
+				d.update(texte=texte, hash=sha(texte), allowed=False, incertain=True)
+				dump(st)
+			else:
+				d.update(statut='envoyer', texte=texte, hash=sha(texte), allowed=False)
+			if kind == 'mail':
 				note(find(st, 'needs', d['needId']), f"Envoyer cliqué sur {did} ({d['cible']})", 'clic')
 				notify(st['panels'].get('orchestrator'),
 				       f"{nom()} a cliqué Envoyer sur le brouillon {did} ({d['cible']}). Envoie-le maintenant par l'outil MCP "
 				       f"avec exactement le texte de « agence draft show {did} », puis « agence draft sent {did} --evidence <lien> ».")
 				return 303, '/'
 			try:
-				link_url = send_gh(d)
+				link_url = send_slack(d) if kind == 'slack' else send_gh(d)
 			except Refus as e:
 				d.update(statut='à valider', texte=None, hash=None)
-				return 409, f"Envoi refusé par GitHub : {e}"
+				if kind != 'slack':
+					return 409, f"Envoi refusé, brouillon laissé à valider : {e}"
+				if not (isinstance(e, Incertain) or avant):  # issue certaine : le marqueur tombe ; un envoi incertain d'avant reste
+					d.pop('incertain', None)
+				elif not avant:  # envoi devenu incertain : le régisseur ouvre la page de sortie (un agent ne le peut pas : agence-guard)
+					with contextlib.suppress(Refus):
+						b = cate('panel', 'create', 'browser', url(st, f'/draft/{did}'))['panelId']
+						title(b, f"#{d['needId']} Envoi Slack incertain")
+						find(st, 'needs', d['needId'])['panels'].append(b)
+						link(st['panels'].get('orchestrator'), b, 'context', 'Envoi incertain')
+				note(find(st, 'needs', d['needId']), f"{did} : envoi Slack " + (f'incertain ({e}) : vérifie le canal avant de renvoyer'
+				     if isinstance(e, Incertain) else f'refusé ({e})'), 'clic')
+				return 409, incertain_msg(st, did) if isinstance(e, Incertain) else f"Envoi refusé, brouillon laissé à valider : {e}"
+			d.pop('incertain', None)
 			d.update(statut='envoyé', url=link_url)
 			note(find(st, 'needs', d['needId']), f'{did} envoyé : {link_url}', 'clic')
 			n = close_need(st, d['needId'], 'done', link_url or 'envoyé')
@@ -1091,6 +1177,8 @@ def need_line(st, n):
 		meta.append(f'preuve : <a href="{e(ev)}">{e(ev)}</a>' if ev.startswith('http') else f'preuve : {e(ev)}')
 	if n['kind'] == 'draft':
 		meta += [f"modifié à {e(d['modifie'])}" for d in st['drafts'] if d['id'] == n['ref'] and d.get('modifie')]
+		meta += [f"envoi Slack incertain : vérifie le canal avant de renvoyer, puis « Envoyer quand même » sur {e(url(st, '/draft/' + d['id']))}"
+		         for d in st['drafts'] if d['id'] == n['ref'] and d.get('incertain')]
 	titles = [st['titles'].get(p) for p in n['panels'] if st['titles'].get(p)]
 	if titles:
 		meta.append('panneau : ' + ', '.join(e(t) for t in titles))
@@ -1156,7 +1244,10 @@ def page_draft(st, did):
 	actions = ''
 	if d['statut'] == 'à valider':
 		actions = (btn(f'/draft/{did}/edit', 'Modifier') + btn(f'/draft/{did}/drop', 'Abandonner', 'no')
-		           + btn(f'/draft/{did}/send', 'Envoyer', 'go', h=sha(texte.strip())))
+		           + (btn(f'/draft/{did}/send', 'Envoyer quand même (canal vérifié)', 'no', h=sha(texte.strip()), confirme='1')
+		              if d.get('incertain') else btn(f'/draft/{did}/send', 'Envoyer', 'go', h=sha(texte.strip()))))
+		if d.get('incertain'):
+			actions = '<p class="meta"><b>Envoi incertain : vérifie le canal avant de renvoyer.</b></p>' + actions
 	link_html = f' · <a href="{e(d["url"])}">{e(d["url"])}</a>' if d['url'] else ''
 	body = (f'<div class="sub"><a href="/">Suivi</a> · {label} · {e(d["cible"])} · {e(d["statut"])}{link_html}</div>'
 	        f'<h1>{e(d["titre"] or "")}</h1><div class="box markdown-body">{render_md(texte)}</div>'
@@ -1448,7 +1539,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 			if n['owner'] == OWNER_HUMAIN:
 				effects.append(('notify', orch, f"Fait par {nom()} : {n['title']} ({done_by['state']})."))
 			continue
-		in_flight = n['kind'] == 'draft' and any(d['id'] == n['ref'] and d['statut'] == 'envoyer' for d in st['drafts'])
+		in_flight = n['kind'] == 'draft' and any(d['id'] == n['ref'] and (d['statut'] == 'envoyer' or d.get('incertain')) for d in st['drafts'])
 		if n['panels'] and not any(p in live for p in n['panels']) and not in_flight:
 			close_need(st, n['id'], 'dropped')
 			if n['kind'] == 'draft':
@@ -1938,10 +2029,7 @@ def send_match(st, tool, ti):
 		with contextlib.suppress(Refus):
 			if find(st, 'needs', d['needId'])['status'] != 'open':
 				continue
-		if tool.endswith('slack_send_message'):
-			if d['cible'] == f"slack:{ti.get('channel_id')}" and d['texte'] == (ti.get('message') or '').strip():
-				return d
-		elif d['cible'].startswith('mail:'):
+		if d['cible'].startswith('mail:'):
 			if (ti.get('to') == [d['cible'][5:]] and not ti.get('cc') and not ti.get('bcc') and not ti.get('htmlBody')
 					and not ti.get('draftId') and not ti.get('attachments')
 					and d['texte'] == (ti.get('body') or '').strip() and (not d['titre'] or d['titre'] == ti.get('subject'))):
