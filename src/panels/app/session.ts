@@ -23,7 +23,7 @@ export interface AppSessionDeps {
   hash: Hash
 }
 
-const idle = (appId: string): AppSnapshot => ({ appId, name: null, state: 'missing', url: null, sentence: null, message: null, reload: 0 })
+const idle = (appId: string): AppSnapshot => ({ appId, name: null, state: 'missing', url: null, sentence: null, message: null, reload: 0, fingerprint: null })
 
 export class AppSession extends PanelSession<AppSnapshot, AppOp> {
   private readonly offs: Array<() => void> = []
@@ -31,9 +31,8 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: AppSessionDeps) {
     super(kit, record, idle(typeof record.fields.appId === 'string' ? record.fields.appId : ''))
-    this.ops.grant = (_op, ctx) => this.grant(ctx)
+    this.ops.grant = (op, ctx) => this.grant(op.fingerprint, ctx)
     this.ops.refuse = (_op, ctx) => this.refuse(ctx)
-    this.ops.reload = () => this.reload()
   }
 
   private get appId(): string {
@@ -65,6 +64,11 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
     return (this.work = this.work.then(() => this.decide(options)).catch((error) => this.kit.log.warn('app panel %s: %O', this.appId, error)))
   }
 
+  /** A snapshot patch; the fingerprint is the card's, so it clears unless given. */
+  private show(patch: Partial<AppSnapshot>): void {
+    this.publish({ fingerprint: null, ...patch })
+  }
+
   private statusOf(manifest: AppManifest) {
     return grantStatus(this.deps.grants.get(this.appId), { manifestFingerprint: manifestFingerprint(manifest, this.deps.hash) })
   }
@@ -73,35 +77,42 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
     if (this.disposed) return
     const { scanner, trust } = this.deps
     if (!trust.isTrusted()) {
-      return this.publish({ name: null, state: 'blocked', url: null, sentence: null, message: 'Workspace non approuvé : les panneaux perso ne se chargent pas.' })
+      return this.show({ name: null, state: 'blocked', url: null, sentence: null, message: 'Workspace non approuvé : les panneaux perso ne se chargent pas.' })
     }
     const entry = scanner.list().find((item) => item.id === this.appId)
     if (!entry) {
-      return this.publish({ name: null, state: 'missing', url: null, sentence: null, message: 'Panneau perso introuvable' })
+      return this.show({ name: null, state: 'missing', url: null, sentence: null, message: 'Panneau perso introuvable' })
     }
     const manifest = scanner.manifest(this.appId)
     if (!manifest) {
-      return this.publish({ name: null, state: 'error', url: null, sentence: null, message: entry.status === 'error' ? entry.error : null })
+      return this.show({ name: null, state: 'error', url: null, sentence: null, message: entry.status === 'error' ? entry.error : null })
     }
     // A broken edit keeps the last valid manifest: the page runs on, the error shows.
     const message = entry.status === 'error' ? entry.error : null
     if (this.statusOf(manifest) !== 'ok') {
-      return this.publish({ name: manifest.name, state: 'needs-grant', url: null, sentence: grantSentence(manifest), message })
+      return this.show({ name: manifest.name, state: 'needs-grant', url: null, sentence: grantSentence(manifest), message, fingerprint: manifestFingerprint(manifest, this.deps.hash) })
     }
-    const url = await this.deps.server.urlFor(this.appId, manifest.entry)
+    let url: string
+    try {
+      url = await this.deps.server.urlFor(this.appId, manifest.entry)
+    } catch (error) {
+      return this.show({ name: manifest.name, state: 'error', url: null, sentence: null, message: `la page ne peut pas être servie : ${error instanceof Error ? error.message : String(error)}` })
+    }
     const reload = pageChanged && this.state.state === 'running' ? this.state.reload + 1 : this.state.reload
-    this.publish({ name: manifest.name, state: 'running', url, sentence: null, message, reload })
+    this.show({ name: manifest.name, state: 'running', url, sentence: null, message, reload })
   }
 
   private requireWebview(ctx: OpContext): void {
     if (!this.deps.clientHas(ctx.connectionId, 'webview')) throw new RpcError('rejected', 'ce client ne peut pas afficher un panneau perso (fonctionnalité webview absente)')
   }
 
-  private async grant(ctx: OpContext): Promise<void> {
+  private async grant(fingerprint: string, ctx: OpContext): Promise<void> {
     this.requireWebview(ctx)
     if (!this.deps.trust.isTrusted()) throw new RpcError('rejected', 'workspace non approuvé : le panneau perso ne peut pas être autorisé')
     const manifest = this.deps.scanner.manifest(this.appId)
     if (!manifest) throw new RpcError('rejected', `panneau perso « ${this.appId} » indisponible`)
+    // The grant is for the card the user read, not for what the folder holds now.
+    if (fingerprint !== manifestFingerprint(manifest, this.deps.hash)) throw new RpcError('rejected', 'le panneau a changé depuis l’affichage de la carte : relire la carte')
     this.deps.grants.grant({
       appId: this.appId,
       source: 'local',
@@ -118,7 +129,4 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
     await this.refresh()
   }
 
-  private reload(): void {
-    if (this.state.state === 'running') this.publish({ reload: this.state.reload + 1 })
-  }
 }
