@@ -100,12 +100,14 @@ function workspaceScope(root: string): (cwd: string) => Promise<boolean> {
   }
 }
 
-/** The size of the context at the latest response (by timestamp; a later
- *  line wins a tie). Responses with no input are skipped: synthetic error
- *  messages carry zeros. */
-function contextTokens(records: AgentUsageRecord[]): number | null {
+/** The size of the context at the latest response of the last session (by
+ *  timestamp; a later line wins a tie). Responses with no input are skipped:
+ *  synthetic error messages carry zeros. A session that has not answered yet
+ *  (after a /clear) gives null, not the earlier session's size. */
+function contextTokens(records: AgentUsageRecord[], sessionId: string): number | null {
   let last: AgentUsageRecord | null = null
   for (const record of records) {
+    if (record.sessionId !== sessionId) continue
     const { uncachedInputTokens, cachedInputTokens, cacheCreationTokens } = record.totals
     if (uncachedInputTokens + cachedInputTokens + cacheCreationTokens > 0 && (!last || record.timestampMs >= last.timestampMs)) last = record
   }
@@ -364,7 +366,7 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
         costUsd = unpricedRecords > 0 || costUsd === null ? null : costUsd + cost
       }
       const [model] = [...tokens].sort((a, b) => b[1] - a[1])[0]
-      return { model, inputTokens, outputTokens, contextTokens: contextTokens(records), costUsd }
+      return { model, inputTokens, outputTokens, contextTokens: contextTokens(records, requests[i].sessions[requests[i].sessions.length - 1].sessionId), costUsd }
     })
   }
 
