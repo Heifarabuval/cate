@@ -10,9 +10,9 @@ import type { PanelSessionClass, SessionKit } from '@panels/framework/runtime'
 import { appsCapability } from './contract/capability'
 import definition from './definition'
 import { appsCapabilityImpl } from './runtime/capability'
-import { createAppGrants } from './runtime/grants'
-import { createAppScanner } from './runtime/scan'
-import { createAppServer } from './runtime/server'
+import { createAppGrants, type AppGrants } from './runtime/grants'
+import { createAppScanner, type AppScanner } from './runtime/scan'
+import { createAppServer, type AppServer } from './runtime/server'
 import { watchFolder } from './runtime/watch'
 import { AppSession, type AppSessionDeps } from './session'
 
@@ -34,38 +34,47 @@ export interface AppPanels {
 }
 
 export function createAppPanels(deps: AppPanelsDeps): AppPanels {
-  const scanner = createAppScanner({ dir: deps.dir, trust: deps.trust, watch: watchFolder })
-  const grants = createAppGrants({ file: deps.grantsFile, panneauxDir: deps.dir })
-  const server = createAppServer({
-    dir: deps.dir,
-    isTrusted: () => deps.trust.isTrusted(),
-    networkHosts: (id) => scanner.manifest(id)?.permissions.network ?? []
-  })
-  const bound: AppSessionDeps = {
-    scanner,
-    grants,
-    server,
-    trust: deps.trust,
-    clientHas: deps.clientHas,
-    hash: (text) => createHash('sha256').update(text).digest('hex')
+  // Nothing is created before a session or the daemon needs it: building the
+  // module list (tests, tooling) touches no folder and no file.
+  let built: { scanner: AppScanner; server: AppServer; grants: AppGrants; bound: AppSessionDeps } | undefined
+  const parts = () => {
+    if (built) return built
+    const scanner = createAppScanner({ dir: deps.dir, trust: deps.trust, watch: watchFolder })
+    const grants = createAppGrants({ file: deps.grantsFile, panneauxDir: deps.dir })
+    const server = createAppServer({
+      dir: deps.dir,
+      isTrusted: () => deps.trust.isTrusted(),
+      networkHosts: (id) => scanner.manifest(id)?.permissions.network ?? []
+    })
+    const bound: AppSessionDeps = {
+      scanner,
+      grants,
+      server,
+      trust: deps.trust,
+      clientHas: deps.clientHas,
+      hash: (text) => createHash('sha256').update(text).digest('hex')
+    }
+    return (built = { scanner, server, grants, bound })
   }
   class BoundAppSession extends AppSession {
     constructor(kit: SessionKit, record: PanelRecord) {
-      super(kit, record, bound)
+      super(kit, record, parts().bound)
     }
   }
   return {
     definition,
     session: BoundAppSession as unknown as PanelSessionClass,
     attach({ rpc }) {
+      const { scanner } = parts()
       rpc.register(appsCapability, appsCapabilityImpl(scanner))
       // A folder that cannot be created or watched leaves the list empty, never the daemon down.
       void scanner.start().catch(() => {})
     },
     async dispose() {
-      await scanner.dispose()
-      await server.close()
-      grants.dispose()
+      if (!built) return
+      await built.scanner.dispose()
+      await built.server.close()
+      built.grants.dispose()
     }
   }
 }
