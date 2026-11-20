@@ -212,3 +212,22 @@ it('follows a changed byte of an installed panel, and a grant given later on ref
   await change('a', 'app.js')
   expect(scanner.folderFiles('a')).toContainEqual({ path: 'app.js', sha256: sha('run() ') })
 })
+
+it('stops a watch that starts after dispose was called, and waits for the unwatch', async () => {
+  let opened!: () => void
+  const events: string[] = []
+  scanner = createAppScanner({
+    dir,
+    trust: { isTrusted: () => true, onChange: () => () => {} },
+    watch: () => new Promise((resolve) => {
+      opened = () => resolve(async () => { await new Promise((r) => setTimeout(r, 10)); events.push('unwatched') })
+    }),
+    grants: { get: () => undefined }
+  })
+  const starting = scanner.start()
+  await vi.waitFor(() => expect(opened).toBeDefined())
+  const disposed = scanner.dispose().then(() => events.push('disposed'))
+  opened()
+  await Promise.all([starting, disposed])
+  expect(events).toEqual(['unwatched', 'disposed'])
+})

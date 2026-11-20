@@ -22,8 +22,8 @@ export interface AppScannerDeps {
     isTrusted(): boolean
     onChange(listener: (state: { trusted: boolean }) => void): () => void
   }
-  /** Watches `dir`, returns the unwatch function. */
-  watch(dir: string, onEvents: (events: FsEvent[]) => Promise<void> | void): Promise<() => void>
+  /** Watches `dir`, returns the unwatch function (resolves once the watch is released). */
+  watch(dir: string, onEvents: (events: FsEvent[]) => Promise<void> | void): Promise<() => Promise<void> | void>
   /** Tells a panel that came from outside (`installed`) from one of the user's own. */
   grants: { get(appId: string): AppGrant | undefined }
 }
@@ -73,7 +73,7 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
   const valid = new Map<string, AppManifest>()
   const listListeners = new Set<(entries: AppEntry[]) => void>()
   const pageListeners = new Set<(id: string) => void>()
-  let unwatch: (() => void) | undefined
+  let unwatch: (() => Promise<void> | void) | undefined
   let offTrust: (() => void) | undefined
   let queue: Promise<void> = Promise.resolve()
   let published = '[]'
@@ -182,9 +182,11 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
     },
     idle: () => queue,
     async dispose() {
+      // A start in flight would open its watch after this: wait for it, then release it.
+      await started.catch(() => {})
       offTrust?.()
       offTrust = undefined
-      unwatch?.()
+      await unwatch?.()
       unwatch = undefined
       listListeners.clear()
       pageListeners.clear()

@@ -3,10 +3,11 @@
 
 import type { FsEvent } from './scan'
 
-export async function watchFolder(dir: string, onEvents: (events: FsEvent[]) => void): Promise<() => void> {
+export async function watchFolder(dir: string, onEvents: (events: FsEvent[]) => void): Promise<() => Promise<void>> {
   const { default: watcher } = await import('@parcel/watcher')
   const subscription = await watcher.subscribe(dir, (error, events) => {
     if (!error) onEvents(events.map(({ path, type }) => ({ path, type })))
   })
-  return () => { void subscription.unsubscribe() }
+  // A folder removed under the watcher has nothing left to release (inotify: EINVAL).
+  return () => subscription.unsubscribe().catch(() => {})
 }
