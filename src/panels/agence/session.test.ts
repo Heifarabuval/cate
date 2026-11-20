@@ -594,6 +594,14 @@ describe('AgenceSession', () => {
       expect(snap(session).backlog?.fiches).toEqual([{ id: 'F9', titre: 'Sans mesure', etat: 'lancée', priorite: 'P1', budgetJetons: 100, consomme: null }])
     })
 
+    it('fiches.lancer answers ok on the reply the CLI really sends for a success', async () => {
+      // Captured from a real `agence watch` by tools/agence/test_lancer.py (RouteReelle).
+      const reply = JSON.parse(readFileSync(path.join(__dirname, 'contract', 'fixtures', 'reponse-lancer.json'), 'utf8')).body
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => reply)
+      await expect(op(session, { kind: 'fiches.lancer', ids: ['F1'] })).resolves.toEqual({ ok: true })
+    })
+
     it('fiches.lancer posts /fiches/lancer with the ids, and answers ok', async () => {
       const { session, regisseurs } = await started()
       await expect(op(session, { kind: 'fiches.lancer', ids: ['F2', 'F5'] })).resolves.toEqual({ ok: true })

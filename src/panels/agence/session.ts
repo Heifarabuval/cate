@@ -178,7 +178,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     }
     try {
       const reply = await regisseur.post(path, form)
-      if (reply.code === 200) return { ok: true }
+      // The CLI's success is its `click()` code 303 (the page's redirect), carried in the JSON body.
+      if (reply.code === 200 || reply.code === 303) return { ok: true }
       const error = reply.code === 403 ? 'unavailable' : reply.code === 400 ? 'invalid' : 'conflict'
       return { ok: false, error, message: reply.message }
     } catch (err) {
