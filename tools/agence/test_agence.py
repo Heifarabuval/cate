@@ -361,6 +361,25 @@ class Demarrage(Base):
 		after = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
 		self.assertEqual(before, after)
 
+	def test_orchestrateur_en_echec_puis_relance_un_seul_canvas(self):
+		self.run.reply(['cate', 'panel', 'create', 'agence'], '', code=1, err="cate: unknown panel type 'agence'")
+		self.run.reply(['cate', 'agent', 'start'], '', code=1, err='cate: agent-hooks-not-ready')
+		with contextlib.redirect_stderr(io.StringIO()):
+			self.assertEqual(self.cli('start')[0], 1)
+		self.assertEqual(self.state()['panels']['canvas'], 'p1')
+		self.run.replies.pop(0)
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'title': 'Agence : ' + self.state()['repo'], 'type': 'canvas'}])
+		self.assertEqual(self.cli('start')[0], 0)
+		self.assertEqual(len(self.run.ran('cate', 'panel', 'create', 'canvas')), 1)
+		self.assertEqual(self.state()['panels']['canvas'], 'p1')
+
+	def test_start_adopte_le_canvas_vivant_non_enregistre(self):
+		self.run.reply(['cate', 'panel', 'create', 'agence'], '', code=1, err="cate: unknown panel type 'agence'")
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'c9', 'title': 'Agence : ' + self.state()['repo'], 'type': 'canvas'}])
+		self.assertEqual(self.cli('start')[0], 0)
+		self.assertEqual(self.state()['panels']['canvas'], 'c9')
+		self.assertFalse(self.run.ran('cate', 'panel', 'create', 'canvas'))
+
 	def test_start_type_agence_un_seul_panneau_sans_canvas(self):
 		self.assertEqual(self.cli('start')[0], 0)
 		st = self.state()

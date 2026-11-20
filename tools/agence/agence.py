@@ -404,8 +404,11 @@ def cmd_start(a):
 			print(f'panneau agence {orch}')
 			return 0
 		if p.get('canvas') not in live:
-			p['canvas'] = cate('panel', 'create', 'canvas')['panelId']
-			title(p['canvas'], f"Agence : {st['repo']}")
+			titre = f"Agence : {st['repo']}"
+			p['canvas'] = adopt(live, titre, 'canvas') or cate('panel', 'create', 'canvas')['panelId']
+			title(p['canvas'], titre)
+	with tx() as st:  # le canvas est enregistré avant l'orchestrateur : un démarrage en échec se relance sans doublon
+		p = st['panels']
 		if p.get('orchestrator') not in live:
 			r = cate('agent', 'start', '--canvas', p['canvas'], '--agent', 'claude-code', '--title', 'Orchestrateur',
 			         ORCH_PROMPT)
