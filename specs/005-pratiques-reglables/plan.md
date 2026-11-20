@@ -124,7 +124,7 @@ Les quatre specs (002 lots macro, 005, 006 coût de l'attente, 007 panneaux pers
 | `docs/architecture.md` | 1 (fichiers de la politique), 5 | tous | Moyen | Un titre par lot ; rebase avant la PR |
 | `src/panels/framework/`, `src/panels/app/` | aucun | 007 | Nul | 005 ne touche pas les définitions de panneau |
 
-**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
+**Ordre de merge et conflits entre les 4 specs** : voir `specs/recoupement-2026-11-20.md` (PR #110) (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
 
 **Ce qui ne bouge pas, par choix** : la propriété du texte « au nom de l'humain » (002), la table des déclencheurs hors du champ `actif` (004), la règle d'attente de l'orchestrateur (006 : le plafond du filet de 600 s et le seuil de `/compact` ne deviennent pas des réglages en v1, voir Q9).
 
