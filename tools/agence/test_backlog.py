@@ -5,7 +5,6 @@ commandes `agence fiche` et `agence decision`.
 Tout tourne en faux HOME et en dossier temporaire : un test échoue s'il voit le vrai ~/.cate ou ~/.config.
 """
 import contextlib
-import gc
 import io
 import json
 import os
@@ -176,7 +175,6 @@ class Decisions(unittest.TestCase):
 
 class Base(unittest.TestCase):
 	def setUp(self):
-		gc.collect()  # les fuites d'autres modules de test (HTTPError) avertissent ici, pas dans la stderr capturée
 		self.tmp = tempfile.mkdtemp(prefix='backlog-test-')
 		self.addCleanup(shutil.rmtree, self.tmp, True)
 		self.home = os.path.join(self.tmp, 'home')
@@ -405,6 +403,33 @@ class Detections(unittest.TestCase):
 		self.assertIsNone(backlog.consomme(None, ['p1']))
 		self.assertIsNone(backlog.consomme({}, []))
 		self.assertEqual(backlog.consomme({'p': {'inputTokens': 0, 'outputTokens': 0}}, ['p']), 0)
+
+	def test_consomme_ignore_nan_infini_et_negatif(self):
+		hostile = {'p': {'inputTokens': float('nan'), 'outputTokens': -5}, 'q': {'inputTokens': float('inf')}}
+		self.assertIsNone(backlog.consomme(hostile, ['p', 'q']))
+		self.assertEqual(backlog.consomme({**hostile, 'r': {'outputTokens': 7}}, ['p', 'q', 'r']), 7)
+
+	def test_chemin_vide_ne_chevauche_rien(self):
+		f = lambda *p: {'fichiers': list(p)}  # noqa: E731
+		for vide in ('', '  '):
+			with self.subTest(chemin=repr(vide)):
+				self.assertIsNone(backlog.chevauche(f(vide), f('src/a.ts')))
+				self.assertIsNone(backlog.chevauche(f('src/a.ts'), f(vide, 'docs/')))
+				self.assertIsNone(backlog.chevauche(f(vide), f(vide)))
+
+	def test_id_en_double_ne_se_chevauche_pas(self):
+		fs = fiches((['src/a.ts'], 'P2', T0))
+		p = backlog.plan(fs + fs, set(), 4, 4)
+		self.assertEqual((p['vagues'], p['part'], p['attente']), ([['F1']], ['F1'], {}))
+
+	def test_fiche_lancee_occupe_ses_fichiers(self):
+		fs = fiches((['src/a.ts'], 'P2', T0), (['src/a.ts'], 'P2', T0), (['src/b.ts'], 'P2', T0), (['src/c.ts'], 'P2', T0, ['F1']))
+		p = backlog.plan(fs[1:], set(), 4, 4, occupees=fs[:1])
+		self.assertEqual(p['part'], ['F3'])
+		self.assertEqual(p['vagues'], [['F3'], ['F2', 'F4']])
+		self.assertEqual(p['attente'], {'F2': 'chevauche F1 sur src/a.ts', 'F4': 'dépendance F1'})
+		p = backlog.plan(fs[1:2], set(), 4, 4, occupees=fs[:1])
+		self.assertEqual((p['part'], p['vagues']), ([], [['F2']]))
 
 	def test_brief(self):
 		d = backlog.vide_decisions()

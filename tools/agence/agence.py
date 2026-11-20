@@ -166,7 +166,8 @@ def draft_path(did):
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
 	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
-	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None}
+	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None,
+	        'backlog': None, 'lot': []}  # backlog : vue publiée pour le panneau agence ; lot : fiches cliquées qui attendent leur place
 
 
 def politique(agir=False):
@@ -240,7 +241,7 @@ def find(st, coll, oid):
 
 
 def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=None, source=None,
-             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None, issue=None):
+             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None, issue=None, budget_jetons=None):
 	"""Ajoute un besoin ; un besoin ouvert de même (kind, ref) est rendu tel quel (FR-006)."""
 	if kind not in KINDS:
 		raise Refus(f'kind inconnu : {kind} ({", ".join(KINDS)})')
@@ -252,7 +253,7 @@ def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=
 				return n, False
 	n = {'id': new_id(st, 'n'), 'kind': kind, 'title': title, 'ref': ref, 'owner': owner, 'blocking': blocking,
 	     'unblocks': unblocks, 'source': source, 'panels': list(panels), 'doneWhen': done_when,
-	     'issue': issue, 'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
+	     'issue': issue, 'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'budgetJetons': budget_jetons, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
 	     'closeFailed': False, 'agentBlocked': False, 'overBudget': False,
 	     'created': now_iso(), 'createdTs': time.time(), 'updated': now_iso()}
 	st['needs'].append(n)
@@ -657,7 +658,8 @@ def cmd_need(a):
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
 			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
 			                source=a.frm, panels=a.panel or (), done_when=done_when, acceptance=a.acceptance,
-			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue)
+			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue,
+			                budget_jetons=a.budget_jetons)
 			if by_orch:
 				launch(n, a.panel)
 		print(n['id'])
@@ -889,6 +891,7 @@ def _slack(method, payload, token):
 		with urllib.request.urlopen(req, timeout=30) as r:
 			return json.load(r)
 	except urllib.error.HTTPError as e:
+		e.close()  # la réponse d'erreur tient la connexion : fermée ici, pas au ramasse-miettes
 		raise (Refus if e.code < 500 else Incertain)(f'Slack : HTTP {e.code}')  # 4xx : refusé, rien posté
 	except urllib.error.URLError as e:
 		if isinstance(e.reason, (socket.gaierror, ConnectionRefusedError)):  # rien n'a été émis
@@ -1260,7 +1263,130 @@ def click(path, form):
 	m = re.match(r'^/perm/(n\d+)/(oui|non)$', path)
 	if m:
 		return click_perm(*m.groups())
+	if path == '/fiches/lancer':
+		return click_lancer((form.get('ids') or [''])[0].split(','))
 	return 404, 'Action inconnue.'
+
+
+# ---------- clic « Lancer » et fiches au tour (spec 010, lot 4) ----------
+
+def jetons_besoin(n):
+	"""Jetons cumulés des panneaux du besoin (dernier relevé par panneau), None tant qu'aucun n'a été lu."""
+	lus = [j for j in (n.get('jetonsParPanneau') or {}).values() if j is not None]
+	return sum(lus) if lus else None
+
+
+def jetons(v):
+	return f'{round(v):,}'.replace(',', ' ')
+
+
+def place_libre(st):
+	"""agents.max moins les vivants du dernier tour et les besoins de fiche qu'aucun panneau n'a encore pris."""
+	# ponytail: un agent rattaché depuis le dernier tour n'est compté qu'au tour suivant ; compter par cate agent list si ça déborde
+	attendus = [n for n in st['needs'] if n['status'] == 'open' and (n['ref'] or '').startswith('fiche:') and not n['panels']]
+	return plafond(st) - st['agentsActive'] - st['agentsWaiting'] - len(attendus)
+
+
+def lancer_fiches(st, r, ids, entete):
+	"""Sous le verrou : plan des prêtes ids contre les lancées ; un besoin par fiche qui part (fiche lancée, journal),
+	les autres restent dans le lot avec leur motif ; un seul message à l'orchestrateur, seulement si une fiche part."""
+	import backlog  # voir registres()
+	b, maintenant = r['backlog'], now_iso()
+	par_id = {f['id']: f for f in b['fiches']}
+	p = backlog.plan([par_id[i] for i in ids], {f['id'] for f in b['fiches'] if f['etat'] == 'faite'}, place_libre(st),
+	                 plafond(st), occupees=[f for f in b['fiches'] if f['etat'] == 'lancée'])
+	briefs = []
+	for fid in p['part']:
+		f = par_id[fid]
+		n, _ = add_need(st, 'task', f['titre'], ref=f'fiche:{fid}', done_when=f['preuve'],
+		                budget_jetons=f['budgetJetons'], model=f['modele'])
+		note(n, f'fiche {fid} lancée au clic', 'clic')
+		backlog.noter(b, fid, f"lancée (besoin {n['id']})", maintenant, par='clic')
+		f.update(etat='lancée', besoin=n['id'])
+		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'])}\nbesoin {n['id']}")
+	st['lot'] = [i for i in dict.fromkeys(st['lot'] + list(ids)) if i not in p['part']]
+	if briefs:
+		attentes = ', '.join(f'{i} ({m})' for i, m in p['attente'].items()) or 'aucune'
+		apply(st, [('notify', st['panels'].get('orchestrator'),
+		            f"{entete} : vague 1 : {', '.join(p['part'])} ; en attente : {attentes}. Lance la vague telle quelle "
+		            "(skill orchestrateur, section Lancer) : un agent par besoin, puis agence need panel <besoin> <panneau>.\n\n"
+		            + '\n\n'.join(briefs))])
+
+
+def vue_backlog(st, r, erreur=None):
+	"""Champ `backlog` de l'état, lu tel quel par le panneau agence (fixtures/vue-backlog.json) : fiches, plan des
+	prêtes contre les lancées, erreur de fichier. consomme : jetons du besoin de la fiche, None sans mesure."""
+	import backlog  # voir registres()
+	if erreur:
+		return {'fiches': [], 'vagues': [], 'attentes': {}, 'erreur': erreur}
+	fs, needs = r['backlog']['fiches'], {n['id']: n for n in st['needs']}
+	p = backlog.plan([f for f in fs if f['etat'] == 'prête'], {f['id'] for f in fs if f['etat'] == 'faite'}, place_libre(st),
+	                 plafond(st), occupees=[f for f in fs if f['etat'] == 'lancée'])
+	return {'fiches': [{**{k: f[k] for k in ('id', 'titre', 'etat', 'priorite', 'budgetJetons')},
+	                    'consomme': jetons_besoin(needs[f['besoin']]) if f['besoin'] in needs else None} for f in fs],
+	        'vagues': p['vagues'], 'attentes': p['attente'], 'erreur': None}
+
+
+def registres_sous_verrou():
+	"""(registres, None) ou (None, motif) : backlog et registre lus sous le verrou que tx() tient déjà."""
+	import backlog  # voir registres()
+	try:
+		return backlog.charger(root()), None
+	except backlog.Invalide as err:
+		return None, str(err)
+
+
+def ecrire_backlog(st, r):
+	"""L'état d'abord : un arrêt entre les deux laisse des besoins sans fiche lancée, qu'add_need rend au clic suivant."""
+	import backlog  # voir registres()
+	dump(st)
+	backlog.ecrire(root(), 'backlog.json', r['backlog'])
+
+
+def click_lancer(ids):
+	"""« Lancer » sur des fiches prêtes (FR-003) : refus sans rien créer si une n'est plus prête ou attend déjà (double clic)."""
+	if not all(re.fullmatch(r'F[1-9]\d*', i) for i in ids):
+		return 400, 'Fiches attendues : ids=F1,F2.'
+	with tx() as st:
+		r, erreur = registres_sous_verrou()
+		if erreur:
+			st['backlog'] = vue_backlog(st, None, erreur)
+			return 409, f'{erreur} : rien lancé.'
+		etats = {f['id']: f['etat'] for f in r['backlog']['fiches']}
+		for i in ids:
+			if etats.get(i) != 'prête' or i in st['lot']:
+				motif = 'introuvable' if i not in etats else 'attend déjà sa place' if etats[i] == 'prête' else f'est {etats[i]}'
+				return 409, f'{i} {motif} : rien lancé.'
+		lancer_fiches(st, r, ids, f'Lancer, clic de {nom()}')
+		st['backlog'] = vue_backlog(st, r)
+		ecrire_backlog(st, r)
+	return 303, '/'
+
+
+def fiches_tour(st):
+	"""Tour du régisseur, sous le verrou : besoin done, fiche faite ; dropped, fiche prête (nouveau clic) ; le lot cliqué
+	part quand une place se libère ; vue publiée. Fichier invalide : erreur publiée, rien lancé."""
+	import backlog  # voir registres()
+	r, erreur = registres_sous_verrou()
+	if erreur:
+		st['backlog'] = vue_backlog(st, None, erreur)
+		return
+	b, maintenant, avant = r['backlog'], now_iso(), json.dumps(r['backlog'])
+	needs = {n['id']: n for n in st['needs']}
+	for f in b['fiches']:
+		n = needs.get(f['besoin']) if f['etat'] == 'lancée' else None
+		if n and n['status'] in ('done', 'dropped'):
+			fait = n['status'] == 'done'
+			backlog.noter(b, f['id'], f"besoin {n['id']} fait" if fait else f"abandon de l'exécution (besoin {n['id']})",
+			              maintenant, par='regisseur')
+			f.update(etat='faite' if fait else 'prête', besoin=n['id'] if fait else None)
+	etats = {f['id']: f['etat'] for f in b['fiches']}
+	st['lot'] = [i for i in st['lot'] if etats.get(i) == 'prête']
+	if st['lot']:
+		lancer_fiches(st, r, list(st['lot']), 'Place libre')
+	st['backlog'] = vue_backlog(st, r)
+	if json.dumps(b) != avant:
+		ecrire_backlog(st, r)
 
 
 def click_perm(nid, rep):
@@ -1388,7 +1514,11 @@ def need_line(st, n):
 		meta.append(f"modèle {e(m)}" + (f", effort {e(ef)}" if ef else '') if m else 'modèle inconnu')
 	if n.get('overBudgetUsd'):
 		meta.append(f"budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(cout_besoin(n))}) : continuer, réduire ou arrêter ?")
-	if n['overBudget'] and n['budgetMin'] and not n.get('overBudgetUsd'):
+	if n.get('budgetJetons'):  # comme le coût : le consommé lu, ou « consommé inconnu », jamais 0
+		j = jetons_besoin(n)
+		meta.append('consommé inconnu' if j is None else f"{jetons(j)} / {jetons(n['budgetJetons'])} jetons"
+		            + (' dépassé : continuer, réduire ou arrêter ?' if n.get('overBudgetJetons') else ''))
+	if n['overBudget'] and n['budgetMin'] and not n.get('overBudgetUsd') and not n.get('overBudgetJetons'):
 		meta.append(f"budget de {e(n['budgetMin'])} min dépassé : continuer, réduire ou arrêter ?")
 	if n.get('seen') or n.get('costByPanel'):  # un agent est suivi : sa dépense, ou « coût inconnu » (tiret de Cate, usage illisible)
 		c = cout_besoin(n)
@@ -1735,10 +1865,12 @@ def orphelins(st, rows, agents):
 	        and not r.get('caller') and p not in st['orphanGardes'] and not protege(st, p, None)}
 
 
-def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
+def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mesures=None):
 	"""Un tour du régisseur : met l'état à jour, rend les effets ('close', panneau, besoin) et ('notify', panneau, texte).
 	screens : écran lu de chaque agent bloqué ({panneau: texte}), pour afficher sa demande.
-	panneaux : lignes de cate panel list par id ; sans elles, pas de balayage des orphelins."""
+	panneaux : lignes de cate panel list par id ; sans elles, pas de balayage des orphelins.
+	mesures : lignes de cate agent usage par panneau (jetons), déjà lues ; None si illisibles."""
+	import backlog  # voir registres()
 	screens = screens or {}
 	orch = st['panels'].get('orchestrator')
 	effects = []
@@ -1822,6 +1954,14 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 		if n.get('budgetUsd') and c is not None and c > n['budgetUsd'] and not n.get('overBudgetUsd'):
 			n['overBudget'] = n['overBudgetUsd'] = True
 			once(f"budget-usd:{n['id']}", orch, f"Budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(c)}) : {n['title']} ({n['id']}).")
+		for p in n['panels']:  # dernier relevé de jetons par panneau, comme le coût ; illisible : rien posé
+			j = backlog.consomme(mesures, [p])
+			if j is not None:
+				n.setdefault('jetonsParPanneau', {})[p] = j
+		j = jetons_besoin(n)
+		if n.get('budgetJetons') and j is not None and j > n['budgetJetons'] and not n.get('overBudgetJetons'):
+			n['overBudget'] = n['overBudgetJetons'] = True
+			once(f"budget-jetons:{n['id']}", orch, f"Budget en jetons dépassé ({jetons(j)} / {jetons(n['budgetJetons'])} jetons) : {n['title']} ({n['id']}).")
 		if n['budgetMin'] and now - n.get('createdTs', now) > n['budgetMin'] * 60:
 			n['overBudget'] = True
 			once(f"budget:{n['id']}", orch, f"Budget de {n['budgetMin']} min dépassé : {n['title']} ({n['id']}).")
@@ -1849,7 +1989,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 			else:
 				continue
 			effects.append(('toast', n['id'], (st['repo'], f"{prefixe}{n['id']} {n['title']} : {action_attendue(st, n)}")))
-	mine = [a for a in agents if a['panelId'] not in (orch, st['panels'].get('regisseur'))]
+	mine = [a for a in agents if a['panelId'] not in st['panels'].values()]  # orchestrateur, régisseur, interlocuteur : pas des places
 	active = len([a for a in mine if a.get('state') == 'running'])
 	waiting = len([a for a in mine if a.get('state') == 'waitingForInput'])
 	vivants = active + waiting
@@ -2238,8 +2378,9 @@ def un_tour():
 		merge_apply(st, merges)
 		st['garde'] = garde
 		st['pratiques'] = pol
-		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage)
+		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage, mesures)
 		apply(st, effects)
+		fiches_tour(st)
 		orch = st['panels'].get('orchestrator')
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
@@ -3065,6 +3206,7 @@ def parser():
 	add.add_argument('--acceptance')
 	add.add_argument('--budget', type=int)
 	add.add_argument('--budget-usd', type=dollars_positifs, help="budget en dollars (la devise de cate agent usage, sans conversion) : le besoin passe en Bloquant au dépassement")
+	add.add_argument('--budget-jetons', type=entier_positif, help="budget en jetons (entrée + sortie des panneaux du besoin, cate agent usage) : le besoin passe en Bloquant au dépassement")
 	add.add_argument('--model', help="modèle voulu pour l'agent du besoin (id ou alias de l'agent CLI), que l'orchestrateur passe à cate agent start --model")
 	add.add_argument('--effort', choices=EFFORTS, help="niveau d'effort voulu (Claude Code), passé à cate agent start --effort")
 	pa = ns.add_parser('panel')

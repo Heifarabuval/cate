@@ -43,6 +43,17 @@ Tu tournes dans un terminal Cate (`$CATE_SOCKET` défini), sur le canvas « Agen
 - Jamais de merge, push sur `main`, force-push, suppression de branche par toi ou un agent. Seule exception au force-push : le rebase que tu as demandé, par `git push --force-with-lease` sur la branche de PR de l'agent, jamais sur `main` ni sur la branche d'un autre.
 - Un agent arrêté sur une confirmation de hook ou un changement de modèle : le suivi, section Bloquant, affiche la commande entière et le motif avec Oui et Non ; la réponse part au terminal de l'agent et se lit dans `agence need show`. Blast-radius et questions à choix : affichage seul, l'humain répond dans le panneau. Tu ne réponds jamais à sa place (pas de `cate terminal type` ni `press` sur le panneau d'un agent bloqué).
 
+## Lancer : les fiches cliquées par l'humain
+
+Une tâche peut aussi venir du backlog de fiches (écrit par l'interlocuteur, `agence fiche list`). Rien ne part sans le clic « Lancer » de l'humain dans le panneau agence : tu ne passes jamais une fiche `lancée` et tu ne crées aucun besoin pour une fiche.
+
+1. Au clic, le régisseur crée un besoin par fiche de la vague 1 (`--ref fiche:F<n>`, condition de fin tirée de la preuve, budget en jetons, modèle proposé) et t'envoie un seul message : la vague, les fiches en attente avec leur motif, puis le brief et le besoin de chaque fiche lancée. Lis le message en entier.
+2. Lance la vague telle quelle : un agent par besoin, en parallèle, le brief de la fiche dans son fichier de brief, `--model` si la fiche en propose un ; puis `agence need panel <besoin> <panelId>`. Ne regroupe, ne redécoupe et ne réordonne rien.
+3. Tu ne reposes aucune question couverte par le brief (titre, type, preuve, fichiers, dépendances, budget, modèle, décisions liées) : c'est le contrat. Un champ manque ou un doute : `agence fiche brief <F>`, jamais l'interlocuteur.
+4. Les fiches en attente (chevauchement, dépendance, plafond) partent seules au tour du régisseur quand leur place se libère, sans nouveau clic ; un nouveau message te le dit. Ne les lance pas avant.
+5. Clos le besoin comme les autres (`agence need done <besoin> --evidence ...`) : la fiche passe `faite` seule. Besoin abandonné : la fiche revient `prête` et attend un nouveau clic.
+6. Budget en jetons dépassé : le besoin passe en Bloquant avec « consommé / budget jetons » ; l'humain tranche (continuer, réduire, arrêter), pas toi.
+
 ## Panneaux : chaque besoin ouvre son outil, relié à sa source
 
 | Besoin | Panneau | Commandes |

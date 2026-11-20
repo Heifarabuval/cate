@@ -6,6 +6,7 @@ par `agence fiche` et `agence decision`, sous le verrou de l'état. Un fichier i
 Python 3.9, stdlib seule ; aucune fonction n'importe agence.py.
 """
 import json
+import math
 import os
 import posixpath
 import re
@@ -257,6 +258,8 @@ def chevauche(a, b):
 	Comparaison par segments après posixpath.normpath : src/a et src/ab.ts ne se chevauchent pas."""
 	for p in a['fichiers']:
 		for q in b['fichiers']:
+			if not p.strip() or not q.strip():  # chemin vide : il ne désigne rien, pas la racine
+				continue
 			x, y = posixpath.normpath(p), posixpath.normpath(q)
 			if x == y or '.' in (x, y) or y.startswith(x + '/') or x.startswith(y + '/'):
 				return max(x, y, key=len)
@@ -267,13 +270,15 @@ def _rang(f):
 	return (f['priorite'] or 'P9', f['creee'], int(f['id'][1:]))
 
 
-def plan(fiches, faites, place, maximum):
+def plan(fiches, faites, place, maximum, occupees=()):
 	"""Vagues d'un lot : {vagues, part, attente}. Tri par priorité puis ancienneté ; une fiche entre dans la première
 	vague après ses dépendances du lot où elle ne chevauche personne. Une dépendance hors lot pas dans faites la met
-	en attente. Seule la première vague part, bornée par place (agents.max moins les vivants) ; tout le reste a un motif."""
-	lot = {f['id']: f for f in fiches}
-	vagues, ou, attente = [], {}, {}
-	reste = sorted(fiches, key=_rang)
+	en attente. Seule la première vague part, bornée par place (agents.max moins les vivants) ; tout le reste a un motif.
+	occupees : fiches lancées, qui tiennent leurs fichiers ; comptées dans la première vague, jamais rendues."""
+	lot = {f['id']: f for f in fiches}  # un id en double ne compte qu'une fois
+	vagues, ou, attente = [[f['id'] for f in occupees]] if occupees else [], {f['id']: 0 for f in occupees}, {}
+	lot.update({f['id']: f for f in occupees})
+	reste = sorted((f for f in lot.values() if f['id'] not in ou), key=_rang)
 	while reste:  # chaque passe place au moins une fiche (dépendances sans cycle, validées à l'écriture)
 		suite = []
 		for f in reste:
@@ -303,9 +308,12 @@ def plan(fiches, faites, place, maximum):
 			attente.update({f['id']: 'dépendance en cycle' for f in suite})
 			break
 		reste = suite
+	occ = {f['id'] for f in occupees}
+	vagues = [[x for x in w if x not in occ] for w in vagues]
 	part = vagues[0][:max(place, 0)] if vagues else []
 	for fid in vagues[0][len(part):] if vagues else []:
 		attente[fid] = f'plafond ({maximum})'
+	vagues = [w for w in vagues if w]  # la première vide : tout ce qui reste attend une lancée
 	return {'vagues': vagues, 'part': part, 'attente': {f: attente[f] for f in sorted(attente, key=lambda x: int(x[1:]))}}
 
 
@@ -328,7 +336,7 @@ def consomme(mesures, panneaux):
 	"""Somme inputTokens + outputTokens des panneaux du besoin (lignes de cate agent usage par panneau) ; None si
 	aucune valeur lisible, jamais 0 par défaut."""
 	vals = [v for p in panneaux for k in ('inputTokens', 'outputTokens')
-	        for v in [((mesures or {}).get(p) or {}).get(k)] if type(v) in (int, float)]
+	        for v in [((mesures or {}).get(p) or {}).get(k)] if type(v) in (int, float) and math.isfinite(v) and v >= 0]
 	return sum(vals) if vals else None
 
 
