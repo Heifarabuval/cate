@@ -41,7 +41,7 @@ L'orchestrateur lance une vague, puis **termine son tour**. Les agents lui rappo
 
 **Why this priority**: c'est le seul poste que le skill peut retirer sans code. Borne haute mesurée : 8,1 % des jetons lus de l'échantillon.
 
-**Independent Test**: garde de texte sur `skills/orchestrateur/SKILL.md` (aucun `--wait-timeout 60000`, la règle de fin de tour et le filet présents) ; puis mesure du lot 3 sur une vague réelle : passages d'attente par 10 min d'attente.
+**Independent Test**: garde de texte sur `skills/orchestrateur/SKILL.md` (aucun `--wait-timeout 60000`, la règle de fin de tour et le filet présents) ; puis mesure du lot 4 sur une vague réelle : passages d'attente par 10 min d'attente.
 
 **Acceptance Scenarios**:
 
@@ -58,7 +58,7 @@ Un `/goal` actif renvoie la session au travail à chaque fin de tour tant que sa
 
 **Why this priority**: 132 tours, 61,5 M de jetons (13,9 %) dans l'échantillon, plus que l'attente elle-même. Sans cette règle, la User Story 1 ne tient pas : le Stop hook annule la fin de tour.
 
-**Independent Test**: garde de texte sur le skill ; lot 3 : 0 tour forcé par un Stop hook (I3) sur une session orchestrateur sans `/goal`.
+**Independent Test**: garde de texte sur le skill ; lot 4 : 0 tour forcé par un Stop hook (I3) sur une session orchestrateur sans `/goal`.
 
 **Acceptance Scenarios**:
 
@@ -69,7 +69,7 @@ Un `/goal` actif renvoie la session au travail à chaque fin de tour tant que sa
 
 ### User Story 3 - Un dev mesure le coût de l'attente avant et après (Priority: P2)
 
-Un script en lecture seule lit les journaux de session d'un orchestrateur et rend des nombres : tours, jetons lus, part des passages d'attente, tours forcés par Stop hook, contexte médian. Il tourne avant la règle (lot 1) et après (lot 3), sur le même format, sur n'importe quel projet.
+Un script en lecture seule lit les journaux de session d'un orchestrateur et rend des nombres : tours, jetons lus, part des passages d'attente, tours forcés par Stop hook, contexte médian. Il tourne avant la règle (lot 1) et après (lot 4), sur le même format, sur n'importe quel projet.
 
 **Why this priority**: sans mesure après, « la piste tient » n'est qu'une phrase. Et la mesure est ce qui a corrigé l'hypothèse de l'issue.
 
@@ -109,8 +109,8 @@ Un script en lecture seule lit les journaux de session d'un orchestrateur et ren
 - **FR-003**: au réveil par le filet, le skill dit de lire `cate agent list` puis `cate agent read <id>` pour les agents au repos sans rapport, et de ne jamais taper dans le terminal d'un agent (règle existante).
 - **FR-004**: le skill interdit à l'orchestrateur de poser de sa propre initiative un `/goal` (ou toute condition d'arrêt qui renvoie au travail) dont la condition dépend d'un clic humain, d'une merge ou d'un agent. Il dit pourquoi en une ligne (un tour complet par fin de tour) et la voie de remplacement (le suivi, les cartes).
 - **FR-005**: un script en lecture seule, `tools/agence/attente_mesure.py`, lit les journaux de session d'agents `claude-code` et rend les indicateurs I1 à I4 **en nombres seulement**, sans identifiant de panneau ni texte de conversation (même limite que les specs 003 et 004). Il ne lance aucun modèle et n'écrit rien.
-- **FR-006**: la mesure avant (lot 1) et la mesure après (lot 3) utilisent le même script, la même définition d'un passage d'attente, et se comparent par indicateur. Une vague mesurée porte au moins 3 agents et 10 min d'attente.
-- **FR-007**: aucun changement dans `src/`, `tools/agence/agence.py` ni `declencheurs.json` n'est fait par cette spec. Si le lot 3 montre plus d'un passage d'attente par 10 min malgré la règle, la piste 4 est rouverte comme une nouvelle spec, pas comme un correctif dans celle-ci.
+- **FR-006**: la mesure avant (lot 1) et la mesure après (lot 4) utilisent le même script, la même définition d'un passage d'attente, et se comparent par indicateur. Une vague mesurée porte au moins 3 agents et 10 min d'attente.
+- **FR-007**: aucun changement dans `src/`, `tools/agence/agence.py` ni `declencheurs.json` n'est fait par cette spec. Si le lot 4 montre plus d'un passage d'attente par 10 min malgré la règle, la piste 4 est rouverte comme une nouvelle spec, pas comme un correctif dans celle-ci.
 - **FR-008**: la règle vit dans le skill, sans valeur propre à un dev. Le plafond du filet (600 s) est la constante de la plateforme (`AGENT_WAIT_MAX_SECONDS`), pas une pratique. Si un dev doit pouvoir régler un plafond d'attente ou un seuil de compactage, c'est une entrée de `specs/005-pratiques-reglables/` (la table de la spec 004 pour le seuil), pas un second mécanisme ici.
 - **FR-009**: le skill reste de la même taille à 5 % près (13 936 octets avant) : la règle remplace des lignes, elle n'en ajoute pas plus de quelques-unes. Chaque octet du skill se relit à chaque tour.
 
@@ -121,14 +121,14 @@ Un script en lecture seule lit les journaux de session d'un orchestrateur et ren
 
 ## Modèle de menaces
 
-Surface ajoutée : un script qui lit des journaux contenant des conversations. Garde-fous : sortie en nombres seulement (FR-005), aucun écriture, aucune sortie réseau, aucun modèle, refus d'un chemin hors du dossier de sessions du dev. Le contenu des journaux n'est jamais affiché ni stocké ; le rapport de mesure du lot 3 ne cite que des nombres. Le skill ne donne à l'orchestrateur aucun pouvoir de plus : le filet est une commande de lecture déjà permise (`cate agent wait`, accès `read`).
+Surface ajoutée : un script qui lit des journaux contenant des conversations. Garde-fous : sortie en nombres seulement (FR-005), aucun écriture, aucune sortie réseau, aucun modèle, refus d'un chemin hors du dossier de sessions du dev. Le contenu des journaux n'est jamais affiché ni stocké ; le rapport de mesure du lot 4 ne cite que des nombres. Le skill ne donne à l'orchestrateur aucun pouvoir de plus : le filet est une commande de lecture déjà permise (`cate agent wait`, accès `read`).
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001**: sur une vague réelle après la règle, au plus 1 passage d'attente par 10 min d'attente (avant : 1 par minute, `--wait-timeout 60000` utilisé 95 fois sur 96). Mesuré au lot 3.
+- **SC-001**: sur une vague réelle après la règle, au plus 1 passage d'attente par 10 min d'attente (avant : 1 par minute, `--wait-timeout 60000` utilisé 95 fois sur 96). Mesuré au lot 4.
 - **SC-002**: I2 (part des passages d'attente dans les jetons lus) ≤ 2 % après, contre 8,1 % avant. **Hypothèse à mesurer** : elle suppose que le filet ne se déclenche pas plus d'une fois par vague.
 - **SC-003**: I3 = 0 tour forcé par un Stop hook sur une session orchestrateur sans `/goal` posé par l'orchestrateur (avant : 132 tours, 61,5 M).
-- **SC-004**: diff du lot 2 = `skills/orchestrateur/SKILL.md` et son test de texte seulement ; 0 ligne dans `src/` ; le skill ne grossit pas de plus de 5 % (FR-009).
+- **SC-004**: diff du lot 3 = `skills/orchestrateur/SKILL.md` et son test de texte seulement ; 0 ligne dans `src/` ; le skill ne grossit pas de plus de 5 % (FR-009).
 - **SC-005**: sur le journal fixture, le script rend exactement les nombres attendus et aucun mot de la conversation ; sur les 10 journaux de l'échantillon il retrouve 1 730 tours et 442 732 472 jetons lus (reproductibilité de `mesure.md`).
 - **SC-006**: le coût en euros n'est pas chiffré : `cate agent usage` rend `costUsd: null` pour le modèle de l'orchestrateur (tarif inconnu de la table). Les gains se disent en jetons lus.
 
@@ -136,7 +136,7 @@ Surface ajoutée : un script qui lit des journaux contenant des conversations. G
 
 - Les agents rapportent bien par `cate agent send` en fin de tâche : c'est la ligne « Fin » du brief du skill, déjà en place. Cette spec ne la change pas.
 - La tâche de fond de Claude Code réveille une session au repos à sa fin (dit par le harnais, non vérifié en panneau Cate : sondes T010 et T011).
-- L'échantillon (10 sessions de l'orchestrateur « Agence : cate », du 2026-11-18 au 2026-11-20) est représentatif d'un orchestrateur en vague ; il ne l'est pas d'un dev qui orchestre une fois par semaine. Le lot 3 le dit s'il le faut.
+- L'échantillon (10 sessions de l'orchestrateur « Agence : cate », du 2026-11-18 au 2026-11-20) est représentatif d'un orchestrateur en vague ; il ne l'est pas d'un dev qui orchestre une fois par semaine. Le lot 4 le dit s'il le faut.
 - Le coût d'un jeton lu du cache est le même avant et après ; le gain se mesure en jetons, pas en euros (SC-006).
 
 ## Questions ouvertes
@@ -144,8 +144,8 @@ Surface ajoutée : un script qui lit des journaux contenant des conversations. G
 Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la réponse change.
 
 - **Q1** : poser la règle d'attente dans le skill seul, ou aussi dans `skills/cate-cli/references/agents.md:15` (qui conseille déjà « repeat while it exits 1 ») ? *Hypothèse* : le skill orchestrateur seul ; `cate-cli` décrit la commande, pas la politique d'un orchestrateur. À confirmer par Heifara.
-- **Q2** : la garde de texte du lot 2 (une assertion sur le contenu de `SKILL.md`) est-elle voulue, ou le skill se relit à la main ? *Hypothèse* : oui, un petit test de texte : le skill dit encore `--wait-timeout 60000` alors que la PR #85 est mergée, preuve qu'une valeur du skill et celle de la plateforme dérivent sans garde.
+- **Q2** : la garde de texte du lot 3 (une assertion sur le contenu de `SKILL.md`) est-elle voulue, ou le skill se relit à la main ? *Hypothèse* : oui, un petit test de texte : le skill dit encore `--wait-timeout 60000` alors que la PR #85 est mergée, preuve qu'une valeur du skill et celle de la plateforme dérivent sans garde.
 - **Q3** : le filet en tâche de fond marche-t-il pour un orchestrateur qui n'est pas Claude Code ? *Hypothèse* : non vérifié, hors cible (le skill vise Claude Code). La sonde T011 le dit pour Claude Code seulement.
 - **Q4** : le script du lot 1 réutilise-t-il `~/.claude/tools/conso.py` (outil de mesure du dépôt Skills, lecture des journaux, nombres seulement) ? *Hypothèse* : non pour le lot 1, il vit dans ce dépôt (`tools/agence/`) et tourne chez tout dev ; si `conso.py` entre dans le dépôt via la spec 004 (4e déclencheur), on le réduit à un appel à sa lecture de journal. À trancher à la fusion des deux.
-- **Q5** : `/goal` : l'interdiction est-elle posée dans le skill, ou y a-t-il un contrôle (le régisseur avertit quand le panneau orchestrateur a un `/goal` actif) ? *Hypothèse* : le skill seul ; un contrôle suppose de lire l'état `/goal` du panneau, donc du code et une donnée que Cate n'expose pas. Rouvrir si I3 reste haut au lot 3.
-- **Q6** : mesurer aussi la piste 3 (effet de T1, `/compact`) dans ce lot 3 ? *Hypothèse* : oui pour I4 (contexte médian), puisque l'outil le donne gratuitement, mais l'attribution à T1 est du bilan de la spec 004, pas d'ici.
+- **Q5** : `/goal` : l'interdiction est-elle posée dans le skill, ou y a-t-il un contrôle (le régisseur avertit quand le panneau orchestrateur a un `/goal` actif) ? *Hypothèse* : le skill seul ; un contrôle suppose de lire l'état `/goal` du panneau, donc du code et une donnée que Cate n'expose pas. Rouvrir si I3 reste haut au lot 4.
+- **Q6** : mesurer aussi la piste 3 (effet de T1, `/compact`) dans ce lot 4 ? *Hypothèse* : oui pour I4 (contexte médian), puisque l'outil le donne gratuitement, mais l'attribution à T1 est du bilan de la spec 004, pas d'ici.
