@@ -82,7 +82,20 @@ export function forwardedActionForInput(input: Pick<Electron.Input, 'type' | 'ke
 }
 
 const guestSessions = new WeakSet<Session>()
-const lockedSessions = new WeakSet<Session>()
+/** The origins a locked session's pages may load as a main frame: the one
+ *  that serves the panel, nothing else. A page never leaves it, by link,
+ *  script, redirect or window, whatever its content policy says. */
+const lockedSessions = new WeakMap<Session, Set<string>>()
+
+const originOf = (url: string): string | null => {
+  try { return new URL(url).origin } catch { return null }
+}
+
+const staysOnOrigin = (contents: WebContents, url: string): boolean => {
+  const origins = lockedSessions.get(contents.session)
+  const origin = originOf(url)
+  return !origins || (origin !== null && origin !== 'null' && origins.has(origin))
+}
 
 function browserUserAgent(target: Session): string {
   const product = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -122,27 +135,37 @@ function configureGuestSession(target: Session, platform: NodeJS.Platform): void
   })
 }
 
-/** The session of a custom panel: no permission, no navigation off the web. */
-function lockGuestSession(target: Session): void {
-  if (lockedSessions.has(target)) return
-  lockedSessions.add(target)
+/** The session of a custom panel: no permission, and main frame requests only
+ *  to the origin that serves its page (`src`). */
+function lockGuestSession(target: Session, src: string): void {
+  const origin = originOf(src)
+  const known = lockedSessions.get(target)
+  if (known) {
+    if (origin) known.add(origin)
+    return
+  }
+  const origins = new Set(origin ? [origin] : [])
+  lockedSessions.set(target, origins)
   target.setPermissionRequestHandler((_contents, permission, callback) => {
     log.warn('denied custom panel permission %s', permission)
     callback(false)
   })
   target.setPermissionCheckHandler(() => false)
   target.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: details.resourceType === 'mainFrame' && !isAllowedGuestUrl(details.url) })
+    const origin = originOf(details.url)
+    callback({ cancel: details.resourceType === 'mainFrame' && !(origin !== null && origins.has(origin)) })
   })
 }
 
 function hardenGuest(contents: WebContents, options: WebSecurityOptions, platform: NodeJS.Platform): void {
-  contents.on('will-navigate', (event, url) => {
-    if (!isAllowedGuestUrl(url)) {
+  const stayOnTheWeb = (event: Electron.Event, url: string) => {
+    if (!isAllowedGuestUrl(url) || !staysOnOrigin(contents, url)) {
       log.warn('blocked guest navigation to %s', url)
       event.preventDefault()
     }
-  })
+  }
+  contents.on('will-navigate', stayOnTheWeb)
+  contents.on('will-redirect', stayOnTheWeb)
   contents.setWindowOpenHandler(({ url }) => {
     if (guestSessions.has(contents.session) && isAllowedGuestUrl(url)) sendOpenTabRequest(contents, url)
     else log.warn('blocked popup to %s', url)
@@ -207,7 +230,7 @@ export function installWebSecurity(options: WebSecurityOptions): void {
       ;(webPreferences as { allowRunningInsecureContent?: boolean }).allowRunningInsecureContent = false
       if (kind) {
         delete params.allowpopups
-        lockGuestSession(electronSession.fromPartition(partition))
+        lockGuestSession(electronSession.fromPartition(partition), src)
         return
       }
       // Popups reach the window-open handler, which turns them into tabs.
