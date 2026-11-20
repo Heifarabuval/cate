@@ -254,6 +254,29 @@ class Pages(Garde):
 		self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Write', {'file_path': state, 'content': '{}'})), 'deny')
 		self.vide(self.hook(self.pages_cmd, 'Bash', {'command': 'agence need list'}))
 
+	def test_politique_refusee_aux_agents(self):
+		"""FR-005 : un agent n'écrit pas pratiques.json et ne lance ni set, ni unset, ni preset ; show, check et brief restent permis."""
+		self.installe()
+		self.orchestre()
+		projet = os.path.join(self.projet, '.cate', 'tmp', 'agence', 'pratiques.json')
+		dev = os.path.join(self.home, '.config', 'agence', 'pratiques.json')
+		for f in (projet, dev):
+			for tool in ('Write', 'Edit', 'MultiEdit'):
+				with self.subTest(tool=tool, f=f):
+					r = self.hook(self.pages_cmd, tool, {'file_path': f, 'content': '{}'})
+					self.assertEqual(self.decision(r), 'deny')
+					self.assertIn('pratiques', r.stdout)
+		for cmd in ('agence pratiques set tests libre', 'agence pratiques unset tests', 'agence pratiques preset neutre --dev',
+		            'cd /tmp && ~/.cate/runtime/b1/agence/agence pratiques set livraison.merge dehors',
+		            'python3 tools/agence/agence.py pratiques set issue libre', f'echo {{}} > {projet}'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+		for cmd in ('agence pratiques show', 'agence pratiques show --json', 'agence pratiques check', 'agence pratiques brief',
+		            f'cat {projet}'):
+			with self.subTest(cmd=cmd):
+				self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'pratiques.json'), 'content': '{}'}))
+
 
 class ModeObligatoire(Garde):
 	"""`agence guard` sans --mode : refusé par argparse (code 2), aucune décision sur stdout, même pour un envoi cliqué.
