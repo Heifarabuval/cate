@@ -18,6 +18,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
+  agence observe list [--jours N] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : une ligne par geste puis le total ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
 
 Codes : 0 ok, 1 refus métier, 2 environnement.
 """
@@ -49,6 +50,7 @@ from datetime import datetime, timezone
 
 MAX_AGENTS = 4  # plafond par défaut d'agents vivants (en plein tour ou en attente) ; agence start --max-agents le change pour le projet
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')  # ceux que cate agent start --effort déclare
+JOURS_JOURNAL = 14  # rétention du journal d'observation (RETENTION_DAYS dans src/workspace/observation/contract/retention.ts)
 KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
                       r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
@@ -430,6 +432,12 @@ def dollars_positifs(v):
 def entier_positif(v):
 	if not v.isdigit() or int(v) < 1:
 		raise argparse.ArgumentTypeError(f'entier >= 1 attendu, reçu {v!r}')
+	return int(v)
+
+
+def jours_valides(v):
+	if not (v.isascii() and v.isdigit()) or int(v) > JOURS_JOURNAL:
+		raise argparse.ArgumentTypeError(f'entier de 0 à {JOURS_JOURNAL} attendu, reçu {v!r}')
 	return int(v)
 
 
@@ -2303,6 +2311,35 @@ def cmd_preview(a):
 	return 0
 
 
+def cmd_observe(a):
+	"""Journal d'observation de l'humain (spec 003), en lecture seule : `cate observe list`, que le réglage
+	cliObservationEnabled garde fermé. N'écrit rien, ni journal ni état de l'agence. Un agent ne la lance pas :
+	sa sortie irait à un modèle de langage, ce que le journal s'interdit."""
+	require_cate()
+	try:
+		r = cate('observe', 'list', '--jours', a.jours)
+	except Refus as err:
+		if 'observation-read-disabled' in str(err):
+			raise Refus(f'{err}\n  réglage : cliObservationEnabled (Cate, Réglages, CLI, Observation, Lecture), fermé par défaut')
+		raise
+	obs = r.get('observations') if isinstance(r, dict) else None
+	if not isinstance(obs, list):
+		raise Refus('cate observe list : réponse illisible')
+	if a.json:
+		print(json.dumps(r, ensure_ascii=False))
+		return 0
+	lignes = ['%s  %-14s %-8s %s' % (o['ts'], o['kind'], o['panelType'], o['ref']) for o in obs
+	          if isinstance(o, dict) and all(isinstance(o.get(k), str) for k in ('ts', 'kind', 'panelType', 'ref'))]
+	vues = r.get('illisibles')
+	illisibles = (vues if isinstance(vues, int) and vues > 0 else 0) + len(obs) - len(lignes)
+	portee = "aujourd'hui" if a.jours == 0 else "aujourd'hui et %s avant" % pluriel(a.jours, 'jour')
+	total = '%s, %s' % (pluriel(len(lignes), 'observation'), portee)
+	if illisibles:
+		total += ', %s illisible%s ignorée%s' % (pluriel(illisibles, 'ligne'), 's' if illisibles > 1 else '', 's' if illisibles > 1 else '')
+	print('\n'.join(lignes + [total]))
+	return 0
+
+
 # ---------- CLI ----------
 
 def version():
@@ -2412,6 +2449,12 @@ def parser():
 	v.add_argument('fichier')
 	v.add_argument('titre', nargs='?')
 	v.set_defaults(fn=cmd_preview)
+	ob = sub.add_parser('observe', help="journal d'observation de l'humain, en lecture seule (jamais lu par un agent)")
+	obs = ob.add_subparsers(dest='action', required=True)
+	ol = obs.add_parser('list', help="les observations des derniers jours, une ligne chacune, puis le total")
+	ol.add_argument('--jours', type=jours_valides, default=JOURS_JOURNAL, metavar='N', help=f"aujourd'hui et N jours avant (0 à {JOURS_JOURNAL}, défaut {JOURS_JOURNAL})")
+	ol.add_argument('--json', action='store_true', help='la réponse de cate observe list, telle quelle')
+	ob.set_defaults(fn=cmd_observe)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
