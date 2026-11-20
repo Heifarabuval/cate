@@ -6,9 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.1-fork.1] - 2026-11-20
+
+First numbered release of the fork. It is Cate 2.1.1 plus an orchestrator you drive from the canvas: the agence panel, the validation inbox, custom panels you can share, practices you can tune, and a CLI that now covers agents, relations, pull requests and canvas frames. Updates are built from source and never check Cate releases.
+
 ### Added
 
+- **Agence panel**: one panel for the orchestrator and its follow-up, with press, waiting and done feedback on every action, a human name taken from `AGENCE_NOM` or git config, drafts you read and send from the panel, and an "Envoyer quand même" action on an uncertain Slack draft.
+- **Validation inbox**: a panel that gathers what waits for you (answers, sends, merges, permissions), with keyboard validation, jumps to the panel concerned and a stopped orchestrator shown as such.
+- **Orchestrator in the app**: the canvas menu offers the orchestrator and ready agents. A need's panels can be grouped in a frame on the canvas (`cate panel group`), and the orchestrator is capped at 4 agents at a time with a `doctor` check for orphan panels. The `agence` CLI ships in the runtime and sits on every terminal's PATH, with send guards you install on your command.
+- **Custom panels**: put a folder with a manifest and an HTML page in `~/.cate/panneaux` and Cate loads it without a rebuild. Each page is locked to its own origin and its declared hosts, asks for its grants on a clear card, and can be exported as a package, shared and imported. A skill helps write them.
+- **Adjustable practices**: the orchestrator's rules come from a practices policy you can read and change per developer. The agence panel shows the policy and where each rule comes from.
+- **Waiting cost**: `agence` measures what an orchestrator costs while it waits, in tokens, so a long wait is visible before it is expensive.
+- **Learning by observation**: an opt-in journal of observations. Nothing is recorded until you accept it.
+- **Pull requests in the review panel**: `cate panel create review --pr <n>` opens a pull request read-only through `gh`.
+- **Agent CLI**: `cate agent start` takes `--model`, `--effort` and `--done-when`, launches Antigravity (`agy`) as an agent, and `cate agent usage` gives per-panel token and cost totals, including context tokens. `cate agent wait` accepts timeouts up to 600 s.
+- **Browser sign-ins**: share sign-ins across workspaces and import them from your default browser. An agent-driven panel asks before it gets a signed-in session.
+- **Fork install**: install and update the fork in one line on macOS, with prerequisites checked first. A workspace runtime whose build differs from the app is updated.
+- **Worktrees**: creating a worktree clones `node_modules`, so a fresh checkout is ready to run.
+- **Memory log**: the main process logs its memory use every 5 minutes.
 - **CLI relations**: `cate panel link <from> <to> [--kind] [--label]` and `cate panel unlink <from> <to>` create and remove panel relations, held to the same rules as the UI (the pair's three kinds, no cycle, only panels that take part in relations). `cate panel list --json` gives each panel's outgoing `relations`. `cate agent start --relation <kind> [--link-from <id>]` relates a panel to the agent it starts; a refused relation leaves the agent running and says why.
+
+### Changed
+
+- **Browser memory**: the page driver bounds its element references in the main process.
+- **Quit**: every quit step is bounded and logged.
+- **Editor**: agence draft files open in source mode, and video and audio files preview instead of opening as text.
+
+### Fixed
+
+- **Agent input**: a queued prompt stays queued while you type in the agent's input.
+- **Browser cookies**: Chromium cookie expiry is read in a way `node:sqlite` accepts, so imported sign-ins load.
+- **Agence panel**: the free answer field keeps focus, and the question page works when Merge is greyed out.
+- **Stability**: local socket, local start and review tests no longer flake.
+- **Fork uninstall**: the update script is kept when the uninstall cannot purge the clone.
 
 ## [2.1.1] - 2026-11-20
 

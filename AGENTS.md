@@ -61,6 +61,14 @@ Before creating any beta or stable release, update `CHANGELOG.md` with the
 matching version, release date, summary, and categorized user-facing changes.
 The changelog entry must be complete before bumping or tagging the release.
 
+In the fork, every user-visible pull request adds a line under `[Unreleased]`.
+For each batch of merged pull requests, a `chore(release)` pull request renames
+`[Unreleased]` to `[2.1.1-fork.N] - <date>`, leaves an empty `[Unreleased]` on
+top, and bumps `package.json`, `package-lock.json` and (through
+`npm run build:runtime`) `RUNTIME_VERSION`. What's New opens only when the
+changelog has a dated section titled exactly with the app version;
+`scripts/changelog-release.test.mjs` fails when they drift.
+
 ## Dependencies
 
 Managed via npm (`package.json`):
