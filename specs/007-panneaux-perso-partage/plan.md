@@ -110,7 +110,7 @@ Un panneau importé est du code d'un tiers. Il tourne dans une page web avec : u
 
 Les specs 005 (pratiques réglables), 002 (lots macro de l'orchestrateur) et 006 (coût de l'attente) sont écrites en parallèle ; leurs listes de fichiers étaient « prises » mais non publiées au moment de l'écriture (bus, 17 h 45). Ce qui suit est donc une lecture de **ma** zone, à recouper par l'orchestrateur avec les `plan.md` des trois autres.
 
-**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
+**Ordre de merge et conflits entre les 4 specs** : voir `specs/recoupement-2026-11-20.md` (PR #110) (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
 
 | Fichier | Mes lots | Risque | Mitigation |
 |---|---|---|---|
