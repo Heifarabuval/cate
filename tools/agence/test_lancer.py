@@ -3,6 +3,7 @@
 budget en jetons (FR-006), vue `backlog` publiée pour le panneau agence (contrat du lot 5).
 
 `cate` est simulé (FakeRun) ; état en dossier temporaire et faux HOME (Base de test_agence)."""
+import concurrent.futures
 import contextlib
 import io
 import json
@@ -14,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agence  # noqa: E402
 import backlog  # noqa: E402
+import test_agence  # noqa: E402
 from test_agence import Base  # noqa: E402
 from test_portable import REPO  # noqa: E402
 
@@ -22,6 +24,9 @@ COMPLETE = {'type': 'tache', 'preuve': 'pr-merged:', 'priorite': 'P2', 'budgetJe
 # Copie de src/panels/agence/contract/fixtures/vue-backlog.json (branche du lot 5) : ce test tourne sans src/.
 FIXTURE = os.path.join(HERE, 'fixtures', 'vue-backlog.json')
 FIXTURE_SRC = os.path.join(REPO, 'src', 'panels', 'agence', 'contract', 'fixtures', 'vue-backlog.json')
+# Réponse réelle de /fiches/lancer en succès (POST JSON du panneau agence) ; session.test.ts lit la copie de src/.
+REPONSE = os.path.join(HERE, 'fixtures', 'reponse-lancer.json')
+REPONSE_SRC = os.path.join(REPO, 'src', 'panels', 'agence', 'contract', 'fixtures', 'reponse-lancer.json')
 
 
 class Lancer(Base):
@@ -345,6 +350,75 @@ class Contrat(Lancer):
 		self.assertIsNone(self.state()['backlog']['fiches'][0]['consomme'])
 		with open(agence.state_file()) as f:
 			self.assertNotIn('NaN', f.read())
+
+
+class RouteReelle(Base):
+	"""/fiches/lancer servie par un vrai `agence watch` (setUp de test_agence.Regisseur, ses méthodes empruntées sans
+	hériter de ses tests) : forme de la réponse en succès, double id, deux clics concurrents."""
+
+	TOKEN = test_agence.Regisseur.TOKEN
+	def setUp(self):
+		super().setUp()
+		self.procs = []
+		bindir = os.path.join(self.tmp, 'bin')
+		os.makedirs(bindir)
+		with open(os.path.join(bindir, 'cate'), 'w') as f:
+			f.write('#!/bin/sh\necho "[]"\n')
+		os.chmod(os.path.join(bindir, 'cate'), 0o755)
+		self.port = agence.free_port()
+		with agence.tx() as st:
+			st['port'] = self.port
+		self.env_run = {**os.environ, 'PATH': bindir + os.pathsep + os.environ['PATH']}
+
+	def tearDown(self):
+		for p in self.procs:
+			if p.poll() is None:
+				p.kill()
+			p.wait()
+			for s in (p.stdin, p.stderr):
+				if s:
+					s.close()
+		super().tearDown()
+
+	watch, wait_port, post, serve = (test_agence.Regisseur.watch, test_agence.Regisseur.wait_port,
+	                                 test_agence.Regisseur.post, test_agence.Regisseur.serve)
+	fiches = Lancer.fiches
+
+	def lancer(self, ids):
+		status, _, body = self.post(self.TOKEN, '/fiches/lancer', 'application/json', ids=ids)
+		return status, json.loads(body)
+
+	def besoins(self):
+		return [n for n in agence.load()['needs'] if (n['ref'] or '').startswith('fiche:')]
+
+	def prepare(self, *specs):
+		with agence.tx() as st:
+			st['panels'] = {'orchestrator': 'o1'}
+		self.fiches(*specs)
+		self.serve()
+
+	def test_reponse_du_succes_egale_la_fixture(self):
+		self.prepare(('A', ['src/a.ts']))
+		status, body = self.lancer('F1')
+		with open(REPONSE, encoding='utf-8') as f:
+			self.assertEqual({'status': status, 'body': body}, json.load(f))
+		self.assertEqual(len(self.besoins()), 1)
+
+	def test_copie_identique_a_la_fixture_du_panneau(self):
+		with open(REPONSE, encoding='utf-8') as a, open(REPONSE_SRC, encoding='utf-8') as b:
+			self.assertEqual(json.load(a), json.load(b))
+
+	def test_id_en_double_un_seul_besoin(self):
+		self.prepare(('A', ['src/a.ts']))
+		self.assertEqual(self.lancer('F1,F1')[0], 200)
+		self.assertEqual([n['ref'] for n in self.besoins()], ['fiche:F1'])
+
+	def test_deux_clics_concurrents_un_seul_lot(self):
+		self.prepare(('A', ['src/a.ts']), ('B', ['src/b.ts']))
+		with concurrent.futures.ThreadPoolExecutor(2) as pool:
+			codes = sorted(c for c, _ in pool.map(self.lancer, ['F1,F2', 'F1,F2']))
+		self.assertEqual(codes, [200, 409])
+		self.assertEqual(sorted(n['ref'] for n in self.besoins()), ['fiche:F1', 'fiche:F2'])
 
 
 if __name__ == '__main__':
