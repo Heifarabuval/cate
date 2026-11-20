@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { shortcutDisplay, shortcutRegistry } from '@kernel/interaction'
 import { keyOutcome, type BoiteCommand } from '@client/boite'
 import type { PanelViewProps } from '../../client/host/views'
+import { InlineNotice } from '../../kernel/interaction'
 import Ligne from './Ligne'
 import { BOITE_ACTIONS, bindBoiteKeys } from './keyboard'
 import { useBoite } from './useBoite'
@@ -30,6 +31,9 @@ export default function BoiteView({ panelId }: PanelViewProps) {
     { title: 'Bloquant', dot: 'bg-danger', rows: rows.filter((row) => row.blocking) },
     { title: 'À faire', dot: 'bg-warning', rows: rows.filter((row) => !row.blocking) },
   ].filter((section) => section.rows.length > 0)
+  // A project with no line yet says why: still read, or unreadable. Never « Rien ne t'attend » over it.
+  const withRows = new Set(rows.map((row) => row.root))
+  const unsettled = projects.filter((project) => project.state !== 'live' && !withRows.has(project.root))
   const watched = [
     plural(projects.length, 'projet surveillé', 'projets surveillés'),
     ...(closedWorkspaces > 0 ? [plural(closedWorkspaces, 'workspace non ouvert', 'workspaces non ouverts')] : []),
@@ -42,7 +46,7 @@ export default function BoiteView({ panelId }: PanelViewProps) {
   return (
     <div className="flex h-full min-w-0 flex-col overflow-auto bg-surface-1">
       {projects.length === 0 && <p className="p-4 text-[12px] text-secondary">Aucun projet orchestré dans les workspaces ouverts.</p>}
-      {projects.length > 0 && rows.length === 0 && <p className="p-4 text-[13px] text-primary">Rien ne t&apos;attend.</p>}
+      {projects.length > 0 && rows.length === 0 && unsettled.length === 0 && <p className="p-4 text-[13px] text-primary">Rien ne t&apos;attend.</p>}
       {sections.map((section) => (
         <section key={section.title}>
           <h2 className="flex items-center gap-2 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-secondary">
@@ -52,6 +56,9 @@ export default function BoiteView({ panelId }: PanelViewProps) {
           <ul>{section.rows.map((row) => <Ligne key={row.key} ligne={row} now={now} actions={actions} state={actionsState} selected={row.key === selectedKey} />)}</ul>
         </section>
       ))}
+      {unsettled.map((project) => project.state === 'error'
+        ? <InlineNotice key={project.root} tone="error" data-testid="projet-erreur" className="mx-3 mt-2 break-words !text-primary">{`${project.repo} : ${project.error}`}</InlineNotice>
+        : <p key={project.root} data-testid="projet-attente" className="mx-3 mt-2 break-words text-[12px] text-secondary">{`${project.repo} : ${project.error}`}</p>)}
       <p className="mt-auto px-3 pt-2 text-[11px] text-secondary">{watched}</p>
       <p data-testid="raccourcis" className="px-3 pb-2 text-[11px] text-secondary">{help}</p>
     </div>
