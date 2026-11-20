@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { defineCapability, framePortOver, method } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
@@ -20,7 +21,7 @@ const connections = (server: net.Server, n: number) => vi.waitFor(() => new Prom
 }))
 
 let dir: string
-beforeEach(() => { dir = fs.mkdtempSync('/tmp/cate-t-') })
+beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-t-')) })
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
 it.skipIf(process.platform === 'win32')('holds connections that arrive before open, then serves them', async () => {
@@ -102,4 +103,23 @@ it.skipIf(process.platform === 'win32')('closes the held connections when the li
   await listener.close()
   await closed
   await expect(dialLocal(lock.endpoint, { timeoutMs: 500 })).rejects.toThrow()
+})
+
+it('handles a client reset while the runtime is still starting', async () => {
+  const server = net.createServer()
+  const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
+  const listener = serveLocal({ server, takeEarly: () => [] }, rpc)
+  const socket = new net.Socket()
+  try {
+    server.emit('connection', socket)
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })
+    expect(() => socket.emit('error', reset)).not.toThrow()
+    expect(socket.destroyed).toBe(true)
+    // The disconnected client must not be served when startup finishes.
+    listener.open()
+  } finally {
+    socket.destroy()
+    await listener.close()
+    rpc.close()
+  }
 })

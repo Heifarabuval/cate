@@ -81,7 +81,7 @@ type TabsSeen = { activeTabId: string; tabIds: string[] }
 export const AGENT_CURSOR_IDLE_MS = 10_000
 
 /** Methods whose own effect on the tabs is their result, not a notice. */
-const TAB_METHODS = new Set(['selectTab', 'createTab', 'closeTab'])
+const TAB_METHODS = new Set(['listTabs', 'selectTab', 'createTab', 'closeTab'])
 
 const SIGN_IN_DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 
@@ -489,6 +489,15 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private api(): SessionApiHandler {
     const handle = sessionApi(browserApi, {
       ...this.control.handlers,
+      listTabs: (_args, ctx) => ({
+        tabs: this.state.tabs.map(({ nav: _nav, navSource: _source, openedBy, ...tab }) => ({
+          ...tab,
+          panelId: this.panelId,
+          tabId: tab.id,
+          active: tab.id === this.state.activeTabId,
+          opener: !openedBy ? 'person' : 'page' in openedBy ? `page in ${openedBy.page}` : openedBy.caller === ctx.caller.id ? 'you' : 'agent',
+        })),
+      }),
       selectTab: async ({ tabId }, ctx) => {
         this.selectTab(tabId)
         return this.control.pageInfo(tabId, pageCall(ctx))

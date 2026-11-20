@@ -28,8 +28,7 @@ Read the one for your task before its first command:
   prompts, waiting for and reading their answers, and typing into terminals
   that have no agent.
 
-Panels, terminals, editors and Review panels are covered
-below.
+Panels, terminals, editors and Review panels are covered below.
 
 ## Permissions
 
@@ -48,7 +47,7 @@ guessing a flag:
 ```bash
 cate --help                  # command groups and global flags
 cate panel --help            # the commands of one group (or just: cate panel)
-cate agent send --help       # one command: arguments, flags and defaults
+cate browser click --help    # one command: arguments, flags and defaults
 ```
 
 A mistyped command suggests the closest one. Lists print as aligned tables,
@@ -77,9 +76,9 @@ short; any unique prefix works, and `--json` gives full ids, each panel's
 `worktreeId` and `"caller": true|false` (only your own panel is `true`;
 every row is `false` outside a terminal Cate spawned).
 
-A command acts on, in order: `--panel <id>` (one command only), the panel
-you selected for this terminal with `cate panel set <id>`, or Cate's
-automatic choice (the calling panel's group, then the panel active in the
+Session commands (`browser`, `terminal`, and `editor active`) act on, in
+order: `--panel <id>` (one command only), the panel you selected for this
+terminal with `cate panel set <id>`, or Cate's automatic choice (the calling panel's group, then the panel active in the
 most recently used window, then the only panel of that type). The selection
 belongs to your terminal, so other agents keep their own:
 
@@ -96,8 +95,18 @@ id). To always get your own panel, read the row with `"caller": true` in
 
 A command refuses a selected panel of the wrong type instead of acting on
 another one. If the selected panel was closed, select another.
-`terminal type`, `terminal press` and every `review` command never guess:
-they need `--panel` or a selection.
+`terminal type` and `terminal press` never guess: they need `--panel` or a
+selection. An empty `--panel` value is a usage error.
+
+`panel close`, `panel set` and the single-agent commands (`agent read`,
+`send`, `withdraw`, `interrupt`) require an explicit panel id, as a positional
+argument or `--panel <id>`; they do not use the selected panel. `agent wait`
+accepts several positional ids and defaults to all live agents. `panel list`
+and `agent list` list the workspace's panels and agents.
+
+`panel title` renames the calling panel unless you pass `--panel <id>`;
+`panel set` does not change that default. `panel create`, `editor open` and
+`agent start` create or reuse panels rather than targeting a selected panel.
 
 There is no `panel focus`: focus belongs to each person's window, not to the
 workspace.
