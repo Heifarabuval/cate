@@ -16,6 +16,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence doctor --prerequis [--hors-cate] [--json] ce qui manque pour orchestrer, une ligne par point avec la commande qui règle (code 1 si un bloquant manque)
   agence guard --mode send|pages     hook PreToolUse (JSON sur stdin) ; --mode obligatoire ; send échoue fermé (ask), pages échoue ouvert
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
+  agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -38,6 +39,7 @@ import secrets
 import shutil
 import socket
 import stat
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -1955,15 +1957,24 @@ def read_token_stdin():
 	return token
 
 
-def lire_usage():
-	"""Coût (dollars équivalent API) par panneau d'agent vivant, de cate agent usage ; None si refusé ou illisible."""
+def lire_mesures():
+	"""Les lignes de cate agent usage par panneau d'agent vivant (coût, jetons, contextTokens quand Cate le rend) ; None si refusé ou illisible."""
 	try:
 		rows = cate('agent', 'usage')
 	except Refus:
 		return None
 	if not isinstance(rows, list):
 		return None
-	return {r['panelId']: r.get('costUsd') for r in rows if isinstance(r, dict) and 'panelId' in r}
+	return {r['panelId']: r for r in rows if isinstance(r, dict) and 'panelId' in r}
+
+
+def couts(mesures):
+	"""Coût (dollars équivalent API) par panneau ; None si les mesures n'ont pas pu être lues."""
+	return None if mesures is None else {p: r.get('costUsd') for p, r in mesures.items()}
+
+
+def lire_usage():
+	return couts(lire_mesures())
 
 
 def un_tour():
@@ -1976,7 +1987,8 @@ def un_tour():
 	gh, merges = lire_github(snap)  # hors transaction : un gh lent ne bloque ni la boucle ni les clics
 	# ponytail: lecture en série, 5 s au pire par agent bloqué (6 au plus) ; en parallèle si ça gêne
 	screens = {p: lire_ecran(p) for p in ecrans_a_lire(snap, agents)}  # hors transaction aussi
-	usage = lire_usage()  # idem : une lecture par tour, None si Cate la refuse
+	mesures = lire_mesures()  # idem : une lecture par tour, None si Cate la refuse
+	usage = couts(mesures)
 	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
@@ -1986,8 +1998,13 @@ def un_tour():
 		st['garde'] = garde
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage)
 		apply(st, effects)
+		orch = st['panels'].get('orchestrator')
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
+	try:  # le suivi des besoins reste prioritaire : un journal qui échoue ne tue pas le tour
+		declencheurs_tour(root(), {'orchestrateur': orch, 'agents': agents, 'usage': mesures}, time.time())
+	except (Refus, OSError) as err:
+		log(f'déclencheurs : {err}')
 
 
 def cmd_watch(a):
@@ -2015,6 +2032,358 @@ def cmd_watch(a):
 			log(str(err))
 		stop.wait(a.interval)
 	server.shutdown()
+	return 0
+
+
+# ---------- déclencheurs : évaluateur, journal, bilan (spec 004, lot 2) ----------
+# Une fonction pure décide sur des instantanés déjà lus (agents, usage, journal, horloge) : ni modèle, ni appel à cate.
+# Lot 2 : rien ne part. Une condition vraie donne `blanc`, journalisé avec la mesure avant (FR-020).
+
+TABLE_DECLENCHEURS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'declencheurs.json')
+CHAMPS_TABLE = ('id', 'commande', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
+SETUP_JAMAIS_EN_A = ('learn', 'audit-config', 'update-config', 'fewer-permission-prompts', 'autocompact', 'skill-creator', 'claude-md-improver')  # FR-006
+MESURES = ('contextTokens', 'inputTokens', 'outputTokens', 'costUsd')
+CLES_LIGNE = ('ts', 'commande', 'classe', 'decision', 'panneau', 'raison', 'avant', 'apres', 'verdict')
+DECISIONS = ('envoyer', 'carte', 'attendre', 'blanc', 'sans-mesure')
+VERDICTS = ('reussi', 'echec', 'partiel', 'sans-mesure', 'blanc', 'ignoree', 'refusee')
+RAISON_RE = re.compile(r'ctx>=\d+|merge:\d+|7j|friction:\d+|repos|plafond|occupe|ctx-absent')  # liste fermée : des codes et leurs nombres, jamais un texte
+COMMANDE_RE = re.compile(r'/?[a-z][a-z0-9-]*')
+PANNEAU_RE = re.compile(r'[0-9a-f-]{8,64}')
+FICHIER_JOURNAL_RE = re.compile(r'\d{4}-\d{2}-\d{2}\.jsonl')
+JOURS_JOURNAL_DECL = 90  # rétention du journal des déclencheurs : un seuil se révise sur des semaines
+JOURS_BILAN = 30
+DELAI_VERDICT = 60  # secondes : deux tours du régisseur (30 s chacun par défaut) # ponytail: horloge, pas un compteur de tours ; compteur si --interval change
+PURGE_FAITE = {}  # racine -> jour de la dernière purge : au démarrage du régisseur, puis une fois par jour
+
+
+def _nombre(v):
+	return type(v) in (int, float) and math.isfinite(v)
+
+
+def _epoch(ts):
+	try:
+		d = datetime.fromisoformat(ts)
+	except (TypeError, ValueError):
+		return None
+	return d.timestamp() if d.tzinfo else None
+
+
+def _jour_local(epoch):
+	return datetime.fromtimestamp(epoch).strftime('%Y-%m-%d')
+
+
+def _iso(epoch):
+	return datetime.fromtimestamp(epoch, timezone.utc).isoformat(timespec='seconds')
+
+
+def charger_table(path=None):
+	"""La table des déclencheurs (un fichier de données) ; refus au chargement si une ligne manque d'un champ ou range une commande de setup en classe A."""
+	try:
+		with open(path or TABLE_DECLENCHEURS) as f:
+			rows = json.load(f)
+	except (OSError, ValueError) as err:
+		raise Refus(f'table des déclencheurs illisible : {err}')
+	if not isinstance(rows, list) or not rows:
+		raise Refus('table des déclencheurs : une liste de lignes attendue')
+	vus = set()
+	for r in rows:
+		ident = r.get('id', '?') if isinstance(r, dict) else '?'
+		if not isinstance(r, dict) or any(k not in r for k in CHAMPS_TABLE):
+			manque = [k for k in CHAMPS_TABLE if not isinstance(r, dict) or k not in r]
+			raise Refus(f'table des déclencheurs : {ident} sans {", ".join(manque) or "champs"}')
+		textes = all(isinstance(r[k], str) and r[k].strip() for k in ('id', 'commande', 'agentId', 'condition', 'donnee', 'indicateur'))
+		seuil_ok = r['seuil'] is None or _nombre(r['seuil'])
+		entiers = type(r['repos']) is int and r['repos'] >= 0 and type(r['plafond']) is int and r['plafond'] >= 1
+		if not (textes and seuil_ok and entiers and r['classe'] in ('A', 'B') and type(r['hypothese']) is bool
+		        and type(r.get('actif', True)) is bool):
+			raise Refus(f'table des déclencheurs : {ident} a un champ invalide')
+		if r['id'] in vus:
+			raise Refus(f'table des déclencheurs : {ident} en double')
+		vus.add(r['id'])
+		if r['classe'] == 'A' and r['commande'].strip().lstrip('/').lower() in SETUP_JAMAIS_EN_A:
+			raise Refus(f"table des déclencheurs : {r['commande']!r} change le setup, classe B seulement (jamais seule)")
+	return rows
+
+
+def _cond_contexte_repos(t, inst, journal, maintenant):
+	"""T1 : l'orchestrateur est au repos et son contexte dépasse le seuil."""
+	panneau = inst.get('orchestrateur')
+	agent = next((a for a in inst.get('agents') or [] if isinstance(a, dict) and a.get('panelId') == panneau), None)
+	if not panneau or agent is None or agent.get('agentId') != t['agentId']:
+		return None
+	usage = inst.get('usage')
+	brut = usage.get(panneau) if isinstance(usage, dict) else None
+	brut = brut if isinstance(brut, dict) else {}
+	avant = {k: brut[k] if _nombre(brut.get(k)) else None for k in MESURES}  # champ absent : null, jamais une erreur
+
+	def rendre(decision, raison):
+		return {'declencheur': t['id'], 'commande': t['commande'], 'classe': t['classe'], 'decision': decision,
+		        'panneau': panneau, 'raison': raison, 'avant': avant}
+
+	ici = [l for l in journal if l['commande'] == t['commande'] and l['panneau'] == panneau]
+	aujourdhui = _jour_local(maintenant)
+	du_jour = [l for l in ici if _jour_local(_epoch(l['ts']) or 0) == aujourdhui]
+	ctx = avant['contextTokens']
+	if ctx is None:
+		return rendre('rien', None) if any(l['decision'] == 'sans-mesure' for l in du_jour) else rendre('sans-mesure', 'ctx-absent')
+	if ctx <= t['seuil']:
+		return rendre('rien', None)
+	raison = 'ctx>=%d' % t['seuil']
+	jouees = [l for l in ici if l['decision'] in ('blanc', 'envoyer')]
+	derniere = max((_epoch(l['ts']) or 0 for l in jouees), default=None)
+	if derniere is not None and maintenant - derniere < t['repos']:  # une horloge qui recule donne un écart négatif : repos non écoulé
+		return rendre('attendre', 'repos')
+	if len([l for l in jouees if l in du_jour]) >= t['plafond']:
+		return rendre('attendre', 'plafond')
+	if agent.get('state') != 'waitingForInput' or agent.get('canReceivePrompt') is not True or agent.get('prompts'):
+		return rendre('attendre', 'occupe')  # en tour, bloqué sur une confirmation ou une file non vide : jamais de commande de contexte
+	return rendre('blanc', raison)  # ponytail: toujours à blanc en lot 2 ; `envoyer` quand la commande est activée pour le projet (lot 3)
+
+
+CONDITIONS = {'contexte-repos': _cond_contexte_repos}  # T2, T3 : lot 4 ; T4 à T10 inactives
+
+
+def evaluer(instantane, table, journal, maintenant):
+	"""Fonction pure : une décision par ligne active dont la condition existe. Ni entrée-sortie, ni modèle, ni cate."""
+	decisions = []
+	for t in table:
+		condition = CONDITIONS.get(t['condition'])
+		if condition and t.get('actif', True):
+			d = condition(t, instantane, journal, maintenant)
+			if d:
+				decisions.append(d)
+	return decisions
+
+
+def verdict_pour(avant, apres):
+	"""Contexte après au plus 50 % de l'avant : réussi ; au moins 80 % : échec ; entre les deux : partiel. Sans mesure des deux côtés : sans-mesure."""
+	a, b = (m.get('contextTokens') if isinstance(m, dict) else None for m in (avant, apres))
+	if not _nombre(a) or not _nombre(b) or a <= 0:
+		return 'sans-mesure'
+	return 'reussi' if b * 10 <= a * 5 else 'echec' if b * 10 >= a * 8 else 'partiel'  # ponytail: seuils de T1 en dur ; dans la table quand T4 sera actif
+
+
+# ---- journal : un fichier par jour, ajout seul, des codes et des nombres ----
+
+def journal_dir(base=None):
+	return os.path.join(os.path.dirname(state_file(base)), 'declencheurs')
+
+
+def _valider_ligne(l):
+	"""Rend l'instant de la ligne (secondes) ou refuse : le schéma est fermé, aucun texte libre n'entre."""
+	if not isinstance(l, dict) or set(l) != set(CLES_LIGNE):
+		raise Refus('ligne de journal : champs attendus ' + ', '.join(CLES_LIGNE))
+	instant = _epoch(l['ts'])
+
+	def mesure_ok(m):
+		return isinstance(m, dict) and set(m) == set(MESURES) and all(v is None or _nombre(v) for v in m.values())
+
+	def court(v, motif):
+		return isinstance(v, str) and motif.fullmatch(v) is not None
+
+	if instant is None or not court(l['commande'], COMMANDE_RE) or l['classe'] not in ('A', 'B') or l['decision'] not in DECISIONS \
+	   or not court(l['panneau'], PANNEAU_RE) or not court(l['raison'], RAISON_RE) or not mesure_ok(l['avant']) \
+	   or not (l['apres'] is None or mesure_ok(l['apres'])) or not (l['verdict'] is None or l['verdict'] in VERDICTS):
+		raise Refus('ligne de journal refusée : un code, un nombre ou une date attendus, jamais un texte libre')
+	return instant
+
+
+def journal_ecrire(base, l):
+	instant = _valider_ligne(l)
+	d = journal_dir(base)
+	os.makedirs(d, mode=0o700, exist_ok=True)
+	os.chmod(d, 0o700)
+	fd = os.open(os.path.join(d, _jour_local(instant) + '.jsonl'), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)  # ponytail: un seul écrivain (le régisseur), pas de verrou
+	try:
+		os.fchmod(fd, 0o600)
+		os.write(fd, (json.dumps(l, ensure_ascii=False) + '\n').encode())
+	finally:
+		os.close(fd)
+
+
+def _fichiers_journal(base):
+	"""(nom, chemin) des fichiers réguliers du dossier, dans l'ordre des noms ; rien si le dossier n'existe pas."""
+	d = journal_dir(base)
+	try:
+		noms = sorted(os.listdir(d))
+	except OSError:
+		return []
+	return [(n, os.path.join(d, n)) for n in noms if os.path.isfile(os.path.join(d, n)) and not os.path.islink(os.path.join(d, n))]
+
+
+def journal_lire(base, jours, maintenant):
+	"""(lignes, nombre de lignes illisibles) d'aujourd'hui et des `jours` jours d'avant ; une ligne illisible est ignorée, jamais réparée."""
+	debut = _jour_local(maintenant - jours * 86400)
+	lignes, illisibles = [], 0
+	for nom, chemin in _fichiers_journal(base):
+		if not FICHIER_JOURNAL_RE.fullmatch(nom) or nom[:10] < debut:
+			continue
+		with open(chemin, encoding='utf-8', errors='replace') as f:
+			for brut in f:
+				if not brut.strip():
+					continue
+				try:
+					l = json.loads(brut)
+					_valider_ligne(l)
+				except (ValueError, Refus):
+					illisibles += 1
+					continue
+				lignes.append(l)
+	return lignes, illisibles
+
+
+def journal_purger(base, maintenant):
+	"""Supprime les fichiers de plus de 90 jours, sur le NOM (la date locale), jamais sur mtime. Rend (supprimés, noms invalides) ; un nom invalide reste."""
+	aujourdhui = datetime.fromtimestamp(maintenant).date()
+	supprimes, invalides = [], []
+	for nom, chemin in _fichiers_journal(base):
+		try:
+			jour = datetime.strptime(nom[:-6], '%Y-%m-%d').date() if FICHIER_JOURNAL_RE.fullmatch(nom) else None
+		except ValueError:
+			jour = None
+		if jour is None:
+			invalides.append(nom)
+		elif (aujourdhui - jour).days > JOURS_JOURNAL_DECL:
+			os.remove(chemin)
+			supprimes.append(nom)
+	return supprimes, invalides
+
+
+def resoudre_verdicts(base, instantane, maintenant):
+	"""Deux tours après un envoi, relit la mesure du panneau : la ligne reçoit `apres` et son verdict. Rend le nombre de lignes résolues."""
+	usage = instantane.get('usage')
+	fait = 0
+	for nom, chemin in _fichiers_journal(base):
+		if not FICHIER_JOURNAL_RE.fullmatch(nom) or nom[:10] < _jour_local(maintenant - 86400):
+			continue
+		sortie, change = [], False
+		with open(chemin, encoding='utf-8', errors='replace') as f:
+			for brut in f.read().splitlines():
+				try:
+					l = json.loads(brut)
+					instant = _valider_ligne(l)
+				except (ValueError, Refus):
+					sortie.append(brut)  # une ligne illisible reste telle quelle
+					continue
+				if l['decision'] == 'envoyer' and l['verdict'] is None and maintenant - instant >= DELAI_VERDICT:
+					m = usage.get(l['panneau']) if isinstance(usage, dict) else None
+					m = m if isinstance(m, dict) else {}
+					l['apres'] = {k: m[k] if _nombre(m.get(k)) else None for k in MESURES}
+					l['verdict'] = verdict_pour(l['avant'], l['apres'])
+					change, fait = True, fait + 1
+					brut = json.dumps(l, ensure_ascii=False)
+				sortie.append(brut)
+		if change:
+			fd, tmp = tempfile.mkstemp(dir=os.path.dirname(chemin), prefix='tmp-journal-')
+			with os.fdopen(fd, 'w', encoding='utf-8') as f:
+				f.write('\n'.join(sortie) + '\n')
+			os.chmod(tmp, 0o600)
+			os.replace(tmp, chemin)
+	return fait
+
+
+def declencheurs_tour(base, instantane, maintenant):
+	"""Un tour : purge (démarrage, puis une fois par jour), verdicts dus, évaluation, journal. Rend toutes les décisions, `rien` compris.
+	Un `attendre` identique à la dernière ligne du même panneau n'est pas répété (rafale)."""
+	try:
+		table = charger_table()
+	except Refus as err:
+		log(f'déclencheurs : {err}')
+		return []
+	jour = _jour_local(maintenant)
+	if PURGE_FAITE.get(base) != jour:
+		PURGE_FAITE[base] = jour
+		for nom in journal_purger(base, maintenant)[1]:
+			log(f'déclencheurs : fichier ignoré dans le journal (nom invalide) : {nom}')
+	resoudre_verdicts(base, instantane, maintenant)
+	journal = journal_lire(base, 1, maintenant)[0]
+	decisions = evaluer(instantane, table, journal, maintenant)
+	for d in decisions:
+		if d['decision'] == 'rien':
+			continue
+		dernier = next((l for l in reversed(journal) if (l['commande'], l['panneau']) == (d['commande'], d['panneau'])), None)
+		if d['decision'] == 'attendre' and dernier and (dernier['decision'], dernier['raison']) == ('attendre', d['raison']):
+			continue
+		l = {'ts': _iso(maintenant), 'commande': d['commande'], 'classe': d['classe'], 'decision': d['decision'], 'panneau': d['panneau'],
+		     'raison': d['raison'], 'avant': d['avant'], 'apres': None,
+		     'verdict': d['decision'] if d['decision'] in ('blanc', 'sans-mesure') else None}
+		journal_ecrire(base, l)
+		journal.append(l)
+	return decisions
+
+
+# ---- bilan ----
+
+def _mediane(valeurs):
+	if not valeurs:
+		return None
+	m = statistics.median(valeurs)
+	return int(m) if m == int(m) else m
+
+
+def bilan(base, jours, maintenant):
+	"""Par commande : décisions, réussites, échecs, ignorées, refusées, gain médian. Aucun identifiant de panneau, aucune raison : des nombres."""
+	lignes, illisibles = journal_lire(base, jours, maintenant)
+	lignes.sort(key=lambda l: _epoch(l['ts']))
+	par = {}
+	for l in lignes:
+		par.setdefault(l['commande'], []).append(l)
+	commandes, propositions = [], []
+	try:
+		table = charger_table()
+	except Refus:
+		table = []
+	for commande, ls in sorted(par.items()):
+		verdict = lambda v: len([l for l in ls if l['verdict'] == v])
+		jouees = [l for l in ls if l['verdict'] in ('reussi', 'echec', 'partiel')]
+		gains = [l['avant']['contextTokens'] - l['apres']['contextTokens'] for l in jouees
+		         if l['apres'] and _nombre(l['avant']['contextTokens']) and _nombre(l['apres']['contextTokens'])]
+		blancs = [l['avant']['contextTokens'] for l in ls if l['decision'] == 'blanc' and l['avant']['contextTokens'] is not None]
+		commandes.append({
+			'commande': commande,
+			'decisions': len([l for l in ls if l['decision'] in ('envoyer', 'carte', 'blanc')]),
+			'blancs': len([l for l in ls if l['decision'] == 'blanc']),
+			'reussis': verdict('reussi'), 'echecs': verdict('echec'), 'partiels': verdict('partiel'),
+			'ignorees': verdict('ignoree'), 'refusees': verdict('refusee'),
+			'taux': round(verdict('reussi') / len(jouees), 3) if jouees else None,
+			'gain_median': _mediane(gains), 'contexte_median_blanc': _mediane(blancs)})
+		t = next((t for t in table if t['commande'] == commande and t['condition'] == 'contexte-repos' and t.get('actif', True)), None)
+		derniers = jouees[-5:]
+		echecs = len([l for l in derniers if l['verdict'] == 'echec'])
+		if t and echecs >= 3:  # le seuil est une hypothèse : la proposition se calcule, l'humain change la ligne de données ou dit non
+			propositions.append('seuil de %s : %d vers %d, %d échecs sur %d' % (commande, t['seuil'], round(t['seuil'] * 1.25 / 10000) * 10000, echecs, len(derniers)))
+	return {'jours': jours, 'illisibles': illisibles, 'commandes': commandes, 'propositions': propositions}
+
+
+def bilan_texte(b):
+	if not b['commandes']:
+		sortie = [f"aucun déclenchement journalisé sur {pluriel(b['jours'], 'jour')}"]
+	else:
+		sortie = []
+		for c in b['commandes']:
+			taux = 'taux %d %%' % round(c['taux'] * 100) if c['taux'] is not None else 'taux inconnu'
+			gain = 'gain médian %d jetons' % c['gain_median'] if c['gain_median'] is not None else 'gain inconnu'
+			blanc = ', contexte médian à blanc %d' % c['contexte_median_blanc'] if c['contexte_median_blanc'] is not None else ''
+			sortie.append('%s : %s (dont %d à blanc), %d réussie%s, %d échec%s, %d partielle%s, %d ignorée%s, %d refusée%s, %s, %s%s' % (
+				c['commande'], pluriel(c['decisions'], 'décision'), c['blancs'], c['reussis'], 's' if c['reussis'] > 1 else '',
+				c['echecs'], 's' if c['echecs'] > 1 else '', c['partiels'], 's' if c['partiels'] > 1 else '',
+				c['ignorees'], 's' if c['ignorees'] > 1 else '', c['refusees'], 's' if c['refusees'] > 1 else '', taux, gain, blanc))
+	sortie += ['proposition : ' + p for p in b['propositions']]
+	if b['illisibles']:
+		sortie.append('%s illisible%s ignorée%s' % (pluriel(b['illisibles'], 'ligne'), 's' if b['illisibles'] > 1 else '', 's' if b['illisibles'] > 1 else ''))
+	return '\n'.join(sortie)
+
+
+def jours_bilan(v):
+	if not (v.isascii() and v.isdigit()) or not 1 <= int(v) <= JOURS_JOURNAL_DECL:
+		raise argparse.ArgumentTypeError(f'entier de 1 à {JOURS_JOURNAL_DECL} attendu, reçu {v!r}')
+	return int(v)
+
+
+def cmd_declencheurs(a):
+	"""`agence declencheurs bilan` : lecture seule du journal du projet, sans cate ; n'écrit ni état ni journal."""
+	b = bilan(root(), a.jours, time.time())
+	print(json.dumps(b, ensure_ascii=False) if a.json else bilan_texte(b))
 	return 0
 
 
@@ -2477,6 +2846,12 @@ def parser():
 	ol.add_argument('--refs', action='store_true', help="écrit aussi chaque adresse et chaque identifiant, une ligne par observation ; un terminal Cate enregistre sa sortie (terminal-logs/), hors de la rétention de 14 jours et de « Tout effacer »")
 	ol.add_argument('--json', action='store_true', help='la réponse de cate observe list (le décompte ; avec --refs, les observations aussi)')
 	ob.set_defaults(fn=cmd_observe)
+	dc = sub.add_parser('declencheurs', help="déclencheurs des commandes qui améliorent le processus (spec 004) : à blanc, rien ne part")
+	dcs = dc.add_subparsers(dest='action', required=True)
+	db = dcs.add_parser('bilan', help="par commande : décisions, réussites, échecs, gain médian et seuil à réviser, d'après le journal du projet (lecture seule, sans identifiant de panneau)")
+	db.add_argument('--jours', type=jours_bilan, default=JOURS_BILAN, metavar='N', help=f"aujourd'hui et N jours avant (1 à {JOURS_JOURNAL_DECL}, défaut {JOURS_BILAN})")
+	db.add_argument('--json', action='store_true', help='le bilan en JSON')
+	dc.set_defaults(fn=cmd_declencheurs)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
