@@ -101,3 +101,22 @@ it('serves script pages as plain text while the workspace is not trusted', async
   const res = await fetch(await server.urlFor('a', 'index.html'))
   expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8')
 })
+
+it('SC-003: a hostile panel gets none of its four attempts through (network, remote script, file outside, cateDesktop)', async () => {
+  put(path.join(panneaux, 'hostile', 'index.html'), '<script src="https://evil.example/x.js"></script>')
+  put(path.join(panneaux, 'hostile', 'app.js'), "fetch('https://example.com'); window.cateDesktop; fetch('../../../secrets')")
+  const url = await server.urlFor('hostile', 'index.html')
+  const res = await fetch(url)
+  const csp = res.headers.get('content-security-policy') ?? ''
+  // 1. no outgoing call: connect-src is the panel itself, no declared host.
+  expect(csp.match(/connect-src[^;]*/)?.[0]).toBe("connect-src 'self'")
+  // 2. no remote script: scripts come from the panel's own origin only, inline and eval included.
+  expect(csp.match(/script-src[^;]*/)?.[0]).toBe("script-src 'self'")
+  expect(csp).not.toMatch(/unsafe-eval|https?:/)
+  // 3. a file outside the folder: 404 whatever the path (see the dedicated test above).
+  const token = new URL(url).pathname.split('/')[1]
+  const secrets = path.join(base, 'secrets').split('/').map(encodeURIComponent).join('/').slice(1)
+  expect((await raw(url, `/${token}/${secrets}`)).status).toBe(404)
+  // 4. window.cateDesktop: the preload of an app panel exposes nothing (preload.test.ts).
+})
+
