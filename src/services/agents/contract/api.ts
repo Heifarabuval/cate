@@ -18,7 +18,7 @@ import { RELATION_KINDS } from '@workspace/document/contract'
 
 export const AGENT_WAIT_DEFAULT_SECONDS = 30
 export const AGENT_WAIT_MIN_SECONDS = 5
-export const AGENT_WAIT_MAX_SECONDS = 60
+export const AGENT_WAIT_MAX_SECONDS = 600
 /** Slack over the wait itself so the handler answers before the router gives up. */
 const WAIT_SLACK_MS = 5_000
 

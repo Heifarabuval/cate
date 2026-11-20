@@ -145,7 +145,9 @@ describe('parseCommandLine', () => {
   it('applies per-argument CLI parsing (ms to seconds) and array rest arguments', () => {
     expect(call(['agent', 'wait', 'a1', 'b2', '--wait-timeout', '10000']).args).toEqual({ panelIds: ['a1', 'b2'], timeoutSeconds: 10 })
     expect(call(['agent', 'wait']).args).toEqual({ timeoutSeconds: 30 })
-    expect(() => parse(['agent', 'wait', '--wait-timeout', '100'])).toThrow(/between 5000 and 60000/)
+    expect(() => parse(['agent', 'wait', '--wait-timeout', '100'])).toThrow(/between 5000 and 600000/)
+    expect(call(['agent', 'wait', '--wait-timeout', '600000']).args).toEqual({ timeoutSeconds: 600 })
+    expect(() => parse(['agent', 'wait', '--wait-timeout', '600001'])).toThrow(/between 5000 and 600000/)
   })
 
   it('resolves paths against the working directory and splits path:line:column', () => {
