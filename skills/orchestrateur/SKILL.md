@@ -69,6 +69,10 @@ Doute : `agence ask --from MOI ...`, n'invente pas. Texte à publier : `agence d
 Fin : `cate agent send --panel <ORCH> "<rapport de 15 lignes max : STATUT, PREUVES (commande + résultat, URL, SHA), HEAD <sha>, poussé : oui ou non, NON VÉRIFIÉ, FICHIERS>"`. Ne te relie jamais à l'orchestrateur (graphe acyclique).
 ```
 
+## Navigation web
+
+Ordre : API ou CLI, puis `curl` pour une page publique, puis `cate browser` en texte (`find --role`, `snapshot <id>`, `click --role --name`, `wait --text`). Jamais `screenshot` par défaut. Tu ne navigues pas toi-même : un agent Sonnet navigue et rend 15 lignes. Un agent qui a besoin d'une session ou d'un cookie pour un site le demande par `agence ask` (domaine, motif) ; l'accord vaut pour ce domaine et ce panneau (#81).
+
 ## Ce que tu rends à l'humain
 
 8 lignes maximum : fait (avec preuves), reste, non vérifié, ce qui l'attend (c'est déjà sur la page de suivi : `agence url`).
