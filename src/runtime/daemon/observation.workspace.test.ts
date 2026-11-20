@@ -5,6 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { build } from 'esbuild'
 import { apiCapability } from '@kernel/api/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { framePortOver } from '@kernel/rpc/contract'
@@ -161,6 +164,27 @@ describe.skipIf(process.platform === 'win32')('the observation in a daemon', () 
 
     await expect(w.api.call({ method: 'cate.observe.list' })).rejects.toMatchObject({ code: 'rejected', message: expect.stringMatching(/^observation-list-local-only/) })
   }, 30_000)
+
+  it('is read through the cate CLI itself, behind its setting', async () => {
+    const w = await start()
+    await w.settings.set({ key: 'observationAccord', value: new Date().toISOString() })
+    await w.addBrowser('b1')
+    await until(() => (fs.existsSync(journalOf(w.daemon)) ? true : undefined))
+
+    const cli = path.join(tmp, 'cli', 'cli.cjs')
+    await build({ entryPoints: ['src/cli/main.ts'], outfile: cli, platform: 'node', format: 'cjs', bundle: true, logLevel: 'silent' })
+    const { token } = w.daemon.workspace.tokens.issue({ kind: 'cli', panelId: 'b1' })
+    const run = (...args: string[]) => promisify(execFile)(process.execPath, [cli, ...args], {
+      env: { ...process.env, CATE_SOCKET: w.daemon.endpoint, CATE_TOKEN: token },
+      timeout: 20_000,
+    })
+
+    await expect(run('observe', 'list', '--json')).rejects.toMatchObject({ stderr: expect.stringContaining('observation-read-disabled') })
+    await w.settings.set({ key: 'cliObservationEnabled', value: true })
+    const { stdout } = await run('observe', 'list', '--jours', '3', '--json')
+    expect(JSON.parse(stdout)).toMatchObject({ total: 1, jours: 3, illisibles: 0, observations: [{ kind: 'panel.created', panelType: 'browser', ref: 'b1' }] })
+    await expect(run('observe', 'list', '--jours', '15', '--json')).rejects.toMatchObject({ code: expect.any(Number) })
+  }, 60_000)
 
   it('writes what waits when the daemon stops', async () => {
     const w = await start()

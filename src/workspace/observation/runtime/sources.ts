@@ -25,7 +25,7 @@ const touchesPanels = (op: DocOp): boolean =>
  * becomes is the one created. A link is told by the type and the id of the
  * panel it starts from.
  */
-export function documentFacts(before: WorkspaceDocument, doc: WorkspaceDocument): ObservationInput[] {
+function documentFacts(before: WorkspaceDocument, doc: WorkspaceDocument): ObservationInput[] {
   const facts: ObservationInput[] = []
   for (const [id, record] of Object.entries(doc.panels)) {
     if (record.type !== 'surface' && before.panels[id]?.type !== record.type) facts.push({ kind: 'panel.created', panelType: record.type, ref: id })
