@@ -16,7 +16,7 @@ description: "Tâches : vision v2, lots transverses, gates des quatre couches et
 ## Format: `- [ ] ID [P] [H] Description`
 
 - **[P]** : parallélisable (autre fichier, aucune dépendance non finie). **[H]** : action de Heifara (ou d'un cobaye), jamais d'un agent.
-- `005-L3` = spec 005, lot 3. **J** : jour d'agent compté depuis le lancement de la vague 1 ; les tailles viennent des `tasks.md` des specs, aucune n'est mesurée.
+- `005-L3` = spec 005, lot 3. Un ID nu (`T040`) désigne une tâche de 009 ; une tâche d'une autre spec porte toujours son numéro de spec (`011 T040`, `T040 de 011`). **J** : jour d'agent compté depuis le lancement de la vague 1 ; les tailles viennent des `tasks.md` des specs, aucune n'est mesurée.
 - Un implémenteur par lot, un worktree par agent, un vérificateur différent de l'implémenteur, qui prend la place de l'implémenteur à sa fermeture. Une tâche se coche sur preuve (sortie citée, `chemin:ligne`, commit).
 
 ## Lots, vue d'ensemble
@@ -24,7 +24,7 @@ description: "Tâches : vision v2, lots transverses, gates des quatre couches et
 | Lot | Contenu | Dépend de | Taille | Preuve de fin |
 |---|---|---|---|---|
 | **L0. Remise à niveau** | H1 à H6, lots déjà commités (005-L3, 007-L3) | rien | 1,25 j agent + 15 min [H] (hypothèse) | T001 coché ; 005-L3 et 007-L3 mergés sur `origin/main` (commits cités) |
-| **C1. Couche 1, noyau** | 010 lots 1 à 7 ; 011 lots 1 à 4 et 6 ; 005-L4 ; 006 lots 2 à 4 ; 004 lots 3 à 5 et X | L0 (005-L3 pour 010-L4) | 20,5 j agent (somme), 5,5 j sur le chemin critique | sous-lots ci-dessous mergés, chacun avec son checkpoint ; `010-L9` fait |
+| **C1. Couche 1, noyau** | 010 lots 1 à 7 et 9 ; 011 lots 1 à 4 et 6 ; 005-L4 ; 006 lots 2 à 4 ; 004 lots 3 à 5 et X | L0 (005-L3 pour 010-L4) | 20,5 j agent (somme), 6 j sur le chemin critique jusqu'à la fin de 010-L5 (dont 0,5 j d'attente de la sonde 006-L2), 6,5 j avec 010-L9 | sous-lots ci-dessous mergés, chacun avec son checkpoint ; `010-L9` fait |
 | **G1. Gate couche 1** [H] | 011-L5 (campagne), verdict | C1 : 010 lots 1 à 5 et 9, 011 lots 1 à 4 | 0,5 j agent + 10 à 30 h [H] (hypothèse 011) | `rapport-benchmark.md` commité, verdict « passe » contre `seuil.json` commité avant le premier rejeu |
 | **C2. Couche 2, règles** | 008 lots 1 à 4 | G1 passée (H1) ; 005-L4 ; 004 sur `declencheurs.json` | 4 j agent | 008-L4 mergé : un dépôt neuf pose ses questions, un dépôt réglé n'en pose aucune |
 | **G2. Gate couche 2** [H] | recette « règles changées sans code » | C2 | 1 h [H] (hypothèse) | T021 : sorties citées, `git diff --stat` vide sur `src/` et `tools/` |
@@ -82,7 +82,7 @@ description: "Tâches : vision v2, lots transverses, gates des quatre couches et
 ### Tâches transverses de C1
 
 - [ ] T010 Tenir l'ordre des PR sur `tools/agence/agence.py` : 005-L3, 010-L1, 005-L4, 010-L2, 010-L3, 010-L6, 010-L4, 010-L7, 004-L3, 004-L4 ; une PR ouverte à la fois, le chemin critique passe d'abord quand deux sont prêtes. Preuve : `gh pr list` cité à chaque merge. Responsable : l'orchestrateur.
-- [ ] T011 Tenir l'ordre sur `skills/orchestrateur/SKILL.md` : 006-L3, 005-L4, 010-L4 (T068), 011-L6 (T064), 004-L5. Le test de taille (006 f, 011 T062) se calcule sur le HEAD réel de chaque PR. Preuve : `wc -c skills/orchestrateur/SKILL.md` cité dans chaque PR.
+- [ ] T011 Tenir l'ordre sur `skills/orchestrateur/SKILL.md` : 006-L3, 005-L4, 010-L4 (010 T067, T068), 011-L6 (011 T064), 004-L5. Le test de taille (006 f, 011 T062) se calcule sur le HEAD réel de chaque PR. Plafond partagé : 006-L3 pose 14 632 octets (105 % de 13 936, 006 FR-009) ; chaque lot suivant (005-L4, 010-L4, 011-L6, 004-L5) relève lui-même la constante du test (f) de 006 dans sa PR, de son ajout seulement et au plus 5 % de la taille d'avant sa PR. Preuve : `wc -c skills/orchestrateur/SKILL.md` avant et après, cité dans chaque PR.
 - [ ] T012 [H] Heifara fixe le seuil (011 T040, Q3) avant tout rejeu. Preuve : `shasum -a 256 specs/011-mesure-benchmark/seuil.json` cité par l'agent après le commit.
 - [ ] T013 Gel (H3) : de la préparation du premier rejeu de campagne (011 T050) au verdict, aucun merge sur `tools/agence/`, `skills/orchestrateur/`, `src/panels/agence/`. Les branches avancent, les PR attendent. Preuve : `git log origin/main` sur ces chemins entre les deux dates : vide.
 
@@ -158,24 +158,26 @@ description: "Tâches : vision v2, lots transverses, gates des quatre couches et
 
 ## Chemin critique
 
-`010-L1` (J0 à J1,5) → `010-L2` (J2,5) → `010-L4` (J4) → `010-L5` (J5,5) → `010-L9` [H] (J6) → `T020` à `T022` (campagne, 10 à 30 h [H]) → G1.
+`006-L2` seule (J0 à J0,5, R10) → `010-L1` (J2) → `010-L2` (J3) → `010-L4` (J4,5) → `010-L5` (J6) → `010-L9` [H] (J6,5) → `T020` à `T022` (campagne, 10 à 30 h [H]) → G1.
 
-Chaîne qui doit finir avant J2,5 (début de 010-L4, pour sa tâche T068 sur `SKILL.md`) : `006-L2` (J0,5) → `006-L3` (J1) → `005-L4` (J2), avec `005-L3` mergé à J1 (T002). Marge : 0,5 j.
+Chaîne qui doit finir avant J3 (début de 010-L4, pour 010 T068 sur `SKILL.md`) : `006-L2` (J0,5) → `006-L3` (J1) → `005-L4` (J2), avec `005-L3` mergé à J1 (T002). Marge : 1 j.
 
-En parallèle, hors du chemin critique : 011 lots 1 à 4 finissent à J5 environ, avant J6 ; T012 [H] doit précéder le pilote.
+En parallèle, hors du chemin critique : 011 lots 1 à 4 finissent à J5,5 environ, avant J6,5 ; T012 [H] doit précéder le pilote.
 
 ## Vagues sous le plafond de 4 agents
 
-| Vague | Places (4 au plus) | Remarque |
-|---|---|---|
-| V1, J0 à J0,5 | 006-L2 (implémenteur + 2 sondes = 3) ; 010-L1 | la sonde de 006 ne tourne qu'avec un seul autre lot (recoupement, R10) |
-| V2, J0,5 à J1,5 | 010-L1 ; 006-L3 puis 005-L4 ; T002 (vérif 005-L3) puis T003 (vérif 007-L3) ; 011-L1 | 006-L3 et T002 finissent à J1 et cèdent leur place |
-| V3, J1,5 à J2,5 | 010-L2 ; 010-L3 ; 005-L4 (fin J2) puis T004 ; 011-L2 | 010-L2 et L3 : hunks disjoints de `agence.py`, PR l'une après l'autre (T010) |
-| V4, J2,5 à J4 | 010-L4 ; 010-L6 puis 010-L7 ; 011-L2 (fin J3) puis 011-L3 ; 004-L3 | 004-L3 attend une semaine à blanc si Heifara le veut : sa place passe alors à 006-L4 |
-| V5, J4 à J5,5 | 010-L5 ; 011-L4 (agent, puis pilote [H]) ; 011-L6 ; 004-L4 | 011-L6 touche `SKILL.md` après 010-L4 (T011) |
-| V6, J5,5 et après | 010-L9 [H] ; campagne 011-L5 [H] sous gel T013 | les agents restants avancent 004-L5 et 004-X sur branche, sans merge pendant le gel |
+Le plafond de 4 compte tous les Claude vivants, orchestrateur compris : il reste **3 places de lot** par vague. L'interlocuteur (010-L3) n'est pas gardé ouvert pendant V1 à V5 ; il ne tourne qu'en V6 pour 010-L9, où il prend une place.
 
-Parallélisables à tout moment, sans fichier commun avec la couche 1 : T004 (docs), T040 de S3 (recherche, après G2 seulement par H1).
+| Vague | Places de lot (3 au plus, orchestrateur en plus) | Remarque |
+|---|---|---|
+| V1, J0 à J0,5 | 006-L2 (implémenteur + 2 sondes = 3) | la sonde prend les 3 places (R10) : 010-L1 attend J0,5, le chemin critique glisse de 0,5 j |
+| V2, J0,5 à J2 | 010-L1 ; 006-L3 puis 005-L4 ; T002 (vérif 005-L3) puis T003 (vérif 007-L3) puis 011-L1 | 006-L3 et T002 finissent à J1, T003 à J1,5 |
+| V3, J2 à J3 | 010-L2 ; 010-L3 ; 011-L1 (fin J2,5) puis 011-L2 | 010-L2 et L3 : hunks disjoints de `agence.py`, PR l'une après l'autre (T010) |
+| V4, J3 à J4,5 | 010-L4 ; 010-L6 puis 010-L7 ; 011-L2 (fin J4) puis 011-L3 | 010-L4 part après 005-L4 sur `SKILL.md` (T011) |
+| V5, J4,5 à J6 | 010-L5 ; 011-L3 (fin J5) puis 011-L4 (agent, puis pilote [H]) ; 004-L3 | 004-L3 attend une semaine à blanc si Heifara le veut : sa place passe alors à 006-L4 |
+| V6, J6 et après | 010-L9 [H] avec l'interlocuteur (1 place) ; campagne 011-L5 [H] sous gel T013 ; 2 places : 011-L6, puis 004-L4, 004-L5, 004-X, T004 | sur branche, sans merge pendant le gel ; 011-L6 touche `SKILL.md` après 010-L4 (T011) |
+
+Parallélisables à tout moment, sans fichier commun avec la couche 1 : T004 (docs), T040 (recherche de S3, après G2 seulement par H1), chacun dans une place libre.
 
 ---
 

@@ -103,9 +103,9 @@ Tailles : celles des `tasks.md` de chaque spec, non mesurées. Aucun coût en je
 
 ## Chemin critique vers G1
 
-`010-L1` (1,5 j) → `010-L2` (1 j) → `010-L4` (1,5 j) → `010-L5` (1,5 j) → `010-L9` [H] (0,5 j) → `011-L5` (0,5 j agent + 10 à 30 h [H], hypothèse 011). Total agent : 6 j ; humain : 0,5 j + 10 à 30 h, plus 4 h de pilote (011-L4) et la fixation du seuil (011 T040) en parallèle.
+`010-L1` (1,5 j) → `010-L2` (1 j) → `010-L4` (1,5 j) → `010-L5` (1,5 j) → `010-L9` [H] (0,5 j) → `011-L5` (0,5 j agent + 10 à 30 h [H], hypothèse 011). Total agent : 6 j, plus 0,5 j d'attente au départ (la sonde 006-L2 prend les 3 places de lot de la vague 1, R10) : G1 se prépare à J6,5 ; humain : 0,5 j + 10 à 30 h, plus 4 h de pilote (011-L4) et la fixation du seuil (011 T040) en parallèle.
 
-Chaîne presque critique : `006-L2` (0,5 j) → `006-L3` (0,5 j) → `005-L4` (1 j, après le merge de `005-L3`) doit être mergée avant que `010-L4` touche `SKILL.md` (ordre 006, 005, 010 sur ce fichier, 010 « Dépendances »). Partie au jour 0, elle finit au jour 2 ; 010-L4 commence au jour 2,5. Marge : 0,5 j.
+Chaîne presque critique : `006-L2` (0,5 j) → `006-L3` (0,5 j) → `005-L4` (1 j, après le merge de `005-L3`) doit être mergée avant que `010-L4` touche `SKILL.md` (ordre 006, 005, 010 sur ce fichier, 010 « Dépendances »). Partie au jour 0, elle finit au jour 2 ; 010-L4 commence au jour 3. Marge : 1 j.
 
 La ressource rare n'est pas l'agent : c'est le temps de Heifara (seuil, pilote, campagne, revue à l'aveugle, recette de 010) et la file des PR sur `agence.py`.
 
@@ -113,21 +113,21 @@ La ressource rare n'est pas l'agent : c'est le temps de Heifara (seuil, pilote, 
 
 | # | Risque | Effet | Parade |
 |---|---|---|---|
-| R1 | File de PR sur `tools/agence/agence.py` : 005-L4, 004-L3 à L5, 010 lots 1, 2, 3, 4, 6, 7, 8, 008-L1, L2 | le chemin critique attend un rebase | ordre fixé dans `tasks.md` (lot T-ORD), une PR ouverte à la fois, hunks disjoints, 010 prioritaire |
-| R2 | `skills/orchestrateur/SKILL.md` : 006-L3, 005-L4, 010-L4, 011-L6, 004-L5 ; plafonds de taille (006 : 105 % de 13 936 octets ; 011 T062 : +2 %) ; C5 et C6 du recoupement | test rouge croisé, skill qui grossit et se relit à chaque tour | ordre 006, 005, 010, 011, 004 ; le test de taille se calcule sur le HEAD réel de chaque PR |
+| R1 | File de PR sur `tools/agence/agence.py` : 005-L4, 004-L3 à L5, 010 lots 1, 2, 3, 4, 6, 7, 8, 008-L1, L2 | le chemin critique attend un rebase | ordre fixé dans `tasks.md` (T010), une PR ouverte à la fois, hunks disjoints, 010 prioritaire |
+| R2 | `skills/orchestrateur/SKILL.md` : 006-L3, 005-L4, 010-L4, 011-L6, 004-L5 ; plafonds de taille (006 : 105 % de 13 936 octets ; 011 T062 : +2 %) ; C5 et C6 du recoupement | test rouge croisé, skill qui grossit et se relit à chaque tour | ordre 006, 005, 010, 011, 004 ; le test de taille se calcule sur le HEAD réel de chaque PR ; plafond partagé : chaque lot relève la constante de 006 de son seul ajout, 5 % au plus (T011) |
 | R3 | Biais du benchmark : Heifara connaît les solutions, 10 à 15 issues, seuil en hypothèse | verdict faux dans un sens ou l'autre | seuil commité avant le premier rejeu (011 T024, T040), ordre tiré, revue à l'aveugle, 5 issues de réserve, limites écrites au rapport |
 | R4 | Temps humain de la campagne : 10 à 30 h + 4 h de pilote (hypothèse 011) | G1 glisse de plusieurs semaines | pilote d'abord pour mesurer la durée réelle d'un rejeu (011-L4) ; Heifara décide ensuite du rythme |
 | R5 | L'outil change pendant la campagne | rejeux non comparables | gel des merges sur `tools/agence/`, `skills/orchestrateur/`, `src/panels/agence/` de la première à la dernière campagne (hypothèse H3) ; la version est notée au rapport |
 | R6 | Deux lecteurs de journaux de session : `attente_mesure.py` (006, 011) et `conso.py` du dépôt Skills (bus q162, recoupement C11) | double maintenance | 011 étend `attente_mesure.py` ; `conso.py` reste un déclencheur de 004 ; à réconcilier par l'orchestrateur Skills, hors de ce plan |
-| R7 | Activation d'un déclencheur définie deux fois (004 `actif`, 005 `declencheurs.actifs`, recoupement C8) | réglage incohérent en couche 2 | trancher dans 005-L4 avant 008-L1 (Q5 de 005) |
+| R7 | Activation d'un déclencheur définie trois fois (004 `actif` puis carte « Activer », 005 `declencheurs.actifs`, recoupement C8) | réglage incohérent en couche 2 | trancher dans 005-L4 avant 008-L1 (Q5 de 005) |
 | R8 | La couche 3 n'a pas de spec pour les connecteurs, le validateur par métier ni les droits (FR-008, FR-009, SC-005) ; MCP du data manager non vérifiés (Q5) | G3 sans plan | spec à écrire après G2 (lot S3 de `tasks.md`), recherche des MCP d'abord |
 | R9 | Lots commités en local (005-L3, 007-L3) qui vieillissent pendant le gel | rebase coûteux | H1 : ils se terminent et se mergent maintenant |
-| R10 | Plafond de 4 agents ; une sonde de 006-L2 prend 3 places | vague bloquée | 006-L2 en vague 1 avec un seul autre lot |
+| R10 | Plafond de 4 Claude vivants, orchestrateur compris (3 places de lot) ; une sonde de 006-L2 prend 3 places | vague bloquée | 006-L2 seule en vague 1 (0,5 j), 010-L1 part ensuite (`tasks.md`, vagues) |
 
 ## Hypothèses de ce plan
 
 - **H1** : les lots déjà commités se terminent ; les lots non commencés des couches 2 à 4 attendent leur gate (lecture de FR-012). À confirmer par Heifara.
-- **H2** : 010-L5 passe avant 008-L3 sur le panneau `agence` (010 dit « après le lot panneau de 008 » ; 008 est en couche 2 et gelée par H1). 008-L3 rebase.
+- **H2** : 010-L5 passe avant 008-L3 sur le panneau `agence` (008 est en couche 2 et gelée par H1) ; 008-L3 rebase sur 010-L5. Règle unique, reprise par 010 (`plan.md` et `tasks.md` de 010).
 - **H3** : gel des merges sur les fichiers de l'outil pendant la campagne 011-L5 (R5).
 - **H4** : 004 lots 3 à 5 et 006-L4 sont de la couche 1 mais ne bloquent pas G1 ; ce qui n'est pas mergé avant la campagne n'est pas mesuré.
 - **H5** : G4 = 3 exécutions consécutives sans intervention ; G2 = 2 règles changées. Valeurs sans mesure.
