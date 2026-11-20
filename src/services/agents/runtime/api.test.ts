@@ -64,7 +64,7 @@ let agents: AgentsCore
 let terminal: ReturnType<typeof fakeTerminals>
 let handlers: ReturnType<typeof createAgentApiHandlers>
 let starter: AgentStarter
-const sessionUsage = { model: 'gpt-5', inputTokens: 1200, outputTokens: 80, costUsd: 0.5 }
+const sessionUsage = { model: 'gpt-5', inputTokens: 1200, outputTokens: 80, contextTokens: 900, costUsd: 0.5 }
 const usage = {
   sessions: vi.fn<AgentUsageService['sessions']>(async (requests) => requests.map(({ sessions }) => (sessions.some(({ sessionId }) => sessionId === 's') ? sessionUsage : null))),
 }
@@ -115,7 +115,7 @@ async function rpcError(promise: unknown): Promise<string> {
 }
 
 describe('cate.agent.*', () => {
-  const nulls = { model: null, inputTokens: null, outputTokens: null, costUsd: null }
+  const nulls = { model: null, inputTokens: null, outputTokens: null, contextTokens: null, costUsd: null }
 
   it('reports each live agent panel\'s usage over the sessions it ran, null where there are none, in one read', async () => {
     // term ran 'old' before a /clear and now runs 's'; term-2 has no session yet (a relaunched agent).

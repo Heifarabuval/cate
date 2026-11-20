@@ -111,7 +111,9 @@ it exits 1 when it timed out, after printing the states.
 
 `cate agent usage [--panel <id>] [--json]` shows what each live agent panel
 has used since its agent started there: `model`, `inputTokens` (cached part
-included), `outputTokens` and `costUsd`, the API-equivalent cost from Cate's
+included), `outputTokens`, `contextTokens` (the context size at the latest
+response: its input, cache creation and cache read tokens, from the last
+session only, so a `/clear` resets it) and `costUsd`, the API-equivalent cost from Cate's
 price table, not money spent. `costUsd` is null (a dash) when a response has
 no price. `--json` adds `sessionIds`, the sessions summed: a `/clear` starts
 a new session and the earlier ones still count; the agent exiting and another
