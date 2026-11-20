@@ -7,7 +7,7 @@ const ligne = (key: string, action: LigneAction, extra: Partial<Ligne> = {}): Li
   key, workspaceId: 'w1', panelId: 'p1', root: key.split('#')[0], repo: 'cate', needId: key.split('#')[1], title: key,
   blocking: false, waitingSince: '2026-11-19T10:00:00Z', action, links: [], ...extra,
 })
-const question = (isMerge = false): LigneAction => ({ type: 'question', questionId: 'q1', options: [{ label: 'Merger', detail: '' }, { label: 'Non', detail: '' }], isMerge })
+const question = (isMerge = false, extra: Partial<Extract<LigneAction, { type: 'question' }>> = {}): LigneAction => ({ type: 'question', questionId: 'q1', options: [{ label: 'Merger', detail: '' }, { label: 'Non', detail: '' }], isMerge, locks: [], ghUnknown: false, rebase: false, ...extra })
 const draft = (hash = 'h1', extra: Partial<Extract<LigneAction, { type: 'draft' }>> = {}): LigneAction => ({ type: 'draft', draftId: 'd1', kind: 'slack', hash, texte: 'Salut', inFlight: false, ...extra })
 const perm: LigneAction = { type: 'perm', command: 'rm -rf build', reason: 'nettoyage', genre: 'hook' }
 
@@ -48,20 +48,20 @@ describe('answer', () => {
       ligne('/a/cate#n1', question()),
       ligne('/a/lamif#n2', question(), { workspaceId: 'w2', panelId: 'p2' }),
     ])
-    await expect(actions.answer('/a/lamif#n2', { choice: 1 })).resolves.toEqual({ ok: true })
+    await expect(actions.answer('/a/lamif#n2', { questionId: 'q1', choice: 1 })).resolves.toEqual({ ok: true })
     expect(fake.sent).toEqual([{ workspaceId: 'w2', panelId: 'p2', op: { kind: 'answer', questionId: 'q1', choice: 1 } }])
   })
 
   it('lets the free answer win over a choice: only the text goes', async () => {
     const actions = start([ligne('/a/cate#n1', question())])
-    await actions.answer('/a/cate#n1', { choice: 0, libre: 'plus tard' })
+    await actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0, libre: 'plus tard' })
     expect(fake.sent.map((call) => call.op)).toEqual([{ kind: 'answer', questionId: 'q1', libre: 'plus tard' }])
   })
 
   it('renders « déjà répondue » as a conflict with its message, and the line leaves with the next snapshot', async () => {
     const actions = start([ligne('/a/cate#n1', question())])
     fake.reply(async () => ({ ok: false, error: 'conflict', message: 'Question déjà répondue.' }))
-    await expect(actions.answer('/a/cate#n1', { choice: 0 })).resolves.toEqual({ ok: false, error: 'conflict', message: 'Question déjà répondue.' })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toEqual({ ok: false, error: 'conflict', message: 'Question déjà répondue.' })
     expect(actions.getState().notices['/a/cate#n1']).toBe('Question déjà répondue.')
     fake.set([])
     expect(actions.getState().notices).toEqual({})
@@ -71,9 +71,9 @@ describe('answer', () => {
     const actions = start([ligne('/a/cate#n1', question())])
     let release!: () => void
     fake.reply(() => new Promise((resolve) => { release = () => resolve({ ok: true }) }))
-    const first = actions.answer('/a/cate#n1', { choice: 0 })
+    const first = actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })
     expect(actions.getState().busy.has('/a/cate#n1')).toBe(true)
-    await expect(actions.answer('/a/cate#n1', { choice: 1 })).resolves.toEqual({ ok: false, error: 'busy' })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 1 })).resolves.toEqual({ ok: false, error: 'busy' })
     release()
     await expect(first).resolves.toEqual({ ok: true })
     expect(fake.sent).toHaveLength(1)
@@ -81,8 +81,8 @@ describe('answer', () => {
 
   it('keeps a line busy after an accepted answer until it leaves, so a double click cannot send twice', async () => {
     const actions = start([ligne('/a/cate#n1', question())])
-    await actions.answer('/a/cate#n1', { choice: 0 })
-    await expect(actions.answer('/a/cate#n1', { choice: 0 })).resolves.toEqual({ ok: false, error: 'busy' })
+    await actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toEqual({ ok: false, error: 'busy' })
     fake.set([])
     expect(actions.getState().busy.size).toBe(0)
   })
@@ -90,40 +90,74 @@ describe('answer', () => {
   it('frees the line after a refusal, so the human can try again', async () => {
     const actions = start([ligne('/a/cate#n1', question())])
     fake.reply(async () => ({ ok: false, error: 'conflict', message: 'non' }))
-    await actions.answer('/a/cate#n1', { choice: 0 })
+    await actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })
     fake.reply(async () => ({ ok: true }))
-    await expect(actions.answer('/a/cate#n1', { choice: 0 })).resolves.toEqual({ ok: true })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toEqual({ ok: true })
     expect(actions.getState().notices).toEqual({})
   })
 
   it('is unavailable when the workspace closed in between (no session to reach) or the line is gone', async () => {
     const actions = start([ligne('/a/cate#n1', question())])
     fake.reply(() => null)
-    await expect(actions.answer('/a/cate#n1', { choice: 0 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
-    await expect(actions.answer('/a/gone#n9', { choice: 0 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    await expect(actions.answer('/a/gone#n9', { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
     expect(actions.getState().busy.size).toBe(0)
   })
 
   it('is unavailable when the session rejects (the connection dropped)', async () => {
     const actions = start([ligne('/a/cate#n1', question())])
     fake.reply(async () => { throw new Error('closed') })
-    await expect(actions.answer('/a/cate#n1', { choice: 0 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
   })
 
   it('answers invalid for a line that is not a question, sending nothing', async () => {
     const actions = start([ligne('/a/cate#n1', draft())])
-    await expect(actions.answer('/a/cate#n1', { choice: 0 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 0 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
     expect(fake.sent).toEqual([])
   })
 
   it('Merger is the first option of a merge question, and shows the refusal « not mergeable »', async () => {
     const actions = start([ligne('/a/cate#n1', question(true)), ligne('/a/cate#n2', question(false))])
     fake.reply(async () => ({ ok: false, error: 'conflict', message: 'not mergeable' }))
-    await expect(actions.merge('/a/cate#n1')).resolves.toMatchObject({ ok: false, error: 'conflict' })
+    await expect(actions.merge('/a/cate#n1', { questionId: 'q1' })).resolves.toMatchObject({ ok: false, error: 'conflict' })
     expect(fake.sent.map((call) => call.op)).toEqual([{ kind: 'answer', questionId: 'q1', choice: 0 }])
     expect(actions.getState().notices['/a/cate#n1']).toBe('not mergeable')
-    await expect(actions.merge('/a/cate#n2')).resolves.toMatchObject({ ok: false, error: 'invalid' })
+    await expect(actions.merge('/a/cate#n2', { questionId: 'q1' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
     expect(fake.sent).toHaveLength(1)
+  })
+})
+
+describe('merge locks, changed questions and busy release', () => {
+  it('refuses Merger while a lock stands, and passes over it only when forced', async () => {
+    const actions = start([ligne('/a/cate#n1', question(true, { locks: ['n11 : Revue de la PR 12', 'conflit avec la base'] }))])
+    await expect(actions.merge('/a/cate#n1', { questionId: 'q1' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+    expect(fake.sent).toEqual([])
+    await expect(actions.merge('/a/cate#n1', { questionId: 'q1', force: true })).resolves.toEqual({ ok: true })
+    expect(fake.sent.map((call) => call.op)).toEqual([{ kind: 'answer', questionId: 'q1', choice: 0, force: true }])
+  })
+
+  it('refuses an answer aimed at a question that changed under the open card, sending nothing', async () => {
+    const actions = start([ligne('/a/cate#n1', question(false, { questionId: 'q2' }))])
+    await expect(actions.answer('/a/cate#n1', { questionId: 'q1', choice: 1 })).resolves.toMatchObject({ ok: false, error: 'conflict', message: 'la question a changé' })
+    expect(fake.sent).toEqual([])
+    expect(actions.getState().notices['/a/cate#n1']).toBe('la question a changé')
+  })
+
+  it('frees an accepted line when its action changes (a new permission on the same need)', async () => {
+    const actions = start([ligne('/a/cate#n3', perm)])
+    await actions.perm('/a/cate#n3', 'oui')
+    await expect(actions.perm('/a/cate#n3', 'oui')).resolves.toEqual({ ok: false, error: 'busy' })
+    fake.set([ligne('/a/cate#n3', { ...perm, command: 'rm -rf dist' })])
+    expect(actions.getState().busy.size).toBe(0)
+    await expect(actions.perm('/a/cate#n3', 'oui')).resolves.toEqual({ ok: true })
+    expect(fake.sent).toHaveLength(2)
+  })
+
+  it('keeps an accepted line busy while its action is unchanged', async () => {
+    const actions = start([ligne('/a/cate#n3', perm)])
+    await actions.perm('/a/cate#n3', 'oui')
+    fake.set([ligne('/a/cate#n3', perm, { title: 'autre titre' })])
+    expect(actions.getState().busy.has('/a/cate#n3')).toBe(true)
   })
 })
 

@@ -23,6 +23,8 @@ export interface ActionsState {
 }
 
 export interface AnswerChoice {
+  /** The question the card showed: an answer for another one (it changed under the card) is refused. */
+  questionId: string
   choice?: number | 'rebase'
   libre?: string
   force?: boolean
@@ -33,8 +35,8 @@ export interface BoiteActions {
   subscribe(listener: () => void): () => void
   /** Answers a question. A free answer wins over a choice, as in the regisseur's `click()`. */
   answer(key: string, choice: AnswerChoice): Promise<ActionResult>
-  /** Merger: the first option of a merge question. */
-  merge(key: string): Promise<ActionResult>
+  /** Merger: the first option of a merge question. Greyed (locks) it takes `force`, as « Merger quand même ». */
+  merge(key: string, choice: Pick<AnswerChoice, 'questionId' | 'force'>): Promise<ActionResult>
   /** Displays a draft: notes the hash of the text shown, the one `send` will carry. */
   show(key: string): ShowResult
   /** Sends the draft whose text was shown, and no other. */
@@ -52,6 +54,9 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
   const listeners = new Set<() => void>()
   let state = EMPTY
   let stopStore: (() => void) | null = null
+  /** What each accepted line was showing when its op went: the line is free again once that changes. */
+  const accepted = new Map<string, string>()
+  const pending = new Set<string>()
 
   const set = (next: Partial<ActionsState>): void => {
     state = { ...state, ...next }
@@ -70,7 +75,10 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
   function prune(): void {
     const rows = new Map(store.getSnapshot().rows.map((row) => [row.key, row]))
     const keep = (key: string) => rows.has(key)
-    const busy = new Set([...state.busy].filter(keep))
+    for (const [key, fingerprint] of accepted) {
+      if (!rows.has(key) || JSON.stringify(rows.get(key)!.action) !== fingerprint) accepted.delete(key)
+    }
+    const busy = new Set([...state.busy].filter((key) => keep(key) && (pending.has(key) || accepted.has(key))))
     const shown: Record<string, string> = {}
     const notices: Record<string, string> = {}
     for (const [key, message] of Object.entries(state.notices)) if (keep(key)) notices[key] = message
@@ -87,12 +95,17 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
   }
 
   /** One op to the session of the line's project; the line is busy meanwhile, and after an accepted op until it leaves. */
-  async function relay(key: string, op: (row: Ligne) => AgenceOp | null): Promise<ActionResult> {
+  async function relay(key: string, op: (row: Ligne) => AgenceOp | 'changed' | null): Promise<ActionResult> {
     const row = find(key)
     if (!row) return { ok: false, error: 'unavailable', message: 'ligne introuvable' }
     if (state.busy.has(key)) return { ok: false, error: 'busy' }
     const message = op(row)
+    if (message === 'changed') {
+      set(withNotice(key, 'la question a changé'))
+      return { ok: false, error: 'conflict', message: 'la question a changé' }
+    }
     if (!message) return { ok: false, error: 'invalid' }
+    pending.add(key)
     set({ busy: new Set([...state.busy, key]), ...withNotice(key, undefined) })
     let result: ActionResult
     try {
@@ -101,14 +114,19 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
     } catch (error) {
       result = { ok: false, error: 'unavailable', message: error instanceof Error ? error.message : String(error) }
     }
-    if (result.ok) return result
+    pending.delete(key)
+    if (result.ok) {
+      accepted.set(key, JSON.stringify(row.action))
+      return result
+    }
     set({ busy: new Set([...state.busy].filter((busy) => busy !== key)), ...withNotice(key, result.message ?? result.error) })
     return result
   }
 
-  const answerOp = (choice: AnswerChoice) => (row: Ligne): AgenceOp | null => {
+  const answerOp = (choice: AnswerChoice) => (row: Ligne): AgenceOp | 'changed' | null => {
     if (row.action.type !== 'question') return null
     const { questionId } = row.action
+    if (questionId !== choice.questionId) return 'changed'
     if (choice.libre) return { kind: 'answer', questionId, libre: choice.libre }
     return { kind: 'answer', questionId, ...(choice.choice !== undefined ? { choice: choice.choice } : {}), ...(choice.force ? { force: true } : {}) }
   }
@@ -127,7 +145,11 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
       }
     },
     answer: (key, choice) => relay(key, answerOp(choice)),
-    merge: (key) => relay(key, (row) => (row.action.type === 'question' && row.action.isMerge ? answerOp({ choice: 0 })(row) : null)),
+    // A greyed Merger (locks) goes only as « Merger quand même », forced.
+    merge: (key, { questionId, force }) => relay(key, (row) =>
+      row.action.type === 'question' && row.action.isMerge && (force || row.action.locks.length === 0)
+        ? answerOp({ questionId, choice: 0, ...(force ? { force } : {}) })(row)
+        : null),
     show(key) {
       const row = find(key)
       if (!row) return { ok: false, error: 'unavailable' }

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
+import { clientUi } from '@kernel/interaction'
 import type { ActionsState, BoiteActions, Ligne as LigneData } from '@client/boite'
 import { Button, InlineNotice } from '../../kernel/interaction'
 import { MarkdownPreview } from '../editor/MarkdownPreview'
@@ -31,23 +32,49 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
   const [text, setText] = useState('')
   const { action } = ligne
   if (action.type !== 'question') return null
+  const { questionId, locks } = action
+  const greyed = action.isMerge && locks.length > 0
+
+  /** Merging over the locks asks first, naming each one it passes over. */
+  const mergeAnyway = async () => {
+    if (!await clientUi().confirm(`Merger quand même, malgré :\n${locks.map((reason) => `- ${reason}`).join('\n')}`)) return
+    await actions.merge(ligne.key, { questionId, force: true })
+  }
+
   return (
     <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-subtle bg-surface-1 p-2">
-      {action.options.map((option, index) => (
-        <button
-          key={option.label}
-          type="button"
-          data-testid="option"
-          disabled={busy}
-          onClick={() => void (action.isMerge && index === 0 ? actions.merge(ligne.key) : actions.answer(ligne.key, { choice: index }))}
-          className={`${OPTION} ${index === 0 ? 'border-agent' : 'border-subtle'}`}
-        >
-          <span className="min-w-0 flex-1">
-            <b className="block break-words">{index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
-            {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
-          </span>
-        </button>
-      ))}
+      {action.ghUnknown && <div className="text-[11px] text-secondary">état GitHub inconnu</div>}
+      {action.options.map((option, index) => {
+        // Merger greyed: « Merger quand même » takes the option's place, its reasons right above.
+        const force = index === 0 && greyed
+        return (
+          <Fragment key={option.label}>
+            {force && (
+              <div className="text-[11px] text-secondary">
+                Merger grisé :
+                <ul className="list-disc pl-4">{locks.map((reason) => <li key={reason} className="break-words">{reason}</li>)}</ul>
+              </div>
+            )}
+            <button
+              type="button"
+              data-testid="option"
+              disabled={busy}
+              onClick={() => void (force ? mergeAnyway() : action.isMerge && index === 0 ? actions.merge(ligne.key, { questionId }) : actions.answer(ligne.key, { questionId, choice: index }))}
+              className={`${OPTION} ${force ? 'border-danger' : index === 0 ? 'border-agent' : 'border-subtle'}`}
+            >
+              <span className="min-w-0 flex-1">
+                <b className="block break-words">{force ? 'Merger quand même (rebase)' : index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
+                {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
+              </span>
+            </button>
+          </Fragment>
+        )
+      })}
+      {greyed && action.rebase && (
+        <div className="flex justify-end">
+          <Button size="sm" className={ACTION} disabled={busy} onClick={() => void actions.answer(ligne.key, { questionId, choice: 'rebase' })}>Demander le rebase</Button>
+        </div>
+      )}
       <textarea
         rows={2}
         value={text}
@@ -57,7 +84,7 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
         className="w-full resize-y rounded-md border border-subtle bg-surface-2 p-1.5 text-[12px] text-primary placeholder:text-secondary"
       />
       <div className="flex justify-end">
-        <Button size="sm" className={ACTION} disabled={busy || text.trim() === ''} onClick={() => void actions.answer(ligne.key, { libre: text.trim() })}>Répondre</Button>
+        <Button size="sm" className={ACTION} disabled={busy || text.trim() === ''} onClick={() => void actions.answer(ligne.key, { questionId, libre: text.trim() })}>Répondre</Button>
       </div>
     </div>
   )

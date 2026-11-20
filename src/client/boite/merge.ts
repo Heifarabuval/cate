@@ -15,7 +15,7 @@ function actionOf(row: NeedRow, snapshot: AgenceSnapshot): LigneAction {
     if (draft) return { type: 'draft', draftId: draft.id, kind: draft.kind, hash: draft.hash, texte: draft.texte, inFlight: action.inFlight }
   } else if (action?.type === 'question') {
     const question = snapshot.questions[action.questionId]
-    if (question) return { type: 'question', questionId: question.id, options: question.options, isMerge: question.isMerge }
+    if (question) return { type: 'question', questionId: question.id, options: question.options, isMerge: question.isMerge, locks: question.locks, ghUnknown: question.ghUnknown, rebase: question.rebase }
   } else if (row.perm?.choix) {
     return { type: 'perm', command: row.perm.commande, reason: row.perm.motif, genre: row.perm.genre }
   }
