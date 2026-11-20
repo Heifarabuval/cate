@@ -3335,6 +3335,201 @@ class Notification(Base):
 		self.assertIn('--max-agents', out.getvalue())
 
 
+class CoutBesoin(Base):
+	"""Skills#8 : dépense cumulée par besoin et total du projet, lues de cate agent usage (dollars équivalent API)."""
+
+	def need(self, panels=('a1',), **kw):
+		self.booted()
+		with agence.tx() as st:
+			return agence.add_need(st, 'task', 'Implémenter', panels=list(panels), **kw)[0]['id']
+
+	def tick(self, usage, live=('o1', 'a1'), agents=None):
+		agents = [{'panelId': p, 'state': 'running', 'canReceivePrompt': True} for p in live if p != 'o1'] if agents is None else agents
+		with agence.tx() as st:
+			return agence.tick(st, set(live), agents, {}, 1000.0, usage=usage)
+
+	def n(self, i=0):
+		return self.state()['needs'][i]
+
+	def test_cout_lu_et_affiche_sur_la_ligne(self):
+		self.need()
+		self.tick({'a1': 1.5})
+		self.assertEqual(self.n()['costByPanel'], {'a1': 1.5})
+		self.assertIn('coût 1,50 $', agence.page_suivi(self.state()))
+
+	def test_panneau_ferme_ne_fait_pas_retomber_le_cumul(self):
+		self.need(panels=('a1', 'a2'))
+		self.tick({'a1': 2.0, 'a2': 0.5}, live=('o1', 'a1', 'a2'))
+		self.tick({'a2': 1.0}, live=('o1', 'a2'))  # a1 fermé : cate ne le rend plus
+		self.assertEqual(self.n()['costByPanel'], {'a1': 2.0, 'a2': 1.0})
+		self.assertIn('coût 3,00 $', agence.page_suivi(self.state()))
+
+	def test_cout_nul_ou_absent_dit_cout_inconnu(self):
+		self.need()
+		self.tick({'a1': None})  # l'agent ne tient pas de coût (tiret)
+		self.assertEqual(self.n()['costByPanel'], {'a1': None})
+		self.assertIn('coût inconnu', agence.page_suivi(self.state()))
+
+	def test_usage_illisible_ne_bloque_rien(self):
+		self.need()
+		self.tick(None)
+		self.assertIn('coût inconnu', agence.page_suivi(self.state()))
+		self.assertFalse(self.n()['overBudget'])
+
+	def test_besoin_sans_agent_pas_de_ligne_cout(self):
+		self.need(panels=())
+		self.tick({'a1': 1.0}, live=('o1',), agents=[])
+		self.assertNotIn('coût', agence.need_line(self.state(), self.n()))
+
+	def test_total_du_projet_en_tete_compte_un_panneau_une_fois(self):
+		self.need(panels=('a1',))
+		with agence.tx() as st:
+			agence.add_need(st, 'task', 'Vérifier', panels=['a1', 'a2'])
+		self.tick({'a1': 2.0, 'a2': 1.0}, live=('o1', 'a1', 'a2'))
+		page = agence.page_suivi(self.state())
+		self.assertIn('dépense des agents : 3,00 $', page)
+		self.assertLess(page.index('dépense des agents'), page.index('<section'))
+
+	def test_panneau_partage_garde_le_maximum_pas_la_premiere_valeur(self):
+		self.need(panels=('a1',))
+		with agence.tx() as st:
+			agence.add_need(st, 'task', 'Vérifier', panels=['a1'])
+		self.tick({'a1': 1.0})
+		with agence.tx() as st:
+			agence.close_need(st, st['needs'][0]['id'], 'done', 'ok')
+			st['needs'][1]['costByPanel'] = {'a1': 5.0}  # le besoin resté ouvert a continué à dépenser
+		self.assertIn('dépense des agents : 5,00 $', agence.page_suivi(self.state()))
+
+	def test_sortie_non_json_de_cate_est_un_refus_pas_une_exception(self):
+		self.run.reply(['cate', 'agent', 'usage'], 'pas du json')
+		self.assertIsNone(agence.lire_usage())
+		self.run.reply(['cate', 'panel', 'list'], 'pas du json')
+		with self.assertRaises(agence.Refus):
+			agence.cate('panel', 'list')
+		self.need()
+		with self.assertRaises(agence.Refus):  # un_tour saute son tour, cmd_watch attrape Refus
+			agence.un_tour()
+
+	def test_cout_negatif_nan_ou_infini_est_inconnu(self):
+		self.need()
+		for bad in (-1.0, float('nan'), float('inf'), float('-inf'), True, '3'):
+			self.tick({'a1': bad})
+			self.assertEqual(self.n()['costByPanel'], {'a1': None}, repr(bad))
+			with agence.tx() as st:
+				st['needs'][0].pop('costByPanel')
+		self.tick({'a1': 0.0})
+		self.assertEqual(self.n()['costByPanel'], {'a1': 0.0})
+
+	def test_cout_invalide_ne_remplace_pas_un_cout_deja_lu(self):
+		self.need()
+		self.tick({'a1': 2.0})
+		self.tick({'a1': float('nan')})
+		self.assertEqual(self.n()['costByPanel'], {'a1': 2.0})
+
+	def test_budget_usd_refuse_zero_negatif_nan_infini(self):
+		self.booted()
+		for bad in ('0', '-1', 'nan', 'inf', '-inf', 'abc', ''):
+			err = io.StringIO()
+			with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+				agence.main(['need', 'add', '--kind', 'task', f'--budget-usd={bad}', 'T'])
+			self.assertIn('--budget-usd', err.getvalue(), bad)
+		self.assertFalse(self.state()['needs'])
+		self.assertEqual(self.cli('need', 'add', '--kind', 'task', '--budget-usd', '0.5', 'T')[0], 0)
+
+	def test_total_partiel_dit_au_moins_sur_la_ligne_et_l_en_tete(self):
+		self.need(panels=('a1', 'a2'))
+		self.tick({'a1': 4.2, 'a2': None}, live=('o1', 'a1', 'a2'))
+		page = agence.page_suivi(self.state())
+		self.assertIn('coût au moins 4,20 $', page)
+		self.assertIn('dépense des agents : au moins 4,20 $', page)
+
+	def test_panneau_sans_cout_dans_usage_n_est_pas_un_total_partiel(self):
+		self.need(panels=('a1', 'e1'))  # e1 : éditeur, jamais dans cate agent usage
+		self.tick({'a1': 4.2})
+		page = agence.page_suivi(self.state())
+		self.assertIn('coût 4,20 $', page)
+		self.assertNotIn('au moins', page)
+
+	def test_total_inconnu_sans_aucune_lecture(self):
+		self.need()
+		self.assertIn('dépense des agents : coût inconnu', agence.page_suivi(self.state()))
+
+	def test_budget_usd_enregistre(self):
+		self.booted()
+		self.assertEqual(self.cli('need', 'add', '--kind', 'task', '--budget-usd', '2.5', 'T')[0], 0)
+		self.assertEqual(self.n()['budgetUsd'], 2.5)
+		self.cli('need', 'add', '--kind', 'task', 'U')
+		self.assertIsNone(self.n(1)['budgetUsd'])
+
+	def test_depassement_du_budget_passe_le_besoin_en_bloquant_une_seule_notification(self):
+		self.need(budget_usd=2.0)
+		self.assertEqual(self.tick({'a1': 1.9}), [])
+		self.assertFalse(self.n()['overBudget'])
+		effects = self.tick({'a1': 2.4})
+		self.assertTrue(self.n()['overBudget'] and self.n()['overBudgetUsd'])
+		self.assertTrue(agence.attend(self.n()))
+		self.assertEqual([e for e in effects if e[0] == 'notify' and 'Budget' in e[2]][0][1], 'o1')
+		page = agence.page_suivi(self.state())
+		self.assertIn('budget de 2.00 $ dépassé', page)
+		self.assertLess(page.index('Bloquant'), page.index('Implémenter'))
+		self.assertFalse([e for e in self.tick({'a1': 2.6}) if e[0] == 'notify' and 'Budget' in e[2]])
+
+	def test_budget_min_garde_son_message(self):
+		self.need(budget=1)
+		with agence.tx() as st:
+			st['needs'][0]['createdTs'] = 0
+		self.tick({})
+		self.assertIn('budget de 1 min dépassé', agence.page_suivi(self.state()))
+		self.assertNotIn('$ dépassé', agence.page_suivi(self.state()))
+
+	def test_budget_sans_cout_lisible_ne_bloque_pas(self):
+		self.need(budget_usd=2.0)
+		self.tick(None)
+		self.assertFalse(self.n()['overBudget'])
+
+	def test_lire_usage_rend_le_cout_par_panneau(self):
+		self.run.reply(['cate', 'agent', 'usage'], [
+			{'panelId': 'a1', 'model': 'm', 'inputTokens': 10, 'outputTokens': 5, 'costUsd': 1.25},
+			{'panelId': 'a2', 'costUsd': None}, 'bruit', {'sans': 'id'}])
+		self.assertEqual(agence.lire_usage(), {'a1': 1.25, 'a2': None})
+
+	def test_lire_usage_refuse_ou_illisible_rend_none(self):
+		self.run.reply(['cate', 'agent', 'usage'], '', code=1, err='cate: unknown command usage')
+		self.assertIsNone(agence.lire_usage())
+		self.run.reply(['cate', 'agent', 'usage'], {'pas': 'une liste'})
+		self.assertIsNone(agence.lire_usage())
+
+	def test_tour_du_regisseur_lit_l_usage_et_l_ecrit_dans_l_etat(self):
+		self.need()
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'a1', 'title': 'impl', 'type': 'agent'}])
+		self.run.reply(['cate', 'agent', 'list'], [{'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}])
+		self.run.reply(['cate', 'agent', 'usage'], [{'panelId': 'a1', 'costUsd': 0.75}])
+		agence.un_tour()
+		self.assertEqual(self.n()['costByPanel'], {'a1': 0.75})
+
+	def test_tour_du_regisseur_avec_usage_refuse_continue(self):
+		self.need()
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'a1', 'title': 'impl', 'type': 'agent'}])
+		self.run.reply(['cate', 'agent', 'list'], [{'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}])
+		self.run.reply(['cate', 'agent', 'usage'], '', code=1, err='unknown command')
+		agence.un_tour()
+		self.assertIn('coût inconnu', agence.page_suivi(self.state()))
+
+	def test_besoin_ancien_sans_les_cles_se_rend(self):
+		self.need()
+		with agence.tx() as st:
+			for k in ('budgetUsd', 'costByPanel', 'overBudgetUsd'):
+				st['needs'][0].pop(k, None)
+		self.tick({'a1': 1.0})
+		self.assertIn('coût 1,00 $', agence.page_suivi(self.state()))
+
+	def test_aide_need_add_dit_le_budget_en_dollars(self):
+		with contextlib.redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()) as out:
+			with self.assertRaises(SystemExit):
+				agence.main(['need', 'add', '--help'])
+		self.assertIn('--budget-usd', out.getvalue())
+
+
 class Version(unittest.TestCase):
 	"""`agence --version` lit `<install>/BUILD`, `agence.py` vivant dans `<install>/agence/`."""
 

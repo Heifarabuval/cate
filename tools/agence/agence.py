@@ -29,6 +29,7 @@ import hashlib
 import html
 import http.server
 import json
+import math
 import os
 import re
 import secrets
@@ -196,7 +197,7 @@ def find(st, coll, oid):
 
 
 def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=None, source=None,
-             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None):
+             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None):
 	"""Ajoute un besoin ; un besoin ouvert de même (kind, ref) est rendu tel quel (FR-006)."""
 	if kind not in KINDS:
 		raise Refus(f'kind inconnu : {kind} ({", ".join(KINDS)})')
@@ -208,7 +209,7 @@ def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=
 				return n, False
 	n = {'id': new_id(st, 'n'), 'kind': kind, 'title': title, 'ref': ref, 'owner': owner, 'blocking': blocking,
 	     'unblocks': unblocks, 'source': source, 'panels': list(panels), 'doneWhen': done_when,
-	     'acceptance': acceptance, 'budgetMin': budget, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
+	     'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
 	     'closeFailed': False, 'agentBlocked': False, 'overBudget': False,
 	     'created': now_iso(), 'createdTs': time.time(), 'updated': now_iso()}
 	st['needs'].append(n)
@@ -220,6 +221,35 @@ def note(n, text, by):
 	Les états écrits avant ce champ n'en ont pas : toujours lire par n.get('journal', [])."""
 	text = ' '.join(text.split())  # une ligne, sans tabulation : un texte d'agent ne forge pas une ligne « clic »
 	n.setdefault('journal', []).append({'ts': now_iso(), 'by': by, 'text': text})
+
+
+def cout_valide(c):
+	return isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and c >= 0
+
+
+def cout_besoin(n):
+	"""Dépense cumulée des panneaux du besoin (dollars), None tant qu'aucun coût n'a été lu."""
+	lus = [c for c in (n.get('costByPanel') or {}).values() if c is not None]
+	return sum(lus) if lus else None
+
+
+def cout_projet(st):
+	"""(total, partiel) des panneaux de tous les besoins : maximum lu par panneau, un panneau partagé n'étant compté qu'une fois."""
+	par_panneau = {}
+	for n in st['needs']:
+		for p, c in (n.get('costByPanel') or {}).items():
+			if c is not None or p not in par_panneau:
+				par_panneau[p] = c if c is None else max(c, par_panneau.get(p) or 0)
+	lus = [c for c in par_panneau.values() if c is not None]
+	return (sum(lus) if lus else None), len(lus) < len(par_panneau)
+
+
+def cout_texte(total, partiel):
+	return ('au moins ' if partiel else '') + dollars(total)
+
+
+def dollars(c):
+	return f'{c:.2f}'.replace('.', ',') + ' $'
 
 
 def need_text(n):
@@ -251,7 +281,10 @@ def cate(*args, timeout=120):
 	if code != 0:
 		raise Refus(f"cate {' '.join(map(str, args[:2]))} : {(err or out).strip()}")
 	out = out.strip()
-	return json.loads(out) if out else {}
+	try:
+		return json.loads(out) if out else {}
+	except ValueError:  # sortie non JSON : un refus comme les autres, que le tour du régisseur attrape
+		raise Refus(f"cate {' '.join(map(str, args[:2]))} : sortie illisible")
 
 
 def live_rows():
@@ -371,6 +404,16 @@ def free_port():
 
 
 # ---------- démarrage ----------
+
+def dollars_positifs(v):
+	try:
+		c = float(v)
+	except ValueError:
+		c = None
+	if c is None or not math.isfinite(c) or c <= 0:
+		raise argparse.ArgumentTypeError(f'montant en dollars > 0 attendu (ni 0, ni négatif, ni NaN, ni infini), reçu {v!r}')
+	return c
+
 
 def entier_positif(v):
 	if not v.isdigit() or int(v) < 1:
@@ -496,7 +539,7 @@ def cmd_need(a):
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
 			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
 			                source=a.frm, panels=a.panel or (), done_when=a.done_when, acceptance=a.acceptance,
-			                budget=a.budget, model=a.model, effort=a.effort)
+			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd)
 			if by_orch:
 				launch(n, a.panel)
 		print(n['id'])
@@ -1026,8 +1069,13 @@ def need_line(st, n):
 	if n.get('seen'):
 		m, ef = n['seen']['model'], n['seen']['effort']
 		meta.append(f"modèle {e(m)}" + (f", effort {e(ef)}" if ef else '') if m else 'modèle inconnu')
-	if n['overBudget']:
+	if n.get('overBudgetUsd'):
+		meta.append(f"budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(cout_besoin(n))}) : continuer, réduire ou arrêter ?")
+	if n['overBudget'] and n['budgetMin'] and not n.get('overBudgetUsd'):
 		meta.append(f"budget de {e(n['budgetMin'])} min dépassé : continuer, réduire ou arrêter ?")
+	if n.get('seen') or n.get('costByPanel'):  # un agent est suivi : sa dépense, ou « coût inconnu » (tiret de Cate, usage illisible)
+		c = cout_besoin(n)
+		meta.append(f"coût {cout_texte(c, None in n['costByPanel'].values())}" if c is not None else 'coût inconnu')
 	perm = n.get('perm') if n['agentBlocked'] else None  # états écrits avant ce champ : pas de demande lue
 	if n['agentBlocked']:
 		meta.append("agent bloqué sur une permission ou une question")
@@ -1090,7 +1138,9 @@ def page_suivi(st):
 	block = [n for n in opened if n['owner'] != OWNER_HUMAIN and attend(n)]
 	rest = [n for n in opened if n not in mine and n not in block]
 	done = sorted([n for n in st['needs'] if n['status'] == 'done'], key=lambda n: n['updated'], reverse=True)[:20]
+	total, partiel = cout_projet(st)
 	body = (f"<h1>{e(st['repo'])}</h1><div class=\"sub\">Agents : {st['agentsActive']} en cours, {st['agentsWaiting']} en attente (plafond {plafond(st)}) · "
+	        f"dépense des agents : {cout_texte(total, partiel) if total is not None else 'coût inconnu'} · "
 	        f"mis à jour {time.strftime('%H:%M:%S')}</div>"
 	        + section(st, 'Bloquant', block, 'block') + section(st, f'À faire par {nom()}', mine, 'me')
 	        + section(st, 'Fait', done) + section(st, 'Reste à faire', rest))
@@ -1353,7 +1403,7 @@ def orphelins(st, rows, agents):
 	        and not r.get('caller') and p not in st['orphanGardes'] and not protege(st, p, None)}
 
 
-def tick(st, live, agents, gh, now, screens=None, panneaux=None):
+def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 	"""Un tour du régisseur : met l'état à jour, rend les effets ('close', panneau, besoin) et ('notify', panneau, texte).
 	screens : écran lu de chaque agent bloqué ({panneau: texte}), pour afficher sa demande.
 	panneaux : lignes de cate panel list par id ; sans elles, pas de balayage des orphelins."""
@@ -1430,6 +1480,16 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None):
 		agent = next((by_panel[p] for p in n['panels'] if p in by_panel), None)
 		if agent:  # lus dans cate agent list ; absents tant que l'app n'a pas le build qui les rend
 			n['seen'] = {'model': agent.get('model'), 'effort': agent.get('effort')}
+		for p in n['panels']:  # dernier coût lu par panneau : un panneau fermé ne le fait pas retomber
+			c = (usage or {}).get(p)
+			if cout_valide(c):
+				n.setdefault('costByPanel', {})[p] = c
+			elif p in (usage or {}):  # agent connu de Cate sans coût lisible (tiret, négatif, NaN) : inconnu, sans effacer un coût déjà lu
+				n.setdefault('costByPanel', {}).setdefault(p, None)
+		c = cout_besoin(n)
+		if n.get('budgetUsd') and c is not None and c > n['budgetUsd'] and not n.get('overBudgetUsd'):
+			n['overBudget'] = n['overBudgetUsd'] = True
+			once(f"budget-usd:{n['id']}", orch, f"Budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(c)}) : {n['title']} ({n['id']}).")
 		if n['budgetMin'] and now - n.get('createdTs', now) > n['budgetMin'] * 60:
 			n['overBudget'] = True
 			once(f"budget:{n['id']}", orch, f"Budget de {n['budgetMin']} min dépassé : {n['title']} ({n['id']}).")
@@ -1794,6 +1854,17 @@ def read_token_stdin():
 	return token
 
 
+def lire_usage():
+	"""Coût (dollars équivalent API) par panneau d'agent vivant, de cate agent usage ; None si refusé ou illisible."""
+	try:
+		rows = cate('agent', 'usage')
+	except Refus:
+		return None
+	if not isinstance(rows, list):
+		return None
+	return {r['panelId']: r.get('costUsd') for r in rows if isinstance(r, dict) and 'panelId' in r}
+
+
 def un_tour():
 	rows = live_rows()
 	if rows is None:
@@ -1804,6 +1875,7 @@ def un_tour():
 	gh, merges = lire_github(snap)  # hors transaction : un gh lent ne bloque ni la boucle ni les clics
 	# ponytail: lecture en série, 5 s au pire par agent bloqué (6 au plus) ; en parallèle si ça gêne
 	screens = {p: lire_ecran(p) for p in ecrans_a_lire(snap, agents)}  # hors transaction aussi
+	usage = lire_usage()  # idem : une lecture par tour, None si Cate la refuse
 	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
@@ -1811,7 +1883,7 @@ def un_tour():
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
 		st['garde'] = garde
-		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows)
+		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage)
 		apply(st, effects)
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
@@ -2164,6 +2236,7 @@ def parser():
 	add.add_argument('--done-when')
 	add.add_argument('--acceptance')
 	add.add_argument('--budget', type=int)
+	add.add_argument('--budget-usd', type=dollars_positifs, help="budget en dollars (la devise de cate agent usage, sans conversion) : le besoin passe en Bloquant au dépassement")
 	add.add_argument('--model', help="modèle voulu pour l'agent du besoin (id ou alias de l'agent CLI), que l'orchestrateur passe à cate agent start --model")
 	add.add_argument('--effort', choices=EFFORTS, help="niveau d'effort voulu (Claude Code), passé à cate agent start --effort")
 	pa = ns.add_parser('panel')
