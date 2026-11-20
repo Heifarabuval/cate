@@ -104,7 +104,7 @@ Le skill n'énumère plus le flux. Il dit : « Avant de découper : `agence prat
 | Nom de l'humain | `nom()`, `st['humain']` | n'y touche pas ; les textes que 005 ajoute (`brief`, refus, panneau) disent « l'humain » par `nom()` | 002 garde la propriété de tout texte au nom de l'humain |
 | État écrit par `watch` | `un_tour` (~1980-2000) | ajoute `st['pratiques']` à côté de `humain` et `garde` | même motif (clé absente = état ancien valide) ; ajouts disjoints |
 | Pureté (SC-002 de 002) | `tools/agence/test_portable.py` | étend la liste des mots interdits : `hermes`, `.hermes` | une ligne ajoutée à un test de 002 ; à faire dans le lot 2 de 005, pas avant que les lots 2 et 3 de 002 soient mergés |
-| Bascule de Skills (002, lot 5) | dépôt Skills | doit attendre le preset `pr-tdd` (lot 4 de 005) | sinon Heifara bascule sur `neutre` et le merge passe de rebase à squash sans qu'il l'ait voulu ; action **[H]** : `agence pratiques preset pr-tdd --dev` avant la bascule |
+| Bascule de Skills (002, lot 5) | dépôt Skills | déjà faite (002 L5-07) ; le merge du lot 2 de 005 doit attendre le preset `pr-tdd` réglé chez Heifara (T064) | sinon son merge passe de rebase à squash sans qu'il l'ait voulu ; action **[H]** : `agence pratiques preset pr-tdd --dev` avant le merge du lot 2 |
 | Gardes | `agence guard --mode pages` | étend la liste des écritures refusées à `pratiques.json` (lot 1) | même fonction que 002 lot 3 ; ajout de deux motifs |
 
 ## Conflits de fichiers avec les autres epics
@@ -115,7 +115,7 @@ Les quatre specs (002 lots macro, 005, 006 coût de l'attente, 007 panneaux pers
 |---|---|---|---|---|
 | `tools/agence/agence.py` | 1, 2, 3, 4 | 002 (lots 2, 3, 4 si encore ouverts), 004 (lots 3 à 5), 006 (piste `agence wait`, lot 4 si retenu) | **Élevé** : fichier de 2 870 lignes, quatre epics | Hunks disjoints (appels, pas de logique : `pratiques.py` porte la logique). Un seul lot de ce fichier ouvert à la fois par epic ; l'orchestrateur sérialise les PR qui le touchent et fait rebaser la suivante |
 | `tools/agence/test_agence.py` | 2, 3 | 002, 004, 006 | Moyen | Tests nouveaux dans des fichiers neufs : `test_pratiques.py` (lots 1, 3), `test_retrait.py` (lot 2), `test_preuve.py` (lot 3) ; `test_agence.py` ne change que là où `HERMES_ENV` et `--rebase` sont déjà utilisés |
-| `skills/orchestrateur/SKILL.md` | 4 | 002 (le skill est son objet), 006 (lot 2 : ligne 28 et deux lignes), 007 (peut le citer) | **Élevé** | Lot 4 de 005 **après** le lot 2 de 006, ou rebase ; l'orchestrateur sérialise. Diff de 005 : remplacement des lignes 19, 20, 25, 30, 36, 39-41, 43, 65, 74 (audit) |
+| `skills/orchestrateur/SKILL.md` | 4 | 002 (le skill est son objet), 006 (lot 3 : ligne 28 et deux lignes), 007 (peut le citer) | **Élevé** | Lot 4 de 005 **après** le lot 3 de 006, ou rebase ; l'orchestrateur sérialise. Diff de 005 : remplacement des lignes 19, 20, 25, 30, 36, 39-41, 43, 65, 74 (audit) |
 | `tools/agence/declencheurs.json`, `test_declencheurs.py` | 4 (tâche `declencheurs.actifs`, Q5) | 004 (lots 3 à 5, 4e déclencheur) | Moyen | Tâche séparable ; si 004 a des lots ouverts, elle passe à 004 |
 | `tools/agence/pratiques.json`, `pratiques.py`, `test_pratiques.py` | 1 (création), 3, 4 (ajouts) | aucun | Nul | Fichiers neufs, propriété de 005 |
 | `scripts/agence-files.mjs`, `scripts/build-runtime-tarball.test.mjs` | 1 | 002 (lot 3 y a ajouté `agence-hook`) | Faible | Une ligne dans `AGENCE_REQUIRED` ; relire `origin/main` avant |
@@ -123,6 +123,8 @@ Les quatre specs (002 lots macro, 005, 006 coût de l'attente, 007 panneaux pers
 | `src/shells/desktop/ui/panels/agence/{AgenceView,QuestionCard}.tsx` | 5 | 002 (bannière `garde`) | Faible | Ajouts disjoints |
 | `docs/architecture.md` | 1 (fichiers de la politique), 5 | tous | Moyen | Un titre par lot ; rebase avant la PR |
 | `src/panels/framework/`, `src/panels/app/` | aucun | 007 | Nul | 005 ne touche pas les définitions de panneau |
+
+**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
 
 **Ce qui ne bouge pas, par choix** : la propriété du texte « au nom de l'humain » (002), la table des déclencheurs hors du champ `actif` (004), la règle d'attente de l'orchestrateur (006 : le plafond du filet de 600 s et le seuil de `/compact` ne deviennent pas des réglages en v1, voir Q9).
 
@@ -164,7 +166,7 @@ docs/architecture.md                   # lots 1 et 5
 | 1 | Schéma, presets `neutre` et `pr-tdd`, lecture, validation, commande `agence pratiques`, `watch` publie `pratiques`, garde `pages` étendue, livraison dans le tarball | 1,5 j | rien |
 | 2 | Retrait du codé en dur : méthode de merge, `ask --merge`, jeton Slack, plafond d'agents, `doctor` | 1 j | 1 |
 | 3 | Preuve de fin dérivée : grammaire, `need add`, `need pr`, évaluation, `ci-green` | 1,25 j | 1 (puis après 2 : `agence.py`) |
-| 4 | Skill lit la politique, `declencheurs.actifs`, pureté étendue | 1 j | 1 ; après 006 lot 2 pour le skill |
+| 4 | Skill lit la politique, `declencheurs.actifs`, pureté étendue | 1 j | 1 ; après 006 lot 3 pour le skill |
 | 5 | Panneau : ligne, valeurs, bannière, ouvrir le fichier, libellé de merge | 1 j | 1 |
 
 Total : 5,75 j d'agent. Estimation en jetons ou en euros : non chiffrée (aucune mesure faite).
@@ -173,7 +175,7 @@ Total : 5,75 j d'agent. Estimation en jetons ou en euros : non chiffrée (aucune
 
 | Risque | Parade |
 |---|---|
-| Heifara oublie `preset pr-tdd` et son merge passe de rebase à squash | `doctor` affiche `pratiques : neutre (aucun fichier)` en `info` ; la PR du lot 2 le dit en tête ; action **[H]** nommée dans `tasks.md` avant le lot 5 de la spec 002 |
+| Heifara oublie `preset pr-tdd` et son merge passe de rebase à squash | `doctor` affiche `pratiques : neutre (aucun fichier)` en `info` ; la PR du lot 2 le dit en tête ; action **[H]** (T064) nommée dans `tasks.md`, à faire avant le merge du lot 2 |
 | `agence.py` devient un goulot de merge | `pratiques.py` porte la logique ; fichiers de test neufs ; sérialisation par l'orchestrateur |
 | Une politique invalide bloque le régisseur | Le régisseur retombe sur `neutre` et publie l'erreur ; seules les commandes qui agissent refusent |
 | Un agent réécrit la politique pour contourner une exigence | Garde `pages` étendue ; sans gardes installés, la protection est celle de `state.json` et la bannière de 002 le dit |
