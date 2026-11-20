@@ -30,7 +30,7 @@ description: "Tâches : interlocuteur, backlog de fiches et garde-fous (spec 010
 | FR-003 (fiche `prête`, clic « Lancer ») | lot 4 (T060 à T066) | |
 | FR-004 (fichiers éditables, une CLI) | lot 1 (T002, T003, T005) | |
 | FR-005 (détections en code) | lot 2 (T020 à T025) | |
-| FR-006 (budget de jetons, vision, écran central) | lot 1 (T001), lot 4 (T063, T068), lot 5 | |
+| FR-006 (budget de jetons, vision, écran central) | lot 1 (T001), lot 4 (T063, T067), lot 5 | |
 | FR-007 (lentilles) | lot 8 (tardif) | conditionné à Q1 |
 | SC-001 | lot 2 (T020), lot 4 (T060), lot 9 (T160) | |
 | SC-003 | lot 7 (T120) | le verdict est rendu par la spec 011 |
@@ -45,13 +45,13 @@ description: "Tâches : interlocuteur, backlog de fiches et garde-fous (spec 010
 | **2. Détections déterministes** | US2, US4 | 1 j | 1 | 3 (hunks disjoints de `agence.py`, PR l'une après l'autre) |
 | **3. Interlocuteur : skill, démarrage, garde** | US1 | 1 j | 1 | 2 |
 | **4. Clic « Lancer », contrat, budget en jetons** | US2, US3 | 1,5 j | 1, 2 ; lot 3 de 005 (grammaire de `--done-when`) | 6 si `agence.py` est rebasé |
-| **5. Écran central** | US2, US3 | 1,5 j | 4 (op et état publié) ; après le lot panneau de 008 | 6, 7 |
+| **5. Écran central** | US2, US3 | 1,5 j | 4 (op et état publié) ; avant le lot 3 de 008 (009 H2) | 6, 7 |
 | **6. Registre au clic, revue de cap** | US4 | 1 j | 1, 2 | 5, 7 |
 | **7. Modèle par rôle proposé** | US5 | 0,5 j | 1 ; après le lot 4 de 005 sur `pratiques.json` | 5, 6 |
 | **8. Lentilles (tardif)** | US6 | 1 j | 1 à 6 mergés ; Q1 atteinte | aucun |
 | **9. Acceptation [H]** | US1 à US3 | 0,5 j (Heifara) | 1 à 5 | 6, 7 |
 
-Ordre conseillé : 1, puis {2, 3} en même temps, puis 4, puis {5, 6, 7}, puis 9. Le lot 8 attend la mesure du volume réel (spec.md, Q1). Taille totale hors lot 8 : 8,5 jours.
+Ordre conseillé : 1, puis {2, 3} en même temps, puis 4, puis {5, 6, 7}, puis 9 ; le lot 5 passe avant le lot 3 de 008 (009 H2). Le lot 8 attend la mesure du volume réel (spec.md, Q1). Taille totale hors lot 8 : 8,5 jours.
 
 ---
 
@@ -59,7 +59,7 @@ Ordre conseillé : 1, puis {2, 3} en même temps, puis 4, puis {5, 6, 7}, puis 9
 
 **But** : backlog et registre existent, sont validés, écrits par la seule CLI ; aucun comportement de l'orchestrateur ne change.
 
-**Tests d'acceptation** : `python3 -m unittest tools.agence.test_backlog` vu rouge puis vert ; `npm run test:agence` vert ; en dossier temporaire, `agence fiche add "x" --type idee` rend `F1` en `discussion` ; `agence fiche etat F1 prête` refuse (code 1) et nomme les 6 champs manquants ; `agence decision add` rend `D1` en `proposée` ; un `backlog.json` invalide édité à la main fait refuser toute écriture (code 2) avec le motif.
+**Tests d'acceptation** : `python3 -m unittest tools.agence.test_backlog` vu rouge puis vert ; `npm run test:agence` vert ; en dossier temporaire, `agence fiche add "x" --type idee` rend `F1` en `discussion` ; `agence fiche etat F1 prête` refuse (code 1) et nomme les 5 champs manquants ; `agence decision add` rend `D1` en `proposée` ; un `backlog.json` invalide édité à la main fait refuser toute écriture (code 2) avec le motif.
 
 **Fichiers touchés** : `tools/agence/backlog.py` (nouveau), `tools/agence/test_backlog.py` (nouveau), `tools/agence/agence.py` (parsers `fiche`, `decision`, lecture sous `tx()`), `tools/agence/test_guard.py` (ajouts), `scripts/agence-files.mjs`, `scripts/build-runtime-tarball.test.mjs`, `docs/architecture.md` (§ panneau agence : les deux fichiers).
 
@@ -182,7 +182,7 @@ Ordre conseillé : 1, puis {2, 3} en même temps, puis 4, puis {5, 6, 7}, puis 9
 
 **Fichiers touchés** : `src/panels/agence/contract/types.ts` (`BacklogView`, op `fiches.lancer`), `src/panels/agence/session.ts`, `src/panels/agence/session.test.ts`, `src/panels/agence/contract/fixtures/` (un état avec `backlog`), `src/shells/desktop/ui/panels/agence/Backlog.tsx` (nouveau), `Backlog.test.tsx` (nouveau), `AgenceView.tsx`, `AgenceView.test.tsx`, `docs/architecture.md` (une phrase).
 
-**Dépend de** : lot 4 (route et vue publiée) ; après le lot panneau de 008 sur `types.ts`, `session.ts` et `AgenceView.tsx`. **Parallélisable avec** : lots 6 et 7 (aucun fichier commun).
+**Dépend de** : lot 4 (route et vue publiée) ; passe avant le lot 3 de 008 sur `types.ts`, `session.ts` et `AgenceView.tsx`, qui rebase (règle H2 de `specs/009-vision-v2/plan.md`). **Parallélisable avec** : lots 6 et 7 (aucun fichier commun).
 
 ### Tests d'abord
 
@@ -291,7 +291,7 @@ Ordre conseillé : 1, puis {2, 3} en même temps, puis 4, puis {5, 6, 7}, puis 9
 - Puis {2, 3} : hunks disjoints de `agence.py`, une PR ouverte à la fois sur ce fichier.
 - Puis 4 (il lit les détections du lot 2 et la grammaire du lot 3 de 005).
 - Puis {5, 6, 7} : 5 n'a aucun fichier commun avec 6 et 7 ; 6 et 7 partagent `agence.py` (hunks disjoints).
-- **Avec les autres epics** : `skills/orchestrateur/SKILL.md` est visé par le lot 3 de 006, le lot 4 de 005 et le lot 4 ici : 006, puis 005, puis 010. Le panneau `agence` est visé par le lot 5 de 005, un lot de 008 et le lot 5 ici : une PR à la fois. `pratiques.json` : lot 4 de 005 avant le lot 7 ici.
+- **Avec les autres epics** : `skills/orchestrateur/SKILL.md` est visé par le lot 3 de 006, le lot 4 de 005 et le lot 4 ici : 006, puis 005, puis 010. Le panneau `agence` est visé par le lot 5 de 005 (mergé), le lot 3 de 008 et le lot 5 ici : une PR à la fois, le lot 5 ici avant 008-L3 (009 H2). `pratiques.json` : lot 4 de 005 avant le lot 7 ici.
 
 ## Stratégie
 

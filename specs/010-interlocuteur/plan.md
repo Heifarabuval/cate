@@ -4,7 +4,7 @@
 
 ## Summary
 
-Un module Python neuf, `tools/agence/backlog.py`, porte le schéma des fiches et des décisions et toutes les détections déterministes (chevauchement, vagues, dépendances, péremption, plafond, budget). `agence.py` n'y gagne que des sous-commandes (`fiche`, `decision`, `revue`), deux chemins de clic (`/fiches/lancer`, `/decision/<id>/<choix>`, `/fiche/<id>/<choix>`), un champ `budgetJetons` sur le besoin et des motifs dans la garde. Un skill neuf, `skills/interlocuteur/SKILL.md`, dit à l'interlocuteur quoi lire et quelles commandes il a. Le skill `orchestrateur` gagne une section « Lancer ». Le panneau `agence` affiche le backlog, le bouton « Lancer » et le consommé contre budget.
+Un module Python neuf, `tools/agence/backlog.py`, porte le schéma des fiches et des décisions et toutes les détections déterministes (chevauchement, vagues, dépendances, péremption, plafond, budget). `agence.py` n'y gagne que des sous-commandes (`fiche`, `decision`, `revue`), trois chemins de clic (`/fiches/lancer`, `/decision/<id>/<choix>`, `/fiche/<id>/<choix>`), un champ `budgetJetons` sur le besoin et des motifs dans la garde. Un skill neuf, `skills/interlocuteur/SKILL.md`, dit à l'interlocuteur quoi lire et quelles commandes il a. Le skill `orchestrateur` gagne une section « Lancer ». Le panneau `agence` affiche le backlog, le bouton « Lancer » et le consommé contre budget.
 
 Aucune dépendance, aucun appel de modèle dans le code, aucune migration. Coût mensuel : 0 € d'infrastructure. Le coût en jetons d'un interlocuteur est mesuré par la spec 011, pas promis ici.
 
@@ -16,7 +16,7 @@ Aucune dépendance, aucun appel de modèle dans le code, aucune migration. Coût
 **Target Platform**: macOS arm64.
 **Performance Goals**: `backlog.plan` sur 100 fiches < 50 ms (paires de fichiers, O(n² · f), hypothèse : un backlog réel reste sous 100 fiches ouvertes).
 **Constraints**: `agence.py` + 150 lignes au plus par lot (spec 005, SC-006) ; écart avec upstream limité au panneau `agence` ; aucun agent ne lance l'app.
-**Scale/Scope**: 2 fichiers de données, 3 sous-commandes, 3 chemins de clic, 1 skill neuf, 8 lots.
+**Scale/Scope**: 2 fichiers de données, 3 sous-commandes, 3 chemins de clic, 1 skill neuf, 9 lots (dont le lot 8 tardif et le lot 9 d'acceptation [H]).
 
 ## Constitution Check
 
@@ -102,6 +102,58 @@ Panneau `agence` (vue React existante, `src/shells/desktop/ui/panels/agence/Agen
 ## Risques
 
 - **Conflits sur `agence.py`** avec les lots ouverts de 005 (lot 4), 006 et 008 : une PR à la fois sur ce fichier, hunks disjoints, rebase de la suivante.
-- **Conflits sur le panneau `agence`** avec la spec 008 (lot sur `types.ts`, `session.ts`, `AgenceView.tsx`) : l'orchestrateur sérialise ; 008 d'abord si elle est déjà lancée.
+- **Conflits sur le panneau `agence`** avec la spec 008 (lot sur `types.ts`, `session.ts`, `AgenceView.tsx`) : l'orchestrateur sérialise ; le lot 5 ici passe avant le lot 3 de 008, qui rebase (règle H2 de `specs/009-vision-v2/plan.md` : 008 est en couche 2, gelée jusqu'à G1).
 - **Sonde `caller_panel()`** : elle renomme le panneau une seconde. Bornée aux commandes interdites, elle ne tourne pas à chaque appel ; si elle échoue (`None`), la garde laisse passer et la CLI garde sa seconde barrière.
 - **Qualité du tri par le modèle** (doublons, contradictions) : jugement, non testable par unittest ; couvert par le scénario de SC-001 joué par Heifara.
+
+## Project Structure
+
+### Documentation (this feature)
+
+```text
+specs/010-interlocuteur/
+├── spec.md
+├── plan.md
+└── tasks.md
+```
+
+### Source Code
+
+```text
+tools/agence/
+├── backlog.py               # lots 1, 2, 6, 7, 8 (nouveau) : schéma, détections, revue, brief
+├── test_backlog.py          # lots 1, 2, 7 (nouveau)
+├── agence.py                # lots 1 à 4, 6, 7, 8 : sous-commandes, clic, budget, garde, start
+├── test_guard.py            # lots 1, 3 : ajouts
+├── test_interlocuteur.py    # lot 3 (nouveau)
+├── test_lancer.py           # lot 4 (nouveau)
+├── test_politique_skill.py  # lot 4 : ajout
+├── test_revue.py            # lot 6 (nouveau)
+├── pratiques.json           # lot 7 : quatre clés modele.*
+├── test_pratiques.py        # lot 7
+├── lentilles.json           # lot 8 (nouveau)
+└── test_lentilles.py        # lot 8 (nouveau)
+skills/
+├── interlocuteur/SKILL.md   # lots 3, 6 (nouveau)
+└── orchestrateur/SKILL.md   # lots 4, 8 : section « Lancer », lentille sur clic
+src/panels/agence/
+├── contract/types.ts        # lot 5 : BacklogView, op fiches.lancer
+├── contract/fixtures/       # lot 5 : un état avec backlog
+├── session.ts               # lot 5
+└── session.test.ts          # lot 5
+src/shells/desktop/ui/panels/agence/
+├── Backlog.tsx              # lot 5 (nouveau)
+├── Backlog.test.tsx         # lot 5 (nouveau)
+├── AgenceView.tsx           # lot 5
+└── AgenceView.test.tsx      # lot 5
+scripts/agence-files.mjs, scripts/build-runtime-tarball.test.mjs   # lots 1, 3, 8 : fichiers livrés
+docs/architecture.md                                              # lots 1, 5 : panneau agence
+```
+
+**Structure Decision** : la logique reste dans `tools/agence/` (Python hors `src/`) ; `src/` ne change que dans le panneau `agence`, déjà propre au fork (constitution IX).
+
+## Complexity Tracking
+
+| Écart | Pourquoi | Alternative plus simple écartée |
+|---|---|---|
+| Module neuf `tools/agence/backlog.py` (constitution VII) | `agence.py` fait 2 962 lignes et quatre epics y écrivent ; un module pur garde les détections testables seules et les PR disjointes | des fonctions dans `agence.py` : conflits de rebase sur le fichier le plus disputé (même choix que `pratiques.py`, spec 005) |
