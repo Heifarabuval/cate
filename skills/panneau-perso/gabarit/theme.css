@@ -1,0 +1,24 @@
+/* Généré par sync-theme.mjs depuis le thème Cate "one-light". Ne pas éditer : relancer le script. */
+:root {
+	color-scheme: light;
+	--surface-0: #fafafa;
+	--surface-1: #f0f0f1;
+	--surface-2: #eaeaeb;
+	--surface-3: #e5e5e6;
+	--surface-4: #dbdbdc;
+	--surface-5: #d0d0d1;
+	--surface-6: #c6c6c7;
+	--border-subtle: #e1e1e2;
+	--border-strong: #c9c9ca;
+	--border-focus: #4078f2;
+	--text-primary: #383a42;
+	--text-secondary: #4f525e;
+	--text-muted: #80828a;
+	--text-inverse: #fafafa;
+	--focus-blue: #4078f2;
+	--surface-hover: #ececed;
+	--surface-hover-strong: #e3e3e4;
+	--activity-green: #50a14f;
+	--activity-orange: #c18401;
+	--git-deleted: #e45649;
+}
