@@ -19,13 +19,15 @@ const ligne = (action: LigneAction): LigneData => ({
   waitingSince: '2026-11-19T10:00:00Z', action, links: [],
 })
 const options = [{ label: 'Merger', detail: 'rebase' }, { label: 'Non', detail: '' }]
-const question = (isMerge = false): LigneAction => ({ type: 'question', questionId: 'q1', options, isMerge })
+const question = (isMerge = false, extra: Partial<Extract<LigneAction, { type: 'question' }>> = {}): LigneAction =>
+  ({ type: 'question', questionId: 'q1', options, isMerge, locks: [], ghUnknown: false, rebase: false, ...extra })
 const draft = (extra: Partial<Extract<LigneAction, { type: 'draft' }>> = {}): LigneAction =>
   ({ type: 'draft', draftId: 'd1', kind: 'slack', hash: 'h1', texte: '# Salut\n\n**gras**', inFlight: false, ...extra })
 const perm: LigneAction = { type: 'perm', command: 'rm -rf build && echo une-commande-assez-longue-pour-deborder', reason: 'nettoyage', genre: 'hook' }
 
 let host: HTMLDivElement
 let root: Root
+let ui: ReturnType<typeof installMockClientUi>
 let actions: { [K in keyof BoiteActions]: ReturnType<typeof vi.fn> }
 const state = (patch: Partial<ActionsState> = {}): ActionsState => ({ busy: new Set(), shown: {}, notices: {}, ...patch })
 const render = (action: LigneAction, current: ActionsState = state()) =>
@@ -35,7 +37,7 @@ const button = (label: string | RegExp) =>
 const click = async (label: string | RegExp) => { await act(async () => { button(label)!.click() }) }
 
 beforeEach(() => {
-  installMockClientUi()
+  ui = installMockClientUi()
   actions = {
     getState: vi.fn(), subscribe: vi.fn(),
     answer: vi.fn(async () => ({ ok: true })), merge: vi.fn(async () => ({ ok: true })),
@@ -66,7 +68,7 @@ it('answers with the index of the option clicked, on the key of the line', async
   render(question())
   await click('Répondre')
   await act(async () => { (host.querySelectorAll('[data-testid="option"]')[1] as HTMLButtonElement).click() })
-  expect(actions.answer).toHaveBeenCalledWith(KEY, { choice: 1 })
+  expect(actions.answer).toHaveBeenCalledWith(KEY, { questionId: 'q1', choice: 1 })
 })
 
 it('sends the free answer, trimmed, and it only when there is text', async () => {
@@ -80,15 +82,41 @@ it('sends the free answer, trimmed, and it only when there is text', async () =>
     area.dispatchEvent(new Event('input', { bubbles: true }))
   })
   await act(async () => { submit().click() })
-  expect(actions.answer).toHaveBeenCalledWith(KEY, { libre: 'plus tard' })
+  expect(actions.answer).toHaveBeenCalledWith(KEY, { questionId: 'q1', libre: 'plus tard' })
 })
 
 it('Merger is one action of its own on a merge question', async () => {
   render(question(true))
   await click('Merger')
   await act(async () => { (host.querySelectorAll('[data-testid="option"]')[0] as HTMLButtonElement).click() })
-  expect(actions.merge).toHaveBeenCalledWith(KEY)
+  expect(actions.merge).toHaveBeenCalledWith(KEY, { questionId: 'q1' })
   expect(actions.answer).not.toHaveBeenCalled()
+})
+
+it('greys Merger with its reasons: the option becomes « Merger quand même », asked first, naming each lock', async () => {
+  render(question(true, { locks: ['n11 : Revue de la PR 12', 'conflit avec la base'], ghUnknown: true }))
+  await click('Merger')
+  expect(host.textContent).toContain('Merger grisé')
+  expect(host.textContent).toContain('n11 : Revue de la PR 12')
+  expect(host.textContent).toContain('état GitHub inconnu')
+  const first = host.querySelectorAll('[data-testid="option"]')[0] as HTMLButtonElement
+  expect(first.textContent).toContain('Merger quand même (rebase)')
+  ui.confirm.mockResolvedValueOnce(false)
+  await act(async () => { first.click() })
+  expect(actions.merge).not.toHaveBeenCalled()
+  ui.confirm.mockResolvedValueOnce(true)
+  await act(async () => { first.click() })
+  expect((ui.confirm.mock.calls as unknown as string[][])[0][0]).toContain('conflit avec la base')
+  expect(actions.merge).toHaveBeenCalledWith(KEY, { questionId: 'q1', force: true })
+})
+
+it('offers « Demander le rebase » on a conflict, only then', async () => {
+  render(question(true, { locks: ['conflit avec la base'], rebase: true }))
+  await click('Merger')
+  await click('Demander le rebase')
+  expect(actions.answer).toHaveBeenCalledWith(KEY, { questionId: 'q1', choice: 'rebase' })
+  render(question(true))
+  expect(button('Demander le rebase')).toBeUndefined()
 })
 
 it('shows « envoi en cours » for a busy line and its buttons take no click', async () => {

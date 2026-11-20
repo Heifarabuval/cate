@@ -24,7 +24,7 @@ export interface ProjectView {
 export type LigneAction =
   /** `texte` is what `hash` is the hash of: what the human reads before sending. */
   | { type: 'draft'; draftId: string; kind: DraftKind; hash: string; texte: string; inFlight: boolean }
-  | { type: 'question'; questionId: string; options: Array<{ label: string; detail: string }>; isMerge: boolean }
+  | { type: 'question'; questionId: string; options: Array<{ label: string; detail: string }>; isMerge: boolean; locks: string[]; ghUnknown: boolean; rebase: boolean }
   /** An agent waits on a permission whose screen was readable: Oui or Non, with the whole command and its reason. */
   | { type: 'perm'; command: string; reason: string; genre: string }
   /** Nothing to answer from here: only the link to the panel. */
