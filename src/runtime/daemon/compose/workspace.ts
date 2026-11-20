@@ -87,6 +87,8 @@ export interface WorkspaceDeps {
   /** The local socket: `CATE_SOCKET` for terminals. */
   endpoint: string
   installDir: string
+  /** `~/.cate/panneaux`: the custom panels of the user. */
+  panneauxDir: string
   rpc: RpcServer
   lifecycle: LifecycleBus
   settings: WorkspaceSettingsStore<WorkspaceSettings>
@@ -353,6 +355,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     agents: agentsRuntime,
     cliEnv: (panelId) => cliEnv.cliEnv(panelId),
     trust,
+    apps: { dir: deps.panneauxDir, grantsFile: paths.appGrants },
+    clientHas: (connectionId, feature) => (connectionId === null ? true : (presence.client(connectionId)?.features.includes(feature) ?? false)),
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
   const registry = createPanelRegistry(modules.map(({ definition, session }) => ({ definition, session })))
