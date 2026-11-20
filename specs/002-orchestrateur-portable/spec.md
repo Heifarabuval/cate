@@ -156,5 +156,5 @@ Un agent launchd lance `cate-fork-update` : il récupère le fork, construit en 
 - Max a les Xcode Command Line Tools (requis pour `git` et le build du fork), donc `/usr/bin/python3` 3.9.6.
 - Le fork est public : la ligne `curl` marche sans compte (vérifié le 2026-11-18).
 - Max lance `gh auth login` lui-même si l'amorçage le demande.
-- Slack et Gmail chez Max : optionnels. Sans connecteur MCP, les brouillons `slack:` et `mail:` ne partent pas ; `issue:`, `pr:`, `comment:` marchent par `gh`.
+- Slack et Gmail chez Max : optionnels. Sans connecteur MCP, les brouillons `mail:` ne partent pas ; sans `SLACK_USER_TOKEN` dans `~/.hermes/.env`, les brouillons `slack:` restent à valider avec le refus affiché ; `issue:`, `pr:`, `comment:` marchent par `gh`.
 - Coût mensuel : 0 € (aucun service, aucune dépendance ajoutée).

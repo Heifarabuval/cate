@@ -12,6 +12,19 @@ Aucun nouveau fichier d'état. Deux clés ajoutées à `state.json`, deux entré
 
 Clés absentes d'un état ancien : `load()` les complète par `empty()`, comme `maxAgents` (`agence.py:149`).
 
+### Coût et envoi Slack (reportés de Skills#8 et Skills#20)
+
+Tous optionnels à la lecture : un état ancien sans ces clés se rend sans erreur.
+
+| Champ | Type | Sens | Lecteurs |
+|---|---|---|---|
+| `needs[].budgetUsd` | dollars ou `null` | budget voulu (`need add --budget-usd`), dans la devise de `cate agent usage`, sans conversion | CLI, régisseur |
+| `needs[].overBudgetUsd` | `true`, absent tant que faux | budget en dollars dépassé ; `overBudget` passe aussi à `true` (drapeau lu pour les minutes comme pour les dollars) : le besoin devient Bloquant | CLI. Le panneau ne lit que `overBudget` et titre « budget de <budgetMin> min » : sans `budgetMin`, le texte est faux pour un dépassement en dollars (reste à traiter) |
+| `needs[].costByPanel` | `{panneau: dollars ou null}`, absent tant que rien n'est lu | dernier coût lu par panneau d'agent du besoin ; `null` : agent connu de Cate sans coût lisible ; un panneau fermé ne fait pas retomber le cumul | CLI. Le panneau ne le lit pas encore |
+| `drafts[].incertain` | `true`, absent sinon (Slack seulement) | envoi sans issue connue (délai, coupure, `internal_error`, `fatal_error`) ; posé avant l'appel, retiré sur une issue certaine | CLI. Le panneau ne le lit pas : il n'affiche pas le refus d'un envoi incertain ni « Envoyer quand même » (reste à traiter) |
+
+Dépense d'un besoin = somme des coûts lus (« au moins » s'il reste un `null`). Total du projet = somme des panneaux distincts, maximum lu par panneau. Un brouillon `incertain` reste `à valider` et le régisseur ne l'abandonne pas ; un simple Envoyer rend 409, seule la page du brouillon (`confirme=1`) renvoie.
+
 ## Instantané du panneau (`src/panels/agence/contract/types.ts`)
 
 Ajout : `humain: string` (« L'humain » par défaut), `garde: 'actif' | 'inactif' | 'partiel' | 'inconnu'` (`inconnu` tant que le régisseur n'a pas fait un tour). Section `aFaire` titrée avec `humain`.
