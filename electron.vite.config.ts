@@ -50,6 +50,7 @@ export default defineConfig({
           // loader cannot require one): src/shells/desktop/preload/preload.test.ts.
           shell: resolve(__dirname, 'src/shells/desktop/preload/index.ts'),
           shellGuest: resolve(__dirname, 'src/services/browser/desktop/preload/guest.ts'),
+          appPanel: resolve(__dirname, 'src/shells/desktop/preload/appPanel.ts'),
         }
       }
     }

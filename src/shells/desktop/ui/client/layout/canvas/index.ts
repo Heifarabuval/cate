@@ -6,7 +6,7 @@ export { CanvasView, type CanvasViewProps } from './CanvasView'
 export { CanvasPanelList } from './CanvasPanelList'
 export { CanvasViewProvider, useCanvasView, useCanvasViewStore } from './context'
 export { installCanvasSlots, canvasSlots, type CanvasSlots, type NodeDockProps } from './slots'
-export { registerCanvasMenuEntries, registerCanvasToolbarItem, registerSpawnFlyout, type CanvasMenuEntry, type CanvasToolbarItem, type CanvasToolbarItemProps, type SpawnFlyout, type SpawnFlyoutProps } from './toolbarItems'
+export { registerCanvasMenuEntries, useCanvasMenuEntries, registerCanvasToolbarItem, registerSpawnFlyout, type CanvasMenuEntry, type CanvasToolbarItem, type CanvasToolbarItemProps, type SpawnFlyout, type SpawnFlyoutProps } from './toolbarItems'
 export { useCanvasToolbarAction, requestCanvasToolbarAction, type CanvasToolbarAction } from './toolbarAction'
 export { CanvasToolbarButton } from './CanvasToolbarButton'
 export { useCanvasUi, type CanvasTool } from './uiState'
@@ -62,6 +62,7 @@ export {
   activeCanvasId,
   placePanelOnCanvas,
 } from './access'
+export { viewCenterOf } from './viewCenter'
 export { createPanelOnCanvas, placeOnCanvas, inheritedCheckout, type CanvasCreateOptions, type CanvasPlaceOptions } from './actions'
 export { canvasAtPoint, canvasContainerFor, type CanvasAtPoint } from './parts/dom'
 export { isMouseWheel, type WheelLike } from './parts/wheelIntent'

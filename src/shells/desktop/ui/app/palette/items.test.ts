@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { declaredActions } from '@kernel/interaction'
 import { storedShortcut } from '@kernel/interaction/contract'
+import { registerPanelActions, registerPanelDefinitions } from '@client/host'
+import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { createDocument, applyOp, MAIN_WINDOW, type DocChange, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import type { WorkspaceEntry } from '@client/workspaces'
@@ -27,6 +30,8 @@ const sources = (over: Partial<CommandSources> = {}): CommandSources => ({
   inWorktree: [],
   worktrees: [],
   create: vi.fn(),
+  menuEntries: [],
+  viewCenter: () => ({ x: 0, y: 0 }),
   ...over,
 })
 
@@ -113,5 +118,34 @@ describe('panelItems', () => {
 
   it('treats the main window as elsewhere when rendering a detached window', () => {
     expect(panelItems(doc, 'w2', lookup, '').map((i) => [i.panelId, i.otherWindow])).toEqual([['b1', false], ['t1', true]])
+  })
+})
+
+describe('custom panels in the palette (spec 008)', () => {
+  const entry = (id: string, label: string, run = vi.fn()) => ({ id, label, icon: 'table' as const, run })
+
+  it('lists one command per menu entry, same source as the canvas menu, and filters by query', () => {
+    const src = sources({ menuEntries: [entry('app:fusion', 'Fusion Excel'), entry('app:notes', 'Notes')] })
+    expect(commandItems(src, '').map((item) => ({ id: item.id, title: item.title, icon: item.icon }))).toEqual([
+      { id: 'entry:app:fusion', title: 'Fusion Excel', icon: 'table' },
+      { id: 'entry:app:notes', title: 'Notes', icon: 'table' }
+    ])
+    expect(commandItems(src, 'fusion').map((item) => item.title)).toEqual(['Fusion Excel'])
+  })
+
+  it('runs an entry at the centre of the view', () => {
+    const run = vi.fn()
+    const src = sources({ menuEntries: [entry('app:fusion', 'Fusion Excel', run)], viewCenter: () => ({ x: 120, y: -40 }) })
+    commandItems(src, '')[0].run()
+    expect(run).toHaveBeenCalledWith({ x: 120, y: -40 })
+  })
+
+  it('declares no panel.new.app action and no command of the app type', () => {
+    registerPanelDefinitions(PANEL_DEFINITIONS)
+    const stop = registerPanelActions(() => {})
+    const ids = declaredActions().map(({ id }) => id)
+    stop()
+    expect(ids).toContain('panel.new.terminal')
+    expect(ids.filter((id) => id.startsWith('panel.new.app') || id.startsWith('panel.app.'))).toEqual([])
   })
 })

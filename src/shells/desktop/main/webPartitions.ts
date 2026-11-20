@@ -16,6 +16,14 @@ import { authenticatedBrowserProxy, browserProxyConfig } from './browserProxy'
 
 const log = createLogger('web')
 
+const APP_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+/** A custom panel's partition (spec 008): its own, never persisted (no
+ *  `persist:`), so no cookie, storage or sign-in survives it or reaches
+ *  another panel or the user's browsing. The runtime is part of the name: the
+ *  partition routes through that runtime's loopback proxy. */
+export const appPartition = (runtimeId: string, appId: string): string => `app-${runtimeId}-${appId}`
+
 export interface LoopbackDialer {
   readonly id: number
   isDestroyed(): boolean
@@ -39,6 +47,9 @@ export interface WebPartitions {
    *  loopback requests; the partition name. `reachesClientNetwork`: the
    *  dialer's connection is on this machine's network (12.3). */
   partitionFor(runtimeId: string, dialer: LoopbackDialer, reachesClientNetwork: boolean): Promise<string>
+  /** Prepares the partition of custom panel `appId` of a runtime, behind the
+   *  same loopback proxy as the workspace's; the partition name. */
+  appPartitionFor(runtimeId: string, appId: string, dialer: LoopbackDialer, reachesClientNetwork: boolean): Promise<string>
   release(runtimeId: string, dialerId: number): void
   /** Drops every registration of a renderer that went away. */
   releaseDialer(dialerId: number): void
@@ -72,6 +83,8 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
   const configured = new Map<string, string>()
   // Agent partitions and the runtime each belongs to.
   const agents = new Map<string, string>()
+  // Custom panel partitions and the runtime each belongs to (spec 008).
+  const apps = new Map<string, string>()
 
   const dialLoopback = async (runtimeId: string, port: number): Promise<ByteDuplex> => {
     const live = (dialers.get(runtimeId) ?? []).filter((d) => !d.isDestroyed())
@@ -128,7 +141,7 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
         // Policy or settings may have changed during setProxy. Finish applying
         // them before allowing even the first caller to mount a webview.
         if (native !== (reaches.get(runtimeId) === true) || upstream !== deps.upstream()) continue
-        // An agent partition never receives the shared sign-ins.
+        // An agent or custom panel partition never receives the shared sign-ins.
         if (!agent) await deps.beforeFirstMount?.(partition)
         prepared.add(partition)
         log.info('partition %s uses %s networking', partition, proxy ? 'protected workspace proxy' : 'Chromium')
@@ -139,6 +152,10 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
     return task
   }
 
+  // A workspace partition's policy change reaches the custom panels of that runtime.
+  const prepareApps = (runtimeId: string): Promise<unknown> =>
+    Promise.all([...apps].filter(([, id]) => id === runtimeId).map(([partition]) => prepare(runtimeId, partition)))
+
   return {
     credentials,
     async partitionFor(runtimeId, dialer, reachesClientNetwork) {
@@ -148,6 +165,7 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
       if (!list.some((d) => d.id === dialer.id)) list.push(dialer)
       dialers.set(runtimeId, list)
       await prepare(runtimeId)
+      await prepareApps(runtimeId)
       return workspacePartition(runtimeId)
     },
     async agentPartitionFor(runtimeId, panelId) {
@@ -166,6 +184,18 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
       configuring.delete(partition)
       await deps.session(partition).clearStorageData()
     },
+    async appPartitionFor(runtimeId, appId, dialer, reachesClientNetwork) {
+      if (!isRuntimeId(runtimeId)) throw new Error('invalid runtime id')
+      if (!APP_ID.test(appId)) throw new Error('invalid panel id')
+      reaches.set(runtimeId, (reaches.get(runtimeId) ?? true) && reachesClientNetwork)
+      const list = dialers.get(runtimeId) ?? []
+      if (!list.some((d) => d.id === dialer.id)) list.push(dialer)
+      dialers.set(runtimeId, list)
+      const partition = appPartition(runtimeId, appId)
+      apps.set(partition, runtimeId)
+      await prepare(runtimeId, partition)
+      return partition
+    },
     release(runtimeId, dialerId) {
       const list = dialers.get(runtimeId)
       if (list) dialers.set(runtimeId, list.filter((d) => d.id !== dialerId))
@@ -178,7 +208,7 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
     refresh: async () => {
       await Promise.all([
         ...[...reaches.keys()].map((runtimeId) => prepare(runtimeId)),
-        ...[...agents].map(([partition, runtimeId]) => prepare(runtimeId, partition)),
+        ...[...agents, ...apps].map(([partition, runtimeId]) => prepare(runtimeId, partition)),
       ])
     },
     credentialsFor(host, port) {

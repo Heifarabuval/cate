@@ -7,6 +7,7 @@ import { flushSync } from 'react-dom'
 import { FileText, Search as MagnifyingGlass } from 'lucide-react'
 import { Icon, LoadingState, PaletteDialogShell, PaletteTextInput, useResolvedShortcuts } from '../../kernel/interaction'
 import { tryRuntimeFor } from '@kernel/rpc/client'
+import { activeCanvasId, canvasViewFor, useCanvasMenuEntries, viewCenterOf } from '../../client/layout/canvas'
 import { useDocument } from '../../client/document'
 import { PanelTitle, usePanelTitles, type PanelTitleProps } from '../../client/host'
 import { useWorkspaceList } from '../../client/workspaces'
@@ -48,12 +49,20 @@ function OpenPalette(): JSX.Element {
 
   const close = useCallback(() => setOpen(false), [setOpen])
 
+  // The canvas menu's extra entries (custom panels, agents): the same source, run at the view's centre.
+  const canvasId = workspaceId ? activeCanvasId(workspaceId, windowId) : null
+  const menuEntries = useCanvasMenuEntries(workspaceId ?? '', canvasId ?? '')
   const commands = commandItems({
     actions: availableActions({ workspaceId }),
     shortcuts,
     runAction: (action) => { runWindowAction(action) },
     inWorktree: workspaceId ? creatableDefinitions().filter((definition) => definition.creation?.inWorktree) : [],
     worktrees: worktreeChoices(doc.worktrees),
+    menuEntries: canvasId ? menuEntries : [],
+    viewCenter: () => {
+      const view = workspaceId && canvasId ? canvasViewFor(workspaceId, canvasId)?.getState() : undefined
+      return view ? viewCenterOf(view) : { x: 0, y: 0 }
+    },
     create: (type, options) => {
       if (workspaceId) createPanel(workspaceId, type, { ...options, near: focusedPanelId(workspaceId) ?? undefined })
     },

@@ -26,6 +26,7 @@ import '../ui/panels/canvas'
 import '../ui/panels/surface'
 import '../ui/panels/agence'
 import '../ui/panels/boite'
+import '../ui/panels/app'
 
 // --- Desktop settings pages -------------------------------------------------------
 
