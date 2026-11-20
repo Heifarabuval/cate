@@ -29,6 +29,7 @@ export function dataPaths(dataDir: string) {
     terminalLogs: at(DATA_FILES.terminalLogs),
     terminalCli: at(DATA_FILES.terminalCli),
     screenshots: at(DATA_FILES.screenshots),
+    observations: at(DATA_FILES.observations),
     logs: at(DATA_FILES.logs),
   }
 }

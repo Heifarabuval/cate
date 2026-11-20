@@ -6,6 +6,8 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import os from 'node:os'
 import path from 'node:path'
 import { formatLogMessage, type Logger } from '@kernel/log/contract'
+import { createDocument, type DocOp, type PanelRecord, type PanelRelation, type PanelType, type WorkspaceDocument } from '@workspace/document/contract'
+import type { DocumentSource } from './sources'
 
 export function tempDir(): { dir: string; remove(): void } {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cate-observation-'))
@@ -47,4 +49,34 @@ export function writeDay(dir: string, name: string, content = '', mtimeMs?: numb
   writeFileSync(file, content)
   if (mtimeMs !== undefined) utimesSync(file, mtimeMs / 1000, mtimeMs / 1000)
   return file
+}
+
+// ---- The document, as a source sees it -------------------------------------------
+
+export const panel = (id: string, type: PanelType, title = 'Untitled'): PanelRecord => ({ id, type, title, fields: {} })
+export const relation = (id: string, fromPanelId: string, toPanelId: string): PanelRelation => ({ id, fromPanelId, toPanelId, kind: 'context' })
+
+export const doc = (panels: PanelRecord[], relations: PanelRelation[] = []): WorkspaceDocument => ({
+  ...createDocument(),
+  panels: Object.fromEntries(panels.map((record) => [record.id, record])),
+  relations: Object.fromEntries(relations.map((one) => [one.id, one])),
+})
+
+/** An op as the document applied it: only its kind matters to a source. */
+export const op = (change: Record<string, unknown>): DocOp => ({ opId: 'op', ...change }) as unknown as DocOp
+
+/** A document that applies ops when the test says so. */
+export function fakeDocument() {
+  const listeners = new Set<(event: { op: DocOp; before: WorkspaceDocument; doc: WorkspaceDocument }) => void>()
+  const source: DocumentSource = {
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  }
+  return {
+    source,
+    listeners: () => listeners.size,
+    emit: (applied: DocOp, before: WorkspaceDocument, after: WorkspaceDocument) => listeners.forEach((listener) => listener({ op: applied, before, doc: after })),
+  }
 }

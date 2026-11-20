@@ -54,6 +54,8 @@ interface World {
   /** A `cate.browser.*` call by `caller` (default `agent-1`). */
   api(panelId: string, method: string, args?: Record<string, unknown>, caller?: string): Promise<unknown>
   visits: Array<[string, string]>
+  /** The pages the observation was told of. */
+  navigations: string[]
   downloads: Map<string, (entries: BrowserDownloadEntry[]) => void>
   settings: Record<string, unknown>
   /** Saved passwords; each one's password is `hunter2`. */
@@ -66,6 +68,7 @@ interface World {
 function world(surface?: Surface): World {
   const document = createDocumentService({ file: path.join(dir, 'document.json'), debounceMs: 60_000 })
   const visits: Array<[string, string]> = []
+  const navigations: string[] = []
   const downloads = new Map<string, (entries: BrowserDownloadEntry[]) => void>()
   const settings: Record<string, unknown> = { browserSearchEngine: 'google', browserNewTabBehavior: 'startPage', browserHomepage: '' }
   const saved: BrowserCredentialSuggestion[] = []
@@ -91,6 +94,7 @@ function world(surface?: Surface): World {
         subscribe: (panelId, cb) => { downloads.set(panelId, cb); return () => downloads.delete(panelId) },
       },
     },
+    observation: { navigated: (url) => { navigations.push(url) } },
     settings: { get: (key) => settings[key] },
     files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}`, servedPath: () => null },
   }
@@ -112,6 +116,7 @@ function world(surface?: Surface): World {
     document,
     host,
     visits,
+    navigations,
     downloads,
     settings,
     saved,
@@ -190,6 +195,28 @@ describe('browser session', () => {
 
     await w.op(id, { kind: 'reportNavigation', tabId, url: 'https://a.test/next', canGoBack: true, canGoForward: false }, 'client-a')
     expect(w.snapshot(id).tabs[0]).toMatchObject({ nav: 1, navSource: 'client-b' })
+    w.dispose()
+  })
+
+  it('tells the observation of each page a tab goes to, and of nothing else', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    const tabId = w.snapshot(id).activeTabId
+    const report = (url: string, inPage = false) => w.op(id, { kind: 'reportNavigation', tabId, url, inPage, canGoBack: false, canGoForward: false })
+
+    await report('about:blank')
+    await report('https://a.test/')
+    expect(w.navigations).toEqual([])
+
+    await report('https://a.test/next?token=abc')
+    await report('https://a.test/next?token=abc')
+    await report('https://a.test/next?token=abc#section', true)
+    await w.op(id, { kind: 'reportTitle', tabId, title: 'Next' })
+    expect(w.navigations).toEqual(['https://a.test/next?token=abc'])
+
+    await report('https://b.test/')
+    expect(w.navigations).toEqual(['https://a.test/next?token=abc', 'https://b.test/'])
     w.dispose()
   })
 

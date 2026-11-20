@@ -66,5 +66,7 @@ export const DATA_FILES = {
   terminalLogs: 'terminal-logs',
   terminalCli: 'terminal-cli',
   screenshots: 'screenshots',
+  /** The journal of observations (spec 003): absent until the person accepts. */
+  observations: 'observations',
   logs: 'logs',
 } as const

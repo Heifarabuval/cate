@@ -116,7 +116,7 @@ session channels for panels. There is no per-feature IPC.
 
 - `kernel/`: rpc, api, settings, lifecycle, state, log, interaction (generic machinery)
 - `runtime/`: daemon, data, transports, security, pairing, connect, tunnel, power, push
-- `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations, notifications
+- `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations, notifications, observation
 - `services/`: terminal, browser, agents
 - `client/`: core (the client core's entry), connections, workspaces, document mirror, host
 - `panels/`: framework + terminal, editor, browser, review, canvas, surface
@@ -239,7 +239,7 @@ corrupt-file quarantine); every file has one writer process.
 - Workspace data: `~/.cate/workspaces/<runtimeId>/` on the runtime's machine
   (`runtime.json`, `document.json`, `sessions/`, `buffers/`, `settings.json`, `secrets.json`,
   `devices.json`, `push.json`, `trust.json`, `grants.json`, `app-grants.json`, `skills/`, `browser/`,
-  `agents/`, `terminal-logs/`, `screenshots/`, `logs/`).
+  `agents/`, `terminal-logs/`, `screenshots/`, `observations/` (only once the person accepts the observation), `logs/`).
 - Project `<root>/.cate/`: only `skills.json`, `tmp/`, `worktrees/` and its
   `.gitignore`.
 - Device (Electron `userData`): `settings.json`, `ui-state.json`, `boot.json`,
