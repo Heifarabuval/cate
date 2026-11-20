@@ -18,7 +18,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
-  agence fiche add|edit|etat|note|list|show [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic
+  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
   agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) ; active, rejetée, révoquée au clic
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
@@ -742,6 +742,16 @@ def cmd_fiche(a):
 		elif a.action == 'show':
 			f = backlog.trouver(b['fiches'], a.id)
 			return sortie(f, a.json, fiche_texte(f, long=True))
+		elif a.action == 'brief':
+			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'])
+			return sortie(texte, a.json, texte)
+		elif a.action == 'plan':
+			st = load()  # place = agents.max moins les agents vivants publiés par le dernier tour du régisseur
+			p = backlog.plan([backlog.trouver(b['fiches'], i) for i in a.ids], {f['id'] for f in b['fiches'] if f['etat'] == 'faite'},
+			                 plafond(st) - st['agentsActive'] - st['agentsWaiting'], plafond(st))
+			return sortie(p, a.json, '\n'.join([f"vague {i + 1} : {', '.join(v)}" for i, v in enumerate(p['vagues'])] +
+			                                   [f'part : {", ".join(p["part"]) or "aucune"}'] +
+			                                   [f'{i} attend : {m}' for i, m in p['attente'].items()]))
 		else:
 			fiches = [f for f in b['fiches'] if not a.etat or f['etat'] == a.etat]
 			return sortie(fiches, a.json, '\n'.join(fiche_texte(f) for f in fiches)) if fiches or a.json else 0
@@ -3066,6 +3076,8 @@ def parser():
 	fl = fis.add_parser('list')
 	fl.add_argument('--etat')
 	fis.add_parser('show').add_argument('id')
+	fis.add_parser('brief', help="texte fixe de la fiche pour l'orchestrateur, décisions actives liées comprises").add_argument('id')
+	fis.add_parser('plan', help='vagues sans fichier commun, dépendances et plafond ; chaque attente nommée').add_argument('ids', nargs='+')
 	for x in fis.choices.values():
 		x.add_argument('--json', action='store_true')
 	fi.set_defaults(fn=cmd_fiche)

@@ -5,6 +5,7 @@ commandes `agence fiche` et `agence decision`.
 Tout tourne en faux HOME et en dossier temporaire : un test échoue s'il voit le vrai ~/.cate ou ~/.config.
 """
 import contextlib
+import gc
 import io
 import json
 import os
@@ -175,6 +176,7 @@ class Decisions(unittest.TestCase):
 
 class Base(unittest.TestCase):
 	def setUp(self):
+		gc.collect()  # les fuites d'autres modules de test (HTTPError) avertissent ici, pas dans la stderr capturée
 		self.tmp = tempfile.mkdtemp(prefix='backlog-test-')
 		self.addCleanup(shutil.rmtree, self.tmp, True)
 		self.home = os.path.join(self.tmp, 'home')
@@ -314,6 +316,157 @@ class Cli(Base):
 			with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
 				agence.main(list(argv))
 		self.assertEqual(json.loads(self.lit(self.registre))['decisions'][0]['statut'], 'proposée')
+
+
+def fiches(*specs):
+	"""Fiches de test : (fichiers, priorite, creee[, dependances]) ; ids F1, F2... dans l'ordre."""
+	b = backlog.vide()
+	for i, s in enumerate(specs):
+		fichiers, prio, creee = s[:3]
+		f = backlog.ajouter(b, f't{i + 1}', creee, fichiers=fichiers, priorite=prio)
+		f['dependances'] = list(s[3]) if len(s) > 3 else []
+	return b['fiches']
+
+
+def jours(n):
+	return f'2026-11-{20 - n:02d}T10:00:00+00:00' if n < 20 else None
+
+
+class Detections(unittest.TestCase):
+	"""Lot 2 (T020 à T024) : chevauchement, vagues, dépendances, plafond, péremption, consommé, brief, sans appel externe."""
+
+	def test_chevauche(self):
+		f = lambda *p: {'fichiers': list(p)}  # noqa: E731
+		self.assertTrue(backlog.chevauche(f('src/a.ts'), f('src/a.ts')))
+		self.assertTrue(backlog.chevauche(f('src/a/'), f('src/a/b.ts')))
+		self.assertTrue(backlog.chevauche(f('src/a/b.ts'), f('./src/a')))
+		self.assertFalse(backlog.chevauche(f('src/a'), f('src/ab.ts')))
+		self.assertFalse(backlog.chevauche(f('src/a.ts'), f('src/b.ts', 'docs/')))
+
+	def test_vagues_sc001(self):
+		fs = fiches((['src/a.ts'], 'P2', T0), (['src/a.ts', 'src/c.ts'], 'P2', '2026-11-20T11:00:00+00:00'),
+		            (['src/b.ts'], 'P2', '2026-11-20T12:00:00+00:00'))
+		p = backlog.plan(fs, set(), place=4, maximum=4)
+		self.assertEqual(p['vagues'], [['F1', 'F3'], ['F2']])
+		self.assertEqual(p['part'], ['F1', 'F3'])
+		self.assertEqual(p['attente'], {'F2': 'chevauche F1 sur src/a.ts'})
+
+	def test_priorite_puis_anciennete(self):
+		fs = fiches((['src/a.ts'], 'P2', T0), (['src/a.ts'], 'P1', '2026-11-20T11:00:00+00:00'))
+		self.assertEqual(backlog.plan(fs, set(), 4, 4)['vagues'], [['F2'], ['F1']])
+		fs = fiches((['src/a.ts'], 'P2', '2026-11-20T11:00:00+00:00'), (['src/a.ts'], 'P2', T0))
+		self.assertEqual(backlog.plan(fs, set(), 4, 4)['vagues'], [['F2'], ['F1']])
+
+	def test_dependance_dans_le_lot_vague_suivante(self):
+		fs = fiches((['src/a.ts'], 'P1', T0, ['F2']), (['src/b.ts'], 'P2', T0))
+		p = backlog.plan(fs, set(), 4, 4)
+		self.assertEqual(p['vagues'], [['F2'], ['F1']])
+		self.assertEqual(p['attente'], {'F1': 'dépendance F2'})
+
+	def test_dependance_hors_lot(self):
+		b = backlog.vide()
+		for i in range(3):
+			backlog.ajouter(b, f't{i}', T0, fichiers=[f'src/{i}.ts'])
+		b['fiches'][1]['dependances'] = ['F1']
+		b['fiches'][2]['dependances'] = ['F2']
+		p = backlog.plan(b['fiches'][1:], set(), 4, 4)  # F1 hors lot, pas faite ; F3 attend F2 qui attend
+		self.assertEqual((p['vagues'], p['part']), ([], []))
+		self.assertEqual(p['attente'], {'F2': 'dépendance F1', 'F3': 'dépendance F2'})
+		p = backlog.plan(b['fiches'][1:], {'F1'}, 4, 4)
+		self.assertEqual((p['vagues'], p['attente']), ([['F2'], ['F3']], {'F3': 'dépendance F2'}))
+
+	def test_plafond(self):
+		fs = fiches(*[([f'src/{i}.ts'], 'P2', T0) for i in range(3)])
+		p = backlog.plan(fs, set(), place=1, maximum=4)
+		self.assertEqual(p['part'], ['F1'])
+		self.assertEqual(p['attente'], {'F2': 'plafond (4)', 'F3': 'plafond (4)'})
+		p = backlog.plan(fs, set(), place=0, maximum=4)
+		self.assertEqual(p['part'], [])
+		self.assertEqual(set(p['attente']), {'F1', 'F2', 'F3'})
+		self.assertEqual(backlog.plan(fs, set(), place=-2, maximum=4)['part'], [])
+
+	def test_perimees(self):
+		fs = fiches(*[(['x'], 'P2', jours(n)) for n in (15, 13, 14, 15)])
+		fs[3]['etat'] = 'prête'
+		self.assertEqual([f['id'] for f in backlog.perimees(fs, T0)], ['F1'])
+
+	def test_revue_due(self):
+		self.assertFalse(backlog.revue_due(jours(6), None, T0))
+		self.assertTrue(backlog.revue_due(jours(7), None, T0))
+		self.assertFalse(backlog.revue_due(None, jours(6), T0))
+		self.assertTrue(backlog.revue_due(None, jours(7), T0))
+		self.assertFalse(backlog.revue_due(None, None, T0))
+
+	def test_consomme(self):
+		mesures = {'p1': {'inputTokens': 6000, 'outputTokens': 5000}, 'p2': {'inputTokens': 100, 'outputTokens': 'x'},
+		           'p3': {'inputTokens': True}}
+		self.assertEqual(backlog.consomme(mesures, ['p1', 'p2', 'absent']), 11100)
+		self.assertIsNone(backlog.consomme(mesures, ['absent', 'p3']))
+		self.assertIsNone(backlog.consomme(None, ['p1']))
+		self.assertIsNone(backlog.consomme({}, []))
+		self.assertEqual(backlog.consomme({'p': {'inputTokens': 0, 'outputTokens': 0}}, ['p']), 0)
+
+	def test_brief(self):
+		d = backlog.vide_decisions()
+		for o in ('JSON seulement', 'pas de base', 'jamais SQLite'):
+			backlog.decision_ajouter(d, o, f'pourquoi {o}', T0)
+		d['decisions'][0]['statut'] = 'active'
+		b = backlog.vide()
+		f = backlog.ajouter(b, 'x', T0, **COMPLETE, decisions=['D1', 'D2'])
+		texte = backlog.brief(f, d['decisions'])
+		cles = ['titre', 'type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions']
+		lignes = texte.splitlines()
+		self.assertEqual(lignes[0], 'F1 : x')
+		self.assertEqual([l.split(' : ')[0] for l in lignes[1:len(cles)]], cles[1:])
+		self.assertIn('D1 : JSON seulement ; pourquoi JSON seulement', texte)
+		self.assertNotIn('D2', texte)
+		self.assertNotIn('D3', texte)
+		self.assertEqual(texte, backlog.brief(f, d['decisions']))
+
+	def test_zero_appel_externe(self):
+		def interdit(*a, **k):
+			raise AssertionError('appel externe')
+		fs = fiches((['src/a.ts'], 'P2', jours(15)), (['src/a.ts'], 'P1', T0))
+		with unittest.mock.patch('subprocess.run', interdit), unittest.mock.patch('subprocess.Popen', interdit), \
+				unittest.mock.patch('socket.socket', interdit):
+			backlog.plan(fs, set(), 4, 4)
+			backlog.perimees(fs, T0)
+			backlog.consomme({'p': {'inputTokens': 1, 'outputTokens': 2}}, ['p'])
+			backlog.revue_due(None, jours(8), T0)
+			backlog.brief(fs[0], [])
+
+
+class CliDetections(Base):
+	"""T026 : `agence fiche plan` et `agence fiche brief`."""
+
+	def test_plan_json_rend_les_vagues_de_us2(self):
+		for fichier in ('src/a.ts', 'src/a.ts', 'src/b.ts'):
+			self.agence('fiche', 'add', 'x', '--fichier', fichier, '--priorite', 'P2')
+		code, out, err = self.agence('fiche', 'plan', 'F1', 'F2', 'F3', '--json')
+		self.assertEqual(code, 0, err)
+		p = json.loads(out)
+		self.assertEqual((p['vagues'], p['attente']), ([['F1', 'F3'], ['F2']], {'F2': 'chevauche F1 sur src/a.ts'}))
+		code, out, _ = self.agence('fiche', 'plan', 'F1', 'F2', 'F3')
+		self.assertIn('vague 1 : F1, F3', out)
+		self.assertIn('F2 attend : chevauche F1 sur src/a.ts', out)
+		self.assertEqual(self.agence('fiche', 'plan', 'F9')[0], 1)
+
+	def test_plan_place_lue_dans_l_etat(self):
+		for i in range(3):
+			self.agence('fiche', 'add', 'x', '--fichier', f'src/{i}.ts')
+		with agence.tx() as st:
+			st['agentsActive'], st['agentsWaiting'] = 2, 1
+		p = json.loads(self.agence('fiche', 'plan', 'F1', 'F2', 'F3', '--json')[1])
+		maxi = agence.plafond(agence.load())
+		self.assertEqual(p['part'], ['F1', 'F2', 'F3'][:maxi - 3])
+		self.assertEqual(p['attente'].get('F3'), f'plafond ({maxi})')
+
+	def test_brief(self):
+		self.agence('fiche', 'add', 'x', '--fichier', 'src/a.ts', '--budget-jetons', '5000')
+		code, out, _ = self.agence('fiche', 'brief', 'F1')
+		self.assertEqual(code, 0)
+		self.assertTrue(out.startswith('F1 : x\n'))
+		self.assertIn('budgetJetons : 5000', out)
 
 
 if __name__ == '__main__':

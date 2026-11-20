@@ -7,8 +7,10 @@ Python 3.9, stdlib seule ; aucune fonction n'importe agence.py.
 """
 import json
 import os
+import posixpath
 import re
 import tempfile
+from datetime import datetime, timedelta
 
 ETATS = ('discussion', 'prête', 'lancée', 'faite', 'abandonnée')
 PAR_LA_CLI = ('discussion', 'prête')  # lancée, faite, abandonnée : régisseur, sur clic ou à la fermeture du besoin
@@ -246,6 +248,100 @@ def decision_ajouter(d, objet, pourquoi, maintenant, alternatives=(), invalide=(
 
 def decisions_actives(d):
 	return [x for x in d['decisions'] if x['statut'] == 'active']
+
+
+# ---------- détections (lot 2) : fonctions pures, aucun appel externe (SC-006) ----------
+
+def chevauche(a, b):
+	"""Premier chemin commun de a et b (le plus long des deux : un fichier et son dossier donnent le fichier), sinon None.
+	Comparaison par segments après posixpath.normpath : src/a et src/ab.ts ne se chevauchent pas."""
+	for p in a['fichiers']:
+		for q in b['fichiers']:
+			x, y = posixpath.normpath(p), posixpath.normpath(q)
+			if x == y or '.' in (x, y) or y.startswith(x + '/') or x.startswith(y + '/'):
+				return max(x, y, key=len)
+	return None
+
+
+def _rang(f):
+	return (f['priorite'] or 'P9', f['creee'], int(f['id'][1:]))
+
+
+def plan(fiches, faites, place, maximum):
+	"""Vagues d'un lot : {vagues, part, attente}. Tri par priorité puis ancienneté ; une fiche entre dans la première
+	vague après ses dépendances du lot où elle ne chevauche personne. Une dépendance hors lot pas dans faites la met
+	en attente. Seule la première vague part, bornée par place (agents.max moins les vivants) ; tout le reste a un motif."""
+	lot = {f['id']: f for f in fiches}
+	vagues, ou, attente = [], {}, {}
+	reste = sorted(fiches, key=_rang)
+	while reste:  # chaque passe place au moins une fiche (dépendances sans cycle, validées à l'écriture)
+		suite = []
+		for f in reste:
+			deps = [d for d in f['dependances'] if d not in faites]
+			bloque = next((d for d in deps if d not in lot or d in attente and d not in ou), None)
+			if bloque:
+				attente[f['id']] = f'dépendance {bloque}'
+				continue
+			if any(d not in ou for d in deps):
+				suite.append(f)
+				continue
+			w = max([ou[d] + 1 for d in deps], default=0)
+			motif = f'dépendance {max(deps, key=lambda d: ou[d])}' if w else None
+			while w < len(vagues):
+				autre = next(((g, c) for g in vagues[w] for c in [chevauche(lot[g], f)] if c), None)
+				if not autre:
+					break
+				motif = motif or f'chevauche {autre[0]} sur {autre[1]}'
+				w += 1
+			if w == len(vagues):
+				vagues.append([])
+			vagues[w].append(f['id'])
+			ou[f['id']] = w
+			if motif:
+				attente[f['id']] = motif
+		if len(suite) == len(reste):  # cycle édité à la main : refusé à la lecture, jamais atteint
+			attente.update({f['id']: 'dépendance en cycle' for f in suite})
+			break
+		reste = suite
+	part = vagues[0][:max(place, 0)] if vagues else []
+	for fid in vagues[0][len(part):] if vagues else []:
+		attente[fid] = f'plafond ({maximum})'
+	return {'vagues': vagues, 'part': part, 'attente': {f: attente[f] for f in sorted(attente, key=lambda x: int(x[1:]))}}
+
+
+def _age(depuis, maintenant):
+	return datetime.fromisoformat(maintenant) - datetime.fromisoformat(depuis)
+
+
+def perimees(fiches, maintenant, jours=14):
+	"""Fiches en discussion modifiées il y a plus de `jours` jours (14 pile : pas encore)."""
+	return [f for f in fiches if f['etat'] == 'discussion' and _age(f['maj'], maintenant) > timedelta(days=jours)]
+
+
+def revue_due(derniere, premiere_fiche, maintenant, jours=7):
+	"""7 jours après la revue précédente, sinon après la première fiche ; jamais sur un backlog vide."""
+	depuis = derniere or premiere_fiche
+	return depuis is not None and _age(depuis, maintenant) >= timedelta(days=jours)
+
+
+def consomme(mesures, panneaux):
+	"""Somme inputTokens + outputTokens des panneaux du besoin (lignes de cate agent usage par panneau) ; None si
+	aucune valeur lisible, jamais 0 par défaut."""
+	vals = [v for p in panneaux for k in ('inputTokens', 'outputTokens')
+	        for v in [((mesures or {}).get(p) or {}).get(k)] if type(v) in (int, float)]
+	return sum(vals) if vals else None
+
+
+def brief(fiche, decisions):
+	"""Texte fixe donné à l'orchestrateur : un champ par ligne, dans l'ordre, puis les décisions liées actives
+	(objet ; pourquoi). Une décision proposée, rejetée ou révoquée n'est pas citée."""
+	val = lambda v: (', '.join(v) if isinstance(v, list) else '' if v is None else str(v)) or '-'  # noqa: E731
+	liees = [x for x in decisions if x['id'] in fiche['decisions'] and x['statut'] == 'active']
+	return '\n'.join([f"{fiche['id']} : {fiche['titre']}"] +
+	                 [f'{c} : {val(fiche[c])}' for c in
+	                  ('type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele')] +
+	                 [f"decisions : {val([x['id'] for x in liees])}"] +
+	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees])
 
 
 # ---------- fichiers ----------
