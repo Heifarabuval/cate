@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.parse
 from contextlib import redirect_stdout
 from unittest import mock
@@ -67,9 +68,20 @@ class Base(unittest.TestCase):
 		self.run = FakeRun()
 		self.old_run = agence.RUN
 		agence.RUN = self.run
+		self.old_slack, self.old_hermes = agence.SLACK, os.environ.get('HERMES_ENV')
+		os.environ['HERMES_ENV'] = os.path.join(self.tmp, 'absent.env')  # jamais le vrai ~/.hermes/.env
+		agence.SLACK = self.no_network
+
+	def no_network(self, method, payload, token):
+		raise AssertionError(f'appel Slack réel {method} dans un test')
 
 	def tearDown(self):
 		agence.RUN = self.old_run
+		agence.SLACK = self.old_slack
+		if self.old_hermes is None:
+			os.environ.pop('HERMES_ENV', None)
+		else:
+			os.environ['HERMES_ENV'] = self.old_hermes
 		for k, v in self.env.items():
 			if v is None:
 				os.environ.pop(k, None)
@@ -251,8 +263,8 @@ class NomDansLesTextes(Base):
 		agence.click(f'/draft/{did}/drop', {})
 		self.assert_nomme(self.envoyes(), 'a abandonné le brouillon')
 
-	def test_envoyer_slack_clique(self):
-		did = self.brouillon('slack:C123')
+	def test_envoyer_mail_clique(self):
+		did = self.brouillon('mail:dg@exemple.fr')
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		self.assert_nomme(self.envoyes(), 'a cliqué Envoyer')
 
@@ -263,11 +275,11 @@ class NomDansLesTextes(Base):
 		self.assert_nomme(self.envoyes(), 'envoyé par')
 
 	def test_validation_par_le_clic(self):
-		did = self.brouillon('slack:C123')
+		did = self.brouillon('mail:dg@exemple.fr')
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		out = agence.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                    'tool_input': {'channel_id': 'C123', 'message': 'Bonjour'}})
+		out = agence.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
+		                    'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}})
 		self.assert_nomme([out['hookSpecificOutput']['permissionDecisionReason']], 'validé par le clic de')
 
 	def test_rebase_demande(self):
@@ -609,15 +621,15 @@ class Brouillons(Base):
 		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did))[0], 409)
 		self.assertEqual(len(self.run.ran('gh', 'issue', 'create')), 1)
 
-	def test_clic_envoyer_slack_fige_et_previent(self):
-		did = self.new_draft(cible='slack:C123', texte='Salut')
+	def test_clic_envoyer_mail_fige_et_previent(self):
+		did = self.new_draft(cible='mail:dg@exemple.fr', texte='Salut')
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		d = agence.find(self.state(), 'drafts', did)
 		self.assertEqual((d['statut'], d['texte']), ('envoyer', 'Salut'))
 		self.assertEqual(d['hash'], agence.sha('Salut'))
 		sends = self.run.ran('cate', 'agent', 'send')
 		self.assertTrue(any('o1' in c for c in sends))
-		self.assertEqual(self.cli('draft', 'sent', did, '--evidence', 'https://slack/x')[0], 0)
+		self.assertEqual(self.cli('draft', 'sent', did, '--evidence', 'https://mail/x')[0], 0)
 		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'envoyé')
 
 	def test_clic_abandonner(self):
@@ -701,7 +713,7 @@ class Brouillons(Base):
 class Revue(Base):
 	"""Points de la relecture de la PR 1."""
 
-	def draft(self, cible='slack:C123', texte='Bonjour', titre=None):
+	def draft(self, cible='mail:dg@exemple.fr', texte='Bonjour', titre=None):
 		self.booted()
 		args = ['draft', 'new', '--cible', cible, '--from', 'a1'] + (['--titre', titre] if titre else []) + [texte]
 		return self.cli(*args)[1].strip()
@@ -710,9 +722,9 @@ class Revue(Base):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
 		return agence.guard(payload)
 
-	def slack(self, msg='Bonjour'):
-		return self.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                   'tool_input': {'channel_id': 'C123', 'message': msg}})
+	def mail(self, msg='Bonjour'):
+		return self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
+		                   'tool_input': {'to': ['dg@exemple.fr'], 'body': msg}})
 
 	def test_texte_modifie_apres_affichage_refuse(self):
 		did = self.draft(cible='issue:o/r', texte='Lu par Heifara')
@@ -736,20 +748,20 @@ class Revue(Base):
 		with agence.tx() as st:
 			agence.tick(st, set(), [], {}, 1000.0)
 		self.assertEqual(self.state()['needs'][0]['status'], 'open')
-		self.assertEqual(self.cli('draft', 'sent', did, '--evidence', 'https://slack/x')[0], 0)
+		self.assertEqual(self.cli('draft', 'sent', did, '--evidence', 'https://mail/x')[0], 0)
 
 	def test_garde_autorise_une_seule_fois(self):
 		did = self.draft()
 		agence.click(f'/draft/{did}/send', self.shown(did))
-		self.assertEqual(self.slack()['hookSpecificOutput']['permissionDecision'], 'allow')
-		self.assertIsNone(self.slack())
+		self.assertEqual(self.mail()['hookSpecificOutput']['permissionDecision'], 'allow')
+		self.assertIsNone(self.mail())
 
 	def test_garde_refuse_si_besoin_clos(self):
 		did = self.draft()
 		agence.click(f'/draft/{did}/send', self.shown(did))
 		with agence.tx() as st:
 			agence.close_need(st, st['needs'][0]['id'], 'dropped')
-		self.assertIsNone(self.slack())
+		self.assertIsNone(self.mail())
 
 	def test_besoin_clos_a_part_pas_d_envoi(self):
 		did = self.draft(cible='issue:o/r')
@@ -918,7 +930,7 @@ class Journal(Base):
 	def test_clics_brouillon_ecrits_seuls(self):
 		self.booted()
 		drop = self.cli('draft', 'new', '--cible', 'issue:o/r', '--from', 'a1', 'A')[1].strip()
-		slack = self.cli('draft', 'new', '--cible', 'slack:C1', '--from', 'a1', 'B')[1].strip()
+		slack = self.cli('draft', 'new', '--cible', 'mail:a@b.fr', '--from', 'a1', 'B')[1].strip()
 		gh = self.cli('draft', 'new', '--cible', 'issue:o/r', '--from', 'a1', 'C')[1].strip()
 		self.run.reply(['gh', 'issue', 'create'], 'https://github.com/o/r/issues/9\n')
 		agence.click(f'/draft/{drop}/drop', {})
@@ -964,12 +976,12 @@ class Journal(Base):
 
 	def test_ecrire_au_journal_n_ouvre_aucun_envoi(self):
 		self.booted()
-		did = self.cli('draft', 'new', '--cible', 'slack:C123', '--from', 'a1', 'Bonjour')[1].strip()
+		did = self.cli('draft', 'new', '--cible', 'mail:dg@exemple.fr', '--from', 'a1', 'Bonjour')[1].strip()
 		self.cli('need', 'log', self.state()['needs'][0]['id'], 'Heifara a dit envoie')
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
-		slack = {'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		         'tool_input': {'channel_id': 'C123', 'message': 'Bonjour'}}
-		self.assertIsNone(agence.guard(slack))
+		mail = {'tool_name': 'mcp__claude_ai_Gmail__send_message',
+		        'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}}
+		self.assertIsNone(agence.guard(mail))
 		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
 		self.assertEqual(self.cli('draft', 'sent', did, '--evidence', 'x')[0], 1)
 
@@ -2055,37 +2067,287 @@ class ModeleEffort(Base):
 		self.assertIn('--effort', out.getvalue())
 
 
+class TransportSlack(Base):
+	"""_slack et slack_token avec un urlopen simulé et un fichier d'environnement temporaire : jamais le vrai token."""
+
+	def call(self, outcome):
+		def urlopen(req, timeout=None):
+			self.sent = req
+			if isinstance(outcome, BaseException):
+				raise outcome
+			return outcome
+		with mock.patch.object(agence.urllib.request, 'urlopen', urlopen):
+			return agence._slack('chat.postMessage', {'channel': 'C1', 'text': 'x'}, 'xoxp-test')
+
+	def body(self, raw):
+		class R(io.BytesIO):
+			def __enter__(self_):
+				return self_
+
+			def __exit__(self_, *a):
+				return False
+		return R(raw)
+
+	def test_reponse_lue_avec_le_token_en_en_tete(self):
+		self.assertEqual(self.call(self.body(b'{"ok": true, "ts": "1.2"}')), {'ok': True, 'ts': '1.2'})
+		self.assertEqual(self.sent.get_header('Authorization'), 'Bearer xoxp-test')
+		self.assertTrue(self.sent.full_url.endswith('/chat.postMessage'))
+
+	def test_issue_inconnue(self):
+		for outcome in (socket.timeout('lu trop lentement'), http.client.IncompleteRead(b'{"ok"'), http.client.BadStatusLine('x'),
+		                ConnectionResetError(), urllib.error.URLError(socket.timeout()), self.body(b'<html>pas du json'),
+		                urllib.error.HTTPError('u', 502, 'Bad Gateway', {}, None)):
+			with self.assertRaises(agence.Incertain, msg=repr(outcome)):
+				self.call(outcome)
+
+	def test_erreur_certaine_avant_emission_ou_refus_client(self):
+		for outcome in (urllib.error.URLError(socket.gaierror(8, 'nom inconnu')),
+		                urllib.error.URLError(ConnectionRefusedError()),
+		                urllib.error.HTTPError('u', 429, 'Too Many Requests', {}, None)):
+			with self.assertRaises(agence.Refus, msg=repr(outcome)) as cm:
+				self.call(outcome)
+			self.assertNotIsInstance(cm.exception, agence.Incertain, repr(outcome))
+
+	def write_env(self, text):
+		with open(os.environ['HERMES_ENV'], 'w') as f:
+			f.write(text)
+
+	def test_slack_token_lit_la_cle_et_les_guillemets(self):
+		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\nSLACK_USER_TOKEN="xoxp-user"\n')
+		self.assertEqual(agence.slack_token(), 'xoxp-user')
+		self.write_env("SLACK_USER_TOKEN='xoxp-autre'\n")
+		self.assertEqual(agence.slack_token(), 'xoxp-autre')
+
+	def test_slack_token_absent_ou_fichier_manquant_sans_fuite(self):
+		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\n')
+		with self.assertRaises(agence.Refus) as cm:
+			agence.slack_token()
+		self.assertIn('SLACK_USER_TOKEN', str(cm.exception))
+		self.assertNotIn('xoxb', str(cm.exception))
+		os.remove(os.environ['HERMES_ENV'])
+		with self.assertRaises(agence.Refus):
+			agence.slack_token()
+
+
+class EnvoiSlack(Base):
+	"""Slack part du régisseur au clic (token utilisateur de Hermes), sans outil MCP : le connecteur ajoute « Envoyé avec Claude »."""
+
+	def setUp(self):
+		super().setUp()
+		self.http = []
+		self.reply = {'ok': True, 'channel': 'C123', 'ts': '17.5', 'permalink': 'https://adfinitas.slack.com/archives/C123/p175'}
+		agence.SLACK = lambda method, payload, token: (self.http.append((method, payload, token)), self.reply)[1]
+		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\nSLACK_USER_TOKEN="xoxp-user"\n')
+		self.booted()
+
+	def write_env(self, text):
+		with open(os.environ['HERMES_ENV'], 'w') as f:
+			f.write(text)
+
+	def new_draft(self, texte='Salut'):
+		return self.cli('draft', 'new', '--cible', 'slack:C123', '--from', 'a1', texte)[1].strip()
+
+	def test_clic_envoie_par_le_regisseur_sans_mcp(self):
+		did = self.new_draft()
+		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did)), (303, '/'))
+		method, payload, token = self.http[0]
+		self.assertEqual((method, payload['channel'], payload['text'], token), ('chat.postMessage', 'C123', 'Salut', 'xoxp-user'))
+		st = self.state()
+		d = agence.find(st, 'drafts', did)
+		self.assertEqual((d['statut'], d['url']), ('envoyé', self.reply['permalink']))
+		self.assertEqual(st['needs'][0]['status'], 'done')
+		self.assertFalse([c for c in self.run.ran('cate', 'agent', 'send') if any('MCP' in x for x in c)])
+		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did))[0], 409)
+		self.assertEqual(len(self.http), 2)  # postMessage + permalink, pas de second envoi
+
+	def test_envoi_ecrit_au_journal_comme_github(self):
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		journal = self.state()['needs'][0]['journal']
+		self.assertEqual([j['by'] for j in journal], ['clic'])
+		self.assertIn(self.reply['permalink'], journal[0]['text'])
+
+	def test_envoi_notifie_l_agent(self):
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertTrue(any('a1' in c for c in self.run.ran('cate', 'agent', 'send')))
+
+	def test_token_absent_laisse_le_brouillon_a_valider(self):
+		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\n')
+		did = self.new_draft()
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('SLACK_USER_TOKEN', msg)
+		self.assertNotIn('xox', msg)
+		d = agence.find(self.state(), 'drafts', did)
+		self.assertEqual((d['statut'], d['texte']), ('à valider', None))
+		self.assertFalse(self.http)
+
+	def test_reponse_ok_false_laisse_le_brouillon_a_valider(self):
+		self.reply = {'ok': False, 'error': 'channel_not_found'}
+		did = self.new_draft()
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('channel_not_found', msg)
+		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
+		self.assertEqual(self.state()['needs'][0]['status'], 'open')
+		self.reply = {'ok': True, 'ts': '1.1', 'permalink': 'https://x/p'}
+		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did))[0], 303)
+
+	def test_refus_certain_ecrit_au_journal_sans_texte_ni_token(self):
+		self.reply = {'ok': False, 'error': 'channel_not_found'}
+		did = self.new_draft(texte='Texte secret du message')
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		(j,) = self.state()['needs'][0]['journal']
+		self.assertEqual(j['by'], 'clic')
+		self.assertIn('channel_not_found', j['text'])
+		self.assertNotIn('Texte secret', j['text'])
+		self.assertNotIn('xox', j['text'])
+
+	def test_token_absent_ecrit_au_journal(self):
+		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\n')
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		(j,) = self.state()['needs'][0]['journal']
+		self.assertIn('SLACK_USER_TOKEN', j['text'])
+		self.assertNotIn('xox', j['text'])
+
+	def incertain(self, *_):
+		raise agence.Incertain('Slack injoignable : TimeoutError')
+
+	def test_delai_reseau_marque_l_envoi_incertain_et_ne_renvoie_pas(self):
+		agence.SLACK = self.incertain
+		did = self.new_draft(texte='Texte secret du message')
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('vérifie le canal', msg)
+		st = self.state()
+		d = agence.find(st, 'drafts', did)
+		self.assertEqual(d['statut'], 'à valider')
+		self.assertTrue(d['incertain'])
+		self.assertEqual(st['needs'][0]['status'], 'open')
+		(j,) = st['needs'][0]['journal']
+		self.assertIn('incertain', j['text'])
+		self.assertNotIn('Texte secret', j['text'])
+		# un simple Envoyer ne renvoie pas : confirmation distincte exigée
+		agence.SLACK = lambda m, p, t: (self.http.append(m), self.reply)[1]
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('confirm', msg)
+		self.assertFalse(self.http)
+
+	def test_confirmation_explicite_renvoie_et_leve_l_incertitude(self):
+		agence.SLACK = self.incertain
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		agence.SLACK = lambda m, p, t: (self.http.append(m), self.reply)[1]
+		self.assertEqual(agence.click(f'/draft/{did}/send', {**self.shown(did), 'confirme': ['1']}), (303, '/'))
+		d = agence.find(self.state(), 'drafts', did)
+		self.assertEqual(d['statut'], 'envoyé')
+		self.assertFalse(d.get('incertain'))
+
+	def test_page_et_suivi_disent_l_incertitude_avec_un_bouton_distinct(self):
+		agence.SLACK = self.incertain
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		page = agence.page_draft(self.state(), did)
+		self.assertIn('vérifie le canal', page)
+		self.assertIn('name="confirme"', page)
+		self.assertIn('vérifie le canal', agence.page_suivi(self.state()))
+
+	def test_brouillon_incertain_n_est_pas_abandonne_par_le_regisseur(self):
+		agence.SLACK = self.incertain
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		with agence.tx() as st:
+			agence.tick(st, set(), [], {}, 1000.0)
+		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
+		self.assertEqual(self.state()['needs'][0]['status'], 'open')
+
+	def test_erreur_certaine_ne_demande_pas_de_confirmation(self):
+		self.reply = {'ok': False, 'error': 'channel_not_found'}
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertFalse(agence.find(self.state(), 'drafts', did).get('incertain'))
+		self.reply = {'ok': True, 'ts': '1.1', 'permalink': 'https://x/p'}
+		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did))[0], 303)
+
+	def test_internal_et_fatal_error_sont_incertains_les_autres_codes_certains(self):
+		for code, incertain in (('internal_error', True), ('fatal_error', True), ('service_unavailable', False),
+		                        ('request_timeout', False), ('channel_not_found', False)):
+			self.reply = {'ok': False, 'error': code}
+			with self.assertRaises(agence.Refus) as cm:
+				agence.send_slack({'cible': 'slack:C123', 'texte': 'x'})
+			self.assertEqual(isinstance(cm.exception, agence.Incertain), incertain, code)
+
+	def test_marqueur_ecrit_avant_l_appel_et_survit_a_un_arret(self):
+		vu = []
+
+		def tue(method, payload, token):
+			vu.append(agence.load()['drafts'][0].get('incertain'))  # état déjà écrit sur disque pendant l'appel
+			raise KeyboardInterrupt('régisseur tué pendant l\'appel')
+		agence.SLACK = tue
+		did = self.new_draft()
+		with self.assertRaises(KeyboardInterrupt):
+			agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(vu, [True])
+		d = agence.find(self.state(), 'drafts', did)
+		self.assertEqual((d['statut'], d['incertain']), ('à valider', True))
+		agence.SLACK = lambda m, p, t: (self.http.append(m), self.reply)[1]
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('vérifie le canal', msg)
+		self.assertFalse(self.http)
+
+	def test_marqueur_retire_sur_issue_certaine(self):
+		self.reply = {'ok': False, 'error': 'channel_not_found'}
+		did = self.new_draft()
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertNotIn('incertain', agence.find(self.state(), 'drafts', did))
+		self.reply = {'ok': True, 'ts': '1.1', 'permalink': 'https://x/p'}
+		agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertNotIn('incertain', agence.find(self.state(), 'drafts', did))
+
+	def test_incertain_donne_l_url_de_la_page_dans_le_409_le_suivi_et_ouvre_un_panneau(self):
+		agence.SLACK = self.incertain
+		did = self.new_draft()
+		page = agence.url(self.state(), f'/draft/{did}')
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertIn(page, msg)
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))  # simple Envoyer refusé : même chemin de sortie
+		self.assertIn(page, msg)
+		self.assertIn(page, agence.page_suivi(self.state()))
+		ouverts = [c for c in self.run.ran('cate', 'panel', 'create', 'browser') if page in c]
+		self.assertEqual(len(ouverts), 2)  # celui du brouillon, puis un seul pour l'envoi incertain
+
+	def test_brouillon_modifie_apres_affichage_ne_part_pas(self):
+		did = self.new_draft(texte='Lu par Heifara')
+		shown = self.shown(did)
+		self.cli('draft', 'edit', did, 'Changé par un agent')
+		self.assertEqual(agence.click(f'/draft/{did}/send', shown)[0], 409)
+		self.assertFalse(self.http)
+		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
+
+	def test_outil_mcp_slack_n_est_plus_autorise_par_le_garde(self):
+		did = self.new_draft()
+		with agence.tx() as st:  # brouillon cliqué, comme avant le correctif
+			d = agence.find(st, 'drafts', did)
+			d.update(statut='envoyer', texte='Salut', hash=agence.sha('Salut'))
+		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
+		self.assertIsNone(agence.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
+		                                'tool_input': {'channel_id': 'C123', 'message': 'Salut'}}))
+
+
 class Garde(Base):
 	def guard(self, payload):
 		os.environ['CLAUDE_PROJECT_DIR'] = self.tmp
 		return agence.guard(payload)
 
-	def clicked_slack(self, texte='Bonjour'):
-		self.booted()
-		_, out = self.cli('draft', 'new', '--cible', 'slack:C123', '--from', 'a1', texte)
-		agence.click(f'/draft/{out.strip()}/send', self.shown(out.strip()))
-
-	def test_slack_identique_au_clic_passe(self):
-		self.clicked_slack()
-		out = self.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                  'tool_input': {'channel_id': 'C123', 'message': 'Bonjour'}})
-		self.assertEqual(out['hookSpecificOutput']['permissionDecision'], 'allow')
-
-	def test_slack_texte_modifie_ne_passe_pas(self):
-		self.clicked_slack()
-		self.assertIsNone(self.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                              'tool_input': {'channel_id': 'C123', 'message': 'Bonjour !'}}))
-
-	def test_slack_autre_canal_ne_passe_pas(self):
-		self.clicked_slack()
-		self.assertIsNone(self.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                              'tool_input': {'channel_id': 'C999', 'message': 'Bonjour'}}))
-
 	def test_brouillon_non_clique_ne_passe_pas(self):
 		self.booted()
-		self.cli('draft', 'new', '--cible', 'slack:C123', '--from', 'a1', 'Bonjour')
-		self.assertIsNone(self.guard({'tool_name': 'mcp__claude_ai_Slack__slack_send_message',
-		                              'tool_input': {'channel_id': 'C123', 'message': 'Bonjour'}}))
+		self.cli('draft', 'new', '--cible', 'mail:dg@exemple.fr', '--from', 'a1', 'Bonjour')
+		self.assertIsNone(self.guard({'tool_name': 'mcp__claude_ai_Gmail__send_message',
+		                              'tool_input': {'to': ['dg@exemple.fr'], 'body': 'Bonjour'}}))
 
 	def test_mail_identique_passe(self):
 		self.booted()

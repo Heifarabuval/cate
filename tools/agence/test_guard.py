@@ -55,7 +55,7 @@ class Garde(FauxHome):
 		with open(os.path.join(self.runtime, 'current'), 'w') as f:
 			f.write(build + '\n')
 
-	def orchestre(self, clic=False, cible='slack:C123', texte='Bonjour', titre=None):
+	def orchestre(self, clic=False, cible='mail:dg@exemple.fr', texte='Bonjour', titre=None):
 		"""Projet orchestré (state.json écrit par la CLI) avec un brouillon, cliqué ou non par l'humain."""
 		vieux = {k: os.environ.get(k) for k in ('AGENCE_ROOT', 'CATE_SOCKET', 'AGENCE_NOM', 'HOME')}
 		os.environ.update(AGENCE_ROOT=self.projet, CATE_SOCKET='/tmp/x.sock', AGENCE_NOM='Max', HOME=self.home)
@@ -109,7 +109,7 @@ class Garde(FauxHome):
 		return out['permissionDecision']
 
 	def envoi(self, **ti):
-		return self.hook(self.send_cmd, SLACK, dict({'channel_id': 'C123', 'message': 'Bonjour'}, **ti))
+		return self.hook(self.send_cmd, GMAIL, dict({'to': ['dg@exemple.fr'], 'body': 'Bonjour'}, **ti))
 
 
 class EnvoiSansCli(Garde):
@@ -164,16 +164,17 @@ class EnvoiAvecCli(Garde):
 
 	def test_texte_ou_canal_different_ask(self):
 		self.orchestre(clic=True)
-		self.assertEqual(self.decision(self.envoi(message='Bonjour !')), 'ask')
-		self.assertEqual(self.decision(self.envoi(channel_id='C999')), 'ask')
+		self.assertEqual(self.decision(self.envoi(body='Bonjour !')), 'ask')
+		self.assertEqual(self.decision(self.envoi(to=['autre@exemple.fr'])), 'ask')
 
 	def test_projet_non_orchestre_ask(self):
 		self.assertEqual(self.decision(self.envoi()), 'ask')
 
-	def test_aucune_exception_de_canal(self):
+	def test_slack_toujours_ask_meme_avec_un_brouillon_mail_clique(self):
+		self.orchestre(clic=True)
 		for canal in ('U0000000000', 'D0000000000', 'C123'):
 			with self.subTest(canal=canal):
-				self.assertEqual(self.decision(self.envoi(channel_id=canal)), 'ask')
+				self.assertEqual(self.decision(self.hook(self.send_cmd, SLACK, {'channel_id': canal, 'message': 'Bonjour'})), 'ask')
 
 	def test_stdin_illisible_ask(self):
 		for stdin in ('', 'pas du json', '[]'):
@@ -218,7 +219,7 @@ class OutilsDEnvoi(Garde):
 				for cmd in self.declenchees(tool):
 					self.assertEqual(self.decision(self.hook(cmd, tool, ti)), 'ask')
 				self.assertTrue(self.declenchees(tool))
-		self.assertEqual(self.decision(self.envoi()), 'allow')  # le brouillon Slack cliqué n'a pas été consommé
+		self.assertEqual(self.decision(self.envoi()), 'allow')  # le brouillon mail cliqué n'a pas été consommé
 
 	def test_ask_sans_cli(self):
 		for tool in self.ENVOIS:
@@ -264,12 +265,12 @@ class GuardSansMode(Garde):
 
 	def test_envoi_sans_clic_rien(self):
 		self.orchestre(clic=False)
-		r = self.guard(SLACK, {'channel_id': 'C123', 'message': 'Bonjour'})
+		r = self.guard(GMAIL, {'to': ['dg@exemple.fr'], 'body': 'Bonjour'})
 		self.assertEqual((r.returncode, r.stdout), (0, ''))
 
 	def test_envoi_clique_allow(self):
 		self.orchestre(clic=True)
-		r = self.guard(SLACK, {'channel_id': 'C123', 'message': 'Bonjour'})
+		r = self.guard(GMAIL, {'to': ['dg@exemple.fr'], 'body': 'Bonjour'})
 		self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['permissionDecision'], 'allow')
 
 	def test_stdin_illisible_rien(self):
