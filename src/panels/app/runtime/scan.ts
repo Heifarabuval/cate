@@ -32,7 +32,6 @@ export interface AppScanner {
   list(): AppEntry[]
   /** The last valid manifest of a panel, kept across a broken edit. */
   manifest(id: string): AppManifest | undefined
-  folder(id: string): string
   /** The list changed (a panel added, removed, fixed or broken). */
   subscribe(listener: (entries: AppEntry[]) => void): () => void
   /** A file of the panel's folder changed, its manifest included. */
@@ -56,14 +55,18 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
   let queue: Promise<void> = Promise.resolve()
   let published = '[]'
   let started: Promise<void> = Promise.resolve()
+  let realDir = deps.dir
 
   const folder = (id: string) => path.join(deps.dir, id)
   const sorted = (): AppEntry[] => [...found.values()].map((scanned) => scanned.entry).sort((a, b) => a.id.localeCompare(b.id))
 
   async function scanOne(id: string): Promise<Scanned | undefined> {
     const stat = await fs.promises.lstat(folder(id)).catch(() => undefined)
-    if (!stat?.isDirectory()) return undefined
+    if (!stat?.isDirectory() && !stat?.isSymbolicLink()) return undefined
     if (!deps.trust.isTrusted()) return { entry: { id, status: 'blocked', warnings: [] } }
+    // The page server never follows a link out of a panel's folder, and the watcher
+    // reports real paths: a linked panel would never load or reload. Say so.
+    if (stat.isSymbolicLink()) return { entry: { id, status: 'error', error: 'le dossier est un lien symbolique : copier le dossier à la place', warnings: [] } }
     let raw: unknown
     try {
       raw = JSON.parse(await fs.promises.readFile(path.join(folder(id), MANIFEST_FILE), 'utf-8'))
@@ -101,7 +104,7 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
 
   async function scanAll(): Promise<void> {
     const names = (await fs.promises.readdir(deps.dir, { withFileTypes: true }))
-      .filter((item) => item.isDirectory() && !item.name.startsWith('.'))
+      .filter((item) => (item.isDirectory() || item.isSymbolicLink()) && !item.name.startsWith('.'))
       .map((item) => item.name)
     for (const id of [...found.keys()]) if (!names.includes(id)) await apply(id)
     for (const id of names) await apply(id)
@@ -111,7 +114,8 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
   const onEvents = (events: FsEvent[]): Promise<void> => {
     const ids = new Set<string>()
     for (const { path: changed } of events) {
-      const relative = path.relative(deps.dir, changed)
+      // The watcher reports real paths: the folder may be reached through a link.
+      const relative = [deps.dir, realDir].map((base) => path.relative(base, changed)).find((candidate) => candidate && !candidate.startsWith('..') && !path.isAbsolute(candidate)) ?? ''
       const id = relative.split(path.sep)[0]
       if (id && id !== '..' && !id.startsWith('.') && !path.isAbsolute(relative)) ids.add(id)
     }
@@ -128,14 +132,14 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
     start: () =>
       (started = (async () => {
         await fs.promises.mkdir(deps.dir, { recursive: true })
+        realDir = await fs.promises.realpath(deps.dir)
         await enqueue(scanAll)
         offTrust = deps.trust.onChange(() => void enqueue(scanAll))
-        unwatch = await deps.watch(deps.dir, onEvents)
+        unwatch = await deps.watch(realDir, onEvents)
       })()),
     ready: () => started.catch(() => {}),
     list: sorted,
     manifest: (id) => valid.get(id),
-    folder,
     subscribe(listener) {
       listListeners.add(listener)
       return () => { listListeners.delete(listener) }
