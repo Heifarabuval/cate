@@ -127,6 +127,22 @@ describe('BrowserView', () => {
     expect(releaseAgentPartition).toHaveBeenCalledWith('ws-ws-runtime-a-p1')
   })
 
+  it('runs no page operation on the shared partition once the panel is agent-driven', async () => {
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })]))
+    let release!: (name: string) => void
+    agentPartition.mockImplementationOnce(() => new Promise<string>((resolve) => { release = resolve }))
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], { agentDriven: true }))
+    let settled = false
+    const request = runSurfaceRequest('ws', { requestId: 'r1', panelId: 'p1', op: 'page.history', args: { tabId: 't1', action: 'reload' } } as never)
+      .catch(() => {}).finally(() => { settled = true })
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(host.querySelector('webview')).toBeNull()
+    expect(settled).toBe(false)
+    await act(async () => { release('ws-ws-runtime-a-p1') })
+    await act(async () => { await request })
+    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('ws-ws-runtime-a-p1')
+  })
+
   it('asks the person for an agent sign-in request, copies that domain, then answers', async () => {
     const confirm = vi.fn(async () => true)
     installMockClientUi({ confirm })
@@ -135,8 +151,9 @@ describe('BrowserView', () => {
     await act(async () => {})
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('github.com'))
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('open the PR'))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('subdomains'))
     expect(grantSignIn).toHaveBeenCalledWith('ws-ws-runtime-a-p1', 'github.com')
-    expect(send).toHaveBeenCalledWith({ kind: 'answerSignIn', allow: true })
+    expect(send).toHaveBeenCalledWith({ kind: 'answerSignIn', allow: true, cookies: 2 })
   })
 
   it('copies nothing when the person refuses', async () => {
@@ -144,7 +161,7 @@ describe('BrowserView', () => {
     render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], { agentDriven: true, signIns: { granted: [], request: { domain: 'github.com', reason: 'r' } } }))
     await act(async () => {})
     expect(grantSignIn).not.toHaveBeenCalled()
-    expect(send).toHaveBeenCalledWith({ kind: 'answerSignIn', allow: false })
+    expect(send).toHaveBeenCalledWith({ kind: 'answerSignIn', allow: false, cookies: 0 })
   })
 
   it('copies the granted domains again into a partition made after a remount', async () => {

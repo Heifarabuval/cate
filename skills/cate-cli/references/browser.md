@@ -196,11 +196,11 @@ it first.
 A panel you drive has none of the person's signed-in sessions: its pages run
 in their own partition, empty. When the task needs a site the person is signed
 in to, run `cate browser signin <domain> --reason "<why>"`. It waits for the
-person's answer in Cate and returns `granted: true` or `false`. A grant copies
-that domain's cookies (never their values to you) into this panel only, until
+person's answer in Cate and returns `granted` (true only if cookies were copied; `cookies` is the count) and a `journal` line to run. A grant copies
+that domain's cookies (never their values to you) and its subdomains into this panel only, until
 the panel closes; ask again for another domain. On `false`, do not retry:
 tell the person what you could not do. Note each grant in the need's journal
-(`agence need log`).
+(the result gives the line: `agence need log <need> "..."`).
 
 `cate browser login` fills the login saved in Cate's browser for the current
 site into its sign-in form; the password never reaches you, and snapshots

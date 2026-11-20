@@ -119,7 +119,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   /** Each caller's view of the tabs, for the notices of its next call. */
   private readonly seenTabs = new Map<string, TabsSeen>()
   /** Settles the agent's pending sign-in request with the person's answer. */
-  private signInAnswer: ((allow: boolean) => void) | null = null
+  private signInAnswer: ((allow: boolean, cookies: number) => void) | null = null
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: BrowserSessionDeps) {
     const id = 't1'
@@ -203,7 +203,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     this.stopDownloads?.()
     this.stopDownloads = undefined
     clearTimeout(this.cursorIdle)
-    this.signInAnswer?.(false)
+    this.signInAnswer?.(false, 0)
   }
 
   // ---- State ---------------------------------------------------------------
@@ -403,7 +403,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       return ok
     },
     setViewport: ({ viewport }) => { this.setViewport(viewport) },
-    answerSignIn: ({ allow }) => { this.signInAnswer?.(allow === true) },
+    answerSignIn: ({ allow, cookies }) => { this.signInAnswer?.(allow === true, typeof cookies === 'number' ? cookies : 0) },
     releaseAgentCursor: () => {
       if (this.state.agentCursor && this.state.agentCursor.event.kind !== 'done') this.showAgentCursor({ kind: 'done', label: '' })
     },
@@ -412,7 +412,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   /** An agent asks for the person's signed-in session on one domain. Waits
    *  for the answer in the view (views ask, sessions act); a grant lasts
    *  until the panel closes. The agent hears the outcome, never a cookie. */
-  private requestSignIn(args: { domain: string; reason: string }, caller: string): Promise<{ granted: boolean; domain: string }> {
+  private requestSignIn(args: { domain: string; reason: string }, caller: string): Promise<{ granted: boolean; domain: string; cookies?: number; journal?: string; note?: string }> {
     const domain = args.domain.trim().toLowerCase()
     if (!SIGN_IN_DOMAIN.test(domain)) throw new RpcError('rejected', 'invalid-sign-in-domain: pass a bare domain such as github.com')
     const reason = args.reason.trim()
@@ -420,12 +420,20 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     if (this.state.signIns.request) throw new RpcError('rejected', 'sign-in-request-pending: the person has not answered the earlier request')
     if (this.state.signIns.granted.includes(domain)) return Promise.resolve({ granted: true, domain })
     return new Promise((resolve) => {
-      this.signInAnswer = (allow) => {
+      this.signInAnswer = (allow, cookies) => {
         this.signInAnswer = null
-        const { granted } = this.state.signIns
-        this.publish({ signIns: { granted: allow ? [...granted, domain] : granted, request: null } })
-        this.kit.log.info('browser %s: sign-in for %s %s by the person (asked by %s: %s)', this.panelId, domain, allow ? 'granted' : 'refused', caller, reason)
-        resolve({ granted: allow, domain })
+        // Granted only when cookies really went into the panel.
+        const granted = allow && cookies > 0
+        const known = this.state.signIns.granted
+        this.publish({ signIns: { granted: granted ? [...known, domain] : known, request: null } })
+        this.kit.log.info('browser %s: sign-in for %s %s by the person, %d cookies copied (asked by %s: %s)', this.panelId, domain, granted ? 'granted' : 'not granted', cookies, caller, reason)
+        resolve({
+          granted,
+          domain,
+          cookies,
+          ...(granted ? { journal: `agence need log <need> "accord cookies ${domain} (and its subdomains), panel ${this.panelId}: ${reason}"` } : {}),
+          ...(allow && !granted ? { note: `The person agreed, but Cate holds no shared sign-in for ${domain}: sign in there by hand, or ask them to.` } : {}),
+        })
       }
       this.publish({ signIns: { granted: this.state.signIns.granted, request: { domain, reason } } })
     })
