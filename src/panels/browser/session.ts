@@ -16,6 +16,7 @@ import {
   type BrowserSurfaceArgs,
   type BrowserSurfaceOp,
   type BrowserSurfaceResult,
+  type BrowserSurfaceStamp,
 } from '@services/browser/contract'
 import type { BrowserNewTabBehavior, BrowserSearchEngine } from '@services/browser/contract/settings'
 import { createPageControl, pageCall, type PageControl, type PageControlDeps } from '@services/browser/runtime'
@@ -65,6 +66,8 @@ type Persisted = {
   tabs: Array<{ id: string; url: string; title: string; favicon: string | null; pinned: boolean; openedBy?: BrowserTabOpener; file?: string }>
   activeTabId: string
   viewport: BrowserViewport
+  /** Survives a restart: a panel an agent drove never goes back to the shared partition. */
+  agentDriven?: boolean
 }
 
 /** A caller's view of the tabs after its last call. */
@@ -158,6 +161,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
 
   override async start(): Promise<void> {
     const saved = this.persisted<Persisted>()
+    if (saved?.agentDriven === true) this.publish({ agentDriven: true })
     if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
       const served = await Promise.all(saved.tabs.map((tab) => (typeof tab.file === 'string'
         ? this.deps.files.serveUrl(tab.file).catch((err) => {
@@ -223,7 +227,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   }
 
   private save(): void {
-    const { tabs, activeTabId, viewport } = this.state
+    const { tabs, activeTabId, viewport, agentDriven } = this.state
     this.persist({
       tabs: tabs.map(({ id, url, title, favicon, pinned, openedBy }) => {
         const file = this.deps.files.servedPath(url)
@@ -231,6 +235,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       }),
       activeTabId,
       viewport,
+      agentDriven,
     } as unknown as Json)
   }
 
@@ -457,7 +462,8 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   // ---- Page operations on the driving client --------------------------------
 
   private page<Op extends BrowserSurfaceOp>(op: Op, args: BrowserSurfaceArgs<Op>, call?: SurfaceCallOptions): Promise<BrowserSurfaceResult<Op>> {
-    return this.withSurface<BrowserSurfaceResult<Op>>(op, args, call)
+    const stamped: BrowserSurfaceArgs<Op> & BrowserSurfaceStamp = { ...args, agentDriven: this.state.agentDriven }
+    return this.withSurface<BrowserSurfaceResult<Op>>(op, stamped, call)
   }
 
   override handleApi: SessionApiHandler
@@ -503,7 +509,10 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     return async (method, args, ctx) => {
       const caller = ctx.caller.id
       // From the first call on, the panel's pages leave the shared partition.
-      if (!this.state.agentDriven) this.publish({ agentDriven: true })
+      if (!this.state.agentDriven) {
+        this.publish({ agentDriven: true })
+        this.save()
+      }
       const start = this.tabsSeen()
       const earlier = this.tabNotices(this.seenTabs.get(caller) ?? start, caller)
       try {

@@ -143,6 +143,20 @@ describe('BrowserView', () => {
     expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('ws-ws-runtime-a-p1')
   })
 
+  it('refuses an agent request that arrives before the snapshot: it waits for the agent partition', async () => {
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })]))
+    let settled = false
+    // An unknown op fails the same way on any handler that really runs it.
+    const request = runSurfaceRequest('ws', { requestId: 'r2', panelId: 'p1', op: 'page.nope', args: { agentDriven: true } } as never)
+      .then(() => null, (err: unknown) => err).finally(() => { settled = true })
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(settled).toBe(false)
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })], { agentDriven: true }))
+    await act(async () => {})
+    expect(await request).toMatchObject({ code: 'unsupported' })
+    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('ws-ws-runtime-a-p1')
+  })
+
   it('asks the person for an agent sign-in request, copies that domain, then answers', async () => {
     const confirm = vi.fn(async () => true)
     installMockClientUi({ confirm })

@@ -26,5 +26,8 @@ export const BROWSER_SURFACE_FEATURES = {
   'page.execute': 'pageDriver',
   'page.download': 'pageDriver',
 } as const satisfies Record<BrowserSurfaceOp, 'pageDriver'>
+/** Every page request carries the panel's mode: a surface on the shared
+ *  partition refuses an `agentDriven` one (it waits for the agent partition). */
+export type BrowserSurfaceStamp = { agentDriven: boolean }
 export type BrowserSurfaceArgs<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['args']
 export type BrowserSurfaceResult<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['result']

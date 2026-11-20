@@ -305,7 +305,7 @@ describe('browser session', () => {
     const tabId = w.snapshot(id).activeTabId
 
     await expect(w.api(id, 'click', { tabId, target: 3 })).resolves.toEqual({ ok: 'click' })
-    expect(calls[0]).toEqual(['page.execute', { tabId, method: 'click', args: { tabId, target: 3 } }])
+    expect(calls[0]).toEqual(['page.execute', { tabId, method: 'click', args: { tabId, target: 3 }, agentDriven: true }])
     expect(w.snapshot(id).agentCursor).toMatchObject({ event: { kind: 'click', x: 5, y: 6 }, serial: 2 })
     await w.op(id, { kind: 'releaseAgentCursor' })
     expect(w.snapshot(id).agentCursor?.event.kind).toBe('done')
@@ -317,7 +317,7 @@ describe('browser session', () => {
     await w.api(id, 'goto', { tabId, url: 'b.test' })
     expect(w.snapshot(id).tabs[0]).toMatchObject({ url: 'https://b.test', nav: 1, navSource: null })
     expect(calls.map(([op]) => op)).toEqual(['page.ready', 'page.execute'])
-    expect(calls[0][1]).toEqual({ tabId, nav: 1 })
+    expect(calls[0][1]).toEqual({ tabId, nav: 1, agentDriven: true })
     expect(calls[1][1]).toMatchObject({ method: 'getAXState', args: { disableDiffing: true } })
 
     await expect(w.api(id, 'selectTab', { tabId })).resolves.toEqual({ panelId: id, tabId, url: 'https://a.test/', title: 'A' })
@@ -569,6 +569,36 @@ describe('browser sign-in grants', () => {
     await w.op(id, { kind: 'answerSignIn', allow: false })
     await first
     w.dispose()
+  })
+
+  it('stamps every page request with the agent mode, so a surface on the shared partition can refuse it', async () => {
+    const seen: any[] = []
+    const w = world(async (_panelId, _op, args) => { seen.push(args); return { ok: true } })
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await w.op(id, { kind: 'history', action: 'reload' })
+    expect(seen.at(-1)).toMatchObject({ agentDriven: false })
+    await w.api(id, 'downloads')
+    await w.op(id, { kind: 'history', action: 'reload' })
+    expect(seen.at(-1)).toMatchObject({ agentDriven: true })
+    w.dispose()
+  })
+
+  it('stays agent-driven after a restart, with no grant kept', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await w.api(id, 'downloads')
+    const pending = w.api(id, 'requestSignIn', { domain: 'github.com', reason: 'r' })
+    await Promise.resolve()
+    await w.op(id, { kind: 'answerSignIn', allow: true, cookies: 2 })
+    await pending
+    await new Promise((r) => setTimeout(r, 30))
+    w.dispose()
+    const again = world()
+    await again.host.restore()
+    expect(again.snapshot(id)).toMatchObject({ agentDriven: true, signIns: { granted: [], request: null } })
+    again.dispose()
   })
 
   it('says so when the person agrees but the domain has no shared cookie', async () => {

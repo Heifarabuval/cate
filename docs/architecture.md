@@ -2375,7 +2375,11 @@ the runtime's machine on every client.
   reads those cookies from the system's default browser (macOS: Chromium
   browsers, Firefox, Safari with Full Disk Access).
   **Agent-driven panels have none of them.** The session sets `agentDriven`
-  on a browser panel's first `cate.browser.*` call; its view then mounts its
+  on a browser panel's first `cate.browser.*` call and persists it (a restart
+  keeps the panel off the shared partition); every page request carries it,
+  and a surface on the shared partition throws `SurfaceStaleError`, so the
+  request waits for the next surface of that panel, whatever order the
+  snapshot and the request arrived in; its view then mounts its
   webviews in an in-memory partition (`ws-<runtimeId>-a-<panelId>`, no
   `persist:`), prepared by main with the workspace's network policy but never
   given `beforeFirstMount`. The agent asks for a site with
