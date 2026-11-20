@@ -82,7 +82,7 @@ it('ignores hidden folders and plain files, and reports a symlinked folder inste
   expect(entry('reel')?.status).toBe('ready')
 })
 
-it('follows the real paths the watcher reports when the panels folder is reached through a symlink', async () => {
+it.skipIf(process.platform === 'win32')('follows the real paths the watcher reports when the panels folder is reached through a symlink', async () => {
   fs.mkdirSync(path.join(root, 'vrai', 'panneaux', 'a'), { recursive: true })
   const real = fs.realpathSync(path.join(root, 'vrai'))
   fs.writeFileSync(path.join(real, 'panneaux', 'a', 'cate-panel.json'), manifest('a'))

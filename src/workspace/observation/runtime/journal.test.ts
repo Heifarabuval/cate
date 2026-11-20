@@ -76,7 +76,7 @@ describe('journal', () => {
     ])
   })
 
-  it('creates the folder with mode 0700 and the file with mode 0600', async () => {
+  it.skipIf(process.platform === 'win32')('creates the folder with mode 0700 and the file with mode 0600', async () => {
     journal.append(created)
     await journal.flush()
     expect(statSync(dir).mode & 0o777).toBe(0o700)

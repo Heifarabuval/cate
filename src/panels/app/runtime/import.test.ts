@@ -26,7 +26,8 @@ function tree(dir: string): Record<string, string> {
   const walk = (at: string) => {
     for (const item of fs.readdirSync(at, { withFileTypes: true })) {
       const full = path.join(at, item.name)
-      const key = path.relative(dir, full)
+      // Package paths are `/`-separated on every system.
+      const key = path.relative(dir, full).split(path.sep).join('/')
       if (item.isSymbolicLink()) out[key] = `-> ${fs.readlinkSync(full)}`
       else if (item.isDirectory()) {
         out[`${key}/`] = 'dir'
@@ -115,7 +116,8 @@ describe('stage', () => {
   })
 
   for (const fixture of HOSTILE) {
-    it(`refuses ${fixture.name} and leaves the data and panels folders intact`, async () => {
+    // A file named `C:\evil.js` cannot be written to a folder on Windows.
+    it.skipIf(process.platform === 'win32' && fixture.name === 'C:\\')(`refuses ${fixture.name} and leaves the data and panels folders intact`, async () => {
       const before = { data: tree(data), panneaux: tree(panneaux) }
       const source = fixture.only === 'folder' || (!fixture.tamper && fixture.only !== 'bundle')
         ? writeFolder(path.join(sources, `${count++}`, fixture.id), fixture.files)

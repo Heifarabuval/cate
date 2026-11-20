@@ -59,9 +59,10 @@ describe('purgeJournal', () => {
   })
 
   // Folder modes mean nothing to root.
-  const asRoot = process.getuid?.() === 0
+  // chmod does not deny root, and Windows has no POSIX modes.
+  const chmodIgnored = process.getuid?.() === 0 || process.platform === 'win32'
 
-  it.skipIf(asRoot)('goes on and says so when a file cannot be removed', async () => {
+  it.skipIf(chmodIgnored)('goes on and says so when a file cannot be removed', async () => {
     writeDay(dir, '2026-10-01.jsonl', '{}\n')
     writeDay(dir, '2026-10-02.jsonl', '{}\n')
     chmodSync(dir, 0o500)
@@ -78,7 +79,7 @@ describe('purgeJournal', () => {
     expect((await run()).removed.sort()).toEqual(['2026-10-01.jsonl', '2026-10-02.jsonl'])
   })
 
-  it.skipIf(asRoot)('reads a folder it cannot read as a failure, not as an empty journal', async () => {
+  it.skipIf(chmodIgnored)('reads a folder it cannot read as a failure, not as an empty journal', async () => {
     writeDay(dir, '2026-10-01.jsonl', '{}\n')
     chmodSync(dir, 0o000)
     try {

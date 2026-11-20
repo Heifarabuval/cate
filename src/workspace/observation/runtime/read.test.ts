@@ -79,7 +79,7 @@ describe('readJournal', () => {
     expect((await read()).observations.map((one) => one.ref)).toEqual(['later'])
   })
 
-  it.skipIf(process.getuid?.() === 0)('goes on and says so when a day cannot be read', async () => {
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')('goes on and says so when a day cannot be read', async () => {
     writeDay(dir, '2026-11-20.jsonl', line('2026-11-20T09:00:00.000Z', 'panel.created', 'today'))
     const hidden = writeDay(dir, '2026-11-19.jsonl', line('2026-11-19T09:00:00.000Z', 'panel.created', 'yesterday'))
     chmodSync(hidden, 0o000)
