@@ -162,7 +162,7 @@ it('says whether the question card is open on « Répondre »', () => {
 
 it('names the rebase button briefly in a narrow column, the full name kept as title and accessible name', () => {
   const conflict = row('q2', { kind: 'human', title: 'Merger la 12 ?', action: { type: 'question', questionId: 'q2', rebase: true } })
-  const merge: QuestionView = { ...questionView, id: 'q2', isMerge: true, locks: ['conflit avec la base'], rebase: true }
+  const merge: QuestionView = { ...questionView, id: 'q2', isMerge: true, locks: ['conflit avec la base'], rebase: true, methode: 'rebase' }
   render(suivi({ aFaire: [conflict] }), { q2: merge }, true)
   expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Demander le rebase')).toBe(false)
   const short = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Rebase')!

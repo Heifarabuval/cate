@@ -36,6 +36,7 @@ const snapshot = (patch: Partial<AgenceSnapshot> = {}): AgenceSnapshot => ({
   drafts: { d1: { id: 'd1', cible: 'issue:x/y', kind: 'issue', titre: 'T', statut: 'à valider', texte: 'Texte', hash: 'h' } },
   questions: {},
   garde: 'actif',
+  pratiques: null,
   ...patch,
 })
 
@@ -326,4 +327,50 @@ it('says an unknown send guard only after 5 s without a turn of the regisseur', 
   } finally {
     vi.useRealTimers()
   }
+})
+
+const pratiques = (patch: Partial<NonNullable<AgenceSnapshot['pratiques']>> = {}): NonNullable<AgenceSnapshot['pratiques']> => ({
+  preset: 'pr-tdd',
+  valeurs: { 'livraison.methode': 'squash', 'livraison.merge': 'clic', preuve: ['pr-mergee', 'ci-verte'], plafond: null },
+  sources: { preset: 'dev', 'livraison.methode': 'projet', 'livraison.merge': 'défaut', preuve: 'dev', plafond: 'défaut' },
+  erreur: null,
+  ...patch,
+})
+
+it('shows the policy line with its preset and where it comes from', () => {
+  render(snapshot({ pratiques: pratiques() }))
+  expect(host.textContent).toContain('Pratiques : pr-tdd (dev)')
+  expect(host.textContent).not.toContain('livraison.methode')
+})
+
+it('lists every value with its source when the line is opened', () => {
+  render(snapshot({ pratiques: pratiques() }))
+  act(() => button('Pratiques : pr-tdd (dev)')!.click())
+  const rows = [...host.querySelectorAll('[data-testid="pratique"]')].map((row) => row.textContent)
+  expect(rows).toEqual([
+    'livraison.methode : squash (projet)',
+    'livraison.merge : clic (défaut)',
+    'preuve : pr-mergee, ci-verte (dev)',
+    'plafond : aucune (défaut)',
+  ])
+})
+
+it('asks the session to open the file, and writes nothing itself', async () => {
+  render(snapshot({ pratiques: pratiques() }))
+  act(() => button('Pratiques : pr-tdd (dev)')!.click())
+  await act(async () => { button('Ouvrir le fichier')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'openPratiques' })
+})
+
+it('shows an invalid policy as a banner that names the key, the rest of the panel still there', () => {
+  render(snapshot({ pratiques: pratiques({ erreur: 'pratiques.json : clé inconnue « livraison.mthode »' }) }))
+  expect(host.textContent).toContain('clé inconnue « livraison.mthode »')
+  expect(button('Ouvrir le fichier')).toBeDefined()
+  expect(host.textContent).toContain('À faire par Max')
+})
+
+it('shows nothing about the policy when the state has none (old CLI)', () => {
+  render(snapshot({ pratiques: null }))
+  expect(host.textContent).not.toContain('Pratiques')
+  expect(button('Ouvrir le fichier')).toBeUndefined()
 })

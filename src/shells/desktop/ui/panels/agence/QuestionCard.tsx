@@ -26,6 +26,9 @@ export interface QuestionCardProps {
 export default function QuestionCard({ question, send, action: { run, active, error, waiting }, onDone, compact = false }: QuestionCardProps) {
   const [text, setText] = useState('')
   const greyed = question.isMerge && question.locks.length > 0
+  /** The merge method names the Merger buttons: the published one, else the one the CLI's own label carries (old CLI). */
+  const methode = question.isMerge ? question.methode ?? /\(([^)]+)\)\s*$/.exec(question.options[0]?.label ?? '')?.[1] : undefined
+  const method = methode ? ` (${methode})` : ''
 
   /** `key` names the button; `confirmation`: the question put to the person first; no answer, nothing sent. */
   const answer = async (key: string, fields: Omit<Answer, 'kind' | 'questionId'>, confirmation?: string) => {
@@ -65,7 +68,7 @@ export default function QuestionCard({ question, send, action: { run, active, er
               className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] text-primary disabled:opacity-100 aria-busy:bg-hover ${force ? 'border-danger' : index === 0 ? 'border-agent' : 'border-subtle'} hover:bg-hover disabled:hover:bg-transparent`}
             >
               <span className="min-w-0 flex-1">
-                <b className="block break-words text-primary">{force ? 'Merger quand même (rebase)' : index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
+                <b className="block break-words text-primary">{force ? `Merger quand même${method}` : index === 0 ? `${question.isMerge && question.methode ? `Merger${method}` : option.label} (Recommandé)` : option.label}</b>
                 {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
               </span>
             </ActionButton>

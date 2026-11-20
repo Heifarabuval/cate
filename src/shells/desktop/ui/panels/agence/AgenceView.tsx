@@ -1,6 +1,6 @@
 import { useCallback, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { openUrlBeside } from '@client/host'
-import type { AgenceOp, AgenceOpResult, AgenceSnapshot } from '@panels/agence/contract'
+import type { AgenceOp, AgenceOpResult, AgenceSnapshot, PratiqueValeur } from '@panels/agence/contract'
 import { InlineNotice, LoadingState } from '../../kernel/interaction'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
@@ -39,6 +39,32 @@ function useWidth(ref: RefObject<HTMLElement | null>, key: unknown = true): numb
 }
 
 type Tab = 'conversation' | 'suivi'
+
+const showValue = (value: PratiqueValeur): string => Array.isArray(value) ? value.map(showValue).join(', ') : value === null ? 'aucune' : String(value)
+
+/** The workflow policy the CLI published: its preset and origin on one line, the
+ *  value and source of each key when opened, a banner when the file is invalid.
+ *  It reads nothing and writes nothing: « Ouvrir le fichier » asks the session. */
+function Pratiques({ pratiques, onOpen }: { pratiques: NonNullable<AgenceSnapshot['pratiques']>; onOpen(): void }) {
+  const [open, setOpen] = useState(false)
+  const label = `Pratiques : ${pratiques.preset} (${pratiques.sources.preset ?? 'défaut'})`
+  return (
+    <div className="border-b border-subtle px-3 py-1.5 text-[12px]">
+      {pratiques.erreur && <InlineNotice tone="error" className="mb-1.5 !text-primary">{`Politique invalide : ${pratiques.erreur}`}</InlineNotice>}
+      <div className="flex items-center gap-2">
+        <button type="button" aria-expanded={open} className="min-w-0 flex-1 truncate text-left text-secondary hover:text-primary" onClick={() => setOpen(!open)}>{label}</button>
+        <ActionButton className={ACTION} onClick={onOpen}>Ouvrir le fichier</ActionButton>
+      </div>
+      {open && (
+        <ul className="mt-1 text-secondary">
+          {Object.entries(pratiques.valeurs).map(([key, value]) => (
+            <li key={key} data-testid="pratique" className="break-words">{`${key} : ${showValue(value)} (${pratiques.sources[key] ?? 'défaut'})`}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 /** The agence panel: the orchestrator's conversation (its terminal) next to the
  *  project's follow-up and the draft being read; tabs when it is narrow. */
@@ -151,6 +177,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           className={`min-h-0 min-w-0 overflow-auto ${showSuivi ? 'flex-1' : 'hidden'}`}
         >
           <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
+          {snapshot.pratiques && <Pratiques pratiques={snapshot.pratiques} onOpen={() => void run({ kind: 'openPratiques' })} />}
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
             : snapshot.suivi
