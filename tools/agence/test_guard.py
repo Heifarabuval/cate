@@ -278,6 +278,19 @@ class Pages(Garde):
 		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'pratiques.json'), 'content': '{}'}))
 
 
+	def test_plafond_agents_refuse_aux_agents(self):
+		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
+		self.installe()
+		self.orchestre()
+		for pre in ('agence', 'python3 tools/agence/agence.py', 'cd /tmp && ~/.cate/runtime/b1/agence/agence'):
+			for args in ('start --max-agents 16', 'start --max-agents=16', 'start --notify --max-agents 3', 'start --max-agents 16 --notify'):
+				with self.subTest(cmd=f'{pre} {args}'):
+					self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': f'{pre} {args}'})), 'deny')
+			for args in ('start', 'start --notify'):
+				with self.subTest(cmd=f'{pre} {args}'):
+					self.vide(self.hook(self.pages_cmd, 'Bash', {'command': f'{pre} {args}'}))
+
+
 class ModeObligatoire(Garde):
 	"""`agence guard` sans --mode : refusé par argparse (code 2), aucune décision sur stdout, même pour un envoi cliqué.
 	Les entrées de `agence hooks install` passent toujours send ou pages (agence-hook)."""
