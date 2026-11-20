@@ -88,7 +88,7 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
     if (merge?.locks.length) meta.push(`Merger grisé : ${merge.locks.join(' ; ')}`)
     action = { type: 'question', questionId: need.ref, rebase: merge?.rebase ?? false }
   }
-  return { id: need.id, title: need.title, kind: need.kind, meta, evidence, link, links, action }
+  return { id: need.id, title: need.title, kind: need.kind, meta, evidence, created: need.created, link, links, action }
 }
 
 export function classify(state: AgenceState, titles: PanelTitles, now: number): SuiviSections {
