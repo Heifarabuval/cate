@@ -11,7 +11,7 @@ description: "Tâches : pratiques réglables par dev (spec 005)"
 
 **Interdits à tout agent** (constitution X) : lancer Playwright, Electron, l'app Cate ou `npm run dev`, ouvrir une fenêtre, lancer `npm ci` ou `npm install`, écrire dans le vrai `~/.cate`, `~/.claude` ou `~/.config`, lancer `agence hooks`, relancer des tests sans édition depuis leur dernière exécution verte.
 
-**État** : spec écrite, aucune tâche commencée. Q1 à Q9 ouvertes avec hypothèse (spec.md) ; aucune ne bloque le lot 1 sauf Q1 (lieu des fichiers) et Q2 (nom du preset), à confirmer avant de le lancer.
+**État** : spec écrite, aucune tâche commencée. Q1 (lieu des fichiers) et Q2 (nom du preset `pr-tdd`) tranchées par Heifara (spec.md, Clarifications) ; Q3 à Q9 ouvertes avec hypothèse, aucune ne bloque le lot 1.
 
 ## Format: `- [ ] ID [P] [US] Description avec chemin`
 
@@ -28,7 +28,7 @@ description: "Tâches : pratiques réglables par dev (spec 005)"
 | **1. Schéma, lecture, commande** | US1, US3 | 1,5 j | rien | aucun (il crée les fichiers que les autres lisent) |
 | **2. Retrait du codé en dur** | US1, US3 | 1 j | 1 | 5 |
 | **3. Preuve de fin dérivée** | US2 | 1,25 j | 1 ; après 2 sur `agence.py` | 5 |
-| **4. Skill, déclencheurs, pureté** | US1, US3 | 1 j | 1 ; après le lot 2 de la spec 006 pour `SKILL.md` | 5 ; 2 et 3 si `agence.py` est rebasé |
+| **4. Skill, déclencheurs, pureté** | US1, US3 | 1 j | 1 ; après le lot 3 de la spec 006 pour `SKILL.md` | 5 ; 2 et 3 si `agence.py` est rebasé |
 | **5. Panneau** | US4 | 1 j | 1 | 2, 3, 4 (aucun fichier commun) |
 
 Ordre conseillé : 1, puis {2 puis 3} et {5} ensemble, puis 4. Le lot 5 ne partage aucun fichier avec les lots 2, 3 et 4 (hors `docs/architecture.md`, un titre chacun). Les lots 2, 3 et 4 partagent `tools/agence/agence.py` (hunks disjoints) : une PR ouverte à la fois sur ce fichier, rebase de la suivante.
@@ -138,7 +138,7 @@ Ordre conseillé : 1, puis {2 puis 3} et {5} ensemble, puis 4. Le lot 5 ne parta
 
 **Fichiers touchés** : `skills/orchestrateur/SKILL.md`, `tools/agence/test_politique_skill.py` (nouveau), `tools/agence/declencheurs.json`, `tools/agence/agence.py` (l'évaluateur lit `declencheurs.actifs`), `tools/agence/test_declencheurs.py`.
 
-**Dépend de** : lot 1 ; `SKILL.md` après le lot 2 de la spec 006 (ou rebase) ; la tâche `declencheurs.actifs` après les lots ouverts de la spec 004, sinon elle leur passe (Q5). **Parallélisable avec** : lot 5.
+**Dépend de** : lot 1 ; `SKILL.md` après le lot 3 de la spec 006 (ou rebase) ; la tâche `declencheurs.actifs` après les lots ouverts de la spec 004, sinon elle leur passe (Q5). **Parallélisable avec** : lot 5.
 
 ### Tests d'abord
 
@@ -149,7 +149,7 @@ Ordre conseillé : 1, puis {2 puis 3} et {5} ensemble, puis 4. Le lot 5 ne parta
 
 - [ ] T062 [US1] `skills/orchestrateur/SKILL.md` : remplacer les lignes 19, 20, 25, 30, 36, 39-41, 43, 65 et 74 (audit, lignes C, D, E) par les phrases conditionnelles du plan ; garder les invariants. Rend T060 vert. Modèle : sonnet.
 - [ ] T063 [US3] `tools/agence/declencheurs.json` (retrait de `actif`), `tools/agence/agence.py` (évaluateur, `TABLE_DECLENCHEURS`), `pratiques.json` (preset : `["T1"]` et `["T1","T2","T3"]` déjà posés au lot 1). Rend T061 vert. Modèle : sonnet.
-- [ ] T064 [P] [H] [US3] Heifara pose son flux : `agence pratiques preset pr-tdd --dev`, et `agence pratiques set envoi.slack.fichier ~/.hermes/.env --dev` (chemin chez lui, jamais dans le fork). L'agent contrôle ensuite en lecture seule : `agence pratiques show` rend `pr-tdd` (source `dev`) et le fichier du jeton. **Avant** le lot 5 de la spec 002.
+- [ ] T064 [P] [H] [US3] Heifara pose son flux : `agence pratiques preset pr-tdd --dev`, et `agence pratiques set envoi.slack.fichier ~/.hermes/.env --dev` (chemin chez lui, jamais dans le fork). L'agent contrôle ensuite en lecture seule : `agence pratiques show` rend `pr-tdd` (source `dev`) et le fichier du jeton. **Avant le merge du lot 2 de 005** : la bascule de Heifara (lot 5 de la spec 002) est faite (L5-07), il tourne déjà sur le fork ; sans ce preset, son merge passerait de rebase à squash dès l'installation du lot 2.
 - [ ] T065 Portes et PR du lot 4. Corps : texte du skill supprimé listé, `actif` supprimé de la table. Modèle : haiku.
 
 **Checkpoint lot 4** : un autre dev sans `/learn` ni `/audit-config` ne reçoit aucune carte pour eux ; Heifara garde les siennes.
@@ -186,8 +186,8 @@ Ordre conseillé : 1, puis {2 puis 3} et {5} ensemble, puis 4. Le lot 5 ne parta
 ## Dépendances et parallélisme
 
 - Lot 1 d'abord, seul : il crée `pratiques.py` et `pratiques.json`.
-- Ensuite, en même temps : `{lot 2, puis lot 3}` (même fichier `agence.py`), `{lot 5}` (panneau, aucun fichier commun), `{lot 4}` quand `SKILL.md` est libre (spec 006, lot 2).
-- **Avec les autres epics** : le lot 4 de 005 et le lot 2 de 006 visent tous deux `SKILL.md` : l'orchestrateur les sérialise (006 d'abord, son diff est de trois hunks courts). Le lot 4 de 002 (amorçage) et le lot 2 de 005 visent tous deux `prerequis()` : une PR à la fois. La bascule de Skills (002, lot 5) attend T064.
+- Ensuite, en même temps : `{lot 2, puis lot 3}` (même fichier `agence.py`), `{lot 5}` (panneau, aucun fichier commun), `{lot 4}` quand `SKILL.md` est libre (spec 006, lot 3).
+- **Avec les autres epics** : le lot 4 de 005 et le lot 3 de 006 visent tous deux `SKILL.md` : l'orchestrateur les sérialise (006 d'abord, son diff est de trois hunks courts). Le lot 4 de 002 (amorçage) et le lot 2 de 005 visent tous deux `prerequis()` : une PR à la fois. La bascule de Skills (002, lot 5) est faite : c'est le merge du lot 2 de 005 qui attend T064.
 
 ## Stratégie
 

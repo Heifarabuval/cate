@@ -21,6 +21,8 @@ Liens :
 - Q: Quel périmètre ? → A: les **pratiques de flux** d'un dev qui code avec des agents : branche et PR ou `main`, merge, issue, TDD, spec-kit, vérification croisée, preuve de fin, plafond d'agents. Hors périmètre (cap produit) : métiers non dev, carrousel de décisions, zoetrope, autres forges que GitHub, autre agent que Claude Code, langue des textes.
 - Q: Qu'est-ce qui n'est pas réglable ? → A: les **invariants de sécurité** : seul le clic de l'humain envoie en son nom ; aucun agent ne merge, ne pousse ni ne force-push (sauf le `--force-with-lease` d'un rebase demandé) ; aucun secret dans la politique ; une preuve est exigée pour passer un besoin en fait. Ils ne figurent pas dans le schéma : aucun réglage ne peut les lever.
 - Q: Le flux de Heifara reste-t-il disponible ? → A: oui, comme **preset** livré par le fork, nommé par ses pratiques (`pr-tdd`) et non par une personne : rien de personnel dans le code (critère SC-002 de la spec 002). Ses chemins personnels (fichier du jeton Slack) vivent dans son fichier de dev, jamais dans le fork.
+- Q: Où vit la politique ? (ancienne Q1, décision de Heifara) → A: **deux fichiers hors dépôt** : projet `<racine>/.cate/tmp/agence/pratiques.json`, dev `~/.config/agence/pratiques.json` ; priorité projet, puis dev, puis `neutre`. Ni `defineSettings` (le schéma serait écrit deux fois, en TypeScript et en Python, contre FR-002 ; la CLI ne doit pas devenir second écrivain de `settings.json`), ni fichier commité dans `.cate/` (décision D5 de `docs/architecture.md` ; un dépôt cloné imposerait son flux).
+- Q: Comment s'appelle le preset du flux de Heifara ? (ancienne Q2, décision de Heifara) → A: **`pr-tdd`**. Les autres specs qui le citent (006, 007, 002) le rappellent en une ligne et renvoient ici.
 
 ## Vocabulaire
 
@@ -160,10 +162,8 @@ Le panneau agence affiche une ligne « Pratiques : pr-tdd (projet) » et, en dé
 
 ## Questions ouvertes
 
-Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la réponse change.
+Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la réponse change. Q1 et Q2 sont tranchées (Clarifications) ; la numérotation des autres est conservée.
 
-- **Q1** : où vit la politique ? Hypothèse : **deux fichiers hors dépôt** (projet sous `.cate/tmp/agence/`, dev sous `~/.config/agence/`), priorité projet puis dev puis `neutre`. Écartés : une tranche `defineSettings` (le schéma serait écrit deux fois, en TypeScript et en Python, contre FR-002 ; la CLI n'a pas d'API pour écrire les réglages du workspace sans devenir second écrivain de `settings.json`) ; un fichier commité dans `.cate/` (décision D5 de `docs/architecture.md` : le dépôt ne porte que `skills.json`, `tmp/`, `worktrees/` ; et un dépôt cloné imposerait son flux). Si Heifara veut une politique partagée par l'équipe dans le dépôt, c'est un amendement de D5 et de `.cate/.gitignore`, à décider avant le lot 1.
-- **Q2** : nom du preset de Heifara. Hypothèse : `pr-tdd` (décrit des pratiques, pas une personne, donc rien de personnel dans le fork). Alternative : `heifara` comme nom de preset, pas comme clé de code. Choix à lui.
 - **Q3** : mode `main` direct (POC, projets perso). Hypothèse : l'agent commit sur la branche de base du checkout, sans worktree ni PR ; **le push reste l'acte de l'humain** (invariant), preuve `report` avec le SHA. Un bouton « Pousser » dans le panneau serait une nouvelle action : hors v1. À confirmer.
 - **Q4** : langue des textes. Hypothèse : le français reste imposé (Max est francophone), hors périmètre ; la spec ne crée pas de mécanisme de langue. À rouvrir à l'arrivée d'un dev non francophone.
 - **Q5** : `declencheurs.actifs` touche la spec 004 (`declencheurs.json`, `test_declencheurs.py`, l'évaluateur de `agence.py`). Hypothèse : la tâche vit dans le lot 4 de cette spec, après le merge des lots 3 et 4 de la spec 004 ; si 004 est en cours au même moment, elle passe à 004 et le lot 4 de 005 la retire.
