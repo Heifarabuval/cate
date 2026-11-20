@@ -1,12 +1,13 @@
 // The app panel type: the one compiled type that shows every custom panel, a
 // folder of `~/.cate/panneaux/` (spec 008 D1). Pure. No `creation`: the
 // generic menus list nothing, the menus' dynamic entries create one record
-// per panel (D4, Q6). No `api` yet and no `commands`.
+// per panel (D4, Q6). Its `api` shares panels (spec 007); no `commands`.
 
 import { channel } from '@kernel/rpc/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import type { AppOp, AppSnapshot } from './contract'
+import { appApi } from './contract/api'
 
 /** The custom panel to show: the name of its folder. */
 export interface AppCreateOptions extends PanelCreateOptions {
@@ -24,5 +25,6 @@ export default definePanel({
   defaultTitle: 'Panneau perso',
   fields: (options: AppCreateOptions): JsonObject => (options.appId ? { appId: options.appId } : {}),
   channel: channel<AppSnapshot, Partial<AppSnapshot>, AppOp>(),
+  api: appApi,
   describe: (record) => (typeof record.fields.appId === 'string' ? record.fields.appId : undefined)
 })

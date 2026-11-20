@@ -56,4 +56,14 @@ describe('skill panneau-perso, jalon 1', () => {
     expect(text).not.toMatch(/panneau navigateur|file:\/\/\//)
     expect(text).not.toContain(LONG_DASH)
   })
+
+  it('shares with cate app export and import, never by copying into the panels folder (spec 007 T404)', () => {
+    const sharing = read('SKILL.md').split(/\n## Partage\n/)[1]?.split(/\n## /)[0] ?? ''
+    expect(sharing).toContain('cate app export')
+    expect(sharing).toContain('cate app import')
+    expect(sharing).toContain("seul l'utilisateur installe, par un clic dans Cate")
+    expect(sharing).toMatch(/jamais[^.]*secret/i)
+    expect(sharing).toMatch(/jamais[^.]*chemin absolu/i)
+    expect(sharing).not.toMatch(/copi\w+ (son|le) dossier|cate app install/)
+  })
 })

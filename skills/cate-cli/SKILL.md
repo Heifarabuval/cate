@@ -27,6 +27,8 @@ Read the one for your task before its first command:
   or `--effort` when the task needs another model or effort), sending them
   prompts, waiting for and reading their answers, and typing into terminals
   that have no agent.
+- `references/app.md`: sharing custom panels (`cate app export`, `import`,
+  `imports`); installing stays a click of the user in Cate.
 
 Panels, terminals, editors and Review panels are covered below.
 
@@ -35,7 +37,7 @@ Panels, terminals, editors and Review panels are covered below.
 Each area needs its permission in the workspace's Settings → CLI: the master
 switch "Command-line control (cate CLI)" plus a Read and a Control cell per
 area (Browser, Browser passwords, Terminal, Panels, Files,
-Agents & reviews). Sending keystrokes to terminals (Terminal, Control) and
+Agents & reviews, Custom panels). Sending keystrokes to terminals (Terminal, Control) and
 using saved browser passwords are off by default. A denied call fails with an error naming the setting: tell the
 person which one to turn on instead of working around it.
 

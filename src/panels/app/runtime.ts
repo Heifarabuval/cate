@@ -1,15 +1,17 @@
 // What the daemon needs for app panels: the definition, the session bound to
 // its deps, and the workspace's one scanner, page server, grants file and
-// pending imports (shared by every app panel), the `apps` capability, and
-// their shutdown.
+// pending imports (shared by every app panel), the `apps` capability, the
+// `cate.app.*` services, and their shutdown.
 
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { createLogger, type Logger } from '@kernel/log/contract'
 import type { ClientFeature } from '@kernel/rpc/contract'
+import type { ApiRouter } from '@kernel/api/runtime'
 import type { RpcServer } from '@kernel/rpc/runtime'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { PanelSessionClass, SessionKit } from '@panels/framework/runtime'
+import { appApi } from './contract/api'
 import { appsCapability } from './contract/capability'
 import definition from './definition'
 import { appsCapabilityImpl } from './runtime/capability'
@@ -17,6 +19,7 @@ import { createAppGrants, type AppGrants } from './runtime/grants'
 import { createAppImports, type AppImports } from './runtime/import'
 import { createAppScanner, type AppScanner } from './runtime/scan'
 import { createAppServer, type AppServer } from './runtime/server'
+import { appApiHandlers } from './runtime/service'
 import { watchFolder } from './runtime/watch'
 import { AppSession, type AppSessionDeps } from './session'
 
@@ -34,8 +37,8 @@ export interface AppPanelsDeps {
 export interface AppPanels {
   definition: typeof definition
   session: PanelSessionClass
-  /** Registers `apps` and starts watching the folder. */
-  attach(context: { rpc: Pick<RpcServer, 'register'> }): void
+  /** Registers `apps` and `cate.app.*`, and starts watching the folder. */
+  attach(context: { rpc: Pick<RpcServer, 'register'>; router: Pick<ApiRouter, 'registerService'> }): void
   dispose(): Promise<void>
 }
 
@@ -79,9 +82,10 @@ export function createAppPanels(deps: AppPanelsDeps): AppPanels {
   return {
     definition,
     session: BoundAppSession as unknown as PanelSessionClass,
-    attach({ rpc }) {
+    attach({ rpc, router }) {
       const { scanner, imports } = parts()
       rpc.register(appsCapability, appsCapabilityImpl(scanner, imports))
+      router.registerService(appApi, appApiHandlers({ dir: deps.dir, scanner, imports, trust: deps.trust }))
       // A folder that cannot be created or watched leaves the list empty, never the daemon down.
       void scanner.start().catch((error) => log.warn('custom panels folder %s unavailable: %O', deps.dir, error))
       void imports.start().catch((error) => log.warn('app imports quarantine unavailable: %O', error))

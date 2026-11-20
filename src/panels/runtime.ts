@@ -174,7 +174,7 @@ const boite: PanelRuntime = () => boitePanel()
 
 const app: PanelRuntime<'apps' | 'trust' | 'clientHas'> = (services) => {
   const panels = createAppPanels({ ...services.apps, trust: services.trust, clientHas: services.clientHas })
-  return { definition: panels.definition, session: panels.session, attach: ({ rpc }) => panels.attach({ rpc }), dispose: () => panels.dispose() }
+  return { definition: panels.definition, session: panels.session, attach: ({ rpc, router }) => panels.attach({ rpc, router }), dispose: () => panels.dispose() }
 }
 
 export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence, boite, app]

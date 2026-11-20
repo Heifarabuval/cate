@@ -102,4 +102,22 @@ Le cadre (nom du panneau, origine « Panneau perso : <id> ») est dessiné par C
 
 ## Partage
 
-Un panneau se partage en copiant son dossier (ou un dépôt git) dans `~/.cate/panneaux/` de l'autre personne. Avant : aucun secret, aucun chemin absolu dans le dossier. L'installation guidée (`cate app install`) et l'accord à chaque mise à jour arrivent au jalon 4.
+Un panneau se donne par un paquet `.cate-panneau`, jamais en déposant un dossier dans `~/.cate/panneaux/` de quelqu'un d'autre.
+
+**Exporter**, chez l'expéditeur :
+
+```bash
+cate app export <id> --out <id>.cate-panneau
+```
+
+L'export lit le dossier sans le modifier, omet `.git/` et `node_modules/` et le dit, puis écrit le paquet. Il refuse un lien symbolique, un `.env`, une clé privée, un jeton reconnu (`ghp_`, `sk-`, `AKIA`) ou un chemin absolu de la machine (`/Users/`, `/home/`) en nommant le fichier et la ligne : corrige le dossier et relance. Ce contrôle ne prouve pas l'absence de secret : ne mets jamais de secret (clé, jeton, mot de passe) ni de chemin absolu dans un panneau. La dernière ligne de la sortie est l'empreinte : la personne la donne au destinataire par un autre canal que le paquet.
+
+**Importer**, chez le destinataire :
+
+```bash
+cate app import <paquet ou dossier> --empreinte <début de l'empreinte reçue>
+```
+
+L'import valide la source, la met en attente hors du dossier des panneaux et répond l'identifiant de l'import et l'empreinte. `--empreinte` (8 caractères hexadécimaux au moins) refuse un paquet dont l'empreinte ne commence pas par cette valeur ; sans elle, demande à la personne de comparer l'empreinte affichée avec celle de l'expéditeur. `cate app imports` liste les imports en attente (10 au plus, chacun expire après 24 h).
+
+**À l'écran** : seul l'utilisateur installe, par un clic dans Cate. Une carte d'import montre le nom, la source, l'empreinte, les fichiers, les permissions en phrases et les alertes ; Installer copie le panneau et l'autorise, Annuler le retire. Tu n'installes jamais toi-même et tu ne contournes jamais la carte : dis à la personne d'ouvrir Cate et de lire la carte. Si l'`id` existe déjà, la carte montre les fichiers ajoutés, changés et retirés. Un panneau installé dont un fichier change redemande l'accord.

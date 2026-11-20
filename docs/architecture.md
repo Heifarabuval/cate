@@ -2232,7 +2232,10 @@ folder of that panel only. One changed byte sends it back to `needs-grant`
 before any reload, with `changes` (files added, changed, removed) in the
 snapshot. Its card fingerprint is the folder's. Granting that card accepts
 the folder as it is now and keeps the panel installed. Refusing removes the
-grant and never deletes the folder.
+grant and never deletes the folder. From a terminal, `cate.app.*` (area
+Custom panels: `cliAppEnabled`, `cliAppControlEnabled`) lists the panels and
+the pending imports, exports a panel to `--out` and stages an import. None
+of its methods installs.
 
 **The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
 writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,
