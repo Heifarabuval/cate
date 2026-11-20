@@ -318,7 +318,11 @@ class Interlocuteur(Garde):
 	LANCE = ('cate agent start --title x "Lis le brief"', 'cate panel create terminal', 'cate panel link i1 o1',
 	         'cate panel close o1', 'cate terminal send o1 "ls"', 'cate terminal type --panel o1 ls',
 	         'cate terminal press enter', 'agence need add --kind task "x"', 'agence ask "Merger ?" --merge o/r#1',
-	         'agence draft new --cible mail:a@b.fr "x"', 'python3 tools/agence/agence.py need add "x"')
+	         'agence draft new --cible mail:a@b.fr "x"', 'python3 tools/agence/agence.py need add "x"',
+	         'cate --json agent start x', 'cate agent --json start x', 'cate -h panel create terminal',
+	         'agence ask "Merger ?" \\\n  --merge o/r#1', 'agence ask "Merger\nla PR ?" --merge o/r#1',
+	         'cate panel unlink i1 o1', 'cate agent interrupt --panel o1', 'cate panel group create x',
+	         'cate panel group add g1 o1', 'cate --json panel group list')
 
 	def setUp(self):
 		super().setUp()

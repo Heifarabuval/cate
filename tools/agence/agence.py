@@ -2787,8 +2787,15 @@ POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json'
 BACKLOG_DENY = "backlog.json et decisions.json s'écrivent seulement par la CLI : agence fiche, agence decision."
 REGISTRES = ('.cate/tmp/agence/backlog.json', '.cate/tmp/agence/decisions.json')
 # Ce qui lance, relie ou ferme du travail (spec 010, FR-002) : seules commandes où la garde sonde l'appelant.
-LANCE_RE = re.compile(r'\bcate\s+(agent\s+start|panel\s+(create|link|close)|terminal\s+(type|press|send|create))\b'
-                      r'|\bagence(\.py)?\s+(need\s+add|ask\b.*--merge|draft\s+new)\b')
+# Lu sur lance() : continuations de ligne jointes, flags globaux retirés (cate les accepte avant et entre les mots).
+LANCE_RE = re.compile(r'\bcate\s+(agent\s+(start|interrupt)|panel\s+(create|link|unlink|close|group)'
+                      r'|terminal\s+(type|press|send|create))\b'
+                      r'|\bagence(\.py)?\s+(need\s+add|ask\b.*--merge|draft\s+new)\b', re.S)
+GLOBAUX_RE = re.compile(r'(?<=\s)(--json|--help|-h|--version)(?=\s|$)')
+
+
+def lance(cmd):
+	return LANCE_RE.search(GLOBAUX_RE.sub(' ', re.sub(r'\\\r?\n', ' ', cmd)))
 
 
 def send_match(st, tool, ti):
@@ -2819,7 +2826,7 @@ def envoi_ask(tool):
 def guard(payload, mode):
 	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
 	de canal) ; 'pages' : pages du régisseur, fichiers écrits par la CLI, et refus à l'interlocuteur de ce qui lance
-	(LANCE_RE : la sonde de l'appelant ne tourne que sur ces commandes, bornée à SONDE secondes ; en échec, elle laisse passer)."""
+	(lance() : la sonde de l'appelant ne tourne que sur ces commandes, bornée à SONDE secondes ; en échec, elle laisse passer)."""
 	tool = payload.get('tool_name') or ''
 	ti = payload.get('tool_input') or {}
 	refus = envoi_ask(tool) if mode == 'send' else None
@@ -2862,7 +2869,7 @@ def guard(payload, mode):
 				and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or ''))):
 			return decision('deny', BACKLOG_DENY)
 		inter = st['panels'].get('interlocuteur')
-		if inter and LANCE_RE.search(cmd) and caller_panel(SONDE) == inter:
+		if inter and lance(cmd) and caller_panel(SONDE) == inter:
 			return decision('deny', INTER_DENY)
 		return None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
