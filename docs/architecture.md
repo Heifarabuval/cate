@@ -2381,7 +2381,7 @@ the runtime's machine on every client.
   given `beforeFirstMount`. The agent asks for a site with
   `cate.browser.requestSignIn {domain, reason}`; the session publishes the
   request, the view asks the person through `ClientUi` and, on yes, main
-  copies the hub's cookies of that domain (`sharedSignIns.grant`, a one-off
+  copies the hub's cookies of that domain and its subdomains (`sharedSignIns.grant`, a one-off
   copy with no sync) into that partition before the view answers
   (`answerSignIn`). Grants live in the snapshot only (never persisted), are
   copied again after a remount, and end with the panel: the view clears the

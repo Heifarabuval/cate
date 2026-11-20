@@ -168,10 +168,10 @@ function useSignInGrants(partition: string, agentDriven: boolean, signIns: Brows
     asked.current = key
     void (async () => {
       const allow = await clientUi().confirm(
-        `An agent asks to use your signed-in session on ${request.domain} in this panel.\n\nReason: ${request.reason}\n\nOnly ${request.domain} cookies, only this panel, until it closes.`,
+        `An agent asks to use your signed-in session on ${request.domain} in this panel.\n\nReason: ${request.reason}\n\nCookies of ${request.domain} and its subdomains only, in this panel only, until it closes.`,
       )
-      if (allow) await browserGrantSignIn(partition, request.domain).catch(() => 0)
-      await send({ kind: 'answerSignIn', allow }).catch(() => { /* shown by the next snapshot */ })
+      const cookies = allow ? await browserGrantSignIn(partition, request.domain).catch(() => 0) : 0
+      await send({ kind: 'answerSignIn', allow, cookies }).catch(() => { /* shown by the next snapshot */ })
     })()
   }, [request, agentDriven, partition, send])
   const granted = signIns.granted.join(' ')

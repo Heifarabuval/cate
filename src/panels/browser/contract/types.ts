@@ -112,8 +112,9 @@ export type BrowserOp =
   /** Back, forward or reload on the driving client's page (palette commands). */
   | { kind: 'history'; action: BrowserHistoryAction; tabId?: string }
   | { kind: 'setViewport'; viewport: BrowserViewport }
-  /** The person's answer to the pending sign-in request. */
-  | { kind: 'answerSignIn'; allow: boolean }
+  /** The person's answer to the pending sign-in request; `cookies`: how many
+   *  the client copied into the panel's partition (a grant needs at least one). */
+  | { kind: 'answerSignIn'; allow: boolean; cookies?: number }
   /** User input takes the page back from the agent. */
   | { kind: 'releaseAgentCursor' }
 
