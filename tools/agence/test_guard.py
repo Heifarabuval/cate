@@ -322,7 +322,7 @@ class Interlocuteur(Garde):
 	         'cate --json agent start x', 'cate agent --json start x', 'cate -h panel create terminal',
 	         'agence ask "Merger ?" \\\n  --merge o/r#1', 'agence ask "Merger\nla PR ?" --merge o/r#1',
 	         'cate panel unlink i1 o1', 'cate agent interrupt --panel o1', 'cate panel group create x',
-	         'cate panel group add g1 o1', 'cate --json panel group list')
+	         'cate panel group add g1 o1', 'cate --json panel group list', 'cate agent send --panel o1 "fait"')
 
 	def setUp(self):
 		super().setUp()
@@ -366,7 +366,7 @@ class Interlocuteur(Garde):
 
 	def test_aucune_sonde_hors_de_la_liste(self):
 		for cmd in ('agence fiche add "x" --type idee', 'git status', 'agence decision list --active',
-		            'agence ask "Choix ?" --option "a|b" --option "c|d"', 'cate agent list --json', 'cate agent send --panel o1 "fait"'):
+		            'agence ask "Choix ?" --option "a|b" --option "c|d"', 'cate agent list --json'):
 			with self.subTest(cmd=cmd):
 				r = self.bash(cmd)
 				self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)

@@ -2786,9 +2786,10 @@ PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+(pratiques\s+(set|unset|preset)\b|
 POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json')
 BACKLOG_DENY = "backlog.json et decisions.json s'écrivent seulement par la CLI : agence fiche, agence decision."
 REGISTRES = ('.cate/tmp/agence/backlog.json', '.cate/tmp/agence/decisions.json')
-# Ce qui lance, relie ou ferme du travail (spec 010, FR-002) : seules commandes où la garde sonde l'appelant.
+# Ce qui lance, relie, commande ou ferme du travail (spec 010, FR-002 ; agent send : spec 009, FR-003) :
+# seules commandes où la garde sonde l'appelant.
 # Lu sur lance() : continuations de ligne jointes, flags globaux retirés (cate les accepte avant et entre les mots).
-LANCE_RE = re.compile(r'\bcate\s+(agent\s+(start|interrupt)|panel\s+(create|link|unlink|close|group)'
+LANCE_RE = re.compile(r'\bcate\s+(agent\s+(start|send|interrupt)|panel\s+(create|link|unlink|close|group)'
                       r'|terminal\s+(type|press|send|create))\b'
                       r'|\bagence(\.py)?\s+(need\s+add|ask\b.*--merge|draft\s+new)\b', re.S)
 GLOBAUX_RE = re.compile(r'(?<=\s)(--json|--help|-h|--version)(?=\s|$)')
