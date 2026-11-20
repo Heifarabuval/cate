@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { classify } from './suivi'
-import type { AgenceState, NeedRow } from './types'
+import type { AgenceState, NeedRow, StateNeed } from './types'
 
 // The fixtures come from agence.py: `etat.json` is an agence state built with
 // `add_need` and the clock it was rendered at (GitHub states are fresh or
@@ -97,6 +97,22 @@ describe('classify', () => {
     const first = state.needs.find((need) => need.status === 'open' && need.owner === 'heifara')!
     expect(sections.aFaire.find((row) => row.id === first.id)!.created).toBe(first.created)
     for (const row of [...sections.bloquant, ...sections.aFaire, ...sections.fait, ...sections.reste]) expect(typeof row.created).toBe('string')
+  })
+
+  it("carries the permission an agent waits on in the need's line, with Oui/Non only when the screen was readable", () => {
+    const base = state.needs.find((need) => need.status === 'open' && need.owner !== 'heifara' && !need.overBudget && !need.blocking)!
+    const perm = { genre: 'hook', commande: 'rm -rf build', motif: 'nettoyage', choix: ['oui', 'non'], panel: 'p2' }
+    const rowOf = (patch: Partial<StateNeed>) => {
+      const out = classify({ ...state, needs: [{ ...base, agentBlocked: true, ...patch }] }, {}, now)
+      return [...out.bloquant, ...out.reste, ...out.fait][0]
+    }
+    expect(rowOf({ perm }).perm).toEqual({ genre: 'hook', commande: 'rm -rf build', motif: 'nettoyage', choix: true })
+    expect(rowOf({ perm: { ...perm, choix: [] } }).perm).toMatchObject({ choix: false })
+    // Already answered: the regisseur hides its buttons, so does the line.
+    expect(rowOf({ perm, permAnswered: 'abc' }).perm).toMatchObject({ choix: false })
+    expect(rowOf({ perm: null }).perm).toBeNull()
+    expect(rowOf({ perm, agentBlocked: false }).perm).toBeNull()
+    expect(rowOf({ perm, status: 'done' }).perm).toBeNull()
   })
 
   it('classifies an empty state into four empty sections', () => {

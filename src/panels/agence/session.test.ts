@@ -431,6 +431,54 @@ describe('AgenceSession', () => {
     })
   })
 
+  describe('perm', () => {
+    const perm = (patch: Record<string, unknown> = {}) => ({ genre: 'hook', commande: 'rm -rf build', motif: 'nettoyage', choix: ['oui', 'non'], panel: 'p1', ...patch })
+    const started = async (patch: Record<string, unknown> = {}) => {
+      const setupped = setup({ files: { state: state({ needs: [need('n3', { agentBlocked: true, panels: ['p1'], perm: perm(), ...patch })] }) } })
+      await setupped.session.start()
+      return setupped
+    }
+    const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
+
+    it.each(['oui', 'non'] as const)('posts %s to /perm/<needId>/%s, the same click as the sends', async (reponse) => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'perm', needId: 'n3', reponse })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: `/perm/n3/${reponse}`, form: {} }])
+    })
+
+    it.each([
+      ['an id outside ^n\\d+$', { needId: '../n3' }, {}],
+      ['an unknown need', { needId: 'n9' }, {}],
+      ['a closed need', {}, { status: 'done' }],
+      ['a need whose screen has no Oui/Non', {}, { perm: perm({ choix: [] }) }],
+      ['a need with no perm', {}, { perm: null }],
+    ])('refuses %s as invalid, posting nothing', async (_name, opPatch, needPatch) => {
+      const { session, regisseurs } = await started(needPatch)
+      await expect(op(session, { kind: 'perm', needId: 'n3', reponse: 'oui', ...opPatch })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it('refuses a reply that is neither oui nor non', async () => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'perm', needId: 'n3', reponse: 'peut-etre' as 'oui' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it("renders the regisseur's refusal (409) as a conflict with its message", async () => {
+      const { session, regisseurs } = await started()
+      const message = 'La demande a changé ou disparu : recharge le suivi, relis, puis réponds.'
+      regisseurs.answer(async () => ({ code: 409, message }))
+      await expect(op(session, { kind: 'perm', needId: 'n3', reponse: 'oui' })).resolves.toEqual({ ok: false, error: 'conflict', message })
+    })
+
+    it('answers unavailable when the regisseur is not running', async () => {
+      const { session, regisseurs } = await started()
+      regisseurs.set({ state: 'stopped' })
+      await expect(op(session, { kind: 'perm', needId: 'n3', reponse: 'oui' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+      expect(regisseurs.posts).toEqual([])
+    })
+  })
+
   describe('draft ops', () => {
     const open = { state: state({ needs: [need('n1', { kind: 'draft', ref: 'd1', owner: 'heifara' })], drafts: [{ id: 'd1', needId: 'n1', cible: 'issue:x/y', titre: 'T', statut: 'à valider', url: null }] }), drafts: { d1: 'Texte' } }
     const started = async () => {

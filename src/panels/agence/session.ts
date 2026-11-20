@@ -49,6 +49,7 @@ const INITIAL_COLS = 80
 const INITIAL_ROWS = 24
 const OPEN_DRAFT: ReadonlySet<string> = new Set(['à valider', 'envoyer'])
 const SAFE_ID = /^[\w-]+$/
+const PERM_NEED = /^n\d+$/
 const DRAFT_KINDS: ReadonlySet<string> = new Set(['issue', 'pr', 'comment', 'slack', 'mail'])
 const GARDES: ReadonlySet<string> = new Set(['actif', 'inactif', 'partiel'])
 
@@ -105,6 +106,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
       'orchestrator.restart': () => this.restart(),
+      perm: ({ needId, reponse }) => this.perm(needId, reponse),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
         ? { libre }
@@ -142,6 +144,14 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const open = SAFE_ID.test(questionId) && this.files?.read().state?.questions.some((question) => question.id === questionId && question.answer == null)
     if (!open) return Promise.resolve({ ok: false, error: 'invalid' })
     return this.click(`/ask/${questionId}`, form)
+  }
+
+  /** Oui or Non for an agent blocked on a readable permission: the regisseur's
+   *  `/perm` click, which re-reads the screen and refuses (409) a changed request. */
+  private perm(needId: string, reponse: string): Promise<AgenceOpResult> {
+    const ask = PERM_NEED.test(needId) && (reponse === 'oui' || reponse === 'non') && this.files?.read().state?.needs.some((need) => need.id === needId && need.status === 'open' && need.perm && need.perm.choix.length > 0)
+    if (!ask) return Promise.resolve({ ok: false, error: 'invalid' })
+    return this.click(`/perm/${needId}/${reponse}`, {})
   }
 
   /** One click on the regisseur's form. The session host runs this panel's
