@@ -96,7 +96,7 @@ function world(surface?: Surface): World {
     },
     observation: { navigated: (url) => { navigations.push(url) } },
     settings: { get: (key) => settings[key] },
-    files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}`, servedPath: () => null },
+    files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}`, servedPath: (url) => (url.startsWith('http://served.test/') ? url.slice('http://served.test'.length) : null) },
   }
   const entry = browserPanel(deps)
   const registry = createPanelRegistry([entry, { definition: canvasDef }])
@@ -198,26 +198,85 @@ describe('browser session', () => {
     w.dispose()
   })
 
-  it('tells the observation of each page a tab goes to, and of nothing else', async () => {
-    const w = world()
-    const id = w.create({ url: 'https://a.test/' })
-    await w.host.restore()
-    const tabId = w.snapshot(id).activeTabId
-    const report = (url: string, inPage = false) => w.op(id, { kind: 'reportNavigation', tabId, url, inPage, canGoBack: false, canGoForward: false })
+  describe('observation', () => {
+    const open = async (url = 'https://a.test/') => {
+      const w = world()
+      const id = w.create({ url })
+      await w.host.restore()
+      const tabId = w.snapshot(id).activeTabId
+      const report = (page: string, options: { inPage?: boolean; tab?: string; client?: string } = {}) =>
+        w.op(id, { kind: 'reportNavigation', tabId: options.tab ?? tabId, url: page, inPage: options.inPage ?? false, canGoBack: false, canGoForward: false }, options.client)
+      return { w, id, tabId, report }
+    }
 
-    await report('about:blank')
-    await report('https://a.test/')
-    expect(w.navigations).toEqual([])
+    it('tells of each page a client reports, once, and of nothing else', async () => {
+      const { w, id, tabId, report } = await open()
+      await report('about:blank')
+      expect(w.navigations).toEqual([])
 
-    await report('https://a.test/next?token=abc')
-    await report('https://a.test/next?token=abc')
-    await report('https://a.test/next?token=abc#section', true)
-    await w.op(id, { kind: 'reportTitle', tabId, title: 'Next' })
-    expect(w.navigations).toEqual(['https://a.test/next?token=abc'])
+      await report('https://a.test/')
+      await report('https://a.test/', { client: 'client-b' })
+      expect(w.navigations).toEqual(['https://a.test/'])
 
-    await report('https://b.test/')
-    expect(w.navigations).toEqual(['https://a.test/next?token=abc', 'https://b.test/'])
-    w.dispose()
+      await report('https://a.test/next?token=abc')
+      await report('https://a.test/next?token=abc')
+      await report('https://a.test/next?token=abc#section', { inPage: true })
+      await report('https://a.test/next?token=abc#section')
+      await w.op(id, { kind: 'reportTitle', tabId, title: 'Next' })
+      expect(w.navigations).toEqual(['https://a.test/', 'https://a.test/next?token=abc'])
+
+      await report('https://b.test/')
+      expect(w.navigations).toEqual(['https://a.test/', 'https://a.test/next?token=abc', 'https://b.test/'])
+      w.dispose()
+    })
+
+    it('tells of an address typed in the bar by the page the tab loaded, once', async () => {
+      const { w, id, tabId, report } = await open()
+      await report('https://a.test/')
+      await w.op(id, { kind: 'navigate', input: 'https://b.test/typed?q=1', tabId })
+      expect(w.navigations).toEqual(['https://a.test/'])
+      await report('https://b.test/typed?q=1')
+      expect(w.navigations).toEqual(['https://a.test/', 'https://b.test/typed?q=1'])
+
+      await w.op(id, { kind: 'navigate', input: 'https://c.test/x', tabId })
+      await report('https://www.c.test/x/')
+      expect(w.navigations).toEqual(['https://a.test/', 'https://b.test/typed?q=1', 'https://www.c.test/x/'])
+      w.dispose()
+    })
+
+    it('tells of a tab opened on a page when the page loads', async () => {
+      const { w, id, report } = await open()
+      const second = await w.op(id, { kind: 'newTab', url: 'https://d.test/' }) as string
+      expect(w.navigations).toEqual([])
+      await report('https://d.test/', { tab: second })
+      await report('https://d.test/', { tab: second })
+      expect(w.navigations).toEqual(['https://d.test/'])
+      w.dispose()
+    })
+
+    it('does not tell of a tab a restart restores', async () => {
+      const { w, id, tabId, report } = await open()
+      await report('https://a.test/next')
+      expect(w.navigations).toEqual(['https://a.test/next'])
+      w.dispose()
+
+      const again = world()
+      await again.host.restore()
+      const reportAgain = (page: string) => again.op(id, { kind: 'reportNavigation', tabId, url: page, canGoBack: false, canGoForward: false })
+      await reportAgain('https://a.test/next')
+      expect(again.navigations).toEqual([])
+      await reportAgain('https://a.test/other')
+      expect(again.navigations).toEqual(['https://a.test/other'])
+      again.dispose()
+    })
+
+    it('does not tell of a page of the workspace files', async () => {
+      const { w, report } = await open()
+      await report('http://served.test/work/b.html')
+      await report('https://a.test/')
+      expect(w.navigations).toEqual(['https://a.test/'])
+      w.dispose()
+    })
   })
 
   it('manages tabs and persists them', async () => {
