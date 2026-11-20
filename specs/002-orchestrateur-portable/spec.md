@@ -26,6 +26,10 @@
 - Q: Où vit la vérification des prérequis ? → A: `agence doctor --prerequis` ; `agence doctor` sans option reste le contrôle de relance de la spec 001. Décision de Heifara (q305, besoin n306).
 - Q: `cliTerminalInputEnabled` activé par défaut dans le fork ? → A: non, il reste coupé (réglage de sécurité) ; Max garde un clic par workspace orchestré, nommé par `doctor --prerequis`. Décision de Heifara (q307, besoin n308).
 
+### Session 2026-11-20
+
+- Q: Comment part le DM « Ta journée » de Heifara, que le garde du fork met en `ask` (T050) ? → A: par Hermes. Décision de Heifara (q508) ; le changement est côté dépôt Skills, à faire avant lundi 2026-11-23.
+
 ## État livré au 2026-11-20
 
 | Lot | Contenu | Preuve |

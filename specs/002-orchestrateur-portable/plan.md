@@ -141,6 +141,8 @@ Total restant : environ 1,25 j d'agent, dont 0,5 j dans le fork. 5-A et 5-B part
 
 Les specs 003 (observation, lots 0 et 1 mergés), 004 (cercle vertueux, lot 2 mergé), 005 (pratiques réglables), 006 (coût et attente) et 007 (panneaux perso partagés) s'écrivent ou s'implémentent en parallèle. Les lots de cette spec écrivent trois fichiers seulement : `tools/agence/test_quickstart.py` (nouveau), `specs/002-orchestrateur-portable/rapport-final.md` (nouveau) et `specs/002-orchestrateur-portable/quickstart.md`. Aucun n'est touché par une autre epic. Le risque est dans ce que le test du lot 5-A **lit** :
 
+**Ordre de merge et conflits entre les 4 specs** : voir `.cate/tmp/backlog/recoupement.md` (vague 1 : 005-L1, 007-L2, 002-5A, 006-L1).
+
 | Fichier lu par le lot 5-A | Autre epic qui peut le changer | Effet | Règle |
 |---|---|---|---|
 | `scripts/cate-fork-install.sh`, `scripts/cate-fork-uninstall.sh` | 005 (valeurs par défaut des gardes, preset) | le résumé de 3 lignes, le code de sortie ou `--sans-gardes` changent : `test_quickstart.py` rouge | l'implémenteur de 005 lance `npm run test:agence` et met le test à jour dans sa PR |
@@ -191,15 +193,15 @@ Exclus : les URL `Heifarabuval/cate` (adresse du fork, SC-002).
 | (retiré) `guard` sans `--mode` | gardé jusqu'à la bascule de Skills, retiré par la PR #96 (`7b41cd32`) | sans objet |
 | Une clé `heifara` reste dans le code livré | ses états existants restent lisibles sans code de migration (SC-005, principe III) | passer à `humain` : réécriture par `load()`, donc de la migration (rejeté par Heifara, q303) |
 
-## Tranché par Heifara le 2026-11-19
+## Tranché par Heifara le 2026-11-19 et le 2026-11-20
 
 - q303 (besoin n304) : la valeur stockée `owner` reste `heifara`, opaque.
 - q305 (besoin n306) : `agence doctor --prerequis` ; `doctor` seul inchangé.
 - q307 (besoin n308) : `cliTerminalInputEnabled` reste coupé par défaut ; `doctor --prerequis` le nomme.
+- q508 (2026-11-20) : le message « Ta journée » (DM de Heifara) passe par Hermes, T050 est tranchée ; le changement est côté dépôt Skills (`pro/tools/slack-moi.sh`, assistant de 8 h 30), à faire avant lundi 2026-11-23 (T050). Rien à changer dans le fork.
 
 ## Questions ouvertes (hypothèse de travail pour chacune)
 
-- **DM de Heifara (T050)** : ses deux envois automatiques (`pro/tools/slack-moi.sh`, assistant de 8 h 30) passent par `slack_send_message` et reçoivent `ask` du garde du fork. Hypothèse : option « Hermes poste, `send-guard.sh` supprimé » du rapport lot 5 de Skills, 0 €. Décision de Heifara ; hors fork.
 - **Nom de Heifara (T014)** : `agence nom` rend aujourd'hui « Heifarabuval (git user.name) ». Hypothèse : il règle `agence.nom` avant d'envoyer la ligne à Max.
 - **Où vit le test de l'amorçage avec la vraie CLI** : hypothèse, en Python (`tools/agence/test_quickstart.py`, job CI `agence (macos-latest)`), pas dans `scripts/cate-fork-install.test.mjs`, pour ne pas partager un fichier avec les epics qui touchent `scripts/`. À confirmer par l'orchestrateur.
 - **R12 (deuxième passage de Max)** exige un commit sur `origin/main` du fork. Hypothèse : Heifara le pousse (commit docs anodin) ; aucun agent ne pousse.
