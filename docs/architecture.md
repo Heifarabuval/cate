@@ -2523,6 +2523,22 @@ the runtime's machine on every client.
   every permission, opens no popup, keeps no browser user agent and sends no
   browser shortcut. The runtime serves its page from `~/.cate/panneaux/<id>/`
   under a strict content security policy.
+  **The origin lock.** `lockGuestSession` keeps one page per custom panel
+  session: the origin of the last `src` (the runtime's page server) and the
+  hosts its policy declares. A new `src` replaces the origin, so a daemon
+  restarted on another port leaves the old port unreachable. Main reads the
+  declared hosts from the `connect-src` of the page's main frame response
+  (`declaredHosts`), and only from that origin. `isPanelRequestAllowed`
+  decides every request of the session: the main frame only to the page's
+  origin, a resource to that origin or a declared host, `data:` and `blob:`
+  left to the policy. `will-navigate` and `will-redirect` apply the same
+  rule. The policy does not cover three channels, closed outside it: WebRTC
+  (`setWebRTCIPHandlingPolicy('disable_non_proxied_udp')` on every guest of a
+  locked session, so no direct UDP and no STUN), DNS prefetch (the page
+  server sends `X-DNS-Prefetch-Control: off`), and resource requests to an
+  undeclared host (the `webRequest` filter above). A `preconnect` opens no
+  request that `webRequest` sees: only the screen test of the hostile page
+  proves it stays closed.
 - **iOS.** WebKit connects to loopback hosts directly and never through a
   proxy, so there is no web proxy: before a page of the workspace loads a
   loopback URL (any frame), the app listens on the phone's own loopback at
