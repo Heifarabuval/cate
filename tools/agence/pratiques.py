@@ -249,3 +249,62 @@ def brief(pol, humain):
 		if texte:
 			lignes.append(f"- {texte} ({cle} : {v}, source {pol['sources'][cle]})")
 	return '\n'.join(lignes)
+
+
+# ---------- preuve de fin (FR-009, FR-010) ----------
+
+FORMES = 'pr-merged:N, issue-closed:N, ci-green:N, tests-local, report, draft-sent:ID'
+CONDITION_RE = re.compile(r'^(?:(pr-merged|issue-closed|ci-green):(\d*)|(tests-local|report)|(draft-sent):([\w.-]+))$')
+VERS_CONDITION = {'pr-mergee': 'pr-merged:', 'ci-verte': 'ci-green:', 'tests-locaux': 'tests-local', 'rapport': 'report'}
+ATTENDU = {'pr-merged': 'MERGED', 'issue-closed': 'CLOSED'}
+MANQUE = {'pr-merged': 'PR non mergée', 'issue-closed': 'issue non fermée', 'ci-green': 'checks non verts',
+          'tests-local': 'tests à déclarer (need done --evidence)', 'report': 'rapport attendu (need done --evidence)',
+          'draft-sent': 'brouillon non envoyé'}
+
+
+def conditions(done_when, saisie=False):
+	"""'ci-green:12,pr-merged:12' -> [('ci-green', '12'), ('pr-merged', '12')] ; Invalide hors grammaire.
+	saisie : le numéro est exigé (la forme dérivée garde N vide jusqu'à `agence need pr`)."""
+	out = []
+	for brut in done_when.split(','):
+		m = CONDITION_RE.match(brut)
+		if not m or (saisie and m.group(1) and not m.group(2)):
+			raise Invalide(f'--done-when : « {brut} » hors grammaire ; formes permises, séparées par une virgule : {FORMES}')
+		out.append((m.group(1), m.group(2)) if m.group(1) else (m.group(3), None) if m.group(3) else (m.group(4), m.group(5)))
+	return out
+
+
+def done_when_defaut(valeurs):
+	"""Condition de fin d'une tâche créée sans --done-when : `preuve`, sinon dérivée du mode ; N vide pour une PR."""
+	preuve = valeurs['preuve'] or (['pr-mergee'] if valeurs['livraison.mode'] == 'pr' else ['rapport'])
+	return ','.join(VERS_CONDITION[p] for p in preuve)
+
+
+def rattacher(done_when, num):
+	"""`need pr` : la PR num devient l'objet des conditions de PR ; None s'il n'y en a aucune."""
+	conds = conditions(done_when)
+	if not any(nom in ('pr-merged', 'ci-green') for nom, _ in conds):
+		return None
+	return ','.join(f'{nom}:{num}' if nom in ('pr-merged', 'ci-green') else nom if arg is None else f'{nom}:{arg}'
+	                for nom, arg in conds)
+
+
+def evaluer(done_when, faits, evidence=None):
+	"""(fait, manques). faits : {N: {'state', 'url', 'checks'}} relevé par le tour (checks : état du rollup, None
+	inconnu). Les conditions humaines (tests-local, report) et draft-sent ne sont vraies que sur une preuve déclarée."""
+	manques = []
+	for nom, arg in conditions(done_when):
+		f = faits.get(arg) if arg else None
+		if nom not in ('pr-merged', 'issue-closed', 'ci-green'):
+			manque = None if evidence else MANQUE[nom]
+		elif not arg:
+			manque = f'{nom} sans numéro : PR non rattachée (agence need pr <besoin> <N>)'
+		elif f is None:
+			manque = f'#{arg} : état inconnu'
+		elif nom == 'ci-green':
+			manque = None if f.get('checks') == 'SUCCESS' else 'checks inconnus' if f.get('checks') is None else MANQUE[nom]
+		else:
+			manque = None if f.get('state') == ATTENDU[nom] else MANQUE[nom]
+		if manque:
+			manques.append(manque)
+	return not manques, manques

@@ -7,7 +7,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
 
   agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
-  agence need add|panel|done|drop|list   add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
+  agence need add|panel|pr|done|drop|list   add --done-when : conditions de fin séparées par une virgule (pr-merged:N, issue-closed:N, ci-green:N, tests-local, report), dérivées de la politique sans elle ; need pr ID N rattache la PR ; add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
   agence draft new|edit|show|sent|drop  brouillons ; seul le bouton Envoyer de la page valide
   agence ask "question" --option "label|effet"... [--merge owner/repo#N]
@@ -229,7 +229,7 @@ def find(st, coll, oid):
 
 
 def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=None, source=None,
-             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None):
+             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None, issue=None):
 	"""Ajoute un besoin ; un besoin ouvert de même (kind, ref) est rendu tel quel (FR-006)."""
 	if kind not in KINDS:
 		raise Refus(f'kind inconnu : {kind} ({", ".join(KINDS)})')
@@ -241,7 +241,7 @@ def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=
 				return n, False
 	n = {'id': new_id(st, 'n'), 'kind': kind, 'title': title, 'ref': ref, 'owner': owner, 'blocking': blocking,
 	     'unblocks': unblocks, 'source': source, 'panels': list(panels), 'doneWhen': done_when,
-	     'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
+	     'issue': issue, 'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
 	     'closeFailed': False, 'agentBlocked': False, 'overBudget': False,
 	     'created': now_iso(), 'createdTs': time.time(), 'updated': now_iso()}
 	st['needs'].append(n)
@@ -299,6 +299,35 @@ def close_need(st, nid, status, evidence=None):
 		raise Refus('preuve requise pour passer en fait : --evidence (sortie de test, lien, SHA)')
 	n.update(status=status, evidence=evidence or n['evidence'], updated=now_iso())
 	return n
+
+
+def fin_lisible(n):
+	"""doneWhen dans la grammaire (FR-009) ; un texte libre écrit avant elle se lit « aucune condition », sans migration."""
+	import pratiques  # voir politique()
+	try:
+		return bool(n['doneWhen']) and bool(pratiques.conditions(n['doneWhen']))
+	except pratiques.Invalide:
+		return False
+
+
+def nums_fin(n):
+	"""Numéros GitHub que la condition de fin du besoin lit."""
+	import pratiques  # voir politique()
+	return {arg for _, arg in pratiques.conditions(n['doneWhen']) if (arg or '').isdigit()} if fin_lisible(n) else set()
+
+
+def fin(n, gh, evidence=None):
+	"""(fait, manques) de la condition de fin ; (False, []) sans condition lisible."""
+	import pratiques  # voir politique()
+	return pratiques.evaluer(n['doneWhen'], gh, evidence) if fin_lisible(n) else (False, [])
+
+
+def manques_machine(st, nid, evidence):
+	"""need done : ce qui manque encore, lu sur GitHub maintenant ; les conditions humaines valent par --evidence."""
+	n = find(st, 'needs', nid)
+	if n['status'] != 'open' or not fin_lisible(n):
+		return []
+	return fin(n, gh_states(st, sorted(nums_fin(n), key=int)), evidence)[1]
 
 
 # ---------- cate et gh ----------
@@ -576,12 +605,24 @@ def shq(s):
 
 def cmd_need(a):
 	if a.action == 'add':
+		import pratiques  # voir politique()
+		done_when = a.done_when
+		if done_when is not None:
+			try:
+				pratiques.conditions(done_when, saisie=True)
+			except pratiques.Invalide as err:
+				raise Env(str(err))
+		if a.kind == 'task':
+			v = politique(agir=True)['valeurs']
+			if v['issue'] == 'obligatoire' and not a.issue:
+				raise Refus('issue obligatoire (pratiques) : une tâche porte --issue N')
+			done_when = done_when or pratiques.done_when_defaut(v)
 		by_orch = bool(a.panel) and caller_is_orchestrator()
 		with tx() as st:
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
 			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
-			                source=a.frm, panels=a.panel or (), done_when=a.done_when, acceptance=a.acceptance,
-			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd)
+			                source=a.frm, panels=a.panel or (), done_when=done_when, acceptance=a.acceptance,
+			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue)
 			if by_orch:
 				launch(n, a.panel)
 		print(n['id'])
@@ -593,7 +634,19 @@ def cmd_need(a):
 				n['panels'].append(a.panel_id)
 			if by_orch:
 				launch(n, [a.panel_id])
+	elif a.action == 'pr':
+		import pratiques  # voir politique()
+		with tx() as st:
+			n = find(st, 'needs', a.id)
+			dw = fin_lisible(n) and pratiques.rattacher(n['doneWhen'], a.num)
+			if not dw:
+				raise Refus(f"{a.id} n'a pas de condition de PR à rattacher (doneWhen : {n['doneWhen']})")
+			n['doneWhen'] = dw
 	elif a.action in ('done', 'drop'):
+		if a.action == 'done':
+			manques = manques_machine(load(), a.id, a.evidence)
+			if manques:
+				raise Refus(f"{a.id} pas encore fait : {', '.join(manques)}")
 		me = caller_panel() if a.close else None  # jamais fermé par son propre appel, ni plus tard par le régisseur
 		with tx() as st:
 			n = close_need(st, a.id, 'done' if a.action == 'done' else 'dropped', a.evidence)
@@ -1216,6 +1269,10 @@ def need_line(st, n):
 		meta.append('demande : ' + ' · '.join(x for x in (code, e(perm['motif'])) if x))
 	if n['closeFailed']:
 		meta.append("fermeture refusée (agent en plein tour ou travail non enregistré) : à fermer à la main")
+	if n['status'] == 'open' and n.get('manques'):  # écrit par le tour : ce que la condition de fin attend encore
+		meta.append('manque : ' + ', '.join(e(m) for m in n['manques']))
+	if n['status'] == 'done' and 'tests-local' in (n['doneWhen'] or '').split(','):
+		meta.append('tests déclarés, non revérifiés')
 	if n['status'] == 'done' and n['evidence']:
 		ev = n['evidence']
 		meta.append(f'preuve : <a href="{e(ev)}">{e(ev)}</a>' if ev.startswith('http') else f'preuve : {e(ev)}')
@@ -1404,9 +1461,7 @@ def gh_needed(st):
 			continue
 		if n['kind'] in ('pr', 'issue') and (n['ref'] or '').isdigit():
 			nums.add(n['ref'])
-		m = re.match(r'^(pr-merged|issue-closed):(\d+)$', n['doneWhen'] or '')
-		if m:
-			nums.add(m.group(2))
+		nums |= nums_fin(n)
 	return sorted(nums, key=int)
 
 
@@ -1415,7 +1470,8 @@ def gh_states(st, nums):
 	if not nums or not repo:
 		return {}
 	owner, name = repo.split('/')
-	fields = ' '.join(f'n{x}: issueOrPullRequest(number:{x}){{... on PullRequest{{state url}} ... on Issue{{state url}}}}'
+	rollup = 'commits(last:1){nodes{commit{statusCheckRollup{state}}}}'  # ci-green : même appel, aucun gh de plus
+	fields = ' '.join(f'n{x}: issueOrPullRequest(number:{x}){{... on PullRequest{{state url {rollup}}} ... on Issue{{state url}}}}'
 	                  for x in nums)
 	query = f'query{{repository(owner:"{owner}",name:"{name}"){{{fields}}}}}'
 	code, out, err = RUN(['gh', 'api', 'graphql', '-f', f'query={query}'], timeout=GH_TIMEOUT)
@@ -1423,7 +1479,14 @@ def gh_states(st, nums):
 		log(f'gh graphql : {err.strip()}')
 		return {}
 	data = (json.loads(out).get('data') or {}).get('repository') or {}
-	return {k[1:]: v for k, v in data.items() if v}
+	return {k[1:]: {'state': v.get('state'), 'url': v.get('url'), 'checks': etat_checks(v)} for k, v in data.items() if v}
+
+
+def etat_checks(noeud):
+	"""État du statusCheckRollup du dernier commit d'une PR (SUCCESS, FAILURE, PENDING...), None s'il n'y en a pas."""
+	with contextlib.suppress(KeyError, IndexError, TypeError, AttributeError):
+		return noeud['commits']['nodes'][-1]['commit']['statusCheckRollup']['state']
+	return None
 
 
 # ---------- demandes de permission d'un agent bloqué ----------
@@ -1565,8 +1628,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 		if n['status'] != 'open':
 			continue
 		ref_state = gh.get(n['ref'] or '') if n['kind'] in ('pr', 'issue') else None
-		m = re.match(r'^(pr-merged|issue-closed):(\d+)$', n['doneWhen'] or '')
-		cond = gh.get(m.group(2)) if m else None
+		fait, n['manques'] = fin(n, gh)
 		done_by = None
 		if ref_state and n['kind'] == 'pr' and ref_state['state'] == 'CLOSED':
 			close_need(st, n['id'], 'dropped')
@@ -1575,8 +1637,9 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 			continue
 		if ref_state and ref_state['state'] in ('MERGED', 'CLOSED'):
 			done_by = ref_state
-		elif cond and cond['state'] == ('MERGED' if m.group(1) == 'pr-merged' else 'CLOSED'):
-			done_by = cond
+		elif fait:
+			nums = sorted(nums_fin(n), key=int)  # fait sans --evidence : au moins une condition machine, donc un numéro lu
+			done_by = next((gh[x] for x in nums if gh[x].get('url')), gh[nums[0]])
 		if done_by:
 			close_need(st, n['id'], 'done', done_by.get('url') or done_by['state'])
 			effects += [('close', p, n['id']) for p in n['panels'] if p in live]
@@ -2848,7 +2911,9 @@ def parser():
 	add.add_argument('--unblocks')
 	add.add_argument('--panel', action='append')
 	add.add_argument('--from', dest='frm')
-	add.add_argument('--done-when')
+	add.add_argument('--done-when', help="conditions de fin séparées par une virgule : pr-merged:N, issue-closed:N, ci-green:N, "
+	                 "tests-local, report (draft-sent:ID est interne) ; sans elle, une tâche reçoit celle de la politique (preuve)")
+	add.add_argument('--issue', help="issue de la tâche (exigée si la politique dit issue : obligatoire)")
 	add.add_argument('--acceptance')
 	add.add_argument('--budget', type=int)
 	add.add_argument('--budget-usd', type=dollars_positifs, help="budget en dollars (la devise de cate agent usage, sans conversion) : le besoin passe en Bloquant au dépassement")
@@ -2857,6 +2922,9 @@ def parser():
 	pa = ns.add_parser('panel')
 	pa.add_argument('id')
 	pa.add_argument('panel_id')
+	pr = ns.add_parser('pr', help='rattacher la PR N aux conditions de PR (pr-merged, ci-green) du besoin')
+	pr.add_argument('id')
+	pr.add_argument('num', type=int, metavar='N')
 	for name in ('done', 'drop'):
 		x = ns.add_parser(name)
 		x.add_argument('id')
