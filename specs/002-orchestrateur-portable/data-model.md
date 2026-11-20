@@ -21,9 +21,9 @@ Tous optionnels à la lecture : un état ancien sans ces clés se rend sans erre
 | `needs[].budgetUsd` | dollars ou `null` | budget voulu (`need add --budget-usd`), dans la devise de `cate agent usage`, sans conversion | CLI, régisseur |
 | `needs[].overBudgetUsd` | `true`, absent tant que faux | budget en dollars dépassé ; `overBudget` passe aussi à `true` (drapeau lu pour les minutes comme pour les dollars) : le besoin devient Bloquant | CLI, panneau (`suivi.ts` : « budget de X $ dépassé (coût Y $) » ; la ligne en minutes seulement si `budgetMin`) |
 | `needs[].costByPanel` | `{panneau: dollars ou null}`, absent tant que rien n'est lu | dernier coût lu par panneau d'agent du besoin ; `null` : agent connu de Cate sans coût lisible ; un panneau fermé ne fait pas retomber le cumul | CLI, panneau (somme des coûts lus, dans la ligne du dépassement en dollars seulement) |
-| `drafts[].incertain` | `true`, absent sinon (Slack seulement) | envoi sans issue connue (délai, coupure, `internal_error`, `fatal_error`) ; posé avant l'appel, retiré sur une issue certaine | CLI. Le panneau ne le lit pas : il n'affiche pas le refus d'un envoi incertain ni « Envoyer quand même » (reste à traiter) |
+| `drafts[].incertain` | `true`, absent sinon (Slack seulement) | envoi sans issue connue (délai, coupure, `internal_error`, `fatal_error`) ; posé avant l'appel, retiré sur une issue certaine | CLI. Le panneau le lit (`DraftView.incertain`) et remplace Envoyer par « Envoyer quand même », qui envoie `confirme=1` sur clic seulement |
 
-Dépense d'un besoin = somme des coûts lus (« au moins » s'il reste un `null`). Total du projet = somme des panneaux distincts, maximum lu par panneau. Un brouillon `incertain` reste `à valider` et le régisseur ne l'abandonne pas ; un simple Envoyer rend 409, seule la page du brouillon (`confirme=1`) renvoie.
+Dépense d'un besoin = somme des coûts lus (« au moins » s'il reste un `null`). Total du projet = somme des panneaux distincts, maximum lu par panneau. Un brouillon `incertain` reste `à valider` et le régisseur ne l'abandonne pas ; un simple Envoyer rend 409, seul « Envoyer quand même » (`confirme=1`), sur la page du brouillon ou dans le panneau, renvoie.
 
 ## Instantané du panneau (`src/panels/agence/contract/types.ts`)
 
