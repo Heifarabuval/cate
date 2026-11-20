@@ -277,6 +277,29 @@ describe('session usage', () => {
     expect(await one('claude-code', ['s-cut'])).toBeNull()
   })
 
+  it('gives null contextTokens when the last session has no response yet, even if an older one has', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-old.jsonl'), `${line('s-old', 'o1', { input_tokens: 150000, output_tokens: 1 })}\n`)
+    // After a /clear: the new session's file holds a zero-count line only.
+    writeFileSync(path.join(dir, 's-new.jsonl'), `${line('s-new', 'n1', { input_tokens: 0, output_tokens: 0 })}\n`)
+    expect(await one('claude-code', ['s-old', 's-new'])).toMatchObject({ contextTokens: null })
+  })
+
+  it('lets the later line win when two responses share a timestamp', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 100, output_tokens: 1 })}\n${line('s-a', 'a2', { input_tokens: 700, output_tokens: 1 })}\n`)
+    expect(await one('claude-code', ['s-a'])).toMatchObject({ contextTokens: 700 })
+  })
+
+  it('reads contextTokens as the input alone when nothing is cached', async () => {
+    const dir = path.join(home, '.claude', 'projects', '-proj')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 's-a.jsonl'), `${line('s-a', 'a1', { input_tokens: 420, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1 })}\n`)
+    expect(await one('claude-code', ['s-a'])).toMatchObject({ contextTokens: 420 })
+  })
+
   it('totals two panels of the same agent in the same folder apart, with one cache write', async () => {
     const dir = path.join(home, '.claude', 'projects', '-proj')
     mkdirSync(dir, { recursive: true })
