@@ -155,15 +155,15 @@ Ordre sur `tools/agence/agence.py` : L2, L3, L4, une PR ouverte à la fois, apr�
 
 - [ ] T040 [P] [US5] `tools/agence/test_connecteurs.py` : **`connecteur check`** (FR-009) : faux `claude mcp list` (format figé d'après une sortie réelle citée, hypothèse P3) : `factice` connecté, `mcp branché` ; absent, `mcp absent` ; connecteur `api` sans variable, `secret absent : <NOM>` ; connecteur `navigateur`, « dernier recours, lecture seule » ; `--json` rend les mêmes faits. Modèle : sonnet.
 - [ ] T041 [P] [US5] `tools/agence/test_connecteurs.py` : **secret sentinelle** (FR-006) : `GTM_FACTICE=valeur-sentinelle` : absente de `check`, `pratiques show`, `pratiques brief`, `state.json` après un tour, journal ; le jeton Slack suit la même fonction (tests de 005-L2 verts sans changement). Modèle : opus.
-- [ ] T042 [P] [US2] `tools/agence/test_pratiques.py` : **installation** : `champs` portent `metier` (groupe essentiel, `question`, choix = noms des métiers), `connecteurs.lecture` et `connecteurs.ecriture` (choix = noms des connecteurs du métier, jamais un nom d'outil MCP) ; la question `metier` vient en premier des premières questions. Modèle : sonnet.
+- [ ] T042 [P] [US2] `tools/agence/test_pratiques.py` : **installation** : `champs` portent `metier` (groupe essentiel, `question`, choix = noms des métiers), `connecteurs.lecture` et `connecteurs.ecriture` (choix = noms des connecteurs du métier, jamais un nom d'outil MCP) ; la question `metier` vient en premier des premières questions ; `tests` ne porte plus de `question` ; les premières questions sont 4 : `metier`, `livraison.mode`, `verification`, `agents.max` (008 SC-006, Q4 de la spec). Modèle : sonnet.
 - [ ] T043 [P] `tools/agence/test_doctor.py` : point `connecteurs` : `info` par manque, jamais bloquant ; absent sous `dev`. Modèle : haiku.
 
 ### Implémentation
 
 - [ ] T044 [US5] `tools/agence/metiers.py`, `agence.py` : `secret()`, `connecteur check`, `slack_token` par `secret()`. Rend T040 et T041 verts. Modèle : opus.
-- [ ] T045 [US2] `tools/agence/pratiques.json` : champs de 008 sur les trois clés, `metier` en tête des essentiels. Rend T042 vert. Modèle : sonnet.
+- [ ] T045 [US2] `tools/agence/pratiques.json` : champs de 008 sur les trois clés, `metier` en tête des essentiels, champ `question` retiré de `tests` (Q4). Rend T042 vert. Modèle : sonnet.
 - [ ] T046 `tools/agence/agence.py` : point `connecteurs` de `prerequis`. Rend T043 vert. Modèle : sonnet.
-- [ ] T047 Portes et PR du lot 4. Corps : renvoi à la Q4 de la spec (cinq premières questions, 008 SC-006 à aligner par son propriétaire). Modèle : haiku.
+- [ ] T047 Portes et PR du lot 4. Corps : Q4 de la spec (la question `metier` remplace celle de `tests`, 4 premières questions, 008 SC-006 tenu). Modèle : haiku.
 
 **Checkpoint lot 4** : un dépôt neuf demande le métier en premier ; `connecteur check` dit l'accès de chaque outil sans jamais montrer un secret.
 
