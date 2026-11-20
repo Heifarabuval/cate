@@ -6,7 +6,7 @@
 
 **Issue**: Heifarabuval/cate#103 (reste ouverte : elle porte l'implémentation). Besoin #n466. Recoupe #100 (coût de l'attente d'un orchestrateur) sans le refaire. Même limite de vie privée que la spec 003 (#76).
 
-**Status**: Draft. Spec d'abord, PR de la spec seule, aucun code. Questions ouvertes en fin de document (section « Questions ouvertes ») ; q469 et q471 sont tranchées (Q1, Q2) ; Q3 à Q9 gardent une hypothèse de travail.
+**Status**: Draft. Spec d'abord, PR de la spec seule, aucun code. Questions ouvertes en fin de document (section « Questions ouvertes ») ; q469, q471 et q488 sont tranchées (Q1, Q2) ; Q3 à Q9 gardent une hypothèse de travail.
 
 **Input**: Heifara veut que l'orchestrateur et Cate lancent eux-mêmes, au bon moment, les commandes de Claude Code et les `/` de nos skills qui améliorent le processus : `/compact`, `/clear` (le « `/new` » de l'issue, voir Clarifications), `/learn`, `/audit-config`, et les `/` qui aident à trouver de nouveaux skills ou à améliorer le processus (`tooling-scout`, `skill-creator`, `fewer-permission-prompts`, `update-config`, `claude-md-improver`, `graphify`). Une règle : consommer peu de jetons, donc **un déclencheur se décide par un script local sur des données déjà là, jamais par un tour de modèle**. Le tout dans une boucle qui s'améliore avec des données d'usage. Rien n'est décidé au-delà du texte de l'issue ; ce qui manque est posé en question, pas tranché ici.
 
@@ -26,7 +26,7 @@ Liens :
 - Q: La part de contexte, par la barre de statut ? → A: non, `statusLine` est `null` dans `~/.claude/settings.json` ; en brancher une serait un changement du setup, et elle ne sert qu'à la session qui l'affiche. La taille du contexte se lit dans le journal de session (dernier message : entrée, création de cache, lecture de cache). Cate ne l'expose pas encore (lot 1 du plan).
 - Q: Seuil en pourcentage ou en jetons ? → A: en jetons. La fenêtre est d'environ 1 M (registre de `measure.py`) ; 150 000 jetons lus par tour (#100) ne font que 15 % et coûtent déjà cher en attente.
 - Q: Un déclencheur envoie-t-il la commande seul, ou seulement une carte à son clic ? → A: tranché par Heifara (q469) : seul pour `/compact` (classe A), carte pour le reste (classe B). Un `/` qui change un fichier du setup ou de la mémoire reste en classe B quoi qu'il arrive (FR-006).
-- Q: Les trois déclencheurs minimaux ? → A: tranché par Heifara (q471) : `/compact` avant l'attente, `/learn` après une PR mergée, `/audit-config` hebdomadaire.
+- Q: Les trois déclencheurs minimaux ? → A: tranché par Heifara (q471) : `/compact` avant l'attente, `/learn` après une PR mergée, `/audit-config` hebdomadaire. Un 4e s'y ajoute (q488) : la mesure de consommation (`conso.py`, une carte hebdomadaire, classe B, 0 jeton).
 
 ## Vocabulaire
 
@@ -127,6 +127,22 @@ La même friction (même commande Bash retapée, même erreur d'outil, même gar
 2. **Given** la carte et un clic, **When** la commande part, **Then** elle suit les règles du skill (confirmation avant d'écrire, évals, `check.py` à 0 échec) : la spec n'y ajoute rien.
 3. **Given** `tooling-scout`, **When** la carte propose de le lancer, **Then** il tourne comme un panneau (`cate agent start`), jamais par l'outil Agent (règle du projet), avec la sortie d'`usage.py` pour entrée.
 
+### User Story 6 - Une carte hebdomadaire mesure la consommation, en nombres (Priority: P2, 4e déclencheur, décidé q488)
+
+Une fois par semaine, une carte propose de lancer `conso.py` : la mesure de consommation de la fenêtre de 7 jours. Motif chiffré : 714 relances de tests sans édition en 1,68 jour, soit 29,4 dollars (`~/.claude/state/mesure-sessions-2026-11-20.md`, lecture seule). L'outil est `common/tools/conso.py` du dépôt Skills : **dépendance externe**, hors de ce dépôt, ni lue ni modifiée par cette spec. Il coûte 0 jeton et sort des nombres seulement. Au clic sur « Lancer » (classe B), la commande part ; la carte n'envoie rien seule.
+
+**Why this priority**: c'est la seule mesure qui dit où partent les jetons ; sans elle, les seuils de `/compact` et les règles de relance restent des hypothèses.
+
+**Independent Test**: horloge fabriquée : 6 jours depuis la dernière ligne `conso` au journal : 0 carte ; 7 jours : 1 carte ; `conso.py` absent : aucune carte et une ligne `sans-mesure`.
+
+**Acceptance Scenarios**:
+
+1. **Given** aucune ligne `conso` depuis 7 jours, **When** le tour tourne, **Then** une carte apparaît avec la raison (`7j`) et la date de la dernière exécution ; aucun jeton n'est dépensé pour la poser.
+2. **Given** la carte, **When** « Lancer », **Then** la commande part vers la session désignée ; le régisseur ne l'exécute jamais de lui-même et n'affiche que des nombres (aucun texte de conversation).
+3. **Given** `conso.py` absent de la machine, **When** le tour tourne, **Then** le déclencheur se tait (décision `rien`, `sans-mesure` une fois par jour au plus).
+
+---
+
 ### Edge Cases
 
 - **L'agent change d'état entre la décision et l'envoi** : `cate agent send` ne refuse jamais un agent occupé, il met en file. Pour `/compact` et `/clear` (qui détruisent ou résument le contexte), l'évaluateur relit `cate agent list` juste avant l'envoi et, si un prompt est déjà en file ou l'agent n'est plus au repos, il n'envoie pas ; un prompt déjà parti en file dont la condition tombe est repris par `cate agent withdraw`.
@@ -182,6 +198,7 @@ Liste ferme, vérifiée par des tests (FR-014). Une ligne ajoutée se teste avan
 - **FR-017**: Respect des couches du fork : le champ `contextTokens` est une extension de `services/agents` (contrat et côté runtime) ; l'évaluateur, le journal, le bilan et les cartes sont des fonctions de la CLI `agence` (`tools/agence/`, hors `src/`) ; la vue des cartes est celle du panneau agence côté desktop ; aucune branche sur le contexte local ou distant ni sur un type de panneau dans le code partagé (voir plan, « Constitution Check »).
 - **FR-018**: Aucune dépendance ajoutée ; aucun service. Coût mensuel de la boucle : 0 € en service ; le coût des commandes lancées est celui qu'elles consomment (`/compact` un appel de résumé, `/learn` et `/audit-config` des tours, `measure.py` environ 0,02 $).
 - **FR-019**: Le skill `orchestrateur` MUST recevoir en lot 5 une section courte qui dit ce que le régisseur fait seul, ce qui attend un clic, et ce que l'orchestrateur ne fait pas (envoyer lui-même `/compact` à un autre agent, taper dans un terminal, lire le journal brut).
+- **FR-021**: Le 4e déclencheur (conso, q488) MUST être une carte de classe B, une par semaine et par projet (fenêtre de 7 jours), qui lance `conso.py` au clic. Il décide sur la date du journal (FR-001), ne lance rien seul, ne lit pas `conso.py` et ne le modifie pas (dépendance externe du dépôt Skills). Sortie : des nombres seulement. Indicateur (FR-009) : le nombre de relances de tests sans édition de la semaine est inférieur à celui de la semaine précédente (lu dans la sortie nombre-seulement) ; sinon échec.
 - **FR-020**: Une commande MUST démarrer **à blanc** : l'évaluateur décide et journalise (`decision: "blanc"`, mesure avant, ce qui aurait été envoyé) sans rien envoyer, jusqu'à ce que Heifara l'active par une carte « Activer <commande> pour ce projet ». L'activation se lit au journal et se retire d'un clic.
 
 ### Key Entities
@@ -241,6 +258,7 @@ Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la répo
 
 - **Q1** (q469, **tranchée par Heifara**) : autonomie. Décision : `/compact` part seul (classe A, après activation et mode à blanc, FR-020) ; tout le reste par carte (classe B). La table du plan met la classe A sur `/compact` seulement.
 - **Q2** (q471, **tranchée par Heifara**) : les trois déclencheurs minimaux : `/compact` avant l'attente de l'orchestrateur, `/learn` après une PR mergée (carte), `/audit-config` hebdomadaire (carte). `/clear` en fin de vague (T4) et la recherche de skills sur friction répétée (T5 à T10) restent hors des trois premiers lots.
+- **Q2 bis** (q488, **tranchée par Heifara**) : la mesure de consommation est le **4e déclencheur** : une carte hebdomadaire, « Lancer » au clic (classe B), 0 jeton, sortie en nombres seulement, fenêtre de 7 jours (`common/tools/conso.py`, dépôt Skills, dépendance externe). Les trois minimaux de Q2 restent `/compact`, `/learn` après merge, `/audit-config` ; la conso s'y ajoute, elle ne les remplace pas.
 - **Q3** : sur quelle session part `/learn` ? L'orchestrateur voit le merge et reste ouvert ; l'agent qui a fait le travail connaît la leçon mais le besoin ferme son panneau. Hypothèse : l'orchestrateur, avec un résumé de la PR en argument ; un agent d'apprentissage dédié est écarté (un panneau de plus, plafond de 4).
 - **Q4** : valeurs de départ des seuils (150 000 jetons pour `/compact`, 7 jours pour `/audit-config`, 48 h d'ignorance pour une carte, repos de 10 minutes). Toutes **hypothèses à mesurer**, aucune n'est une mesure ; le bilan les révise.
 - **Q5** : où lire la taille du contexte ? Hypothèse : un champ `contextTokens` dans `cate agent usage` (FR-012, code dans `services/agents/usage`), lu par la même routine que le reste. Alternative écartée : le régisseur lit `~/.claude/projects/` (contourne le moteur, dépend du nommage d'un dossier de Claude).

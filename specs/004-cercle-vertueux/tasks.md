@@ -11,7 +11,7 @@ description: "Tâches : cercle vertueux (issue #103)"
 
 **Interdits à tout agent** (constitution X) : lancer Playwright, Electron, l'app Cate ou `npm run dev`, ouvrir une fenêtre, lancer `npm ci` ou `npm install`, écrire dans le vrai `~/.cate` ou `~/.claude`, éditer `~/.claude/settings.json`, lancer `agence hooks`. Pas de merge, de push sur `main`, de force-push, de suppression de branche. Aucune dépendance ajoutée. Jamais `cate terminal type` ni `press` sur un panneau d'agent (hors du panneau jetable que le lot 0 a créé lui-même).
 
-**État** : spec écrite, aucune tâche commencée. Q1 (q469) est tranchée : `/compact` seul, le reste par carte. Q2 (q471) est tranchée : `/compact`, `/learn` après merge, `/audit-config` hebdomadaire (lots 3 et 4). Q3 à Q9 ont une hypothèse de travail.
+**État** : spec écrite, aucune tâche commencée. Q1 (q469) est tranchée : `/compact` seul, le reste par carte. Q2 (q471) est tranchée : `/compact`, `/learn` après merge, `/audit-config` hebdomadaire (lots 3 et 4). Q2 bis (q488) ajoute la conso comme 4e déclencheur (lot 4, T068). Q3 à Q9 ont une hypothèse de travail.
 
 ## Format: `- [ ] ID [P] [US] Description avec chemin`
 
@@ -106,6 +106,7 @@ description: "Tâches : cercle vertueux (issue #103)"
 
 - [ ] T064 [US2] `tools/agence/agence.py` : détection du besoin clos par merge (le régisseur la fait déjà pour fermer les panneaux), carte `/learn` vers la session désignée (Q3), verdict. Rend T060 et T061 verts.
 - [ ] T065 [US3] `tools/agence/agence.py` : T3 sur la date du journal, lecture seule du registre, verdict. Rend T062 et T063 verts.
+- [ ] T068 [US6] `tools/agence/test_declencheurs.py` puis `tools/agence/agence.py` + `declencheurs.json` : 4e déclencheur conso (q488), carte hebdomadaire de classe B qui lance `common/tools/conso.py` (dépôt Skills, dépendance externe, jamais lu ni modifié ici) au clic : 6 jours : 0 carte, 7 jours : 1, outil absent : `sans-mesure`. Test rouge d'abord. Pas de code dans cette spec.
 - [ ] T066 Vérificateur : même contrôle que T031 ; relecture : aucun fichier de `~/.claude` écrit (comparer les dates de modification avant et après les tests).
 - [ ] T067 [H] X002 : Heifara clique une carte `/learn` et une carte `/audit-config` sur un projet réel, lit leurs questions de confirmation dans le panneau agence.
 
