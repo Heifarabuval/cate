@@ -51,7 +51,7 @@ Tu tournes dans un terminal Cate (`$CATE_SOCKET` défini), sur le canvas « Agen
 | Commande prod, secrets, destructrice | terminal, commande tapée **sans** `Enter` | idem sans `press` ; `agence ask` pour qu'il décide |
 | Voir une PR, une issue, un site | navigateur | `cate panel create browser <url> --json` (`/pull/N/files` pour une review) |
 | Relire un fichier ou une spec du workspace | éditeur | `cate panel create editor --file <chemin> --json` |
-| Relire un fichier hors workspace (`~/.claude/state/`) : l'éditeur le refuse | navigateur (aperçu Markdown) | `python3 ~/.claude/tools/md_preview.py <fichier> "<titre>"` imprime une URL `file://`, puis `cate panel create browser <url> --json` |
+| Relire un fichier hors workspace (`~/.claude/state/`) : l'éditeur le refuse | navigateur (aperçu) | `agence preview <fichier> "<titre>"` imprime une URL `file://`, puis `cate panel create browser <url> --json` |
 
 Puis : `agence need add --kind cmd|pr|issue|file --ref <cmd|N|chemin> --panel <id> --from <source> "<titre>"` (un besoin ouvert identique est réutilisé : pas de doublon), `cate panel title --panel <id> "#<besoin> <rôle>"`, `cate panel link <source> <id> --kind context`.
 

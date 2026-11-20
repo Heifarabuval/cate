@@ -10,6 +10,7 @@ Codes inchangés : 0 ok, 1 refus métier, 2 environnement.
 | `agence nom` | nom affiché et sa source (`AGENCE_NOM`, `git agence.nom`, `git user.name`, `défaut`) | 0 | livré (PR #41) |
 | `agence doctor [--relance]` | contrôle de relance de la spec 001 | 0 oui, 1 non | livré (PR #58), inchangé |
 | `agence doctor --prerequis [--hors-cate] [--json]` | une ligne par point : `ok`, `manque` ou `info`, avec la commande qui règle | 0 tout ok, 1 un point bloquant manque | lots 3 et 4 |
+| `agence preview <fichier> [titre]` | page HTML statique du fichier (texte échappé, l'éditeur refuse les chemins hors workspace), URL `file://` imprimée | 0, 1 fichier illisible | #83 |
 | `agence hooks install\|uninstall\|status` | voir `hooks.md` | voir `hooks.md` | lot 3 |
 | `agence guard --mode send\|pages` | décision JSON `PreToolUse` ou rien | 0 | lot 3 |
 

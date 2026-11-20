@@ -2284,6 +2284,25 @@ def cmd_url(a):
 	return 0
 
 
+def cmd_preview(a):
+	"""Aperçu d'un fichier que l'éditeur refuse (hors workspace) : page statique, URL file:// à ouvrir dans un panneau navigateur."""
+	try:
+		with open(a.fichier, encoding='utf-8') as f:
+			texte = f.read()
+	except OSError as err:
+		raise Refus(f'lecture impossible : {err}')
+	titre = html.escape(a.titre or os.path.basename(a.fichier))
+	d = os.path.join(tempfile.gettempdir(), 'agence-preview')
+	os.makedirs(d, exist_ok=True)
+	out = os.path.join(d, hashlib.sha1(os.path.abspath(a.fichier).encode()).hexdigest()[:12] + '.html')
+	with open(out, 'w', encoding='utf-8') as f:
+		f.write('<!doctype html><meta charset="utf-8"><title>%s</title>'
+		        '<body style="font:14px system-ui;max-width:780px;margin:24px auto;padding:0 20px">'
+		        '<pre style="white-space:pre-wrap">%s</pre>' % (titre, html.escape(texte)))
+	print('file://' + urllib.parse.quote(out))
+	return 0
+
+
 # ---------- CLI ----------
 
 def version():
@@ -2389,6 +2408,10 @@ def parser():
 	h.add_argument('--settings', help='fichier à lire ou écrire (défaut : ~/.claude/settings.json)')
 	h.add_argument('--json', action='store_true')
 	h.set_defaults(fn=cmd_hooks)
+	v = sub.add_parser('preview', help="aperçu d'un fichier hors workspace : imprime une URL file://")
+	v.add_argument('fichier')
+	v.add_argument('titre', nargs='?')
+	v.set_defaults(fn=cmd_preview)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
