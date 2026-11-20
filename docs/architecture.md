@@ -121,7 +121,7 @@ its session.
  │ shells     desktop (window host, native OS, React UI) · mobile (iOS core) │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ panels     framework + terminal · editor · browser · review · agence ·   │
- │            canvas · surface                                              │
+ │            canvas · surface · boite                                      │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ client     core · connections · workspaces · document mirror · host      │
  ├──────────────────────────────────────────────────────────────────────────┤
