@@ -84,6 +84,15 @@ describe('classify', () => {
     expect(sections.aFaire.find((row) => row.title === 'Valider le brouillon issue')!.meta).toEqual(['modifié à 14:05'])
   })
 
+  it('says a dollar overrun in dollars, never as minutes, and still blocks the need', () => {
+    const need = state.needs.find((candidate) => candidate.status === 'open' && candidate.owner !== 'heifara' && !candidate.overBudget)!
+    const over = { ...need, budgetMin: null, budgetUsd: 2, overBudget: true, overBudgetUsd: true, costByPanel: { a1: 2.4 } }
+    const out = classify({ ...state, needs: [over] }, {}, now)
+    expect(out.bloquant).toHaveLength(1)
+    expect(out.bloquant[0].meta).toContain('budget de 2.00 $ dépassé (coût 2,40 $) : continuer, réduire ou arrêter ?')
+    expect(out.bloquant[0].meta.join()).not.toContain('min dépassé')
+  })
+
   it('classifies an empty state into four empty sections', () => {
     expect(classify({ ...state, needs: [], drafts: [], questions: [] }, {}, now)).toEqual({ bloquant: [], aFaire: [], fait: [], reste: [] })
   })

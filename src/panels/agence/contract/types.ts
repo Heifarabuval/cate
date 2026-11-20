@@ -139,11 +139,17 @@ export interface StateNeed {
   panels: string[]
   acceptance: string | null
   budgetMin: number | null
+  /** Dollar budget (`need add --budget-usd`); absent from states written before it. */
+  budgetUsd?: number | null
   evidence: string | null
   status: 'open' | 'done' | string
   closeFailed: boolean
   agentBlocked: boolean
+  /** True for a minutes overrun and for a dollar one. */
   overBudget: boolean
+  overBudgetUsd?: boolean
+  /** Last cost read per agent panel, in dollars; null when Cate gives none. */
+  costByPanel?: Record<string, number | null>
   updated: string
 }
 
