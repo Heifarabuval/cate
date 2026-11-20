@@ -20,6 +20,7 @@ import { notificationsCapability } from '@workspace/notifications/contract/capab
 import { agentsCapability } from '@services/agents/contract/capability'
 import { browserDataCapability } from '@services/browser/contract/capability'
 import { processCapability } from '@services/terminal/contract/capability'
+import { appsCapability } from './app/contract/capability'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract/capability'
 
 export const RUNTIME_CAPABILITIES = [
@@ -43,6 +44,7 @@ export const RUNTIME_CAPABILITIES = [
   processCapability,
   sessionCapability,
   surfaceCapability,
+  appsCapability,
 ] as const
 
 type Listed = (typeof RUNTIME_CAPABILITIES)[number]['name']

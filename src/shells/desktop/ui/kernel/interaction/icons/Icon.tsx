@@ -1,5 +1,7 @@
 import type { ComponentType, CSSProperties } from 'react'
-import { Briefcase, Folders, GitCompareArrows, Globe, Grid2X2, Inbox, Plus, Terminal } from 'lucide-react'
+import {
+  Briefcase, Calculator, Calendar, ChartBar, FileText, Folders, GitCompareArrows, Globe, Grid2X2, Image, Inbox, LayoutDashboard, ListChecks, Plus, Table, Terminal
+} from 'lucide-react'
 import type { IconName } from '@kernel/interaction/contract'
 
 export interface IconProps {
@@ -17,6 +19,14 @@ const ICONS: Record<IconName, ComponentType<IconProps>> = {
   plus: Plus,
   briefcase: Briefcase,
   inbox: Inbox,
+  'layout-dashboard': LayoutDashboard,
+  table: Table,
+  'file-text': FileText,
+  'chart-bar': ChartBar,
+  calculator: Calculator,
+  calendar: Calendar,
+  image: Image,
+  'list-checks': ListChecks
 }
 
 export function Icon({ name, ...props }: IconProps & { name: IconName }) {
