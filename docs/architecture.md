@@ -2266,6 +2266,34 @@ lock (schema in `tools/agence/backlog.py`, shipped next to the CLI); the
 `discussion` <-> `prête` through the CLI; `lancée`, `faite` and `abandonnée`,
 like a decision becoming `active`, come from a click only.
 The regisseur publishes the backlog as `backlog` in `state.json` (cards, waves, waits, file error; shape in `src/panels/agence/contract/fixtures/vue-backlog.json`), the panel's snapshot carries it (null for a CLI that publishes none), and « Lancer (n) » is the `fiches.lancer` op, a POST of the checked ids to `/fiches/lancer`.
+Each project has one **interlocutor**: `agence start` starts a Claude Code
+terminal titled `Interlocuteur` with `/interlocuteur` (the bundled skill
+`skills/interlocuteur/SKILL.md`), records it as `panels.interlocuteur`, links
+it to the agence panel (`context`) and adopts the live one when run again. It
+talks to the human and writes cards and proposed decisions, nothing else. The
+`pages` guard refuses it every command that starts, steers, links or closes
+work (`cate agent start|send|interrupt`, `cate panel create|link|unlink|close|group`,
+`cate terminal type|press|send|create`, `agence need add`, `agence ask --merge`,
+`agence draft new`), with global flags and line continuations ignored; the CLI
+itself also refuses it the three `agence` commands. The guard finds the caller
+by a probe (5 s per `cate` call), and lets the command through when the probe
+fails or times out.
+It holds an `agents.max` seat like any live agent; only the orchestrator and
+the regisseur do not.
+The regisseur's `/fiches/lancer` route (the panel's « Lancer ») plans the
+checked `prête` cards against the `lancée` ones and the free seats. For each
+card of wave 1 it creates a task need (`ref fiche:F<n>`, the card's proof as
+done condition, its token budget and model), marks the card `lancée` and sends
+the orchestrator one message with the wave, the waiting cards and their briefs.
+The other cards stay in the clicked batch and leave at the turn a seat frees,
+without a new click. A card that is no longer `prête`, or already waits, refuses
+the whole click (409). A need `done` makes its card `faite`; `dropped` puts it
+back to `prête`.
+A need's **token budget** (`budgetJetons`, `agence need add --budget-jetons`)
+is compared, at each regisseur turn, with the sum of the last `cate agent usage`
+reading of each of its panels. Past the budget, the need turns `overBudget`, the
+orchestrator is told once, and the need's card shows « consommé / budget jetons »
+(« consommé inconnu » without a reading).
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger
@@ -3099,7 +3127,7 @@ scripts/                    builds (runtime, tarball, mobile core, build id,
                             skills index), packaging and signing, the
                             install script, agent CLI installs, e2e and perf
                             runners
-skills/                     bundled skills (cate-cli, cate-theme, orchestrateur)
+skills/                     bundled skills (cate-cli, cate-theme, interlocuteur, orchestrateur, panneau-perso)
 registry/                   the curated skills index and its sources
 native/passkeys/            the passkeys native addon
 ios/                        the iOS app: Cate/ (App, Core), Notifications/
