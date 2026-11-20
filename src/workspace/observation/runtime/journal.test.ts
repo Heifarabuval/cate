@@ -141,6 +141,30 @@ describe('journal', () => {
     await vi.waitFor(() => expect(existsSync(path.join(dir, '2026-11-20.jsonl'))).toBe(true))
   })
 
+  it('writes by itself 250 ms after the first fact of a burst, not before, and the burst in one go', async () => {
+    // The timers are faked, the disk is not: give the disk real time to answer before looking.
+    const file = path.join(dir, '2026-11-20.jsonl')
+    const watchDisk = async (ms: number, done: () => boolean) => {
+      const until = Date.now() + ms
+      while (Date.now() < until && !done()) await new Promise((resolve) => setImmediate(resolve))
+    }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await journal.dispose()
+      journal = open()
+      journal.append(created)
+      await vi.advanceTimersByTimeAsync(249)
+      await watchDisk(100, () => existsSync(dir))
+      expect(existsSync(dir)).toBe(false)
+      journal.append({ ...created, kind: 'panel.closed' })
+      await vi.advanceTimersByTimeAsync(1)
+      await watchDisk(1000, () => existsSync(file) && readFileSync(file, 'utf8').split('\n').filter(Boolean).length === 2)
+      expect(lines('2026-11-20.jsonl').map((line) => line.kind)).toEqual(['panel.created', 'panel.closed'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('drops the new facts when too many wait for the disk', async () => {
     await journal.dispose()
     journal = open({ maxQueued: 2 })

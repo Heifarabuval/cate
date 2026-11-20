@@ -7,24 +7,22 @@ import path from 'node:path'
 import type { Logger } from '@kernel/log/contract'
 import { dayAge, localDay, parseJournalFileName, parseObservation, type Observation } from '../contract'
 
-export interface Listing {
+export interface JournalRead {
   /** The clean lines of the days asked, oldest first. */
   observations: Observation[]
-  total: number
   /** Lines that are not a clean observation, left in their file. */
   illisibles: number
-  /** Today and this many days before. */
-  jours: number
 }
 
-export async function readJournal(options: { dir: string; now: number; jours: number; log: Logger }): Promise<Listing> {
+/** The lines of today and of the `jours` days before. */
+export async function readJournal(options: { dir: string; now: number; jours: number; log: Logger }): Promise<JournalRead> {
   const { dir, jours, log } = options
-  const listing: Listing = { observations: [], total: 0, illisibles: 0, jours }
+  const read: JournalRead = { observations: [], illisibles: 0 }
   let names: string[]
   try {
     names = await fs.readdir(dir)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return listing
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return read
     throw err
   }
   const today = localDay(options.now)
@@ -47,10 +45,9 @@ export async function readJournal(options: { dir: string; now: number; jours: nu
       try {
         observation = parseObservation(JSON.parse(line))
       } catch { /* not JSON: counted below */ }
-      if (observation) listing.observations.push(observation)
-      else listing.illisibles += 1
+      if (observation) read.observations.push(observation)
+      else read.illisibles += 1
     }
   }
-  listing.total = listing.observations.length
-  return listing
+  return read
 }

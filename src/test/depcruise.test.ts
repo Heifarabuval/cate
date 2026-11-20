@@ -41,6 +41,9 @@ describe('dependency rules', () => {
   it("a CLI file importing another module's internals", () => {
     expect(rejected).toContain('src/cli/bad.ts')
   })
+  it('the observation module importing a network built-in', () => {
+    expect(rejected).toContain('src/workspace/observation/runtime/bad.ts')
+  })
   it('the agents runtime importing a client side', () => {
     expect(rejected).toContain('src/services/agents/runtime/bad.ts')
   })

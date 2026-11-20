@@ -41,6 +41,27 @@ describe('the document as a source', () => {
     expect(w.facts).toEqual([{ kind: 'panel.linked', panelType: 'browser', ref: 'b1' }])
   })
 
+  it('says nothing of a relation that was already there when another panel is created', () => {
+    const w = watched()
+    const panels = [panel('b1', 'browser'), panel('t1', 'terminal')]
+    const linked = [relation('r1', 'b1', 't1')]
+    w.emit(op({ kind: 'addPanel' }), doc(panels, linked), doc([...panels, panel('e1', 'editor')], linked))
+    expect(w.facts).toEqual([{ kind: 'panel.created', panelType: 'editor', ref: 'e1' }])
+  })
+
+  it('says nothing of a link that starts from a panel the document does not hold', () => {
+    const w = watched()
+    const panels = [panel('t1', 'terminal')]
+    w.emit(op({ kind: 'addRelation' }), doc(panels), doc(panels, [relation('r1', 'ghost', 't1')]))
+    expect(w.facts).toEqual([])
+  })
+
+  it('reads a batch that holds a panel op among ops that are not', () => {
+    const w = watched()
+    w.emit(op({ kind: 'batch', changes: [{ kind: 'setNodeRects' }, { kind: 'addPanel' }] }), doc([]), doc([panel('p1', 'browser')]))
+    expect(w.facts).toEqual([{ kind: 'panel.created', panelType: 'browser', ref: 'p1' }])
+  })
+
   it('says a created panel then its link, in the order of a batch', () => {
     const w = watched()
     const before = [panel('t1', 'terminal')]

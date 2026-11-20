@@ -35,7 +35,7 @@ export async function purgeJournal(options: { dir: string; now: number; log: Log
     }
     if (dayAge(day, today) <= RETENTION_DAYS) continue
     try {
-      await fs.rm(path.join(dir, entry.name), { force: true })
+      await fs.unlink(path.join(dir, entry.name))
       result.removed.push(entry.name)
     } catch (err) {
       log.warn('observation purge could not remove %s: %s', entry.name, err instanceof Error ? err.message : String(err))

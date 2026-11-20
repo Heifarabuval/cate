@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readJournal } from './read'
@@ -31,7 +31,7 @@ describe('readJournal', () => {
       ['panel.created', 'p3'],
       ['panel.closed', 'p3'],
     ])
-    expect(listing).toMatchObject({ total: 3, illisibles: 0, jours: 14 })
+    expect(listing.illisibles).toBe(0)
   })
 
   it('leaves out the days before the ones asked: 0 is today, 1 is today and yesterday', async () => {
@@ -40,7 +40,7 @@ describe('readJournal', () => {
     writeDay(dir, '2026-11-18.jsonl', line('2026-11-18T09:00:00.000Z', 'panel.created', 'before'))
     expect((await read(0)).observations.map((one) => one.ref)).toEqual(['today'])
     expect((await read(1)).observations.map((one) => one.ref)).toEqual(['yesterday', 'today'])
-    expect((await read(14)).total).toBe(3)
+    expect((await read(14)).observations).toHaveLength(3)
   })
 
   it('counts a line it cannot read and leaves the file as it is', async () => {
@@ -71,7 +71,7 @@ describe('readJournal', () => {
   it('does not look at a file that is not a day of the journal', async () => {
     writeDay(dir, 'etat.json', '{"a":1}')
     writeDay(dir, 'notes.jsonl', line('2026-11-20T09:00:00.000Z', 'panel.created', 'p1'))
-    expect(await read()).toMatchObject({ observations: [], total: 0, illisibles: 0 })
+    expect(await read()).toEqual({ observations: [], illisibles: 0 })
   })
 
   it('lists a day after today, a clock that went back', async () => {
@@ -79,8 +79,23 @@ describe('readJournal', () => {
     expect((await read()).observations.map((one) => one.ref)).toEqual(['later'])
   })
 
+  it.skipIf(process.getuid?.() === 0)('goes on and says so when a day cannot be read', async () => {
+    writeDay(dir, '2026-11-20.jsonl', line('2026-11-20T09:00:00.000Z', 'panel.created', 'today'))
+    const hidden = writeDay(dir, '2026-11-19.jsonl', line('2026-11-19T09:00:00.000Z', 'panel.created', 'yesterday'))
+    chmodSync(hidden, 0o000)
+    try {
+      const listing = await read()
+      expect(listing.observations.map((one) => one.ref)).toEqual(['today'])
+      expect(listing.illisibles).toBe(0)
+      expect(logs.warnings).toHaveLength(1)
+      expect(logs.warnings[0]).toMatch(/^observation list could not read 2026-11-19\.jsonl: /)
+    } finally {
+      chmodSync(hidden, 0o600)
+    }
+  })
+
   it('lists nothing, and creates nothing, when there is no folder', async () => {
-    expect(await read()).toEqual({ observations: [], total: 0, illisibles: 0, jours: 14 })
+    expect(await read()).toEqual({ observations: [], illisibles: 0 })
     expect(existsSync(dir)).toBe(false)
   })
 })

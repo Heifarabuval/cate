@@ -8,13 +8,21 @@ import type { Logger } from '@kernel/log/contract'
 import { RpcError } from '@kernel/rpc/contract'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import type { SliceValues } from '@kernel/settings/contract'
-import { exclusionList, type ObservationInput, type ObservationState, type observationCapability, type observationSettings, type observeApi } from '../contract'
+import {
+  countObservations,
+  exclusionList,
+  type ObservationInput,
+  type ObservationListing,
+  type ObservationState,
+  type observationCapability,
+  type observationSettings,
+  type observeApi,
+} from '../contract'
 import { createJournal } from './journal'
 import { purgeJournal } from './purge'
-import { readJournal, type Listing } from './read'
+import { readJournal } from './read'
 import { navigationFact, watchDocument, type DocumentSource } from './sources'
 
-export type { Listing } from './read'
 export type { DocumentSource } from './sources'
 
 const DAY_MS = 86_400_000
@@ -45,8 +53,13 @@ export interface ObservationRuntime {
   /** A browser panel went to a page. */
   navigated(url: string): void
   state(): ObservationState
-  /** The journal of today and of the `jours` days before, read only. */
-  list(jours: number): Promise<Listing>
+  /**
+   * The journal of today and of the `jours` days before, read only: the counts
+   * by type and the total, and the lines with their refs only when `refs`.
+   * What a terminal prints is recorded in terminal-logs/, which neither the
+   * 14 days retention nor Erase all reaches, so the refs are asked for by name.
+   */
+  list(jours: number, refs: boolean): Promise<ObservationListing>
   /** Purges the old files now, then every day. Never rejects. */
   start(): Promise<void>
   flush(): Promise<void>
@@ -100,7 +113,10 @@ export function createObservationRuntime(deps: ObservationDeps): ObservationRunt
         erreur,
       }
     },
-    list: (jours) => readJournal({ dir, now: now(), jours, log }),
+    async list(jours, refs) {
+      const { observations, illisibles } = await readJournal({ dir, now: now(), jours, log })
+      return { jours, total: observations.length, illisibles, types: countObservations(observations), ...(refs ? { observations } : {}) }
+    },
     async start() {
       if (daily) return
       daily = setInterval(() => { void purge() }, DAY_MS)
@@ -124,12 +140,12 @@ export function observationCapabilityImpl(service: Pick<ObservationRuntime, 'sta
 /** The `service` methods of `cate.observe.*`. */
 export function observationApiHandlers(service: Pick<ObservationRuntime, 'list'>): CateServiceHandlers<typeof observeApi> {
   return {
-    list: async ({ jours }, ctx) => {
+    list: async ({ jours, refs }, ctx) => {
       // A terminal of the machine only: the raw journal never crosses the protocol to a paired device (FR-018).
       if (ctx.caller.kind !== 'cli') {
         throw new RpcError('rejected', 'observation-list-local-only: the journal is read from a terminal of the machine that runs it, never over the network')
       }
-      return service.list(jours)
+      return service.list(jours, refs)
     },
   }
 }
