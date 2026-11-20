@@ -50,12 +50,13 @@ export default function DraftReader({ workspaceId, panelId, draft, send, onBack 
       <div className="relative min-h-[200px] flex-1 overflow-hidden rounded-lg border border-subtle bg-surface-2">
         <MarkdownPreview content={draft.texte} workspaceId={workspaceId} panelId={panelId} filePath={`${draft.id}.md`} noImages />
       </div>
+      {draft.incertain && <InlineNotice tone="error" className="!text-primary">Envoi incertain : vérifie le canal Slack avant de renvoyer.</InlineNotice>}
       {error && <InlineNotice tone="error" className="!text-primary">{error}</InlineNotice>}
       {open && (
         <div data-testid="draft-actions" className="flex shrink-0 items-center justify-end gap-1.5">
           <ActionButton className="shrink-0 whitespace-nowrap" busy={active === 'edit'} done={done === 'edit'} disabled={waiting('edit')} onClick={() => void act('edit', { kind: 'draft.edit', draftId: draft.id }, false)}>Modifier</ActionButton>
           <ActionButton className={ACTION_DANGER} busy={active === 'drop'} disabled={waiting('drop')} onClick={() => void act('drop', { kind: 'draft.drop', draftId: draft.id }, true)}>Abandonner</ActionButton>
-          <ActionButton className={ACTION} busy={active === 'send'} disabled={waiting('send')} onClick={() => void act('send', { kind: 'draft.send', draftId: draft.id, hash: draft.hash }, true)}>Envoyer</ActionButton>
+          <ActionButton className={ACTION} busy={active === 'send'} disabled={waiting('send')} onClick={() => void act('send', { kind: 'draft.send', draftId: draft.id, hash: draft.hash, ...(draft.incertain ? { confirme: true } : {}) }, true)}>{draft.incertain ? 'Envoyer quand même' : 'Envoyer'}</ActionButton>
         </div>
       )}
     </div>

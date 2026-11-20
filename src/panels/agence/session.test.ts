@@ -446,6 +446,16 @@ describe('AgenceSession', () => {
       expect(regisseurs.posts).toEqual([{ path: '/draft/d1/send', form: { h: 'abc' } }])
     })
 
+    it('serves an incertain slack draft as incertain, and posts confirme=1 only when the op carries it', async () => {
+      const files = { state: state({ needs: [need('n1', { kind: 'draft', ref: 'd1', owner: 'heifara' })], drafts: [{ id: 'd1', needId: 'n1', cible: 'slack:C1', titre: null, statut: 'à valider', url: null, incertain: true }] }), drafts: { d1: 'Salut' } }
+      const { session, regisseurs } = setup({ files })
+      await session.start()
+      expect(snap(session).drafts.d1.incertain).toBe(true)
+      await op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc' })
+      await op(session, { kind: 'draft.send', draftId: 'd1', hash: 'abc', confirme: true })
+      expect(regisseurs.posts).toEqual([{ path: '/draft/d1/send', form: { h: 'abc' } }, { path: '/draft/d1/send', form: { h: 'abc', confirme: '1' } }])
+    })
+
     it('posts drop and edit without a hash', async () => {
       const { session, regisseurs } = await started()
       await expect(op(session, { kind: 'draft.drop', draftId: 'd1' })).resolves.toEqual({ ok: true })
