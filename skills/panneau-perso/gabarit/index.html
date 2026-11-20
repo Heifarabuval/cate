@@ -2,20 +2,53 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mon panneau</title>
+<link rel="stylesheet" href="theme.css">
 <style>
-  body { font: 14px system-ui, sans-serif; margin: 16px; }
-  table { border-collapse: collapse; }
-  td, th { border: 1px solid #8884; padding: 2px 8px; }
+  /* Seules les variables de theme.css donnent des couleurs. Aucune valeur en dur. */
+  :root { --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --radius: 6px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: var(--s4); background: var(--surface-0); color: var(--text-primary);
+    font: 13px/1.5 system-ui, -apple-system, sans-serif; }
+  h1 { margin: 0 0 var(--s4); font-size: 16px; font-weight: 600; }
+  h2 { margin: 0 0 var(--s2); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .bar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s3); margin-bottom: var(--s4); }
+  label { display: grid; gap: var(--s1); color: var(--text-secondary); }
+  input, button { font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border-strong); border-radius: var(--radius); padding: var(--s1) var(--s3); min-height: 32px; }
+  button { cursor: pointer; background: var(--text-primary); color: var(--text-inverse); border-color: var(--text-primary); }
+  button.secondary { background: var(--surface-1); color: var(--text-primary); border-color: var(--border-strong); }
+  button:hover:not(:disabled) { opacity: .88; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+  .status { margin: 0 0 var(--s4); color: var(--text-secondary); }
+  .error { padding: var(--s2) var(--s3); border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--git-deleted); border-radius: var(--radius); background: var(--surface-1); }
+  .empty { padding: var(--s5); text-align: center; color: var(--text-secondary);
+    border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+  .scroll { overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: var(--s1) var(--s3); text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border-subtle); }
+  th { position: sticky; top: 0; background: var(--surface-2); color: var(--text-secondary); font-weight: 600; }
+  tbody tr:hover { background: var(--surface-hover); }
+  tbody tr:last-child td { border-bottom: 0; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: opacity .12s; } }
 </style>
 </head>
 <body>
 <h1>Mon panneau</h1>
-<p id="status">Prêt.</p>
+<div class="bar">
+  <button type="button" id="go">Action</button>
+</div>
+<p class="status" id="status" role="status">Prêt.</p>
+<div class="empty" id="empty">Rien à afficher pour l'instant.</div>
 <!-- Bibliothèque : fichier local copié dans ce dossier, jamais d'URL externe.
 <script src="lib.min.js"></script> -->
 <script>
-  document.getElementById('status').textContent = 'Page chargée.'
+  document.getElementById('go').onclick = () => {
+    document.getElementById('status').textContent = 'Action lancée.'
+  }
 </script>
 </body>
 </html>

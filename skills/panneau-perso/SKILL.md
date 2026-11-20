@@ -13,6 +13,7 @@ Un panneau = un dossier `<root>/.cate/panels/<id>/` (`<id>` en kebab-case) :
 
 - `cate-panel.json` : le manifeste. Gabarit : `gabarit/cate-panel.json` à côté de ce fichier.
 - `index.html` : l'entrée. Gabarit : `gabarit/index.html`.
+- `theme.css` : les couleurs du thème Cate actif, générées par `gabarit/sync-theme.mjs`.
 - tout le reste (`app.js`, `style.css`, bibliothèques, données d'essai) dans le même dossier, en chemins relatifs.
 
 Manifeste : `id`, `name`, `version`, `description`, `author`, `icon` (nom lucide), `entry`, `size` (`width`, `height`), `permissions` (`files.read` et `files.write` en globs relatifs à la racine du workspace, `network` en liste d'hôtes, `links.receive`, `links.emit`), `inputs` optionnel (libellés des champs). C'est le format du futur type `app`.
@@ -21,21 +22,45 @@ Manifeste : `id`, `name`, `version`, `description`, `author`, `icon` (nom lucide
 
 ## Créer
 
-1. Copie `gabarit/` dans `.cate/panels/<id>/`, remplis le manifeste, écris la page.
+1. Copie `gabarit/` dans `.cate/panels/<id>/`, remplis le manifeste, écris la page, puis génère le thème (section Thème).
 2. Une bibliothèque (SheetJS, Chart.js...) est un fichier `.js` copié dans le dossier, récupéré **une seule fois, à la création**, version fixée dans l'URL, puis chargé par `<script src="lib.min.js">`. Aucun appel réseau à l'exécution, aucun CDN dans le HTML. Exemple SheetJS :
    `curl -fsSL -o .cate/panels/<id>/xlsx.full.min.js https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js`
    Ne commite pas de bibliothèque minifiée dans le dépôt de Cate. Dans un projet d'équipe, elle suit le panneau.
 3. Données d'essai : petits fichiers dans le dossier du panneau. La page les charge par chemin relatif (`fetch('a.xlsx')`) ou par `<input type="file">`.
 4. Ouvre la page dans un panneau navigateur :
    ```bash
-   cate panel create browser .cate/panels/<id>/index.html
+   cate panel create browser file:///<racine>/.cate/panels/<id>/index.html
    ```
-   Le chemin est servi par le serveur de fichiers du runtime (HTTP local, un jeton par dossier, la page n'atteint que son dossier). Workspace non approuvé : le HTML est servi en texte et la page ne s'affiche pas. Demande l'approbation à la personne.
+   **Chemin ABSOLU obligatoire** (`file:///...` ou `/Users/...`). Un chemin relatif est lu comme un nom d'hôte (`https://.cate/`, `ERR_NAME_NOT_RESOLVED`). Si `cate browser` rend `webview-not-ready`, ferme le panneau (`cate panel close <id>`) et ouvres-en un neuf. Le chemin est servi par le serveur de fichiers du runtime (HTTP local, un jeton par dossier, la page n'atteint que son dossier). Workspace non approuvé : le HTML est servi en texte et la page ne s'affiche pas. Demande l'approbation à la personne.
 5. Relie le panneau à l'agent créateur (toi) pour qu'il le pilote et lise ce qu'il affiche :
    ```bash
    cate panel link <ton-id> <id-du-panneau> --kind context
    ```
 6. Vérifie avec `cate browser snapshot --panel <id-du-panneau>` : le contenu attendu est dans l'arbre. Fais afficher à la page un décompte (lignes lues, lignes sans correspondance) pour contrôler un calcul sans deviner. Après une retouche : `cate browser reload --panel <id-du-panneau>`.
+
+## Thème
+
+Une page a une autre origine que Cate : elle n'hérite pas de ses variables CSS. Le gabarit a donc un `theme.css` avec les **mêmes noms de variables que Cate** (`--surface-0` à `--surface-6`, `--border-subtle`, `--border-strong`, `--border-focus`, `--text-primary`, `--text-secondary`, `--text-muted`, `--text-inverse`, `--focus-blue` pour l'accent, `--surface-hover`, `--surface-hover-strong`, `--activity-green`, `--activity-orange`, `--git-deleted`). `index.html` n'utilise que ces variables : jamais `#...`, `rgb(...)` ou `hsl(...)` en dur.
+
+À la création, et chaque fois que la personne change de thème, régénère `theme.css` depuis le thème actif :
+```bash
+node .cate/panels/<id>/sync-theme.mjs .cate/panels/<id>
+```
+Le script lit `activeThemeId` dans `~/Library/Application Support/cate/settings.json` (lecture seule). `system` donne `systemLightThemeId` ou `systemDarkThemeId` selon le Mac. Un thème perso vient de `customThemes`. Un thème intégré vient de `src/kernel/interaction/contract/themes/<id>.ts` sur `origin/main` d'un checkout Cate (`--cate <dossier>` ou `CATE_REPO`, sinon `gh api` sur le fork), fusionné sur `base.ts`. Option `--settings <fichier>` pour lire une copie. Hors du repo Cate, le script suppose `gh` connecté.
+
+Le suivi en direct du thème viendra avec le type `app` (SDK). En mode page, le thème est figé à la génération : après un changement de thème, relance le script puis `cate browser reload`.
+
+## Checklist design
+
+Un panneau est un outil (mode Operate du skill `impeccable`, archivé dans `~/.claude/archive/skills/impeccable/SKILL.md` : précision et retenue, pas de décor). Avant d'ouvrir le panneau :
+
+- Hiérarchie : un titre, une barre d'actions, l'état, puis le contenu. Une action principale, les autres en `secondary`.
+- Espacement : l'échelle `--s1` à `--s5` du gabarit (4, 8, 12, 16, 24 px). Pas d'autre valeur.
+- Typographie : `system-ui`, 13 px de corps, 16 px de titre, `tabular-nums` dans les tableaux.
+- États présents : survol, `:focus-visible` (anneau `--border-focus`), désactivé, vide (`.empty`), erreur (`.error`, message écrit en clair), chargement (texte dans `.status`).
+- Tableaux : en-tête collant, lignes séparées, défilement horizontal dans `.scroll`, 20 lignes d'aperçu puis « N lignes de plus ».
+- Contraste AA : texte courant en `--text-primary` ou `--text-secondary`. `--text-muted` ni pour du texte utile ni sur fond coloré. Pas de texte coloré par `--git-deleted`, `--activity-*` ou `--focus-blue` (trop faible sur thème clair) : ces couleurs vont sur des bordures et des anneaux.
+- Responsive : vérifie à 375, 834 et 1280 px (`cate browser viewport custom --width 375 --height 800`, puis `cate browser screenshot`). Pas de défilement horizontal de la page.
 
 ## Limites du mode page
 
