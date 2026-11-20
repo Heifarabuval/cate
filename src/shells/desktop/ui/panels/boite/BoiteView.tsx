@@ -57,8 +57,8 @@ export default function BoiteView({ panelId }: PanelViewProps) {
         </section>
       ))}
       {unsettled.map((project) => project.state === 'error'
-        ? <InlineNotice key={project.root} tone="error" data-testid="projet-erreur" className="mx-3 mt-2 break-words !text-primary">{`${project.repo} : ${project.error}`}</InlineNotice>
-        : <p key={project.root} data-testid="projet-attente" className="mx-3 mt-2 break-words text-[12px] text-secondary">{`${project.repo} : ${project.error}`}</p>)}
+        ? <InlineNotice key={`${project.workspaceId}/${project.panelId}`} tone="error" data-testid="projet-erreur" className="mx-3 mt-2 break-words !text-primary">{`${project.repo} : ${project.error}`}</InlineNotice>
+        : <p key={`${project.workspaceId}/${project.panelId}`} data-testid="projet-attente" className="mx-3 mt-2 break-words text-[12px] text-secondary">{`${project.repo} : ${project.error}`}</p>)}
       <p className="mt-auto px-3 pt-2 text-[11px] text-secondary">{watched}</p>
       <p data-testid="raccourcis" className="px-3 pb-2 text-[11px] text-secondary">{help}</p>
     </div>

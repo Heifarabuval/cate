@@ -97,10 +97,11 @@ export const hashOf = (text: string): string => createHash('sha256').update(text
 
 export interface FakeNeed { id: string; title: string; kind?: string; ref?: string | null; owner?: string; status?: string; evidence?: string | null }
 export interface FakeDraft { id: string; needId: string; cible: string; titre?: string | null; statut?: string; url?: string | null }
+export interface FakeQuestion { id: string; needId: string; question: string; options: Array<{ label: string; detail: string }>; action?: string | null; answer?: string | null }
 
 /** The state the `agence` CLI keeps in `<root>/.cate/tmp/agence/state.json`
  *  (`empty()` and `add_need` of agence.py), written atomically as the CLI does. */
-export function writeAgenceState(root: string, state: { port: number; repo?: string; needs: FakeNeed[]; drafts: FakeDraft[] }): void {
+export function writeAgenceState(root: string, state: { port: number; repo?: string; needs: FakeNeed[]; drafts: FakeDraft[]; questions?: FakeQuestion[] }): void {
   const dir = path.join(root, '.cate', 'tmp', 'agence')
   mkdirSync(path.join(dir, 'drafts'), { recursive: true })
   const stamp = '2026-11-18T09:00:00+00:00'
@@ -110,8 +111,9 @@ export function writeAgenceState(root: string, state: { port: number; repo?: str
     overBudget: false, created: stamp, createdTs: 1795428000, updated: stamp, ...need,
   }))
   const drafts = state.drafts.map((draft) => ({ titre: null, statut: 'à valider', texte: null, hash: null, url: null, agent: null, ...draft }))
+  const questions = (state.questions ?? []).map((question) => ({ action: null, answer: null, agent: null, ...question }))
   const next = {
-    repo: state.repo ?? 'site', ghRepo: 'acme/site', panels: {}, port: state.port, seq: 9, needs, drafts, questions: [],
+    repo: state.repo ?? 'site', ghRepo: 'acme/site', panels: {}, port: state.port, seq: 9, needs, drafts, questions,
     notified: [], agentsActive: 0, agentsWaiting: 0, titles: {}, notify: true,
   }
   const tmp = path.join(dir, 'tmp-state-e2e')

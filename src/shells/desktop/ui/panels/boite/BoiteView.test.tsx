@@ -181,12 +181,45 @@ it('does not repeat a project that already has a greyed line', () => {
   expect(host.querySelector('[data-testid="projet-attente"]')).toBeNull()
 })
 
-it('holds at 320 px by classes: the action never wraps or shrinks, the text breaks, no fixed color', () => {
-  const question = { type: 'question' as const, questionId: 'q1', options: [{ label: 'Oui', detail: 'x'.repeat(200) }], isMerge: false, locks: [], ghUnknown: false, rebase: false }
-  render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1', { action: question, title: 'x'.repeat(300) })] })
-  const action = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Répondre')!
-  expect(action.className).toContain('whitespace-nowrap')
-  expect(action.className).toContain('shrink-0')
+it('lists two panels of one root without a duplicate key', () => {
+  const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
+  render({ projects: [{ ...standing('cate', 'unavailable', 'lecture'), panelId: 'p1' }, { ...standing('cate', 'error', 'illisible'), panelId: 'p2', workspaceId: 'w2' }], closedWorkspaces: 0, rows: [] })
+  expect(warn.mock.calls.flat().join(' ')).not.toContain('same key')
+  warn.mockRestore()
+})
+
+// 320 px is checked by classes, not by pixels (jsdom has no layout): every action keeps its
+// size and one line, every free text breaks, the root clips, no color is fixed.
+it('holds at 320 px by classes, with the cards open and a stopped project', () => {
+  h.actions = {}
+  const locks = ['PR 12 : la CI est rouge depuis 3 jours sur une branche longue ' + 'x'.repeat(120)]
+  const question = { type: 'question' as const, questionId: 'q1', options: [{ label: 'Merger', detail: 'd'.repeat(200) }, { label: 'Attendre', detail: 'e'.repeat(200) }], isMerge: true, locks, ghUnknown: false, rebase: true }
+  const perm = { type: 'perm' as const, command: 'rm -rf ' + 'y'.repeat(200), reason: 'r'.repeat(200), genre: 'bash' }
+  render({
+    projects: [project('cate')], closedWorkspaces: 0,
+    rows: [
+      ligne('/a/cate#n1', { action: question, title: 'x'.repeat(300), blocking: true }),
+      ligne('/a/cate#n2', { action: perm }),
+      ligne('/a/cate#n3', { action: draft(), links: [{ panelId: 'p9', title: 't'.repeat(200), closed: false }] }),
+      ligne('/a/cate#n4', { enabled: false, reason: 'régisseur arrêté ' + 'z'.repeat(200) })
+    ]
+  })
+  act(() => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Merger')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+  const buttons = [...host.querySelectorAll('button')]
+  const labels = buttons.map((b) => b.textContent)
+  expect(labels).toEqual(expect.arrayContaining(['Demander le rebase', 'Non', 'Oui', 'Relancer', 'Lire et envoyer']))
+  for (const button of buttons) {
+    const own = button.className
+    // An action holds its size on one line; a link clips; an option is a full-width card whose texts break.
+    const holds = own.includes('shrink-0') && own.includes('whitespace-nowrap')
+    const clips = own.includes('truncate')
+    const card = button.dataset.testid === 'option' && button.querySelector('span.break-words, b.break-words') !== null
+    expect(holds || clips || card, `${button.textContent} : ${own}`).toBe(true)
+  }
+  for (const text of ['d'.repeat(200), 'y'.repeat(200), 'r'.repeat(200), 'z'.repeat(200)]) {
+    const holder = [...host.querySelectorAll('*')].find((el) => el.children.length === 0 && el.textContent?.includes(text))!
+    expect(`${holder.className} ${holder.parentElement?.className}`, text.slice(0, 6)).toMatch(/break-(words|all)/)
+  }
   expect(host.firstElementChild?.className).toContain('min-w-0')
   expect(host.innerHTML).not.toMatch(/#[0-9a-f]{3,8}\b|(bg|text|border)-(white|black)\b/i)
 })

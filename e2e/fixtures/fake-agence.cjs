@@ -3,7 +3,7 @@
 // Keep in step with click() and read_token_stdin() of tools/agence/agence.py (wording, order of the guards, token rule).
 // `agence` stand-in for the agence panel's e2e: only `agence watch
 // --token-stdin`, the regisseur the panel starts. It serves the form POSTs of
-// agence.py's `click()` for drafts (same checks, same wording, same
+// agence.py's `click()` for drafts and plain questions (no merge) (same checks, same wording, same
 // `{code, message}` answers) over the state file the test writes, and sends
 // through the `gh` on its PATH, which must be the fake one (`fake-gh.cjs`).
 //
@@ -58,8 +58,28 @@ process.stdin.on('end', () => {
   process.exit(0)
 })
 
+/** One question answer: the plain case of the `/ask/qN` branch of `click()` (a choice by index, or a free text; no merge). */
+function answer(id, form) {
+  const state = load()
+  const question = state.questions.find((q) => q.id === id)
+  if (!question) return [409, `${id} introuvable`]
+  if (question.answer !== null) return [409, 'Question déjà répondue.']
+  const libre = (form.get('libre') || '').trim()
+  const choice = form.get('choice') || ''
+  let text
+  if (libre) text = libre
+  else if (/^\d+$/.test(choice) && Number(choice) < question.options.length) text = question.options[Number(choice)].label
+  else return [400, 'Écris une réponse ou choisis une option.']
+  question.answer = text
+  Object.assign(state.needs.find((n) => n.id === question.needId), { status: 'done', evidence: `réponse : ${text}` })
+  save(state)
+  return [303, '/']
+}
+
 /** One draft click: `click()` of agence.py. Returns [code, message]. */
 function click(pathname, form) {
+  const asked = /^\/ask\/(q\d+)$/.exec(pathname)
+  if (asked) return answer(asked[1], form)
   const match = /^\/draft\/(d\d+)\/(send|drop|edit)$/.exec(pathname)
   if (!match) return [404, 'Introuvable']
   const [, id, action] = match
