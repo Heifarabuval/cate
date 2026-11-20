@@ -10,6 +10,7 @@ import { runtimeSettings } from '@runtime/daemon/contract/settings'
 import { relationLabelSettings, relationSettings } from '@workspace/relations/contract/settings'
 import { repositorySettings } from '@workspace/repository/contract/settings'
 import { notificationSettings } from '@workspace/notifications/contract/settings'
+import { observationSettings } from '@workspace/observation/contract/settings'
 import { terminalClientSettings, terminalSettings } from '@services/terminal/contract/settings'
 import { browserClientSettings, browserSettings } from '@services/browser/contract/settings'
 import { agentSettings } from '@services/agents/contract/settings'
@@ -25,6 +26,7 @@ export const SHARED_SETTINGS_SLICES = [
   relationSettings,
   repositorySettings,
   notificationSettings,
+  observationSettings,
   terminalClientSettings,
   terminalSettings,
   browserClientSettings,
