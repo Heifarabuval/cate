@@ -2444,7 +2444,7 @@ WRITE_RE = re.compile(r'(>|sed -i|\btee\b|\bmv\b|\bcp\b|\brm\b|python|perl|trunc
 PAGE_DENY = "Les pages du régisseur sont pour l'humain : un agent ne clique pas à sa place."
 STATE_DENY = "state.json s'écrit seulement par la CLI agence."
 PRATIQUES_DENY = "La politique (pratiques.json) se règle seulement par l'humain : agence pratiques set, unset ou preset."
-PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+pratiques\s+(set|unset|preset)\b')
+PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+(pratiques\s+(set|unset|preset)\b|start\b.*--max-agents\b)')
 POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json')
 
 
