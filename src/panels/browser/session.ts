@@ -125,6 +125,8 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private readonly seenTabs = new Map<string, TabsSeen>()
   /** Settles the agent's pending sign-in request with the person's answer. */
   private signInAnswer: ((allow: boolean, cookies: number) => void) | null = null
+  /** The `nav` of each tab the observation was last told of (none yet for a new tab; a restored tab starts told). */
+  private readonly navTold = new Map<string, number>()
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: BrowserSessionDeps) {
     const id = 't1'
@@ -181,6 +183,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
         navSource: null,
         openedBy: validOpener(tab.openedBy) ? tab.openedBy : null,
       }))
+      for (const tab of tabs) this.navTold.set(tab.id, tab.nav)
       this.tabCounter = Math.max(0, ...tabs.map((tab) => Number(/^t(\d+)$/.exec(tab.id)?.[1] ?? 0)))
       const activeTabId = tabs.some((tab) => tab.id === saved.activeTabId) ? saved.activeTabId : tabs[0].id
       const active = tabs.find((tab) => tab.id === activeTabId)!
@@ -352,6 +355,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     const index = this.state.tabs.findIndex((tab) => tab.id === tabId)
     if (index < 0) this.tab(tabId)
     const tabs = this.state.tabs.filter((tab) => tab.id !== tabId)
+    this.navTold.delete(tabId)
     if (tabs.length === 0) {
       tabs.push({ id: this.nextTabId(), url: BROWSER_NEW_TAB_URL, title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null })
     }
@@ -455,8 +459,14 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     if (url !== tab.url) Object.assign(patch, { url, nav: tab.nav + 1, navSource: ctx.clientId })
     if (!inPage && typeof op.title === 'string' && op.title) patch.title = op.title
     if (Object.keys(patch).length) this.patchTab(tabId, patch)
-    // A page the tab was not on: not a reload, not a restored tab, not a hash change.
-    if (!inPage && url !== tab.url) this.deps.observation.navigated(url)
+    // The observation hears of a page once, whatever tab.nav reached it by (the address bar, a link, a
+    // redirect) and however many clients report it; a reload, a restored tab and a hash change are no
+    // page, and a page of the workspace's own files is no fact.
+    const { nav } = this.tab(tabId)
+    if (this.navTold.get(tabId) !== nav) {
+      this.navTold.set(tabId, nav)
+      if (!inPage && !this.deps.files.servedPath(url)) this.deps.observation.navigated(url)
+    }
     if (!inPage && isRecordableBrowserUrl(url)) this.deps.browserData.history.recordVisit(url, op.title ?? tab.title)
     if (tabId === this.state.activeTabId) {
       this.publish({ canGoBack: !!canGoBack, canGoForward: !!canGoForward, ...(inPage ? {} : { isLoading: false, loadError: null }) })

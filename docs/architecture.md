@@ -1548,9 +1548,10 @@ output of a terminal.
 - **Sources**: the document (a panel created, closed or linked, read from the
   document before and after an op that can do it; a surface is the picker and
   never a fact) and the browser panel, which tells `navigated(url)` through
-  `PanelServices.observation` for each page a tab goes to (not a reload, not a
-  hash change). A source gives a type and an id, or an address; the journal
-  cleans it again.
+  `PanelServices.observation` for each page a tab loads, once (an address typed
+  in the bar, a link, a new tab; not a reload, a tab a restart restores, a hash
+  change or a page of the workspace's own files). A source gives a type and an
+  id, or an address; the journal cleans it again.
 - **Off until the person accepts.** `observationAccord` (the time of the
   accord, empty before) and `observationPause` are workspace settings, read at
   every fact and again before every write: a pause stops the writes at once and
