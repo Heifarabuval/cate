@@ -12,7 +12,7 @@ the workspace.
 
 ```bash
 id=$(cate agent start --agent codex --new-worktree fix-login --done-when 'npm test' "Fix the flaky login test")
-cate agent wait "$id" --wait-timeout 60000   # repeat while it exits 1 (timed out)
+cate agent wait "$id" --wait-timeout 600000   # repeat while it exits 1 (timed out)
 cate agent read "$id"
 cate agent send "$id" "Also add a regression test"
 ```
@@ -106,7 +106,7 @@ cate agent wait <panel-id> [<panel-id>...] --wait-timeout 10000
 ```
 
 Panel ids may be the unique short ids `agent list` prints. `wait` accepts
-5000 to 60000 milliseconds and, with no ids, monitors every live agent panel;
+5000 to 600000 milliseconds and, with no ids, monitors every live agent panel;
 it exits 1 when it timed out, after printing the states.
 
 `cate agent usage [--panel <id>] [--json]` shows what each live agent panel
