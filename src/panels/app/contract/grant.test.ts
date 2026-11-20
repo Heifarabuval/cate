@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { folderFingerprint, grantStatus, manifestFingerprint, type AppGrant, type CurrentFingerprints } from './grant'
+import { folderFingerprint, grantSentence, grantStatus, manifestFingerprint, type AppGrant, type CurrentFingerprints } from './grant'
 import { parseManifest } from './manifest'
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -88,5 +88,17 @@ describe('describe: no accidental pass', () => {
     const manifest = manifestOf()
     const entry: AppGrant = { appId: 'fusion-excel', source: 'local', manifestFingerprint: manifestFingerprint(manifest, hash), accepted: manifest.permissions, at: 'x' }
     expect(grantStatus(entry, { manifestFingerprint: entry.manifestFingerprint })).toBe('ok')
+  })
+})
+
+describe('grantSentence (jalon 1: one sentence)', () => {
+  it('says the page runs isolated, with no internet when no host is declared', () => {
+    expect(grantSentence(manifestOf())).toBe('« Fusion » s’exécute dans un cadre isolé, sans accès à vos fichiers. Il ne peut pas utiliser internet.')
+  })
+
+  it('names every declared host', () => {
+    expect(grantSentence(manifestOf({ network: ['api.exemple.fr', '*.cdn.fr'] }))).toBe(
+      '« Fusion » s’exécute dans un cadre isolé, sans accès à vos fichiers. Il peut contacter api.exemple.fr, *.cdn.fr.'
+    )
   })
 })

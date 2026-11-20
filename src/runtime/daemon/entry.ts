@@ -213,6 +213,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     paths,
     endpoint,
     installDir,
+    panneauxDir: path.join(cateHome(home), 'panneaux'),
     rpc,
     lifecycle,
     settings,

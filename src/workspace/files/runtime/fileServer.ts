@@ -27,6 +27,10 @@ export interface FileServerDeps {
   strict(p: string): Promise<string>
   /** Read per request: untrusted workspaces get no script-running pages. */
   isTrusted(): boolean
+  /** Extra headers for a served real file (the app panels' policy). They never
+   *  replace the server's own `Content-Type`, `Content-Length`, `Cache-Control`
+   *  or `X-Content-Type-Options`. */
+  responseHeaders?(file: string): Record<string, string>
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -117,6 +121,7 @@ export function createFileServer(deps: FileServerDeps): FileServer {
       if (!stat.isFile() || !inScope(file, scope)) return respond(res, 404, 'Not found')
       const type = contentTypeOf(file)
       res.writeHead(200, {
+        ...deps.responseHeaders?.(file),
         'Content-Type': !deps.isTrusted() && ACTIVE_TYPE.test(type) ? 'text/plain; charset=utf-8' : type,
         'Content-Length': stat.size,
         'Cache-Control': 'no-cache',

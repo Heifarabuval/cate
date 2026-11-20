@@ -58,6 +58,7 @@ export const DATA_FILES = {
   push: 'push.json',
   trust: 'trust.json',
   grants: 'grants.json',
+  appGrants: 'app-grants.json',
   skills: 'skills',
   skillSources: 'skills/sources.json',
   browser: 'browser',

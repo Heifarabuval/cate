@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { makeWorkspace } from '../testing.test-helpers'
-import { decodeServedPath, encodeServedPath } from './fileServer'
+import { createFileServer, decodeServedPath, encodeServedPath } from './fileServer'
 
 let ws: Awaited<ReturnType<typeof makeWorkspace>>
 let dir: string
@@ -117,5 +117,24 @@ describe('served paths', () => {
     expect(decodeServedPath('a/b%20c%23.html')).toBe('/a/b c#.html')
     expect(encodeServedPath('C:\\a\\b.html')).toBe('C%3A/a/b.html')
     expect(decodeServedPath('C%3A/a/b.html')).toBe('C:/a/b.html')
+  })
+})
+
+describe('file server response headers', () => {
+  it('adds no header of its own without the option, and the option adds its headers to a served file', async () => {
+    const folder = path.join(root, 'site')
+    const plain = createFileServer({ strict: (p) => fs.realpath(p), isTrusted: () => true })
+    const withHeaders = createFileServer({ strict: (p) => fs.realpath(p), isTrusted: () => true, responseHeaders: (file) => ({ 'Content-Security-Policy': `default-src 'self'; x-file=${path.basename(file)}` }) })
+    try {
+      const a = await fetch(await plain.urlFor(path.join(folder, 'index.html')))
+      expect(a.headers.get('content-security-policy')).toBeNull()
+      expect(a.headers.get('x-content-type-options')).toBe('nosniff')
+      const b = await fetch(await withHeaders.urlFor(path.join(folder, 'index.html')))
+      expect(b.headers.get('content-security-policy')).toBe("default-src 'self'; x-file=index.html")
+      expect(b.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    } finally {
+      await plain.close()
+      await withHeaders.close()
+    }
   })
 })

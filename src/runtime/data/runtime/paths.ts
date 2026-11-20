@@ -20,6 +20,7 @@ export function dataPaths(dataDir: string) {
     push: at(DATA_FILES.push),
     trust: at(DATA_FILES.trust),
     grants: at(DATA_FILES.grants),
+    appGrants: at(DATA_FILES.appGrants),
     skills: at(DATA_FILES.skills),
     skillSources: at(DATA_FILES.skillSources),
     browser: at(DATA_FILES.browser),

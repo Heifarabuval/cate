@@ -4,6 +4,7 @@
 // entry here.
 
 import type { ApiRouter } from '@kernel/api/runtime'
+import type { ClientFeature } from '@kernel/rpc/contract'
 import type { RpcServer } from '@kernel/rpc/runtime'
 import type { WorkspaceSettingsStore } from '@kernel/settings/runtime'
 import type { DocumentService } from '@workspace/document/runtime'
@@ -24,6 +25,7 @@ import { surfacePanel } from './surface/runtime'
 import { canvasPanel } from './canvas/runtime'
 import { createAgencePanels } from './agence/runtime'
 import { boitePanel } from './boite/runtime'
+import { createAppPanels } from './app/runtime'
 
 /** The runtime services the daemon has for panel types; each type's entry
  *  below names the ones it takes (`PanelRuntime<keys>`). */
@@ -49,6 +51,12 @@ export interface PanelServices {
     requireTrusted(): void
     onChange(listener: (state: { trusted: boolean }) => void): () => void
   }
+  /** Where the user's custom panels live and where the workspace keeps what
+   *  the user accepted for them. */
+  apps: { dir: string; grantsFile: string }
+  /** Whether the client behind a connection has a feature; `null` (the
+   *  runtime itself) has them all. */
+  clientHas(connectionId: number | null, feature: ClientFeature): boolean
 }
 
 export interface PanelAttachContext {
@@ -161,4 +169,9 @@ const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv' | 'trust'> = (services
 
 const boite: PanelRuntime = () => boitePanel()
 
-export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence, boite]
+const app: PanelRuntime<'apps' | 'trust' | 'clientHas'> = (services) => {
+  const panels = createAppPanels({ ...services.apps, trust: services.trust, clientHas: services.clientHas })
+  return { definition: panels.definition, session: panels.session, attach: ({ rpc }) => panels.attach({ rpc }), dispose: () => panels.dispose() }
+}
+
+export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, agence, boite, app]
