@@ -5,6 +5,7 @@
 // of the click, never by its position, and one click is one action.
 
 import type { AgenceOp, AgenceOpResult } from '@panels/agence/contract'
+import { focusPanel, revealPanel } from '@client/host'
 import type { BoiteStore } from './store'
 import type { Ligne, LigneAction } from './types'
 
@@ -43,6 +44,10 @@ export interface BoiteActions {
   send(key: string): Promise<ActionResult>
   /** Oui or Non to the permission an agent waits on. */
   perm(key: string, reponse: 'oui' | 'non'): Promise<ActionResult>
+  /** Brings a linked panel of the line on screen and focuses it; without `panelId`, the project's agence panel. Always allowed, greyed line or not. */
+  open(key: string, panelId?: string): Promise<ActionResult>
+  /** Relaunches the project's own orchestrator and regisseur through its agence session. Busy when the project runs: no second regisseur. */
+  restart(project: { workspaceId: string; panelId: string }): Promise<ActionResult>
 }
 
 const EMPTY: ActionsState = { busy: new Set(), shown: {}, notices: {} }
@@ -57,6 +62,8 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
   /** What each accepted line was showing when its op went: the line is free again once that changes. */
   const accepted = new Map<string, string>()
   const pending = new Set<string>()
+  /** Projects with a restart in flight. */
+  const restarting = new Set<string>()
 
   const set = (next: Partial<ActionsState>): void => {
     state = { ...state, ...next }
@@ -94,10 +101,22 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
     if (!same) set({ busy, shown, notices })
   }
 
+  /** One op to an agence session; a refusal or a failure is an answer, never a throw. */
+  async function toSession(workspaceId: string, panelId: string, op: AgenceOp): Promise<ActionResult> {
+    try {
+      const reply = await (store.send(workspaceId, panelId, op) ?? Promise.resolve(null))
+      return reply === null ? { ok: false, error: 'unavailable', message: 'workspace fermé' } : isResult(reply) ? reply : { ok: false, error: 'unavailable' }
+    } catch (error) {
+      return { ok: false, error: 'unavailable', message: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
   /** One op to the session of the line's project; the line is busy meanwhile, and after an accepted op until it leaves. */
   async function relay(key: string, op: (row: Ligne) => AgenceOp | 'changed' | null): Promise<ActionResult> {
     const row = find(key)
     if (!row) return { ok: false, error: 'unavailable', message: 'ligne introuvable' }
+    // A greyed line (its project does not run) takes nothing but Relancer and the links.
+    if (!row.enabled) return { ok: false, error: 'unavailable', message: row.reason ?? 'projet indisponible' }
     if (state.busy.has(key)) return { ok: false, error: 'busy' }
     const message = op(row)
     if (message === 'changed') {
@@ -107,13 +126,7 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
     if (!message) return { ok: false, error: 'invalid' }
     pending.add(key)
     set({ busy: new Set([...state.busy, key]), ...withNotice(key, undefined) })
-    let result: ActionResult
-    try {
-      const reply = await (store.send(row.workspaceId, row.panelId, message) ?? Promise.resolve(null))
-      result = reply === null ? { ok: false, error: 'unavailable', message: 'workspace fermé' } : isResult(reply) ? reply : { ok: false, error: 'unavailable' }
-    } catch (error) {
-      result = { ok: false, error: 'unavailable', message: error instanceof Error ? error.message : String(error) }
-    }
+    const result = await toSession(row.workspaceId, row.panelId, message)
     pending.delete(key)
     if (result.ok) {
       accepted.set(key, JSON.stringify(row.action))
@@ -152,7 +165,7 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
         : null),
     show(key) {
       const row = find(key)
-      if (!row) return { ok: false, error: 'unavailable' }
+      if (!row?.enabled) return { ok: false, error: 'unavailable' }
       const draft = draftOf(row)
       if (!draft) return { ok: false, error: 'invalid' }
       set({ shown: { ...state.shown, [key]: draft.hash }, ...withNotice(key, undefined) })
@@ -165,6 +178,32 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
       if (!draft || hash === undefined || hash !== draft.hash || draft.inFlight) return null
       return { kind: 'draft.send', draftId: draft.draftId, hash }
     }),
+    async open(key, panelId) {
+      const row = find(key)
+      if (!row) return { ok: false, error: 'unavailable', message: 'ligne introuvable' }
+      const target = panelId ?? row.panelId
+      if (panelId !== undefined) {
+        const link = row.links.find((candidate) => candidate.panelId === panelId)
+        if (!link) return { ok: false, error: 'invalid' }
+        if (link.closed) return { ok: false, error: 'unavailable', message: 'panneau fermé' }
+      }
+      if (!await revealPanel(row.workspaceId, target)) return { ok: false, error: 'unavailable', message: 'panneau introuvable' }
+      focusPanel(row.workspaceId, target)
+      return { ok: true }
+    },
+    async restart({ workspaceId, panelId }) {
+      const project = store.getSnapshot().projects.find((candidate) => candidate.workspaceId === workspaceId && candidate.panelId === panelId)
+      if (!project) return { ok: false, error: 'unavailable', message: 'projet introuvable' }
+      const id = `${workspaceId}/${panelId}`
+      // Everything runs, or a restart is on its way: nothing to start, never a second regisseur.
+      if (project.state === 'live' || restarting.has(id)) return { ok: false, error: 'busy' }
+      restarting.add(id)
+      try {
+        return await toSession(workspaceId, panelId, { kind: 'orchestrator.restart' })
+      } finally {
+        restarting.delete(id)
+      }
+    },
     perm: (key, reponse) => relay(key, (row) => (row.action.type === 'perm' ? { kind: 'perm', needId: row.needId, reponse } : null)),
   }
 }

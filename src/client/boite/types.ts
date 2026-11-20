@@ -19,6 +19,11 @@ export interface ProjectView {
   panelId: string
   root: string
   repo: string
+  /** live: its regisseur runs. unavailable: it does not (stopped, missing, starting) or nothing was read yet.
+   *  error: its state file is unreadable, the last valid state is kept. */
+  state: 'live' | 'unavailable' | 'error'
+  /** Why it is not live, in words; null when live. */
+  error: string | null
 }
 
 export type LigneAction =
@@ -46,6 +51,10 @@ export interface Ligne {
   waitingSince: string
   action: LigneAction
   links: Array<{ panelId: string; title: string; closed: boolean }>
+  /** False when the project is not live: the row is greyed, only Relancer and the links work. */
+  enabled: boolean
+  /** Why it is greyed; null when enabled. */
+  reason: string | null
 }
 
 export interface BoiteSnapshot {
