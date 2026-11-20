@@ -102,7 +102,7 @@ Garde-fous communs à toutes les lignes : l'évaluateur est une fonction pure (0
 | T9 | `graphify` | beaucoup de fichiers ajoutés dans `src/` depuis le dernier graphe | `git diff --diff-filter=A` depuis la date de `graphify-out/` ; sans `graphify-out/` (cas de ce worktree), le déclencheur se tait | 20 fichiers ajoutés | carte | B | régénération coûteuse (skill de 50 920 octets) : carte seulement | graphe régénéré et consulté |
 | T10 | `update-config` | une recommandation de T5 nomme un hook ou un réglage | sortie de `tooling-scout` (carte, pas de lecture automatique) | aucune condition propre | Heifara, depuis la carte de T5 | B | modifie `settings.json` : **accord** et sauvegarde ; jamais seul | réglage ajouté et `check.py` à 0 échec |
 
-**Les trois déclencheurs minimaux** (Q2, hypothèse « Recommandé ») : **T1, T2, T3**. Ils couvrent le contexte (#100), l'apprentissage vers la mémoire et le ménage du setup. T4 est la variante de Q2 ; T5 à T10 demandent de normaliser les données de friction (Q9) et viennent après les trois premiers bilans.
+**Les trois déclencheurs minimaux** (Q2, tranchée par Heifara, q471) : **T1, T2, T3**. Ils couvrent le contexte (#100), l'apprentissage vers la mémoire et le ménage du setup. T4 n'est pas retenu pour l'instant ; T5 à T10 demandent de normaliser les données de friction (Q9) et viennent après les trois premiers bilans.
 
 ## Boucle de mesure
 
@@ -172,7 +172,7 @@ CLAUDE.md                      # une ligne : journal des déclencheurs
 | 0. Sondes | (a) `cate agent send "/compact"`, `"/clear"`, `"/context"`, `"/learn"`, `"/audit-config"` sur un **agent jetable en panneau** (jamais l'app, jamais l'orchestrateur) : part, s'exécute, ouvre-t-il un dialogue, que devient l'état ; (b) `contextTokens` calculé depuis le journal de session égale le contexte que Heifara lit dans `/context` (action de Heifara) ; (c) l'agence reçoit-elle l'état `waitingForInput` et `canReceivePrompt` à temps pour FR-004 ; (d) `usage.py` : durée d'un passage, forme de la sortie | 0,5 j | Q1 et Q2 | `rapport-lot-0.md` ; table réduite aux commandes sondées |
 | 1. Contexte | `contextTokens` dans `cate agent usage` (contrat, moteur, aide, doc) | 1,5 j | 0 | `usage.test.ts` vert ; `lint:deps` vert |
 | 2. Évaluateur, journal, bilan (à blanc) | `declencheurs.json`, `evaluer()`, journal, purge, verdicts, `agence declencheurs bilan`, mode à blanc | 2 j | 1 | `test_declencheurs.py` : rouge d'abord, puis vert ; 0 fichier à l'état neuf ; rafale de 100 = 1 décision |
-| 3. Envoi de T1 et cartes | effet `send`, relecture avant envoi, `withdraw`, carte `cmd:`, activation par carte, verdict de T1 | 2 j | 2, Q1 | tests FR-003, FR-004 ; recette sur instantanés |
+| 3. Envoi de T1 et cartes | effet `send`, relecture avant envoi, `withdraw`, carte `cmd:`, activation par carte, verdict de T1 | 2 j | 2 | tests FR-003, FR-004 ; recette sur instantanés |
 | 4. T2 et T3 | cartes `/learn` après merge et `/audit-config` hebdomadaire, verdicts | 1,5 j | 3 | tests des deux cartes ; lecture seule des registres |
 | 5. Règle et docs | section « Déclencheurs » du skill orchestrateur, `docs/architecture.md`, `CLAUDE.md`, `skills/cate-cli/references/` | 1 j | 4 | relecture ; `check.py` non concerné (aucun changement de `~/.claude`) |
 | X. Recette réelle | un orchestrateur réel, une semaine à blanc puis `/compact` activé, le bilan lu | 0,5 j puis une semaine | 5 | action de Heifara, rapport dans #103 |
@@ -211,4 +211,9 @@ Total estimé : 9 j d'agent plus la semaine de mesure. Coût mensuel : 0 €. Le
 
 ## Tranché par Heifara
 
-Rien n'est tranché au-delà du texte de l'issue #103 et de sa décision « spec d'abord, PR de la spec, l'issue reste ouverte ». Les questions en attente sont dans spec.md (« Questions ouvertes », Q1 à Q9) ; deux sont posées dans le panneau agence (q469, q471).
+- Spec d'abord, PR de la spec, l'issue #103 reste ouverte pour l'implémentation.
+- Autonomie (q469) : `/compact` part seul, tout le reste par carte (classe B). La classe A de `/compact` ne s'ouvre qu'après le mode à blanc et l'activation (FR-020).
+
+- Trois déclencheurs minimaux (q471) : T1 `/compact`, T2 `/learn` après merge, T3 `/audit-config` hebdomadaire.
+
+Les questions en attente sont dans spec.md (« Questions ouvertes », Q3 à Q9), chacune avec une hypothèse de travail.

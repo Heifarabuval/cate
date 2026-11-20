@@ -6,7 +6,7 @@
 
 **Issue**: Heifarabuval/cate#103 (reste ouverte : elle porte l'implémentation). Besoin #n466. Recoupe #100 (coût de l'attente d'un orchestrateur) sans le refaire. Même limite de vie privée que la spec 003 (#76).
 
-**Status**: Draft. Spec d'abord, PR de la spec seule, aucun code. Questions ouvertes en fin de document (section « Questions ouvertes ») ; deux sont posées dans le panneau agence (q469, q471) et attendent Heifara.
+**Status**: Draft. Spec d'abord, PR de la spec seule, aucun code. Questions ouvertes en fin de document (section « Questions ouvertes ») ; q469 et q471 sont tranchées (Q1, Q2) ; Q3 à Q9 gardent une hypothèse de travail.
 
 **Input**: Heifara veut que l'orchestrateur et Cate lancent eux-mêmes, au bon moment, les commandes de Claude Code et les `/` de nos skills qui améliorent le processus : `/compact`, `/clear` (le « `/new` » de l'issue, voir Clarifications), `/learn`, `/audit-config`, et les `/` qui aident à trouver de nouveaux skills ou à améliorer le processus (`tooling-scout`, `skill-creator`, `fewer-permission-prompts`, `update-config`, `claude-md-improver`, `graphify`). Une règle : consommer peu de jetons, donc **un déclencheur se décide par un script local sur des données déjà là, jamais par un tour de modèle**. Le tout dans une boucle qui s'améliore avec des données d'usage. Rien n'est décidé au-delà du texte de l'issue ; ce qui manque est posé en question, pas tranché ici.
 
@@ -25,7 +25,8 @@ Liens :
 - Q: Un agent peut-il appeler `/learn` ou `/audit-config` lui-même ? → A: non. Ces skills (et `/handoff`, `/n8n-deploy`) portent `disable-model-invocation: true`. Seul un prompt saisi les lance, ce qui est exactement ce que fait l'envoi à une session.
 - Q: La part de contexte, par la barre de statut ? → A: non, `statusLine` est `null` dans `~/.claude/settings.json` ; en brancher une serait un changement du setup, et elle ne sert qu'à la session qui l'affiche. La taille du contexte se lit dans le journal de session (dernier message : entrée, création de cache, lecture de cache). Cate ne l'expose pas encore (lot 1 du plan).
 - Q: Seuil en pourcentage ou en jetons ? → A: en jetons. La fenêtre est d'environ 1 M (registre de `measure.py`) ; 150 000 jetons lus par tour (#100) ne font que 15 % et coûtent déjà cher en attente.
-- Q: Qui tranche l'autonomie (un déclencheur envoie-t-il seul ?) et les trois déclencheurs minimaux ? → A: Heifara. Posées en q469 et q471. La spec écrit une hypothèse de travail pour chacune (« Recommandé ») ; elle tombe si la réponse change.
+- Q: Un déclencheur envoie-t-il la commande seul, ou seulement une carte à son clic ? → A: tranché par Heifara (q469) : seul pour `/compact` (classe A), carte pour le reste (classe B). Un `/` qui change un fichier du setup ou de la mémoire reste en classe B quoi qu'il arrive (FR-006).
+- Q: Les trois déclencheurs minimaux ? → A: tranché par Heifara (q471) : `/compact` avant l'attente, `/learn` après une PR mergée, `/audit-config` hebdomadaire.
 
 ## Vocabulaire
 
@@ -238,8 +239,8 @@ Cette spec **n'en refait pas la mesure ni les pistes**. #100 compare cinq pistes
 
 Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la réponse change.
 
-- **Q1** (q469, posée) : autonomie. Hypothèse : `/compact` part seul (classe A) ; tout le reste par carte (classe B). Variantes : tout par carte ; tout seul sauf le setup. Le plan écrit la table avec la classe A pour `/compact` seulement.
-- **Q2** (q471, posée) : les trois déclencheurs minimaux. Hypothèse : `/compact` avant l'attente de l'orchestrateur, `/learn` après une PR mergée (carte), `/audit-config` hebdomadaire (carte). Variantes : `/clear` en fin de vague à la place de `/audit-config` ; la recherche de skills sur friction répétée.
+- **Q1** (q469, **tranchée par Heifara**) : autonomie. Décision : `/compact` part seul (classe A, après activation et mode à blanc, FR-020) ; tout le reste par carte (classe B). La table du plan met la classe A sur `/compact` seulement.
+- **Q2** (q471, **tranchée par Heifara**) : les trois déclencheurs minimaux : `/compact` avant l'attente de l'orchestrateur, `/learn` après une PR mergée (carte), `/audit-config` hebdomadaire (carte). `/clear` en fin de vague (T4) et la recherche de skills sur friction répétée (T5 à T10) restent hors des trois premiers lots.
 - **Q3** : sur quelle session part `/learn` ? L'orchestrateur voit le merge et reste ouvert ; l'agent qui a fait le travail connaît la leçon mais le besoin ferme son panneau. Hypothèse : l'orchestrateur, avec un résumé de la PR en argument ; un agent d'apprentissage dédié est écarté (un panneau de plus, plafond de 4).
 - **Q4** : valeurs de départ des seuils (150 000 jetons pour `/compact`, 7 jours pour `/audit-config`, 48 h d'ignorance pour une carte, repos de 10 minutes). Toutes **hypothèses à mesurer**, aucune n'est une mesure ; le bilan les révise.
 - **Q5** : où lire la taille du contexte ? Hypothèse : un champ `contextTokens` dans `cate agent usage` (FR-012, code dans `services/agents/usage`), lu par la même routine que le reste. Alternative écartée : le régisseur lit `~/.claude/projects/` (contourne le moteur, dépend du nommage d'un dossier de Claude).
