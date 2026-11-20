@@ -6,6 +6,7 @@ import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { DockResizeHandle } from '../../client/layout/dock'
 import { ActionButton, refusal as refusalText, useAction } from './action'
+import Backlog from './Backlog'
 import DraftReader from './DraftReader'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
@@ -178,6 +179,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
         >
           <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
           {snapshot.pratiques && <Pratiques pratiques={snapshot.pratiques} onOpen={() => void run({ kind: 'openPratiques' })} />}
+          {snapshot.backlog && !draft && <Backlog backlog={snapshot.backlog} send={send} />}
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
             : snapshot.suivi

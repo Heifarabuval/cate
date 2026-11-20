@@ -2265,6 +2265,7 @@ lock (schema in `tools/agence/backlog.py`, shipped next to the CLI); the
 `pages` guard refuses agents any direct write of both files. A card moves
 `discussion` <-> `prête` through the CLI; `lancée`, `faite` and `abandonnée`,
 like a decision becoming `active`, come from a click only.
+The regisseur publishes the backlog as `backlog` in `state.json` (cards, waves, waits, file error; shape in `src/panels/agence/contract/fixtures/vue-backlog.json`), the panel's snapshot carries it (null for a CLI that publishes none), and « Lancer (n) » is the `fiches.lancer` op, a POST of the checked ids to `/fiches/lancer`.
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger
