@@ -1,0 +1,148 @@
+// What the human does from the inbox: each action is an op of the agence panel
+// of the line's own project, relayed by the store (contracts/relais.md). The
+// regisseur's `click()` and its token stay in the project's daemon; nothing
+// here reads or holds a token. A line is always found by its key at the moment
+// of the click, never by its position, and one click is one action.
+
+import type { AgenceOp, AgenceOpResult } from '@panels/agence/contract'
+import type { BoiteStore } from './store'
+import type { Ligne, LigneAction } from './types'
+
+export type ActionResult = AgenceOpResult
+
+export type ShowResult = { ok: true; texte: string } | { ok: false; error: 'invalid' | 'unavailable' }
+
+/** What the views show of the actions in flight. Immutable: a new object on each change. */
+export interface ActionsState {
+  /** Lines with an action sent and not yet gone from the list: they take no second click. */
+  readonly busy: ReadonlySet<string>
+  /** The hash of the draft text each line displayed: the only hash `send` relays. */
+  readonly shown: Readonly<Record<string, string>>
+  /** The last refusal of each line, in the regisseur's own words. */
+  readonly notices: Readonly<Record<string, string>>
+}
+
+export interface AnswerChoice {
+  choice?: number | 'rebase'
+  libre?: string
+  force?: boolean
+}
+
+export interface BoiteActions {
+  getState(): ActionsState
+  subscribe(listener: () => void): () => void
+  /** Answers a question. A free answer wins over a choice, as in the regisseur's `click()`. */
+  answer(key: string, choice: AnswerChoice): Promise<ActionResult>
+  /** Merger: the first option of a merge question. */
+  merge(key: string): Promise<ActionResult>
+  /** Displays a draft: notes the hash of the text shown, the one `send` will carry. */
+  show(key: string): ShowResult
+  /** Sends the draft whose text was shown, and no other. */
+  send(key: string): Promise<ActionResult>
+  /** Oui or Non to the permission an agent waits on. */
+  perm(key: string, reponse: 'oui' | 'non'): Promise<ActionResult>
+}
+
+const EMPTY: ActionsState = { busy: new Set(), shown: {}, notices: {} }
+
+const isResult = (value: unknown): value is ActionResult =>
+  typeof value === 'object' && value !== null && typeof (value as { ok?: unknown }).ok === 'boolean'
+
+export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subscribe' | 'send'>): BoiteActions {
+  const listeners = new Set<() => void>()
+  let state = EMPTY
+  let stopStore: (() => void) | null = null
+
+  const set = (next: Partial<ActionsState>): void => {
+    state = { ...state, ...next }
+    for (const listener of [...listeners]) listener()
+  }
+  const without = <T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> => {
+    const { [key]: _gone, ...rest } = record
+    return rest
+  }
+  const withNotice = (key: string, message: string | undefined) =>
+    message === undefined ? { notices: without(state.notices, key) } : { notices: { ...state.notices, [key]: message } }
+  const find = (key: string): Ligne | undefined => store.getSnapshot().rows.find((row) => row.key === key)
+  const draftOf = (row: Ligne): Extract<LigneAction, { type: 'draft' }> | null => (row.action.type === 'draft' ? row.action : null)
+
+  /** The list moved: what belongs to a line that left goes, and a text that changed under its display is no longer shown. */
+  function prune(): void {
+    const rows = new Map(store.getSnapshot().rows.map((row) => [row.key, row]))
+    const keep = (key: string) => rows.has(key)
+    const busy = new Set([...state.busy].filter(keep))
+    const shown: Record<string, string> = {}
+    const notices: Record<string, string> = {}
+    for (const [key, message] of Object.entries(state.notices)) if (keep(key)) notices[key] = message
+    for (const [key, hash] of Object.entries(state.shown)) {
+      const draft = rows.has(key) ? draftOf(rows.get(key)!) : null
+      if (!draft) continue
+      if (draft.hash === hash) shown[key] = hash
+      else notices[key] = 'texte a changé'
+    }
+    const same = busy.size === state.busy.size
+      && Object.keys(shown).length === Object.keys(state.shown).length
+      && JSON.stringify(notices) === JSON.stringify(state.notices)
+    if (!same) set({ busy, shown, notices })
+  }
+
+  /** One op to the session of the line's project; the line is busy meanwhile, and after an accepted op until it leaves. */
+  async function relay(key: string, op: (row: Ligne) => AgenceOp | null): Promise<ActionResult> {
+    const row = find(key)
+    if (!row) return { ok: false, error: 'unavailable', message: 'ligne introuvable' }
+    if (state.busy.has(key)) return { ok: false, error: 'busy' }
+    const message = op(row)
+    if (!message) return { ok: false, error: 'invalid' }
+    set({ busy: new Set([...state.busy, key]), ...withNotice(key, undefined) })
+    let result: ActionResult
+    try {
+      const reply = await (store.send(row.workspaceId, row.panelId, message) ?? Promise.resolve(null))
+      result = reply === null ? { ok: false, error: 'unavailable', message: 'workspace fermé' } : isResult(reply) ? reply : { ok: false, error: 'unavailable' }
+    } catch (error) {
+      result = { ok: false, error: 'unavailable', message: error instanceof Error ? error.message : String(error) }
+    }
+    if (result.ok) return result
+    set({ busy: new Set([...state.busy].filter((busy) => busy !== key)), ...withNotice(key, result.message ?? result.error) })
+    return result
+  }
+
+  const answerOp = (choice: AnswerChoice) => (row: Ligne): AgenceOp | null => {
+    if (row.action.type !== 'question') return null
+    const { questionId } = row.action
+    if (choice.libre) return { kind: 'answer', questionId, libre: choice.libre }
+    return { kind: 'answer', questionId, ...(choice.choice !== undefined ? { choice: choice.choice } : {}), ...(choice.force ? { force: true } : {}) }
+  }
+
+  return {
+    getState: () => state,
+    subscribe(listener) {
+      listeners.add(listener)
+      stopStore ??= store.subscribe(prune)
+      return () => {
+        listeners.delete(listener)
+        if (listeners.size > 0) return
+        stopStore?.()
+        stopStore = null
+        state = EMPTY
+      }
+    },
+    answer: (key, choice) => relay(key, answerOp(choice)),
+    merge: (key) => relay(key, (row) => (row.action.type === 'question' && row.action.isMerge ? answerOp({ choice: 0 })(row) : null)),
+    show(key) {
+      const row = find(key)
+      if (!row) return { ok: false, error: 'unavailable' }
+      const draft = draftOf(row)
+      if (!draft) return { ok: false, error: 'invalid' }
+      set({ shown: { ...state.shown, [key]: draft.hash }, ...withNotice(key, undefined) })
+      return { ok: true, texte: draft.texte }
+    },
+    send: (key) => relay(key, (row) => {
+      const draft = draftOf(row)
+      const hash = state.shown[key]
+      // No text shown, or not the one on the list now: nothing leaves.
+      if (!draft || hash === undefined || hash !== draft.hash || draft.inFlight) return null
+      return { kind: 'draft.send', draftId: draft.draftId, hash }
+    }),
+    perm: (key, reponse) => relay(key, (row) => (row.action.type === 'perm' ? { kind: 'perm', needId: row.needId, reponse } : null)),
+  }
+}

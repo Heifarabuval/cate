@@ -113,10 +113,26 @@ describe('merge', () => {
     base.questions = { q1: { id: 'q1', question: 'Merger ?', options: [{ label: 'Merger', detail: 'oui' }], isMerge: true, locks: [], ghUnknown: false, rebase: false } }
     const rows = merge([{ workspaceId: 'w', panelId: 'p', root: '/a/cate', snapshot: base }]).rows
     expect(rows.map((row) => row.action)).toEqual([
-      { type: 'draft', draftId: 'd1', kind: 'slack', hash: 'abc', inFlight: true },
+      { type: 'draft', draftId: 'd1', kind: 'slack', hash: 'abc', texte: 'salut', inFlight: true },
       { type: 'question', questionId: 'q1', options: [{ label: 'Merger', detail: 'oui' }], isMerge: true },
       { type: 'link' },
       { type: 'link' }, // the draft left the snapshot: nothing to send from here
+    ])
+  })
+
+  it('offers Oui and Non only for a permission the regisseur could read; else the bare link', () => {
+    const perm = { genre: 'hook', commande: 'rm -rf build', motif: 'nettoyage' }
+    const rows = merge([project('/a/cate', {
+      bloquant: [
+        need('n1', { perm: { ...perm, choix: true } }),
+        need('n2', { perm: { ...perm, choix: false } }),
+        need('n3', { perm: null }),
+      ],
+    })]).rows
+    expect(rows.map((row) => row.action)).toEqual([
+      { type: 'perm', command: 'rm -rf build', reason: 'nettoyage', genre: 'hook' },
+      { type: 'link' },
+      { type: 'link' },
     ])
   })
 

@@ -49,7 +49,7 @@ it('lists Bloquant first, then À faire; a line is its project, need, expected a
     closedWorkspaces: 0,
     rows: [
       ligne('/a/cate#n1', { blocking: true, title: 'Choisir la base', action: { type: 'question', questionId: 'q1', options: [], isMerge: false }, waitingSince: '2026-11-19T11:30:00Z' }),
-      ligne('/a/lamif#n2', { repo: 'lamif', root: '/a/lamif', title: 'Valider le brouillon', action: { type: 'draft', draftId: 'd1', kind: 'slack', hash: 'h', inFlight: false } }),
+      ligne('/a/lamif#n2', { repo: 'lamif', root: '/a/lamif', title: 'Valider le brouillon', action: { type: 'draft', draftId: 'd1', kind: 'slack', hash: 'h', texte: 'Salut', inFlight: false } }),
       ligne('/a/lamif#n3', { repo: 'lamif', root: '/a/lamif', title: 'Merger la 12', action: { type: 'question', questionId: 'q2', options: [], isMerge: true }, waitingSince: '2026-11-17T12:00:00Z' }),
     ],
   })
