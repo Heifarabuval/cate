@@ -18,7 +18,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
-  agence observe list [--jours N] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : une ligne par geste puis le total ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
+  agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
 
 Codes : 0 ok, 1 refus métier, 2 environnement.
 """
@@ -51,6 +51,8 @@ from datetime import datetime, timezone
 MAX_AGENTS = 4  # plafond par défaut d'agents vivants (en plein tour ou en attente) ; agence start --max-agents le change pour le projet
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')  # ceux que cate agent start --effort déclare
 JOURS_JOURNAL = 14  # rétention du journal d'observation (RETENTION_DAYS dans src/workspace/observation/contract/retention.ts)
+AVERTISSEMENT_REFS = ('agence : attention, un terminal Cate enregistre la sortie de ses commandes (terminal-logs/) : '
+                      "les adresses et les identifiants affichés y restent, hors de la rétention de 14 jours et de « Tout effacer ».")
 KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
                       r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
@@ -2311,32 +2313,51 @@ def cmd_preview(a):
 	return 0
 
 
+def entier(v):
+	return type(v) is int  # ni un booléen, ni un flottant
+
+
 def cmd_observe(a):
 	"""Journal d'observation de l'humain (spec 003), en lecture seule : `cate observe list`, que le réglage
-	cliObservationEnabled garde fermé. N'écrit rien, ni journal ni état de l'agence. Un agent ne la lance pas :
-	sa sortie irait à un modèle de langage, ce que le journal s'interdit."""
+	cliObservationEnabled garde fermé. Par défaut le décompte et les types d'événements, jamais une adresse : un
+	terminal Cate enregistre sa sortie (terminal-logs/), hors de la rétention de 14 jours et de « Tout effacer ».
+	--refs écrit aussi chaque adresse et chaque identifiant, et le dit. N'écrit rien, ni journal ni état de l'agence.
+	Un agent ne la lance pas : sa sortie irait à un modèle de langage, ce que le journal s'interdit."""
 	require_cate()
 	try:
-		r = cate('observe', 'list', '--jours', a.jours)
+		r = cate('observe', 'list', '--jours', a.jours, *(['--refs'] if a.refs else []))
 	except Refus as err:
 		if 'observation-read-disabled' in str(err):
 			raise Refus(f'{err}\n  réglage : cliObservationEnabled (Cate, Réglages, CLI, Observation, Lecture), fermé par défaut')
 		raise
-	obs = r.get('observations') if isinstance(r, dict) else None
-	if not isinstance(obs, list):
+	types, obs = (r.get('types'), r.get('observations')) if isinstance(r, dict) else (None, None)
+	if not isinstance(types, list) or not entier(r.get('total')) or (a.refs and not isinstance(obs, list)):
 		raise Refus('cate observe list : réponse illisible')
-	if a.json:
-		print(json.dumps(r, ensure_ascii=False))
-		return 0
-	lignes = ['%s  %-14s %-8s %s' % (o['ts'], o['kind'], o['panelType'], o['ref']) for o in obs
-	          if isinstance(o, dict) and all(isinstance(o.get(k), str) for k in ('ts', 'kind', 'panelType', 'ref'))]
+	bons = [t for t in types if isinstance(t, dict) and isinstance(t.get('kind'), str) and isinstance(t.get('panelType'), str) and entier(t.get('count'))]
 	vues = r.get('illisibles')
-	illisibles = (vues if isinstance(vues, int) and vues > 0 else 0) + len(obs) - len(lignes)
+	illisibles = vues if entier(vues) and vues > 0 else 0
+	if a.refs:
+		print(AVERTISSEMENT_REFS, file=sys.stderr)
+	if a.json:
+		# Une liste blanche : sans --refs, aucune adresse ne sort, même d'un runtime qui en enverrait.
+		sortie = {k: r[k] for k in ('jours', 'total', 'illisibles') if k in r}
+		sortie['types'] = [{k: t[k] for k in ('kind', 'panelType', 'count')} for t in bons]
+		if a.refs:
+			sortie['observations'] = obs
+		print(json.dumps(sortie, ensure_ascii=False))
+		return 0
+	if a.refs:
+		lignes = ['%s  %-14s %-8s %s' % (o['ts'], o['kind'], o['panelType'], o['ref']) for o in obs
+		          if isinstance(o, dict) and all(isinstance(o.get(k), str) for k in ('ts', 'kind', 'panelType', 'ref'))]
+		nombre, illisibles = len(lignes), illisibles + len(obs) - len(lignes)
+	else:
+		lignes = ['  %-14s %-9s %d' % (t['kind'], t['panelType'], t['count']) for t in bons]
+		nombre, illisibles = r['total'], illisibles + len(types) - len(bons)
 	portee = "aujourd'hui" if a.jours == 0 else "aujourd'hui et %s avant" % pluriel(a.jours, 'jour')
-	total = '%s, %s' % (pluriel(len(lignes), 'observation'), portee)
+	total = '%s, %s' % (pluriel(nombre, 'observation'), portee)
 	if illisibles:
 		total += ', %s illisible%s ignorée%s' % (pluriel(illisibles, 'ligne'), 's' if illisibles > 1 else '', 's' if illisibles > 1 else '')
-	print('\n'.join(lignes + [total]))
+	print('\n'.join(lignes + [total] if a.refs else [total] + lignes))
 	return 0
 
 
@@ -2451,9 +2472,10 @@ def parser():
 	v.set_defaults(fn=cmd_preview)
 	ob = sub.add_parser('observe', help="journal d'observation de l'humain, en lecture seule (jamais lu par un agent)")
 	obs = ob.add_subparsers(dest='action', required=True)
-	ol = obs.add_parser('list', help="les observations des derniers jours, une ligne chacune, puis le total")
+	ol = obs.add_parser('list', help="le décompte des observations des derniers jours par type d'événement, sans adresse ni identifiant (--refs : une ligne chacune)")
 	ol.add_argument('--jours', type=jours_valides, default=JOURS_JOURNAL, metavar='N', help=f"aujourd'hui et N jours avant (0 à {JOURS_JOURNAL}, défaut {JOURS_JOURNAL})")
-	ol.add_argument('--json', action='store_true', help='la réponse de cate observe list, telle quelle')
+	ol.add_argument('--refs', action='store_true', help="écrit aussi chaque adresse et chaque identifiant, une ligne par observation ; un terminal Cate enregistre sa sortie (terminal-logs/), hors de la rétention de 14 jours et de « Tout effacer »")
+	ol.add_argument('--json', action='store_true', help='la réponse de cate observe list (le décompte ; avec --refs, les observations aussi)')
 	ob.set_defaults(fn=cmd_observe)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))

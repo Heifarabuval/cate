@@ -119,6 +119,17 @@ const sideRules = [
     { path: ELECTRON }),
 ]
 
+// FR-018: the journal of observations stays on the machine and goes to no model.
+const NETWORK = `^(?:node_modules/)?(?:node:)?${any(['http', 'https', 'http2', 'net', 'tls', 'dgram', 'dns', 'ws', 'undici', 'node-fetch', 'axios', 'got', 'node-datachannel', 'bonjour-service', '@anthropic-ai', 'openai', '@google/generative-ai', '@google/genai', 'ollama'])}(?:/|$)`
+const observationRules = [
+  forbid('observation-no-network', 'the observation module imports no network module and no model SDK (FR-018)',
+    { path: '^src/workspace/observation/' },
+    { path: NETWORK }),
+  forbid('observation-no-network-core', 'the observation module imports no network built-in (FR-018)',
+    { path: '^src/workspace/observation/' },
+    { dependencyTypes: ['core'], path: '^(?:node:)?(?:http|https|http2|net|tls|dgram|dns)$' }),
+]
+
 const contractRules = [
   forbid('contract-pure', 'contracts are pure: no Electron, React, DOM or I/O libraries',
     { path: CONTRACT },
@@ -163,7 +174,7 @@ const serviceRules = [
 ]
 
 module.exports = {
-  forbidden: [...contractRules, ...sideRules, ...layerRules, publicEntries, ...serviceRules, ...cliRules],
+  forbidden: [...observationRules, ...contractRules, ...sideRules, ...layerRules, publicEntries, ...serviceRules, ...cliRules],
   options: {
     doNotFollow: { path: ['node_modules'] },
     exclude: { path: ['\\.i?test\\.tsx?$', '^src/test/'] },

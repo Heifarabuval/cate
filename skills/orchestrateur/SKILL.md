@@ -75,7 +75,7 @@ Ordre : API ou CLI, puis `curl` pour une page publique, puis `cate browser` en t
 
 ## Journal d'observation
 
-`agence observe list` lit le journal d'observation de l'humain (`observations/` des données du workspace). Il est à lui seul : sa sortie irait à un modèle, ce que le journal s'interdit (spec 003). Tu ne lances pas cette commande, tu n'ouvres pas `observations/`, tu n'actives pas `cliObservationEnabled`. S'il demande « ce que l'outil a noté », dis-lui de taper `agence observe list` lui-même.
+`agence observe list` lit le journal d'observation de l'humain (`observations/` des données du workspace). Il est à lui seul : sa sortie irait à un modèle, ce que le journal s'interdit (spec 003). Tu ne lances pas cette commande, tu n'ouvres pas `observations/`, tu n'actives pas `cliObservationEnabled`. S'il demande « ce que l'outil a noté », dis-lui de taper `agence observe list` lui-même : elle n'imprime par défaut que le décompte par type, et `--refs` ajoute les adresses et les identifiants en prévenant que le terminal enregistre sa sortie (`terminal-logs/`, hors rétention et hors « Tout effacer »).
 
 ## Ce que tu rends à l'humain
 

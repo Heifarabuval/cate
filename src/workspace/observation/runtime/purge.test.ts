@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { purgeJournal } from './purge'
@@ -55,7 +55,37 @@ describe('purgeJournal', () => {
     expect(readdirSync(dir).sort()).toEqual([...odd].sort())
     expect(result.removed).toEqual([])
     expect(result.ignored.sort()).toEqual([...odd].sort())
-    expect(logs.warnings.join('\n')).toContain('notes.jsonl')
+    for (const name of odd) expect(logs.warnings, name).toContain(`observation purge leaves ${name} alone: it is not a day of the journal`)
+  })
+
+  // Folder modes mean nothing to root.
+  const asRoot = process.getuid?.() === 0
+
+  it.skipIf(asRoot)('goes on and says so when a file cannot be removed', async () => {
+    writeDay(dir, '2026-10-01.jsonl', '{}\n')
+    writeDay(dir, '2026-10-02.jsonl', '{}\n')
+    chmodSync(dir, 0o500)
+    try {
+      const result = await run()
+      expect(result.removed).toEqual([])
+      expect(readdirSync(dir).sort()).toEqual(['2026-10-01.jsonl', '2026-10-02.jsonl'])
+      expect(logs.warnings).toHaveLength(2)
+      expect(logs.warnings[0]).toMatch(/^observation purge could not remove 2026-10-0[12]\.jsonl: /)
+      expect(logs.warnings[1]).toMatch(/^observation purge could not remove 2026-10-0[12]\.jsonl: /)
+    } finally {
+      chmodSync(dir, 0o700)
+    }
+    expect((await run()).removed.sort()).toEqual(['2026-10-01.jsonl', '2026-10-02.jsonl'])
+  })
+
+  it.skipIf(asRoot)('reads a folder it cannot read as a failure, not as an empty journal', async () => {
+    writeDay(dir, '2026-10-01.jsonl', '{}\n')
+    chmodSync(dir, 0o000)
+    try {
+      await expect(run()).rejects.toMatchObject({ code: 'EACCES' })
+    } finally {
+      chmodSync(dir, 0o700)
+    }
   })
 
   it('leaves a folder named like a day alone', async () => {

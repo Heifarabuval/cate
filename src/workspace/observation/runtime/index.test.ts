@@ -103,8 +103,12 @@ describe('the observation runtime', () => {
     values.observationAccord = ACCEPTED
     const document = fakeDocument()
     runtime.watchDocument(document.source)
-    const secrets = ['S3cretPw', 'aB3dE5gH7jK9mN1pQ', 'TOK-123', 'a@b.fr', 'frag-456', 'Plan secret', 'ABC-123', 'JSESSION-9']
+    const secrets = [
+      'S3cretPw', 'aB3dE5gH7jK9mN1pQ', 'TOK-123', 'a@b.fr', 'frag-456', 'Plan secret', 'ABC-123', 'JSESSION-9',
+      'jane.doe', 'dG9rZW4', 'abcdefghijklmnop', 'c2VjcmV0', 'john%40',
+    ]
     runtime.navigated('https://user:S3cretPw@example.com/reset/aB3dE5gH7jK9mN1pQ/x;jsessionid=JSESSION-9?token=TOK-123&email=a@b.fr#frag-456')
+    runtime.navigated('https://example.com/u/jane.doe@example.com/t/dG9rZW4=/s/abcdefghijklmnop/v/c2VjcmV0+/m/john%40example.com')
     document.emit(op({ kind: 'addPanel' }), doc([]), doc([{ ...panel('p1', 'editor', 'Plan secret ABC-123'), fields: { filePath: '/Users/me/ABC-123.md' } }]))
     await runtime.flush()
     expect(files(tmp.dir).length).toBeGreaterThan(0)
@@ -150,11 +154,58 @@ describe('the observation runtime', () => {
     runtime.navigated('https://example.com/a')
     await runtime.flush()
     const before = statSync(journalFile()).mtimeMs
-    const listing = await runtime.list(14)
-    expect(listing).toMatchObject({ total: 1, illisibles: 0, jours: 14 })
-    expect(listing.observations[0]).toMatchObject({ kind: 'navigate', panelType: 'browser', ref: 'https://example.com/a' })
+    const listing = await runtime.list(14, true)
+    expect(listing).toMatchObject({ total: 1, illisibles: 0, jours: 14, types: [{ kind: 'navigate', panelType: 'browser', count: 1 }] })
+    expect(listing.observations?.[0]).toMatchObject({ kind: 'navigate', panelType: 'browser', ref: 'https://example.com/a' })
     expect(statSync(journalFile()).mtimeMs).toBe(before)
     expect(readdirSync(dir)).toEqual(['2026-11-20.jsonl'])
+  })
+
+  it('counts by type and gives no ref unless they are asked for', async () => {
+    values.observationAccord = ACCEPTED
+    const document = fakeDocument()
+    runtime.watchDocument(document.source)
+    document.emit(op({ kind: 'addPanel' }), doc([]), doc([panel('p-private-id', 'browser')]))
+    runtime.navigated('https://example.com/private/page')
+    runtime.navigated('https://example.com/private/other')
+    await runtime.flush()
+
+    const summary = await runtime.list(14, false)
+    expect(summary).toEqual({
+      jours: 14,
+      total: 3,
+      illisibles: 0,
+      types: [{ kind: 'navigate', panelType: 'browser', count: 2 }, { kind: 'panel.created', panelType: 'browser', count: 1 }],
+    })
+    expect('observations' in summary).toBe(false)
+    expect(JSON.stringify(summary)).not.toMatch(/example\.com|private|p-private-id/)
+
+    const full = await runtime.list(14, true)
+    expect(full.observations?.map((one) => one.ref)).toEqual(['p-private-id', 'https://example.com/private/page', 'https://example.com/private/other'])
+    expect(full.types).toEqual(summary.types)
+  })
+
+  it('counts the lines it cannot read apart, and the days asked only', async () => {
+    values.observationAccord = ACCEPTED
+    runtime.navigated('https://example.com/a')
+    await runtime.flush()
+    writeDay(dir, '2026-11-19.jsonl', 'not json\n')
+    writeDay(dir, '2026-11-10.jsonl', '{"ts":"2026-11-10T09:00:00.000Z","kind":"panel.created","panelType":"browser","ref":"ten-days-ago"}\n')
+    writeDay(dir, '2026-11-01.jsonl', '{"ts":"2026-11-01T09:00:00.000Z","kind":"panel.created","panelType":"browser","ref":"too-old"}\n')
+    expect(await runtime.list(1, false)).toMatchObject({ total: 1, illisibles: 1, jours: 1 })
+    expect(await runtime.list(14, false)).toMatchObject({ total: 2, illisibles: 1, jours: 14 })
+  })
+
+  it('never lets a failure of its own reach the browser panel that tells it of a page', () => {
+    const broken = createObservationRuntime({ dir, settings: { get: () => { throw new Error('settings are gone') } }, now: time.now, log: logs.log })
+    expect(() => broken.navigated('https://example.com/a')).not.toThrow()
+    expect(logs.warnings).toEqual(['observation could not take a fact: settings are gone'])
+  })
+
+  it('says so when the purge fails, and never rejects', async () => {
+    writeFileSync(dir, 'a file where the folder should be')
+    await expect(runtime.start()).resolves.toBeUndefined()
+    expect(logs.warnings).toEqual([expect.stringMatching(/^observation purge failed: /)])
   })
 
   it('stops watching the document and writing once disposed', async () => {
@@ -174,17 +225,25 @@ describe('the observation runtime', () => {
 
 describe('cate.observe.list', () => {
   const ctx = (kind: 'cli' | 'client') => ({ caller: { kind, id: 'caller' } }) as ApiHandlerContext
-  const listing = { observations: [], total: 0, illisibles: 0, jours: 3 }
-  const handlers = observationApiHandlers({ list: vi.fn(async () => listing) })
+  const listing = { total: 0, illisibles: 0, jours: 3, types: [] }
+  const list = vi.fn(async () => listing)
+  const handlers = observationApiHandlers({ list })
 
-  it('serves a terminal of the machine', async () => {
-    expect(await handlers.list({ jours: 3 }, ctx('cli'))).toBe(listing)
+  it('serves a terminal of the machine, with the refs only when it asks for them', async () => {
+    expect(await handlers.list({ jours: 3, refs: false }, ctx('cli'))).toBe(listing)
+    expect(list).toHaveBeenLastCalledWith(3, false)
+    await handlers.list({ jours: 0, refs: true }, ctx('cli'))
+    expect(list).toHaveBeenLastCalledWith(0, true)
   })
 
   it('never serves a client: the journal does not cross the protocol', async () => {
-    await expect(Promise.resolve().then(() => handlers.list({ jours: 3 }, ctx('client')))).rejects.toMatchObject({
-      code: 'rejected',
-      message: expect.stringMatching(/^observation-list-local-only/),
-    })
+    list.mockClear()
+    for (const refs of [false, true]) {
+      await expect(Promise.resolve().then(() => handlers.list({ jours: 3, refs }, ctx('client')))).rejects.toMatchObject({
+        code: 'rejected',
+        message: expect.stringMatching(/^observation-list-local-only/),
+      })
+    }
+    expect(list).not.toHaveBeenCalled()
   })
 })

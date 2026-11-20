@@ -1530,8 +1530,9 @@ output of a terminal.
   (`cleanInput` on the way in, `parseObservation` on the way out: a line with
   another field, an unknown kind or a navigation that carries a parameter is
   refused whole); the rules that say what is never captured (`stripUrl`: no
-  query, fragment or credential, a token-like path segment becomes `*`, and
-  only http and https pages leave a trace; `isSensitiveField`: `type=password`
+  query, fragment or credential, a path segment of 16 characters or more or
+  holding `+`, `=` or `@` (an address, base64) becomes `*`, and only http and
+  https pages leave a trace; `isSensitiveField`: `type=password`
   and the `cc-*`, `one-time-code`, `current-password`, `new-password`
   autocomplete words; `isExcludedDomain`: the exclusion list and its
   subdomains, failing closed); the default exclusion list (bank, mail, health,
@@ -1558,12 +1559,22 @@ output of a terminal.
   drops what waited. A workspace that never accepted has no `observations/`
   folder. The default exclusion list and the person's additions and removals
   apply to a navigation before anything is written.
-- **Reading.** `cate observe list [--jours N]` (`agence observe list`) lists
-  the journal read only. It runs behind `cliObservationEnabled`, off by default
+- **Reading.** `cate observe list [--jours N] [--refs]` (`agence observe list`)
+  reads the journal read only. It answers the counts by kind and panel type and
+  the total; the lines with their refs (an address, a panel id) only with
+  `--refs`, because a Cate terminal records what it prints in `terminal-logs/`,
+  which neither the 14 days retention nor Erase all reaches (`agence` warns
+  when `--refs` is used). It runs behind `cliObservationEnabled`, off by default
   (an agent that reads the journal could send it to a model), and the handler
   serves a terminal of the machine only: a client, a paired device included,
   never gets the raw journal. No file of the module imports the network or a
-  model SDK (`network.test.ts`).
+  model SDK, nor calls a network API (`network.test.ts` reads each file with the
+  TypeScript parser).
+- **Known limits.** The accord is an editable JSON setting, and any client can
+  set it through the `settings` capability. The journal is a `0600` file of the
+  user's account: any process of that account can read it, `cliObservationEnabled`
+  guards only the `cate` command. The disk is not encrypted by Cate. See "Limites
+  connues" in the spec.
 - Not in this version: the recorder (clicks and field names), the detector and
   its card, the accord screen, `erase`, and the line of a terminal command
   (the shell hook is not clean, `specs/003-apprentissage-observation/rapport-lot-0.md`).
@@ -2778,7 +2789,7 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`listTabs`) / session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
 | `cate.agent.*` | `start` (`linkFrom`/`relation`: relates a panel to the new agent; a refusal comes back as `relationError`, the agent still runs), `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
-| `cate.observe.*` | `list` (`--jours N`, read only; a terminal of the machine, behind `cliObservationEnabled`; a client gets `observation-list-local-only`) | workspace/observation | service |
+| `cate.observe.*` | `list` (`--jours N`, read only: counts by type, and the lines only with `--refs`; a terminal of the machine, behind `cliObservationEnabled`; a client gets `observation-list-local-only`) | workspace/observation | service |
 
 There is no `cate.panel.focus`: focus is client state. Every browser method
 is a CLI command (`cate browser snapshot`, `find`, `click`, `fill`, `type`,

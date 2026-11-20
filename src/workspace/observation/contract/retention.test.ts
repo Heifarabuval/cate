@@ -40,8 +40,9 @@ describe('retention', () => {
 
   it('refuses a name that is not a day of the calendar', () => {
     for (const name of [
-      '2026-13-01.jsonl', '2026-02-30.jsonl', '2023-02-29.jsonl', '2026-00-10.jsonl', '2026-11-00.jsonl',
+      '2026-13-01.jsonl', '2026-02-30.jsonl', '2023-02-29.jsonl', '2026-00-10.jsonl', '2026-11-00.jsonl', '2026-11-31.jsonl',
       'etat.json', '2026-11-20.jsonl.bak', 'notes.jsonl', '20261120.jsonl', '2026-11-20.JSONL', '2026-11-20', '.jsonl', '',
+      'x2026-11-20.jsonl', 'backup-2026-11-20.jsonl', ' 2026-11-20.jsonl', '2026-11-20.jsonl ', '12026-11-20.jsonl', '2026-11-200.jsonl',
     ]) expect(parseJournalFileName(name), name).toBeNull()
   })
 })

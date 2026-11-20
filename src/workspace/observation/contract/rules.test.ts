@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_EXCLUSIONS, exclusionList } from './exclusions'
+import { DEFAULT_EXCLUSIONS, exclusionList, isDomainName } from './exclusions'
 import { isExcludedDomain, isSensitiveField, stripUrl } from './rules'
 
 describe('stripUrl', () => {
@@ -46,9 +46,63 @@ describe('stripUrl', () => {
     expect(stripUrl('https://example.com/api/v1/users/0123456789abcdef0123/orders')).toBe('https://example.com/api/v1/users/*/orders')
   })
 
-  it('keeps short segments and long words without a digit', () => {
+  it('masks a segment of 16 characters or more whatever it holds, a digit or not', () => {
+    expect(stripUrl('https://example.com/share/abcdefghijklmnop')).toBe('https://example.com/share/*')
+    expect(stripUrl('https://example.com/share/ABCDEFGHIJKLMNOPQRSTUVWXYZ')).toBe('https://example.com/share/*')
+    expect(stripUrl('https://example.com/docs/internationalization')).toBe('https://example.com/docs/*')
+    expect(stripUrl('https://example.com/blog/how-to-set-up-a-custom-domain')).toBe('https://example.com/blog/*')
+    expect(stripUrl('https://example.com/d/Ab_Cd-Ef_Gh-Ij_Kl')).toBe('https://example.com/d/*')
+    expect(stripUrl('https://example.com/f/report_final.pdf')).toBe('https://example.com/f/*')
+  })
+
+  it('keeps a segment of 15 characters or less, and masks one of exactly 16', () => {
     expect(stripUrl('https://example.com/reset/abc123')).toBe('https://example.com/reset/abc123')
-    expect(stripUrl('https://example.com/docs/internationalization')).toBe('https://example.com/docs/internationalization')
+    expect(stripUrl('https://example.com/share/abcdefghijklmno')).toBe('https://example.com/share/abcdefghijklmno')
+    expect(stripUrl('https://example.com/share/abcdefghijklmnop')).toBe('https://example.com/share/*')
+    expect(stripUrl('https://example.com/share/abcdefg-hijklmn')).toBe('https://example.com/share/abcdefg-hijklmn')
+    expect(stripUrl('https://example.com/share/abcdefg-hijklmno')).toBe('https://example.com/share/*')
+    expect(stripUrl('https://example.com/orders/new')).toBe('https://example.com/orders/new')
+  })
+
+  it('masks a segment that holds a run of 16 characters or more, wherever the run sits in it', () => {
+    for (const segment of ['abcdefghijklmnop!', '!abcdefghijklmnop', 'id:abcdefghijklmnop', 'x%20abcdefghijklmnop', 'abcdefghijklmnop%20x', 'a!abcdefghijklmnop!b']) {
+      expect(stripUrl(`https://example.com/share/${segment}`), segment).toBe('https://example.com/share/*')
+    }
+    for (const segment of ['abcdefghijklmno!', '!abcdefghijklmno', 'abcdefghijklmn!op', 'abcdefgh!ijklmnop-q-r']) {
+      expect(stripUrl(`https://example.com/share/${segment}`), segment).toBe(`https://example.com/share/${segment}`)
+    }
+  })
+
+  it('masks an email address in the path, written or percent-encoded', () => {
+    expect(stripUrl('https://example.com/users/jane.doe@example.com/profile')).toBe('https://example.com/users/*/profile')
+    expect(stripUrl('https://example.com/users/jane%40example.com')).toBe('https://example.com/users/*')
+    expect(stripUrl('https://example.com/users/a@b')).toBe('https://example.com/users/*')
+    expect(stripUrl('https://example.com/users/j%40d')).toBe('https://example.com/users/*')
+  })
+
+  it('masks a base64 token with + or =, written or percent-encoded, whatever its length', () => {
+    expect(stripUrl('https://example.com/t/ab+cd')).toBe('https://example.com/t/*')
+    expect(stripUrl('https://example.com/t/dG9rZW4=')).toBe('https://example.com/t/*')
+    expect(stripUrl('https://example.com/t/YWJj%2BZGVm')).toBe('https://example.com/t/*')
+    expect(stripUrl('https://example.com/t/YWJjZA%3D%3D')).toBe('https://example.com/t/*')
+    expect(stripUrl('https://example.com/t/YWJj%2bZGVm')).toBe('https://example.com/t/*')
+    expect(stripUrl('https://example.com/t/YWJjZA%3d%3d')).toBe('https://example.com/t/*')
+  })
+
+  it('masks a segment whose decoded form is long, and keeps one that cannot be decoded and is short', () => {
+    expect(stripUrl('https://example.com/s/%61%62%63%64%65%66%67%68%69%6a%6b%6c%6d%6e%6f%70')).toBe('https://example.com/s/*')
+    expect(stripUrl('https://example.com/s/100%')).toBe('https://example.com/s/100%')
+    expect(stripUrl('https://example.com/s/a%20b')).toBe('https://example.com/s/a%20b')
+  })
+
+  it('masks every such segment of a path and leaves the others', () => {
+    expect(stripUrl('https://example.com/a/jane@example.com/b/abcdefghijklmnop/c/dG9rZW4=/d')).toBe('https://example.com/a/*/b/*/c/*/d')
+  })
+
+  it('gives a masked address back unchanged', () => {
+    const once = stripUrl('https://example.com/users/jane.doe@example.com/t/abcdefghijklmnop/dG9rZW4=')!
+    expect(once).toBe('https://example.com/users/*/t/*/*')
+    expect(stripUrl(once)).toBe(once)
   })
 
   it('drops path parameters, where legacy session ids travel', () => {
@@ -76,6 +130,15 @@ describe('isSensitiveField', () => {
     expect(isSensitiveField({ autocomplete: 'section-pay billing cc-csc' })).toBe(true)
     expect(isSensitiveField({ autocomplete: 'shipping new-password' })).toBe(true)
     expect(isSensitiveField({ autocomplete: '  cc-number  ' })).toBe(true)
+  })
+
+  it('splits the words of autocomplete on any white space', () => {
+    expect(isSensitiveField({ autocomplete: 'billing\tcc-number' })).toBe(true)
+    expect(isSensitiveField({ autocomplete: 'shipping\ncc-csc' })).toBe(true)
+    expect(isSensitiveField({ autocomplete: 'section-a   one-time-code' })).toBe(true)
+    expect(isSensitiveField({ autocomplete: 'billing cc-number' })).toBe(true)
+    expect(isSensitiveField({ autocomplete: 'billing cc-number' })).toBe(true)
+    expect(isSensitiveField({ autocomplete: 'billing-cc-number' })).toBe(false)
   })
 
   it('does not flag the other fields', () => {
@@ -164,5 +227,36 @@ describe('exclusionList', () => {
 
   it('lets a removal win over an addition of the same domain', () => {
     expect(exclusionList({ ajoutees: ['exemple.fr'], retirees: ['exemple.fr'] })).not.toContain('exemple.fr')
+  })
+})
+
+describe('isDomainName', () => {
+  const label = (length: number) => 'a'.repeat(length)
+
+  it('takes a bare lowercase domain of at least two labels', () => {
+    for (const name of ['exemple.fr', 'mail.exemple.fr', 'a.b', 'a-b.fr', 'a1.fr', '1a.fr', 'xn--80ak6aa92e.com', 'exemple.fr.co']) {
+      expect(isDomainName(name), name).toBe(true)
+    }
+  })
+
+  it('refuses what is not one', () => {
+    for (const name of [
+      '', 'exemple', 'Exemple.fr', 'exemple.FR', '-a.fr', 'a-.fr', 'a..fr', '.fr', 'a.fr.', ' a.fr', 'a.fr ', 'a b.fr', 'a_b.fr',
+      'https://a.fr', 'a.fr/x', 'a.fr:80', 'a@b.fr', '*.a.fr',
+    ]) expect(isDomainName(name), name).toBe(false)
+  })
+
+  it('takes a label of 63 characters and refuses one of 64', () => {
+    expect(isDomainName(`${label(63)}.fr`)).toBe(true)
+    expect(isDomainName(`a.${label(63)}`)).toBe(true)
+    expect(isDomainName(`${label(64)}.fr`)).toBe(false)
+    expect(isDomainName(`a.${label(64)}`)).toBe(false)
+  })
+
+  it('takes a name of 253 characters and refuses one of 254', () => {
+    const at253 = [label(63), label(63), label(63), label(61)].join('.')
+    expect(at253).toHaveLength(253)
+    expect(isDomainName(at253)).toBe(true)
+    expect(isDomainName([label(63), label(63), label(63), label(62)].join('.'))).toBe(false)
   })
 })

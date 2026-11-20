@@ -2,19 +2,30 @@
 // capté"). The journal applies them on receipt; the recorder of a later lot
 // applies them on the page too, before it sends anything.
 
-/** A path segment this long, made of unreserved URL characters, holding a digit, is a token (Q5). */
-const TOKEN_SEGMENT = /^[A-Za-z0-9._~-]{16,}$/
-const DIGIT = /\d/
+/** A run of 16 characters or more of letters, digits and `-_.~`, anywhere in a path segment, is a token or a name (Q5). */
+const LONG_RUN = /[A-Za-z0-9._~-]{16,}/
+/** `@` is an email address; `+` and `=` are base64, written or percent-encoded (`%40`, `%2B`, `%3D`). */
+const ADDRESS_OR_BASE64 = /[+=@]/
+
+/** Read as written and as decoded: `%61%62...` is a long word, `%40` is an `@`. */
+function isSecretLike(segment: string): boolean {
+  let decoded = segment
+  try {
+    decoded = decodeURIComponent(segment)
+  } catch { /* a malformed escape: the segment as written is all there is to read */ }
+  return [segment, decoded].some((form) => LONG_RUN.test(form) || ADDRESS_OR_BASE64.test(form))
+}
 
 function maskSegment(segment: string): string {
   // `;jsessionid=...` after a segment is a legacy path parameter: it goes.
   const bare = segment.split(';')[0]
-  return TOKEN_SEGMENT.test(bare) && DIGIT.test(bare) ? '*' : bare
+  return isSecretLike(bare) ? '*' : bare
 }
 
 /**
  * The URL of a page as the journal knows it: scheme, host, port and path.
- * No query, no fragment, no credentials, a token-like path segment replaced
+ * No query, no fragment, no credentials; a path segment that may be a token or
+ * an address (16 characters or more, or holding `+`, `=` or `@`) is replaced
  * by `*`. Null for what is not an http or https page (a file, an internal
  * page, a script): such a page leaves no trace.
  */
@@ -43,7 +54,7 @@ export interface FieldProps {
  */
 export function isSensitiveField(field: FieldProps): boolean {
   if (field.type?.trim().toLowerCase() === 'password') return true
-  return (field.autocomplete ?? '').toLowerCase().split(/\s+/).some((word) =>
+  return (field.autocomplete ?? '').toLowerCase().split(/\s/).some((word) =>
     word === 'one-time-code' || word === 'current-password' || word === 'new-password' || word.startsWith('cc-'))
 }
 

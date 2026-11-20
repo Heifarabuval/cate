@@ -49,7 +49,7 @@ L'utilisateur active l'observation sur son accord (User Story 4). Cate écrit en
 2. **Given** une navigation vers `https://example.com/a/b?token=abc#x`, **When** l'événement s'écrit, **Then** `ref` vaut `https://example.com/a/b` (ni requête, ni fragment, ni identifiants dans l'URL).
 3. **Given** un fichier daté de 15 jours, **When** la purge tourne (au démarrage du runtime puis une fois par jour), **Then** le fichier est supprimé ; celui de 14 jours reste.
 4. **Given** l'accord non donné, ou l'observation en pause, **When** un panneau est créé, **Then** aucun fichier n'est créé ni modifié.
-5. **Given** `agence observe list`, **When** l'utilisateur la tape, **Then** les observations des 14 jours sortent en lecture seule, une ligne chacune, avec le total.
+5. **Given** `agence observe list`, **When** l'utilisateur la tape, **Then** le décompte des 14 jours par type d'événement et le total sortent en lecture seule, sans adresse ni identifiant ; avec `--refs`, une ligne par observation sort après un avertissement : le terminal enregistre sa sortie (`terminal-logs/`), hors de la rétention de 14 jours et hors de « Tout effacer ».
 
 ---
 
@@ -134,7 +134,7 @@ L'utilisateur clique « Oui » sur une carte, ou « Faire une recette » après 
 - Redémarrage du runtime : la pause, l'accord et les domaines muets persistent ; un enregistrement en cours ne reprend pas tout seul.
 - Un site qui change `autocomplete` après coup, ou un champ ajouté dynamiquement : la règle est évaluée au moment du geste, sur l'élément réel.
 - Iframe ou page cross-origin dans un enregistrement : la capture suit la règle du domaine de l'iframe ; si le domaine ne se lit pas, rien n'est capté.
-- Une URL contient un jeton dans le chemin (`/reset/abc123`) : voir Q5 ; hypothèse de travail, les segments longs et aléatoires sont masqués par `*`.
+- Une URL contient un jeton dans le chemin (`/reset/abc123`) : voir Q5 ; hypothèse appliquée, un segment de 16 caractères ou plus, ou qui contient `+`, `=` ou `@` (écrit ou en `%40`, `%2B`, `%3D`), est masqué par `*`.
 - Une commande de terminal contient un secret hors des motifs connus : le motif ne le voit pas (risque connu, voir modèle de menaces M5) ; d'où le contrôle de l'utilisateur avant toute recette.
 - Double clic sur « Tout effacer » : idempotent. Double clic sur « Oui » : une seule recette.
 - Utilisateur qui change de métier (pack 007) : les propositions d'avant restent liées à leurs domaines, sans pack.
@@ -172,7 +172,7 @@ Liste ferme, vérifiée par des tests de non-capture (FR-015). Une ligne ajouté
 - **FR-013**: La génération de recette MUST partir d'une proposition cliquée « Oui » ou d'un enregistrement, produire un texte en phrases sans valeur de champ, et ne rien écrire avant la validation du texte par l'utilisateur.
 - **FR-014**: Le contenu d'une recette MUST être produit par un gabarit déterministe (une phrase par étape) ; l'usage d'un agent pour reformuler est hors périmètre (Q3, tranchée : 0 appel à un modèle).
 - **FR-015**: Des tests de non-capture MUST exister pour chaque ligne de la liste « jamais capté », écrits avant le code (rouge d'abord), et tourner en CI. Un test cherche en plus chaque valeur d'entrée dans tous les fichiers produits (journal, état, logs du runtime).
-- **FR-016**: `agence observe list [--jours N] [--json]` MUST lister le journal en lecture seule ; `agence observe erase` MUST effacer comme FR-012 ; aucune commande n'écrit une observation à la place de l'utilisateur.
+- **FR-016**: `agence observe list [--jours N] [--refs] [--json]` MUST lire le journal en lecture seule et n'imprimer par défaut que le décompte par type d'événement et le total, jamais une adresse ni un identifiant : un terminal Cate enregistre sa sortie dans `terminal-logs/`, que ni la rétention de 14 jours ni « Tout effacer » n'atteignent. `--refs` (aussi sur `cate observe list`) ajoute une ligne par observation et MUST avertir que le terminal enregistre la sortie. `agence observe erase` MUST effacer comme FR-012 ; aucune commande n'écrit une observation à la place de l'utilisateur.
 - **FR-017**: Le journal MUST rester hors de portée des panneaux perso (spec 008) : il vit dans les données du workspace, hors racine du projet, et `observations/` entre dans la liste de refus fixe du pont `window.cate` (008, D7). Une proposition acceptée peut produire un panneau perso ; le panneau ne lit jamais le journal.
 - **FR-018**: Le journal MUST rester local : aucune écriture réseau, aucun envoi à un modèle, aucune synchronisation, aucun partage entre appareils appairés. Un second appareil connecté au workspace peut afficher les cartes, pas lire le journal brut (voir M4).
 - **FR-019**: Aucune dépendance ajoutée ; aucun service. Coût mensuel : 0 € (à confirmer au plan, voir Assumptions).
@@ -201,6 +201,14 @@ Qui peut nuire, par quoi, et la parade. Ce modèle se relit à chaque lot ; une 
 | M8 | Une suite trop générale (ex. « ouvrir un navigateur ») propose en boucle | Lassitude, désactivation | Seuil de 3, longueur minimale d'une suite, `Pas utile` et domaines muets ; mesure au plan |
 | M9 | Une proposition acceptée applique une action irréversible | Dommage | Rien ne s'applique : la recette est un texte ; seul le clic de l'humain envoie ou exécute (principe de l'orchestrateur) |
 | M10 | Le script d'enregistrement fuit hors de l'enregistrement (reste actif après l'arrêt) | Capture non voulue | Arrêt vérifié par test ; le script se désinstalle à l'arrêt, au changement de page exclue et à la fermeture du panneau |
+
+### Limites connues, non corrigées
+
+Ces limites tiennent au poste de l'utilisateur et non au code de Cate. Elles se lisent avant tout usage par une autre personne.
+
+- **L'accord est un réglage JSON éditable.** `observationAccord` vit dans le `settings.json` du workspace. Toute personne ou tout processus qui écrit ce fichier, et tout client par la capability `settings` (aucun rôle par client, D3), peut donner l'accord sans avoir lu l'écran d'accord. Cet écran (lot 4) informe ; il ne prouve pas que la personne l'a lu.
+- **Le journal est lisible par tout processus de l'utilisateur.** Les fichiers sont en `0600` dans le compte macOS : un agent, un script ou une application lancés sous ce compte les lisent ou les modifient sans passer par Cate. Le réglage `cliObservationEnabled` garde `cate observe list`, pas le disque. Cate ne chiffre pas le disque (voir M7).
+- **Un terminal enregistre ce qu'il affiche.** `terminal-logs/` garde la sortie des commandes hors de la rétention de 14 jours et hors de « Tout effacer ». D'où le décompte seul par défaut de `agence observe list` et l'avertissement de `--refs` (FR-016).
 
 ## Cadre RGPD
 
@@ -241,7 +249,7 @@ Posées dans le panneau agence (q409, q411, q413) ou à poser. Chacune a une hyp
 - **Q2** (q411, tranchée par Heifara) : seuil du détecteur, 3 fois en 14 jours (issue) ou 2 (spec 007). Décision : 3, réglable plus tard (constante déclarée, T034).
 - **Q3** (q413, tranchée par Heifara) : détecteur déterministe côté runtime, sans modèle de langage ; la recette est un texte généré depuis la suite, validé par clic. Décision : oui, 0 €.
 - **Q4** : destination et format d'une recette validée : fichier Markdown du workspace, skill (`skills/`), habitude du pack métier (007, story 5, « Retenir cette habitude ? »), panneau perso (008) ? Hypothèse : le lot 5 livre un texte validé et la destination reste un choix à l'écran, à trancher avant ce lot.
-- **Q5** : masquage des segments d'URL qui ressemblent à un jeton (`/reset/abc123`). Hypothèse : segments d'au moins 16 caractères alphanumériques sans espace remplacés par `*`.
+- **Q5** : masquage des segments d'URL qui ressemblent à un jeton (`/reset/abc123`). Hypothèse appliquée au lot 1 : un segment de 16 caractères ou plus (lettres, chiffres, `-`, `_`, `.`, `~`, avec ou sans chiffre), ou qui contient `+`, `=` ou `@` (un courriel, du base64 ; écrits ou en `%40`, `%2B`, `%3D`), est remplacé par `*`. Un segment plus court et sans ces signes reste lisible (`/reset/abc123`).
 - **Q6** : un événement « fichier ouvert » est-il voulu ? L'issue ne le cite pas. Hypothèse : non.
 - **Q7** : contenu de la liste d'exclusion par défaut (banques, messageries, mutuelle, paie...) : qui la fournit, et la liste de l'orga d'Heifara (clients, outils de paie, RH) est-elle à lui demander ? Hypothèse : liste de départ écrite au plan, Heifara complète.
 - **Q8** : durée maximale d'un enregistrement (arrêt automatique) : l'issue n'en parle pas. Hypothèse : aucun, l'arrêt reste à la main, la pastille rouge reste visible.

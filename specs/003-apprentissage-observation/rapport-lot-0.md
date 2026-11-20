@@ -88,7 +88,23 @@ Script hors dépôt, jsdom du dépôt, aucune fenêtre. Résultats lus :
 
 ### Verdict T004
 
-**Possible.** Le support recommandé est le script de précharge du guest : monde isolé, écouteurs passifs en capture, retour par `sendToHost` vers le client, jamais vers le runtime directement (menace M2 : la page ne parle pas au runtime).
+**Possible, avec un point de vigilance (ci-dessous).** Le support recommandé est le script de précharge du guest : monde isolé, écouteurs passifs en capture, retour par `sendToHost` vers le client, jamais vers le runtime directement (menace M2 : la page ne parle pas au runtime).
+
+### Point de vigilance pour le lot 3 : `passwordBridge.ts` envoie déjà un mot de passe par `sendToHost`
+
+Le canal que l'enregistrement emprunterait porte **déjà des identifiants** :
+
+- `guest.ts:87-90` installe `installPasswordBridge` dans le cadre principal, avec `ipcRenderer.sendToHost` comme `send`.
+- `passwordBridge.ts:43-48` envoie `cate-browser-password-submit` avec `username`, **`password`** (la valeur du champ), `origin` et les noms des champs. Il part sur un `submit` (`:49-51`), sur un clic d'un bouton de connexion (`:53-62`) et sur `Enter` dans un champ (`:63-66`).
+- `passwordBridge.ts:18-30` pose sur le champ focalisé un attribut `data-cate-autofill-target` (une page peut le lire) et envoie son rectangle (`cate-browser-password-focus`).
+- Le même fichier écoute déjà `click`, `submit`, `focusin`, `scroll` et `keydown` (`event.key`, jamais envoyé).
+
+Conséquences pour le lot 3, à écrire dans les tests avant le code :
+
+1. L'enregistrement a **son propre canal** (un nom à lui) et une charge stricte (type, libellé ou nom de champ, rien d'autre). Il n'appelle jamais le `send` du pont et n'importe pas `passwordBridge.ts`.
+2. Le gestionnaire côté hôte de l'enregistrement n'écoute jamais les canaux `cate-browser-password-*`, et celui des mots de passe n'écoute pas le canal de l'enregistrement.
+3. Test jsdom (T060, T064) : sur une page avec un champ mot de passe rempli puis envoyé, le pont émet et **rien** n'arrive sur le canal de l'enregistrement. Un champ nommé `username` ou `email` (que le pont lit par `isUsername`) ne donne à l'enregistrement que son nom, jamais `value`.
+4. L'enregistrement n'ajoute ni écouteur `key*` ni attribut sur la page. Le guest en pose déjà (`webFrame.insertCSS` pour les barres de défilement, `guest.ts:46`, et `data-cate-autofill-target`) : la page peut déjà y voir Cate, l'enregistrement ne l'aggrave pas.
 
 ### Écart avec tasks.md, à corriger avant le lot 3
 
@@ -100,11 +116,12 @@ Script hors dépôt, jsdom du dépôt, aucune fenêtre. Résultats lus :
 | Risque du plan | Levé par les sondes ? | Motif |
 |---|---|---|
 | Commande de terminal : aucune lecture propre sans frappes | **Non levé**, contourné | Un hook existe (zsh, bash) mais n'est pas propre (canal forgeable, secrets, couverture). L'événement reste hors du premier lot, comme Q1 le décide. |
-| Le script de page change le comportement du site ou se voit | **Levé pour le support** | Monde isolé de préchargement, écouteurs passifs. Aucun style injecté dans la page. À confirmer au vrai poste (X001) : aucune fenêtre n'a été ouverte. |
+| Le script de page change le comportement du site ou se voit | **Levé pour le support** | Monde isolé de préchargement, écouteurs passifs. L'enregistrement n'ajoute ni style ni attribut (le guest en pose déjà, voir `passwordBridge.ts` ci-dessus). À confirmer au vrai poste (X001) : aucune fenêtre n'a été ouverte. |
+| Un canal du guest transporte déjà un mot de passe (`sendToHost`) | **Non levé**, à traiter au lot 3 | `passwordBridge.ts:43-48`. Canal distinct, charge stricte, tests croisés : voir le point de vigilance. |
 | `autocomplete` et `type` illisibles sur l'élément réel | **Levé** | jsdom les lit, y compris après changement et sur un champ ajouté. Casse et valeurs composées à gérer. |
 | La pastille ment (script resté actif) | **Levé sur le principe** | Le guest reçoit des ordres du processus principal (`guest.ts:72`) : un ordre d'arrêt retire les écouteurs. Le test d'arrêt (T064) reste obligatoire. |
 
-**Validation** : la relecture avec Heifara que T005 demande passe par l'orchestrateur. Ce rapport est son entrée. Le lot 1 a été lancé sur cette base et sur les décisions Q1, Q2 et Q3.
+**Validation** : la relecture avec Heifara que T005 demande **n'a pas eu lieu** (T005 est décoché dans `tasks.md`). Ce rapport est son entrée. Le lot 1 a été lancé par l'orchestrateur sur les décisions Q1, Q2 et Q3, que la spec porte déjà.
 
 ## Non vérifié
 

@@ -106,7 +106,8 @@ Capability observation
   pause(on) / erase(confirm)    -> op explicites
   answer(propositionId, choix)  -> oui | pas-utile | domaine-muet
 Cate API      cate.observe.list (read), cate.observe.erase (control)    gardés par un réglage cliObservationEnabled, coupé par défaut
-agence        agence observe list [--jours N] [--json]  /  agence observe erase
+agence        agence observe list [--jours N] [--refs] [--json]  /  agence observe erase
+              (par défaut le décompte par type, sans ref ; --refs : une ligne par observation, avec un avertissement, car un terminal enregistre sa sortie dans terminal-logs/)
 Réglages      observation { accord: {donneLe}|null, pause: bool, exclusionsAjoutees[], exclusionsRetirees[] }
 Fichiers      observations/<AAAA-MM-JJ>.jsonl   (0600)   observations/etat.json   (propositions, domainesMuets)
 ```

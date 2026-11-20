@@ -125,26 +125,30 @@ describe.skipIf(process.platform === 'win32')('the observation in a daemon', () 
     await w.session.op({ panelId: 'b1', op: {
       kind: 'reportNavigation', tabId: snapshot.activeTabId, url: 'https://mail.google.com/mail/u/0/?id=SECRET-9', canGoBack: false, canGoForward: false,
     } })
+    await w.session.op({ panelId: 'b1', op: {
+      kind: 'reportNavigation', tabId: snapshot.activeTabId, url: 'https://example.com/u/jane.doe@example.com/t/dG9rZW4=/s/abcdefghijklmnop', canGoBack: false, canGoForward: false,
+    } })
 
     const lines = await until(() => {
       try {
         const read = readJournal(w.daemon)
-        return read.length >= 2 ? read : undefined
+        return read.length >= 3 ? read : undefined
       } catch { return undefined }
     })
     expect(lines.map((line) => [line.kind, line.panelType, line.ref])).toEqual([
       ['panel.created', 'browser', 'b1'],
       ['navigate', 'browser', 'https://example.com/a/b'],
+      ['navigate', 'browser', 'https://example.com/u/*/t/*/s/*'],
     ])
     const text = fs.readFileSync(journalOf(w.daemon), 'utf8')
-    for (const secret of ['S3cretPw', 'TOK-123', 'frag-456', 'SECRET-9', 'mail.google.com', 'Plan secret', 'ABC-123']) expect(text).not.toContain(secret)
+    for (const secret of ['S3cretPw', 'TOK-123', 'frag-456', 'SECRET-9', 'mail.google.com', 'Plan secret', 'ABC-123', 'jane.doe', 'dG9rZW4', 'abcdefghijklmnop']) expect(text).not.toContain(secret)
     expect(fs.statSync(w.daemon.paths.observations).mode & 0o777).toBe(0o700)
     expect(fs.statSync(journalOf(w.daemon)).mode & 0o777).toBe(0o600)
 
     await w.settings.set({ key: 'observationPause', value: true })
     await w.addBrowser('b2')
     await pause(500)
-    expect(readJournal(w.daemon)).toHaveLength(2)
+    expect(readJournal(w.daemon)).toHaveLength(3)
   }, 30_000)
 
   it('serves `cate observe list` to a terminal that was allowed, and never to a client', async () => {
@@ -157,12 +161,18 @@ describe.skipIf(process.platform === 'win32')('the observation in a daemon', () 
     const router = w.daemon.workspace.router
     await expect(router.call(terminal, 'cate.observe.list', {})).rejects.toMatchObject({ code: 'rejected', message: expect.stringMatching(/^observation-read-disabled/) })
     await w.settings.set({ key: 'cliObservationEnabled', value: true })
-    const listing = await router.call(terminal, 'cate.observe.list', {}) as { observations: Array<Record<string, string>>; total: number; jours: number }
+    // By default a count by type: nothing a terminal would record in terminal-logs/.
+    const counted = await router.call(terminal, 'cate.observe.list', {})
+    expect(counted).toEqual({ jours: 14, total: 1, illisibles: 0, types: [{ kind: 'panel.created', panelType: 'browser', count: 1 }] })
+    expect(JSON.stringify(counted)).not.toContain('b1')
+    const listing = await router.call(terminal, 'cate.observe.list', { refs: true }) as { observations: Array<Record<string, string>>; total: number; jours: number }
     expect(listing).toMatchObject({ total: 1, jours: 14 })
     expect(listing.observations[0]).toMatchObject({ kind: 'panel.created', panelType: 'browser', ref: 'b1' })
     expect(await router.call(terminal, 'cate.observe.list', { jours: 0 })).toMatchObject({ total: 1, jours: 0 })
 
-    await expect(w.api.call({ method: 'cate.observe.list' })).rejects.toMatchObject({ code: 'rejected', message: expect.stringMatching(/^observation-list-local-only/) })
+    for (const args of [{}, { refs: true }]) {
+      await expect(w.api.call({ method: 'cate.observe.list', args })).rejects.toMatchObject({ code: 'rejected', message: expect.stringMatching(/^observation-list-local-only/) })
+    }
   }, 30_000)
 
   it('is read through the cate CLI itself, behind its setting', async () => {
@@ -181,8 +191,11 @@ describe.skipIf(process.platform === 'win32')('the observation in a daemon', () 
 
     await expect(run('observe', 'list', '--json')).rejects.toMatchObject({ stderr: expect.stringContaining('observation-read-disabled') })
     await w.settings.set({ key: 'cliObservationEnabled', value: true })
-    const { stdout } = await run('observe', 'list', '--jours', '3', '--json')
-    expect(JSON.parse(stdout)).toMatchObject({ total: 1, jours: 3, illisibles: 0, observations: [{ kind: 'panel.created', panelType: 'browser', ref: 'b1' }] })
+    const counted = (await run('observe', 'list', '--jours', '3', '--json')).stdout
+    expect(JSON.parse(counted)).toEqual({ jours: 3, total: 1, illisibles: 0, types: [{ kind: 'panel.created', panelType: 'browser', count: 1 }] })
+    expect(counted).not.toContain('b1')
+    const withRefs = (await run('observe', 'list', '--jours', '3', '--refs', '--json')).stdout
+    expect(JSON.parse(withRefs)).toMatchObject({ total: 1, jours: 3, illisibles: 0, observations: [{ kind: 'panel.created', panelType: 'browser', ref: 'b1' }] })
     await expect(run('observe', 'list', '--jours', '15', '--json')).rejects.toMatchObject({ code: expect.any(Number) })
   }, 60_000)
 

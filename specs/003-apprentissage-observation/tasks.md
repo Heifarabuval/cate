@@ -11,7 +11,7 @@ description: "Tâches : apprentissage par observation (issue #76)"
 
 **Interdits à tout agent** (constitution X) : lancer Playwright, Electron, l'app Cate ou `npm run dev`, ouvrir une fenêtre, lancer `npm ci` ou `npm install`, écrire dans le vrai `~/.cate` ou `~/.claude`. Pas de merge, de push sur `main`, de force-push, de suppression de branche. Aucune dépendance ajoutée.
 
-**État** : lots 0 et 1 faits sur la branche `feat/observation-journal` (T011 non écrit, T026 attend un vérificateur). Les lots 2 à 5 attendent la décision de Heifara, et les questions Q1 à Q9 de spec.md attendent sa réponse avant le lot qui en dépend (Q1 : tranchée, hors du premier lot ; Q2 : tranchée, 3 fois en 14 jours ; Q4 : lot 5 ; Q5 et Q7 : hypothèses appliquées au lot 1, à confirmer ; Q9 : lot 4).
+**État** : lots 0 et 1 faits sur la branche `feat/observation-journal` (T011 non écrit ; T003 et T005 attendent Heifara ; T026, le vérificateur, a rendu « ok, aucun bloquant » et ses écarts sont corrigés par `fix(observation)`). Les lots 2 à 5 attendent la décision de Heifara, et les questions Q1 à Q9 de spec.md attendent sa réponse avant le lot qui en dépend (Q1 : tranchée, hors du premier lot ; Q2 : tranchée, 3 fois en 14 jours ; Q4 : lot 5 ; Q5 et Q7 : hypothèses appliquées au lot 1, à confirmer ; Q9 : lot 4).
 
 ## Format: `- [ ] ID [P] [US] Description avec chemin`
 
@@ -23,11 +23,11 @@ description: "Tâches : apprentissage par observation (issue #76)"
 
 ## Lot 0 : sondes (0,5 j, avant tout code)
 
-- [x] T001 [H] Heifara répond à Q1 (q409) : ligne de commande d'un terminal. Sans réponse, T002 s'exécute quand même et T003 reste fermé.
+- [x] T001 [H] Heifara répond à Q1 (q409) : ligne de commande d'un terminal. Sans réponse, T002 s'exécute quand même et T003 reste fermé. (Preuve : `spec.md`, Clarifications et Q1, « tranché par Heifara (q409) : hors du premier lot ».)
 - [x] T002 [P] Sonde terminal : lire `src/services/terminal/runtime/terminalService.ts` et `shellResolver.ts`, noter si un hook de shell (zsh `preexec`, bash `DEBUG`) peut rapporter la ligne **soumise** sans lire d'entrée clavier, et ce que cela demande dans l'environnement du shell (variable, fichier généré dans `terminal-cli/`, jamais un fichier global). Livrable : une page dans le rapport du lot 0 (`specs/003-apprentissage-observation/rapport-lot-0.md`), verdict « possible / pas propre ».
-- [x] T003 Si T001 répond « hook de shell » ou T002 conclut « possible » et que Heifara valide : planifier l'événement `terminal.command` en lot 1b. Sinon : retirer l'événement du FR-002 de la spec par une PR de spec.
+- [ ] T003 Si T001 répond « hook de shell » ou T002 conclut « possible » et que Heifara valide : planifier l'événement `terminal.command` en lot 1b. Sinon : retirer l'événement du FR-002 de la spec par une PR de spec. (Décoché : ni l'une ni l'autre branche n'est faite. T002 conclut « possible mais pas propre » et Q1 sort l'événement du lot 1, mais aucune PR de spec ne le retire de FR-002 et Heifara n'a pas validé le lot 1b. Reste à lui : retirer l'événement, ou le planifier avec l'option B du rapport.)
 - [x] T004 [P] Sonde page : lire `src/services/browser/desktop/pageDriver.ts` et `src/services/browser/contract/surface.ts`, noter comment injecter un script dans la page, s'il tourne dans un monde isolé, et comment un événement revient au client. Test jetable jsdom (hors dépôt, scratchpad) : un élément `autocomplete="cc-number"` est bien lisible par `el.autocomplete`. Livrable : rapport du lot 0.
-- [x] T005 Relire le rapport avec Heifara : les sondes lèvent ou non les risques « terminal » et « script de page » du plan. Aucun lot ne démarre sans cette relecture.
+- [ ] T005 [H] Relire le rapport avec Heifara : les sondes lèvent ou non les risques « terminal » et « script de page » du plan. Aucun lot ne démarre sans cette relecture. (Décoché : la relecture avec Heifara n'a pas eu lieu. Le rapport l'attend : `rapport-lot-0.md`, section T005, donne ce qui est levé et ce qui ne l'est pas.)
 
 ## Lot 1 : journal du socle (3 j, US1)
 
@@ -40,7 +40,7 @@ description: "Tâches : apprentissage par observation (issue #76)"
 - [x] T012 [US1] `src/workspace/observation/runtime/journal.test.ts` : état neuf, aucun dossier `observations/` ; sans accord, `append` n'écrit rien ; en pause, rien ; avec accord, une ligne `{ts, kind, panelType, ref}` dans `<AAAA-MM-JJ>.jsonl`, modes `0700`/`0600`, ajout seul ; une ligne invalide (kind inconnu, champ en trop, `ref` trop long) est rejetée.
 - [x] T013 [P] [US1] `src/workspace/observation/runtime/purge.test.ts` : horloge simulée J-13 reste, J-14 reste, J-15 supprimé ; un fichier au nom invalide est ignoré, jamais supprimé ; la purge se base sur le nom, pas sur `mtime`.
 - [x] T014 [P] [US1] `src/workspace/observation/runtime/sources.test.ts` : une création, une fermeture et une liaison de panneau du document produisent `panel.created`, `panel.closed`, `panel.linked` ; une navigation produit `navigate` avec l'URL sans paramètres ; une URL d'un domaine exclu ne produit rien.
-- [x] T015 [P] [US1] `tools/agence/test_observe.py` : `agence observe list` sort une ligne par observation et le total, refuse sans réglage `cliObservationEnabled`, tolère une ligne illisible, sans écrire.
+- [x] T015 [P] [US1] `tools/agence/test_observe.py` : `agence observe list` sort par défaut le décompte par type et le total, sans adresse ni identifiant ; avec `--refs`, une ligne par observation et un avertissement (le terminal enregistre sa sortie dans `terminal-logs/`) ; refuse sans réglage `cliObservationEnabled`, tolère une ligne illisible, sans écrire.
 - [x] T016 [P] [US1] `src/workspace/observation/runtime/network.test.ts` : le module n'importe ni `ws`, ni `http`, ni `fetch`, ni un SDK de modèle (FR-018).
 
 ### Implémentation

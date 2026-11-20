@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_REF_LENGTH, OBSERVATION_KINDS, cleanInput, parseObservation } from './observation'
+import { MAX_REF_LENGTH, OBSERVATION_KINDS, cleanInput, countObservations, parseObservation, type Observation } from './observation'
 
 const PANEL = '3f2a9c1e-7b4d-4e0a-9d51-0a1b2c3d4e5f'
 const NONE: readonly string[] = []
@@ -17,6 +17,11 @@ describe('cleanInput', () => {
   it('strips a navigation to the URL without parameters', () => {
     expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: 'https://example.com/a/b?token=abc#x' }, NONE))
       .toEqual({ kind: 'navigate', panelType: 'browser', ref: 'https://example.com/a/b' })
+  })
+
+  it('masks an address, a base64 token and a long word in the path of a navigation', () => {
+    expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: 'https://example.com/u/jane.doe@example.com/t/dG9rZW4=/s/abcdefghijklmnop' }, NONE))
+      .toEqual({ kind: 'navigate', panelType: 'browser', ref: 'https://example.com/u/*/t/*/s/*' })
   })
 
   it('drops a navigation to an excluded domain, subdomains included, even with credentials in the URL', () => {
@@ -69,6 +74,27 @@ describe('cleanInput', () => {
     expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref }, NONE)).toBeNull()
   })
 
+  it('takes a panel reference of 1 to 128 characters', () => {
+    for (const length of [1, 2, 127, 128]) expect(cleanInput({ kind: 'panel.created', panelType: 'browser', ref: 'a'.repeat(length) }, NONE), String(length)).not.toBeNull()
+    expect(cleanInput({ kind: 'panel.created', panelType: 'browser', ref: 'a'.repeat(129) }, NONE)).toBeNull()
+  })
+
+  it('takes a cleaned address of 512 characters and refuses one of 513', () => {
+    const at512 = `https://example.com/${'a/'.repeat(246)}`
+    expect(MAX_REF_LENGTH).toBe(512)
+    expect(at512).toHaveLength(512)
+    expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: at512 }, NONE)?.ref).toBe(at512)
+    expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: `${at512}b` }, NONE)).toBeNull()
+    expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: `https://example.com/${'a/'.repeat(245)}b` }, NONE)).not.toBeNull()
+  })
+
+  it('reads an address of 8192 characters, and refuses one of 8193 without reading it', () => {
+    const head = 'https://example.com/a?'
+    const address = (length: number) => head + 'x'.repeat(length - head.length)
+    expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: address(8192) }, NONE)?.ref).toBe('https://example.com/a')
+    expect(cleanInput({ kind: 'navigate', panelType: 'browser', ref: address(8193) }, NONE)).toBeNull()
+  })
+
   it('lists the kinds of the socle, and no other', () => {
     expect(OBSERVATION_KINDS).toEqual(['panel.created', 'panel.closed', 'panel.linked', 'navigate'])
   })
@@ -95,15 +121,74 @@ describe('parseObservation', () => {
     expect(parseObservation({ ...line, panelType: 'toaster' })).toBeNull()
   })
 
+  it('takes a time with 0 to 3 fractional digits and nothing around it', () => {
+    for (const ts of ['2026-11-20T10:00:00Z', '2026-11-20T10:00:00.1Z', '2026-11-20T10:00:00.12Z', '2026-11-20T10:00:00.123Z']) {
+      expect(parseObservation({ ...line, ts }), ts).not.toBeNull()
+    }
+    for (const ts of [
+      '2026-11-20T10:00:00.Z', '2026-11-20T10:00:00.1234Z', ' 2026-11-20T10:00:00.000Z', '2026-11-20T10:00:00.000Z ',
+      'x2026-11-20T10:00:00.000Z', '2026-11-20T10:00:00.000Zx', '2026-11-20T10:00:00.000+01:00', '2026-11-20 10:00:00.000Z',
+    ]) expect(parseObservation({ ...line, ts }), ts).toBeNull()
+  })
+
+  it('refuses a line with only two of the three fields, and one with the wrong three', () => {
+    expect(parseObservation({ ts: line.ts, kind: line.kind, panelType: line.panelType })).toBeNull()
+    expect(parseObservation({ ts: line.ts, kind: line.kind, ref: line.ref, title: 'x' })).toBeNull()
+    expect(parseObservation({ ts: line.ts, kind: line.kind, panelType: line.panelType, ref: line.ref, extra: 1 })).toBeNull()
+  })
+
   it('refuses a navigation that was edited to carry a parameter or a credential', () => {
     const nav = { ...line, kind: 'navigate', ref: 'https://example.com/a' }
     expect(parseObservation(nav)).toEqual(nav)
     expect(parseObservation({ ...nav, ref: 'https://example.com/a?token=abc' })).toBeNull()
     expect(parseObservation({ ...nav, ref: 'https://example.com/a#x' })).toBeNull()
     expect(parseObservation({ ...nav, ref: 'https://me:pw@example.com/a' })).toBeNull()
+    expect(parseObservation({ ...nav, ref: 'https://example.com/u/jane.doe@example.com' })).toBeNull()
+    expect(parseObservation({ ...nav, ref: 'https://example.com/t/dG9rZW4=' })).toBeNull()
+    expect(parseObservation({ ...nav, ref: 'https://example.com/s/abcdefghijklmnop' })).toBeNull()
+    expect(parseObservation({ ...nav, ref: 'https://example.com/u/*/t/*' })).not.toBeNull()
   })
 
   it('refuses what is not an object', () => {
     for (const value of [null, undefined, 'x', 3, []]) expect(parseObservation(value)).toBeNull()
+  })
+})
+
+describe('countObservations', () => {
+  const line = (kind: Observation['kind'], panelType: Observation['panelType'], ref: string): Observation => ({ ts: '2026-11-20T10:00:00.000Z', kind, panelType, ref })
+
+  it('counts the lines of each kind on each panel type, and keeps no ref', () => {
+    const counts = countObservations([
+      line('navigate', 'browser', 'https://example.com/a'),
+      line('panel.created', 'browser', PANEL),
+      line('navigate', 'browser', 'https://example.com/b'),
+      line('panel.created', 'terminal', 't1'),
+      line('navigate', 'browser', 'https://example.com/a'),
+    ])
+    expect(counts).toEqual([
+      { kind: 'navigate', panelType: 'browser', count: 3 },
+      { kind: 'panel.created', panelType: 'browser', count: 1 },
+      { kind: 'panel.created', panelType: 'terminal', count: 1 },
+    ])
+    expect(JSON.stringify(counts)).not.toMatch(/example\.com|t1|3f2a9c1e/)
+  })
+
+  it('orders by kind then by panel type, whatever the order of the lines', () => {
+    const counts = countObservations([
+      line('panel.linked', 'terminal', 'a'),
+      line('panel.closed', 'terminal', 'b'),
+      line('panel.closed', 'browser', 'c'),
+      line('navigate', 'browser', 'https://example.com/'),
+    ])
+    expect(counts.map((one) => `${one.kind} ${one.panelType}`)).toEqual([
+      'navigate browser',
+      'panel.closed browser',
+      'panel.closed terminal',
+      'panel.linked terminal',
+    ])
+  })
+
+  it('is empty for no line', () => {
+    expect(countObservations([])).toEqual([])
   })
 })
