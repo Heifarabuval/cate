@@ -121,7 +121,7 @@ its session.
  │ shells     desktop (window host, native OS, React UI) · mobile (iOS core) │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ panels     framework + terminal · editor · browser · review · agence ·   │
- │            canvas · surface · boite                                      │
+ │            canvas · surface · boite · app                                │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ client     core · connections · workspaces · document mirror · host      │
  ├──────────────────────────────────────────────────────────────────────────┤
@@ -576,6 +576,7 @@ persisted session and document file. It is created with mode `0700`.
                         delivery target (opaque), the key pushes are sealed with
   trust.json            { trusted, decidedAt }
   grants.json           granted paths outside the root
+  app-grants.json       what the user accepted for each custom panel (fingerprint, permissions)
   skills/sources.json   the workspace's skill sources
   browser/              history.json, bookmarks.json, downloads/
   agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps),
@@ -2101,8 +2102,26 @@ Every panel type meets the same contract.
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay; a panel opened on a pull request (`pr` field) reads it through `gh` instead (description, commits, checks, mergeability, files with bounded diff pages), read only: no comment, approval or merge; a visible view sends `prTick` and the session decides whether to re-read the checks |
 | agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("New Orchestrator") or by `cate panel create agence`; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
 | boite | none: a definition alone, no session of its own (the daemon serves it a stateless one) and no `cate` API | none; the client core's store (`client/boite`) reads the agence panels of every workspace the client has open | the inbox (`shells/desktop/ui/panels/boite`) | the human's validation inbox, `unique`: one per workspace (any workspace of the client shows every project); cannot be driven by an agent |
+| app | workspace/files (its page server), workspace lifecycle (trust) | `needs-grant`, `running` (page URL), `missing`, `error` or `blocked`, the card's sentence and fingerprint, a reload counter | webview | one type for every custom panel (a folder of `~/.cate/panneaux/`), no `creation` |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
+
+**The app panel.** One compiled type shows every custom panel, a folder of
+`~/.cate/panneaux/<id>/` (`cate-panel.json` and its pages, written by the
+user's agent). The runtime scans and watches that folder (`@parcel/watcher`,
+real paths: a folder that is a symlink is listed as an error, never loaded)
+and publishes the list through the `apps` capability (`list`, `watch`). The
+type has no `creation`: the canvas menu and the palette get one entry per
+ready panel from the list. The page is served by a second `createFileServer`
+scoped to `~/.cate/panneaux/` (one token per panel folder) with a content
+security policy (`script-src 'self'`, `connect-src 'self'` plus the manifest's
+`permissions.network`), in a webview of its own partition and preload (12.3).
+Nothing of the page runs before the user's grant: the session publishes
+`needs-grant` with the card's sentence and the manifest fingerprint, and the
+`grant` op must echo that fingerprint. The grant lives in
+`<data>/app-grants.json` (never under `~/.cate/panneaux/`); a local panel
+keeps it while only its pages change, a changed manifest asks again. An
+untrusted workspace (9.2) blocks every panel.
 
 **The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
 writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,

@@ -238,7 +238,7 @@ Persisted state is hand-editable JSON written through `kernel/state`
 corrupt-file quarantine); every file has one writer process.
 - Workspace data: `~/.cate/workspaces/<runtimeId>/` on the runtime's machine
   (`runtime.json`, `document.json`, `sessions/`, `buffers/`, `settings.json`, `secrets.json`,
-  `devices.json`, `push.json`, `trust.json`, `grants.json`, `skills/`, `browser/`,
+  `devices.json`, `push.json`, `trust.json`, `grants.json`, `app-grants.json`, `skills/`, `browser/`,
   `agents/`, `terminal-logs/`, `screenshots/`, `logs/`).
 - Project `<root>/.cate/`: only `skills.json`, `tmp/`, `worktrees/` and its
   `.gitignore`.

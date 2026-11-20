@@ -3,6 +3,7 @@
 // (shared by every app panel), the `apps` capability, and their shutdown.
 
 import { createHash } from 'node:crypto'
+import { createLogger, type Logger } from '@kernel/log/contract'
 import type { ClientFeature } from '@kernel/rpc/contract'
 import type { RpcServer } from '@kernel/rpc/runtime'
 import type { PanelRecord } from '@workspace/document/contract'
@@ -23,6 +24,8 @@ export interface AppPanelsDeps {
   grantsFile: string
   trust: AppSessionDeps['trust']
   clientHas(connectionId: number | null, feature: ClientFeature): boolean
+  /** Where startup failures go; the daemon's `apps` channel by default. */
+  log?: Pick<Logger, 'warn'>
 }
 
 export interface AppPanels {
@@ -34,6 +37,7 @@ export interface AppPanels {
 }
 
 export function createAppPanels(deps: AppPanelsDeps): AppPanels {
+  const log = deps.log ?? createLogger('apps')
   // Nothing is created before a session or the daemon needs it: building the
   // module list (tests, tooling) touches no folder and no file.
   let built: { scanner: AppScanner; server: AppServer; grants: AppGrants; bound: AppSessionDeps } | undefined
@@ -68,7 +72,7 @@ export function createAppPanels(deps: AppPanelsDeps): AppPanels {
       const { scanner } = parts()
       rpc.register(appsCapability, appsCapabilityImpl(scanner))
       // A folder that cannot be created or watched leaves the list empty, never the daemon down.
-      void scanner.start().catch(() => {})
+      void scanner.start().catch((error) => log.warn('custom panels folder %s unavailable: %O', deps.dir, error))
     },
     async dispose() {
       if (!built) return
