@@ -111,7 +111,7 @@ Ordre sur `agence.py` (009 R1) : L2, L3, L4, une PR à la fois, après les lots 
 | R1 | Les arguments qu'un client MCP passe au hook diffèrent de ceux que l'agent a mis dans la carte (valeurs par défaut ajoutées, types) | carte cliquée qui ne passe jamais | test de la sérialisation canonique ; le lot 6 note un cas réel ; si l'écart existe, la carte compare les seuls champs qu'elle nomme (décision à prendre sur preuve, pas avant) |
 | R2 | Un MCP d'outil métier mélange lecture et écriture dans un même outil (paramètre `action`) | lecture refusée ou écriture qui passe pour lecture | un outil non classé est une écriture (FR-003) ; le lot 0 classe chaque outil |
 | R3 | Le cobaye a besoin d'un outil sans MCP ni API : navigateur seul | G3 sans écriture possible | v1 : l'écriture devient « à faire par l'humain » ; la tâche de référence choisie au lot 0 doit tenir en lecture et en cartes |
-| R4 | Cinquième question d'installation contre 008 SC-006 | conflit de spec | Q4 de la spec : renvoi au propriétaire de 008 |
+| R4 | Cinquième question d'installation contre 008 SC-006 (4 au plus) | conflit de spec | tranché (Q4 de la spec) : la question `metier` remplace celle de `tests` ; 4 questions, 008 inchangée |
 | R5 | Le matcher généré oublie un serveur (renommé par la personne) | écriture non gardée sur ce serveur | `hooks status` `partiel`, point de `doctor` ; le serveur doit être déclaré pour être utilisé par le métier |
 | R6 | Secret collé par erreur dans un catalogue par une PR | fuite dans le dépôt | test des motifs (FR-001) dans `npm run test:agence`, porte de chaque PR |
 

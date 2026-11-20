@@ -72,7 +72,7 @@ Une personne ouvre l'agence sur un nouveau workspace. Parmi les premières quest
 
 **Acceptance Scenarios**:
 
-1. **Given** un dépôt sans fichier du projet, **When** les premières questions s'affichent, **Then** la question du métier est la première, avec les métiers du catalogue par leur nom.
+1. **Given** un dépôt sans fichier du projet, **When** les premières questions s'affichent, **Then** la question du métier est la première, avec les métiers du catalogue par leur nom ; la question de `tests` n'est plus posée et il y a 4 questions au total (008 SC-006, Q4).
 2. **Given** le métier `media-planner` choisi, **When** le formulaire s'ouvre, **Then** « Outils que les agents peuvent lire » liste ses connecteurs, tous cochés, et « préparer une écriture » n'en coche aucun.
 3. **Given** `connecteurs.ecriture` qui contient un connecteur hors du métier, **When** la politique est validée, **Then** refus avec une phrase qui cite le nom du connecteur et du métier.
 4. **Given** un fichier `metiers.json` ou `connecteurs.json` qui contient une valeur qui ressemble à un secret (`ghp_`, `sk-`, `AKIA`, `-----BEGIN`), **When** le test du catalogue tourne, **Then** il échoue en nommant la ligne, jamais la valeur.
@@ -202,7 +202,7 @@ Chacune a une hypothèse de travail ; aucune ne bloque le plan.
 - **Q1. Connecteur propre à un projet** (outil d'un seul client) : hypothèse : hors v1 ; un connecteur s'ajoute au catalogue par une PR. À rouvrir quand un cobaye en a besoin.
 - **Q2. Écriture par API ou navigateur** : hypothèse : non en v1 (lecture seule, action « à faire par l'humain »). Une écriture par API demanderait un exécuteur côté régisseur par connecteur, comme `send_slack` (`agence.py:718-732`).
 - **Q3. Coffre** : hypothèse : variable d'environnement et fichier `.env` hors dépôt en v1 ; un gestionnaire de mots de passe se branche plus tard comme connecteur, en lecture, sans que sa valeur entre dans un contexte d'agent.
-- **Q4. Nombre de premières questions** : la question `metier` porte les premières questions de 008 de 4 (008 Q7) à 5, alors que 008 SC-006 écrit « 4 questions au plus ». Hypothèse : 5, la question du métier en premier ; 008 SC-006 est à aligner par le propriétaire de la spec 008 (renvoi, cette spec ne l'édite pas).
+- **Q4. Nombre de premières questions** : 008 SC-006 en prévoit 4 au plus (008 Q7 : `livraison.mode`, `tests`, `verification`, `agents.max`). Tranché : la question du métier **remplace celle de `tests`**, la seule des quatre qui ne parle qu'au dev (un media planner n'a pas de tests rouges) ; `tests` perd son champ `question`, reste dans le formulaire (groupe essentiel) avec la valeur du preset. Premières questions : `metier`, `livraison.mode`, `verification`, `agents.max`, soit 4 ; la spec 008 reste inchangée.
 - **Q5. Surcharge du validateur par projet** : hypothèse : non en v1 ; le métier fixe le validateur, la clé `preuve` de 005 ne vaut que pour `dev`.
 - **Q6. Cobaye et tâche de référence** : hypothèse 009 Q4 (media planner). Heifara tranche (009 T041) ; son métier entre au catalogue au lot 5.
 - **Q7. Matcher des hooks** : hypothèse : un matcher généré depuis les serveurs déclarés (pas `mcp__.*`), pour ne lancer la garde que sur les serveurs connus ; coût d'un démarrage de la garde par appel : non mesuré.
