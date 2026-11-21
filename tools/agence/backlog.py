@@ -285,9 +285,10 @@ def registre_md(d):
 	Aucune date d'export : deux exports du même registre sont identiques. Une copie, jamais une source."""
 	lignes = ['# Décisions actives', '', "Copie du registre de l'agence écrite par `agence decision export`. "
 	          'La source reste le registre : ne pas éditer à la main, refaire l\'export.', '']
+	un = lambda s: ' '.join(s.split())  # noqa: E731  une ligne : un texte sur plusieurs lignes n'injecte aucun titre
 	for x in sorted(decisions_actives(d), key=lambda x: (x['date'], int(x['id'][1:]))):
-		lignes += [f"## {x['id']} : {x['objet']}", '', f"- date : {x['date'][:10]}", f"- pourquoi : {x['pourquoi']}"]
-		lignes += [f"- alternatives écartées : {', '.join(x['alternatives'])}"] if x['alternatives'] else []
+		lignes += [f"## {x['id']} : {un(x['objet'])}", '', f"- date : {x['date'][:10]}", f"- pourquoi : {un(x['pourquoi'])}"]
+		lignes += [f"- alternatives écartées : {', '.join(map(un, x['alternatives']))}"] if x['alternatives'] else []
 		lignes += ['- structurante'] if x['structurante'] else []
 		lignes.append('')
 	if not decisions_actives(d):

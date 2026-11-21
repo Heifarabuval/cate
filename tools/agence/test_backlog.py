@@ -727,6 +727,63 @@ class Export(Base):
 		backlog.ecrire(self.racine, 'decisions.json', d)
 		return d
 
+	def setUp(self):
+		super().setUp()
+		ici = os.getcwd()
+		os.chdir(self.racine)  # hors dépôt git : la cible retombe sur la racine de l'agence
+		self.addCleanup(os.chdir, ici)
+
+	def git(self, *argv, cwd):
+		subprocess.run(['git', '-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', *argv], check=True, capture_output=True)
+
+	def poser_registre_dans(self, racine):
+		self.racine, avant = racine, self.racine
+		try:
+			return self.poser_registre()
+		finally:
+			self.racine = avant
+
+	def test_depuis_un_worktree_ecrit_dans_le_worktree(self):
+		principal, wt = os.path.join(self.tmp, 'principal'), os.path.join(self.tmp, 'wt')
+		os.makedirs(principal)
+		self.git('init', '-q', cwd=principal)
+		self.git('commit', '-q', '--allow-empty', '-m', 'x', cwd=principal)
+		self.git('worktree', 'add', '-q', wt, cwd=principal)
+		os.environ['AGENCE_ROOT'] = principal
+		self.poser_registre_dans(principal)
+		os.chdir(wt)
+		code, out, err = self.agence('decision', 'export')
+		self.assertEqual(code, 0, err)
+		self.assertEqual(os.path.realpath(out.strip()), os.path.realpath(os.path.join(wt, 'docs', 'decisions.md')))
+		self.assertIn('## D3 : JSON seulement', self.lit(os.path.join(wt, 'docs', 'decisions.md')))
+		self.assertFalse(os.path.exists(os.path.join(principal, 'docs')))
+
+	def test_out_choisit_le_fichier(self):
+		self.poser_registre()
+		cible = os.path.join(self.tmp, 'ailleurs', 'registre.md')
+		code, out, err = self.agence('decision', 'export', '--out', cible)
+		self.assertEqual(code, 0, err)
+		self.assertEqual(out.strip(), cible)
+		self.assertIn('## D1 : Markdown', self.lit(cible))
+		self.assertFalse(os.path.exists(os.path.join(self.racine, 'docs')))
+
+	def test_ecriture_par_renommage_ancien_fichier_intact_si_echec(self):
+		self.poser_registre()
+		cible = os.path.join(self.racine, 'docs', 'decisions.md')
+		self.ecrit(cible, 'ancien\n')
+		with unittest.mock.patch.object(os, 'replace', side_effect=OSError('disque plein')):
+			with self.assertRaises(OSError):
+				self.agence('decision', 'export')
+		self.assertEqual(self.lit(cible), 'ancien\n')
+		self.assertEqual(os.listdir(os.path.dirname(cible)), ['decisions.md'])  # aucun temporaire laissé
+
+	def test_objet_ou_pourquoi_sur_plusieurs_lignes_sans_titre_injecte(self):
+		d = backlog.vide_decisions()
+		backlog.decision_ajouter(d, 'objet\n# Faux titre', 'raison\n\n## D9 : injecté', T0, alternatives=['a\n# b'])
+		backlog.decider(d, 'D1', 'valider')
+		titres = [l for l in backlog.registre_md(d).splitlines() if l.startswith('#')]
+		self.assertEqual(titres, ['# Décisions actives', '## D1 : objet # Faux titre'])
+
 	def test_export_actives_triees_par_date_et_rien_d_autre(self):
 		self.poser_registre()
 		registre =self.lit(os.path.join(self.racine, '.cate', 'tmp', 'agence', 'decisions.json'))

@@ -833,10 +833,18 @@ def cmd_decision(a):
 	with registres() as r:
 		d = r['decisions']
 		if a.action == 'export':  # registre durable (spec 013, Q1) : un fichier du dépôt, commité par une PR de docs
-			cible = os.path.join(root(), 'docs', 'decisions.md')
+			code, top, _ = RUN(['git', 'rev-parse', '--show-toplevel'])  # le dépôt courant, worktree compris
+			cible = os.path.abspath(a.out) if a.out else os.path.join(top.strip() if code == 0 else root(), 'docs', 'decisions.md')
 			os.makedirs(os.path.dirname(cible), exist_ok=True)
-			with open(cible, 'w') as f:
-				f.write(backlog.registre_md(d))
+			fd, tmp = tempfile.mkstemp(dir=os.path.dirname(cible), prefix='.tmp-decisions-')
+			try:
+				with os.fdopen(fd, 'w') as f:
+					f.write(backlog.registre_md(d))
+				os.chmod(tmp, 0o644)
+				os.replace(tmp, cible)
+			except BaseException:
+				os.unlink(tmp)
+				raise
 			return print(cible)
 		if a.action == 'show':  # fiches qui la citent : lien inverse calculé, jamais stocké (spec 013, FR-004)
 			x = backlog.trouver(d['decisions'], a.id)
@@ -1445,6 +1453,8 @@ def click_registre(path):
 			elif genre == 'lentille':
 				if backlog.trouver(r['backlog']['fiches'], oid)['etat'] in backlog.TERMINAUX:
 					raise backlog.Refus(f'{oid} est terminée')
+				if not any(q['answer'] is None and path in (q.get('clics') or []) for q in st['questions']):
+					raise backlog.Refus(f'aucune carte ouverte ne propose ce clic sur {oid}')  # POST nu ou rejoué
 				fait = f'lentille demandée sur {oid}'
 			else:
 				backlog.reviser(r['backlog'], oid, choix, now_iso())
@@ -3563,7 +3573,8 @@ def parser():
 	da.add_argument('--structurante', action='store_true')
 	des.add_parser('list').add_argument('--active', action='store_true')
 	des.add_parser('show').add_argument('id')
-	des.add_parser('export', help='écrit docs/decisions.md : décisions actives triées par date, à commiter par une PR de docs')
+	des.add_parser('export', help='écrit docs/decisions.md du dépôt git courant (ou --out) : décisions actives triées '
+	               'par date, à commiter par une PR de docs').add_argument('--out', help='fichier à écrire à la place')
 	for x in des.choices.values():
 		x.add_argument('--json', action='store_true')
 	de.set_defaults(fn=cmd_decision)

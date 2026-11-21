@@ -134,6 +134,18 @@ class Eclairer(Carte):
 		self.assertEqual(self.eclairer(), [])
 		self.assertEqual(self.repond(q, 'Éclairer F1')[0], 409)  # double clic
 
+	def test_post_sans_carte_ouverte_refuse(self):
+		code, msg = agence.click('/lentille/F1/eclairer', {})
+		self.assertEqual(code, 409)
+		self.assertIn('carte', msg)
+		self.assertEqual(self.envois(), [])
+
+	def test_post_rejoue_previent_une_seule_fois(self):
+		self.cli('lentille', 'F1', '--carte')
+		self.assertEqual(agence.click('/lentille/F1/eclairer', {}), (303, '/'))
+		self.assertEqual(agence.click('/lentille/F1/eclairer', {})[0], 409)
+		self.assertEqual(len(self.envois()), 1)
+
 	def test_a_la_demande_une_carte_jamais_un_agent(self):
 		code, out = self.cli('lentille', 'F1', '--carte')
 		self.assertEqual(code, 0)
