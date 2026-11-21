@@ -406,8 +406,9 @@ def brief(pol, humain):
 
 # ---------- preuve de fin (FR-009, FR-010) ----------
 
-FORMES = 'pr-merged:N, issue-closed:N, ci-green:N, tests-local, report, draft-sent:ID'
-CONDITION_RE = re.compile(r'^(?:(pr-merged|issue-closed|ci-green):(\d*)|(tests-local|report)|(draft-sent):([\w.-]+))$')
+FORMES = 'pr-merged:N, issue-closed:N, ci-green:N, tests-local, report, draft-sent:ID, preuve:NOM'
+CONDITION_RE = re.compile(r'^(?:(pr-merged|issue-closed|ci-green):(\d*)|(tests-local|report)|(draft-sent):([\w.-]+)'
+                          r'|(preuve):([\w.-]+))$')
 VERS_CONDITION = {'pr-mergee': 'pr-merged:', 'ci-verte': 'ci-green:', 'tests-locaux': 'tests-local', 'rapport': 'report'}
 ATTENDU = {'pr-merged': 'MERGED', 'issue-closed': 'CLOSED'}
 MANQUE = {'pr-merged': 'PR non mergée', 'issue-closed': 'issue non fermée', 'ci-green': 'checks non verts',
@@ -415,20 +416,34 @@ MANQUE = {'pr-merged': 'PR non mergée', 'issue-closed': 'issue non fermée', 'c
           'draft-sent': 'brouillon non envoyé'}
 
 
-def conditions(done_when, saisie=False):
+def conditions(done_when, saisie=False, preuves=None):
 	"""'ci-green:12,pr-merged:12' -> [('ci-green', '12'), ('pr-merged', '12')] ; Invalide hors grammaire.
-	saisie : le numéro est exigé (la forme dérivée garde N vide jusqu'à `agence need pr`)."""
+	saisie : le numéro est exigé (la forme dérivée garde N vide jusqu'à `agence need pr`).
+	preuves : {nom: type} du métier actif (spec 012) ; une preuve:NOM hors de la liste est refusée."""
 	out = []
 	for brut in done_when.split(','):
 		m = CONDITION_RE.match(brut)
 		if not m or (saisie and m.group(1) and not m.group(2)):
 			raise Invalide(f'--done-when : « {brut} » hors grammaire ; formes permises, séparées par une virgule : {FORMES}')
-		out.append((m.group(1), m.group(2)) if m.group(1) else (m.group(3), None) if m.group(3) else (m.group(4), m.group(5)))
+		out.append((m.group(1), m.group(2)) if m.group(1) else (m.group(3), None) if m.group(3) else
+		           (m.group(4), m.group(5)) if m.group(4) else (m.group(6), m.group(7)))
+		if preuves is not None and m.group(6) and m.group(7) not in preuves:
+			raise Invalide(f'--done-when : preuve « {m.group(7)} » inconnue du métier actif ; preuves du métier : '
+			               + (', '.join(preuves) or 'aucune (métier dev : formes de « Quand une tâche est finie »)'))
 	return out
 
 
+def preuves_du_metier(valeurs):
+	"""{nom: type} des preuves nommées du métier actif (spec 012) ; {} pour dev."""
+	m = metiers.metier(metiers.charger(), valeurs.get('metier') or metiers.DEV)
+	return {p['nom']: p['type'] for p in (m['validateur'] if m else [])}
+
+
 def done_when_defaut(valeurs):
-	"""Condition de fin d'une tâche créée sans --done-when : `preuve`, sinon dérivée du mode ; N vide pour une PR."""
+	"""Condition de fin d'une tâche créée sans --done-when : les preuves du métier (spec 012, FR-007), sinon pour dev
+	`preuve`, sinon dérivée du mode ; N vide pour une PR."""
+	if valeurs.get('metier') not in (None, metiers.DEV):
+		return ','.join('preuve:' + nom for nom in preuves_du_metier(valeurs))
 	preuve = valeurs['preuve'] or (['pr-mergee'] if valeurs['livraison.mode'] == 'pr' else ['rapport'])
 	return ','.join(VERS_CONDITION[p] for p in preuve)
 
@@ -442,13 +457,16 @@ def rattacher(done_when, num):
 	                for nom, arg in conds)
 
 
-def evaluer(done_when, faits, evidence=None):
+def evaluer(done_when, faits, evidence=None, preuves=None):
 	"""(fait, manques). faits : {N: {'state', 'url', 'checks'}} relevé par le tour (checks : état du rollup, None
-	inconnu). Les conditions humaines (tests-local, report) et draft-sent ne sont vraies que sur une preuve déclarée."""
+	inconnu). Les conditions humaines (tests-local, report) et draft-sent ne sont vraies que sur une preuve déclarée.
+	preuve:NOM (spec 012) n'est jamais vraie ici : `need done` la contrôle ; le manque dit son nom et son type."""
 	manques = []
 	for nom, arg in conditions(done_when):
 		f = faits.get(arg) if arg else None
-		if nom not in ('pr-merged', 'issue-closed', 'ci-green'):
+		if nom == 'preuve':
+			manque = f"preuve attendue : {arg} ({(preuves or {}).get(arg, 'inconnue')})"
+		elif nom not in ('pr-merged', 'issue-closed', 'ci-green'):
 			manque = None if evidence else MANQUE[nom]
 		elif not arg:
 			manque = f'{nom} sans numéro : PR non rattachée (agence need pr <besoin> <N>)'

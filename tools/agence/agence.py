@@ -331,6 +331,87 @@ def fin_lisible(n):
 		return False
 
 
+def preuves_nommees(n):
+	"""Noms des preuve:NOM de la condition de fin (spec 012)."""
+	import pratiques  # voir politique()
+	return [arg for nom, arg in pratiques.conditions(n['doneWhen']) if nom == 'preuve'] if fin_lisible(n) else []
+
+
+def done_preuves(nid, evidence):
+	"""need done d'une tâche de métier (spec 012, FR-008) : --evidence contrôlée pour une preuve fichier ou lien (journal :
+	chemin et SHA-256, ou lien) ; une preuve clic pose la carte de preuve, seul le clic de l'humain la ferme.
+	Rend la preuve de fermeture quand tout est reçu ; Refus sinon."""
+	import metiers
+	import pratiques  # voir politique()
+	types = pratiques.preuves_du_metier(politique(agir=True)['valeurs'])
+	n = find(load(), 'needs', nid)
+	noms = preuves_nommees(n)
+	inconnues = [x for x in noms if x not in types]
+	if inconnues:
+		raise Refus(f"{nid} : preuve {', '.join(inconnues)} inconnue du métier actif (preuves : {', '.join(types) or 'aucune'})")
+	recues = dict(n.get('preuves') or {})
+	a_saisir = [x for x in noms if x not in recues and types[x] != 'clic']
+	clics = [x for x in noms if x not in recues and types[x] == 'clic']
+	if evidence:
+		if not a_saisir:
+			raise Refus(f"{nid} : preuve {', '.join(clics)} (clic) : --evidence refusé, seul le clic de {nom()} sur la carte de preuve la ferme")
+		x = a_saisir.pop(0)  # ponytail: une --evidence pour la première preuve à saisir ; deux preuves fichier : deux appels
+		try:
+			texte = metiers.verifier_preuve(types[x], evidence, root())
+		except metiers.Invalide as err:
+			raise Refus(f'{nid} : preuve {x} ({types[x]}) refusée : {err}')
+		with tx() as st:
+			m = find(st, 'needs', nid)
+			m.setdefault('preuves', {})[x] = texte
+			note(m, f'preuve {x} : {texte}', 'cli')
+		recues[x] = texte
+	if a_saisir:
+		raise Refus(f"{nid} pas encore fait : " + ', '.join(f'preuve attendue : {x} ({types[x]})' for x in a_saisir))
+	if clics:
+		with tx() as st:
+			qids = [carte_preuve(st, find(st, 'needs', nid), x) for x in clics]
+		raise Refus(f"{nid} pas encore fait : preuve {', '.join(clics)} attendue : carte de preuve {', '.join(qids)}, "
+		            f"la tâche se ferme sur le clic « Validé » de {nom()}")
+	return '; '.join(f'{k} : {v}' for k, v in recues.items())
+
+
+def carte_preuve(st, n, x):
+	"""Carte de preuve clic (spec 012) : « Validé » ou « Pas encore » ; une seule ouverte par besoin et preuve."""
+	import metiers
+	base = f"/besoin/{n['id']}/preuve/{x}/"
+	for q in st['questions']:
+		if q['answer'] is None and base + 'valide' in (q.get('clics') or []):
+			return q['id']
+	m = metiers.metier(metiers.charger(), politique()['valeurs']['metier'])
+	explique = next((p['explique'] for p in m['validateur'] if p['nom'] == x), '') if m else ''
+	return poser_carte(st, f"Preuve « {x} » de « {n['title']} » : {explique}",
+	                   [{'label': 'Validé', 'detail': 'la tâche passe en fait'},
+	                    {'label': 'Pas encore', 'detail': 'la tâche reste ouverte'}], [base + 'valide', base + 'attendre'])
+
+
+def click_preuve(path):
+	"""Clic sur une carte de preuve ouverte : « Validé » note la preuve et ferme la tâche quand tout est reçu ;
+	« Pas encore » la laisse ouverte, journal « <preuve> attendu ». Sans carte ouverte qui propose ce clic : 409."""
+	_, _, nid, _, x, choix = path.split('/')
+	with tx() as st:
+		q = next((q for q in st['questions'] if q['answer'] is None and path in (q.get('clics') or [])), None)
+		if q is None:
+			return 409, 'Aucune carte de preuve ouverte ne propose ce clic.'
+		n = find(st, 'needs', nid)
+		label = q['options'][q['clics'].index(path)]['label']
+		fermer_carte(st, q, label)
+		if choix == 'attendre':
+			note(n, f'{x} attendu : {nom()} a répondu « {label} »', 'clic')
+			return 303, '/'
+		n.setdefault('preuves', {})[x] = f'clic de {nom()} « {label} »'
+		note(n, f'preuve {x} : clic de {nom()} « {label} »', 'clic')
+		if n['status'] == 'open' and all(k in n['preuves'] for k in preuves_nommees(n)):
+			close_need(st, nid, 'done', '; '.join(f'{k} : {v}' for k, v in n['preuves'].items()))
+			apply(st, [('close', p, nid) for p in n['panels']])
+			notify(st['panels'].get('orchestrator'), f"{nom()} a validé la preuve {x} : {n['title']} ({nid}) est fait.")
+	return 303, '/'
+
+
 def nums_fin(n):
 	"""Numéros GitHub que la condition de fin du besoin lit."""
 	import pratiques  # voir politique()
@@ -661,7 +742,8 @@ def cmd_need(a):
 		done_when = a.done_when
 		if done_when is not None:
 			try:
-				pratiques.conditions(done_when, saisie=True)
+				pratiques.conditions(done_when, saisie=True, preuves=pratiques.preuves_du_metier(politique(agir=True)['valeurs'])
+				                     if 'preuve:' in done_when else None)
 			except pratiques.Invalide as err:
 				raise Env(str(err))
 		origines = {k: 'besoin' for k in ('model', 'effort') if getattr(a, k)}
@@ -702,7 +784,9 @@ def cmd_need(a):
 				raise Refus(f"{a.id} n'a pas de condition de PR à rattacher (doneWhen : {n['doneWhen']})")
 			n['doneWhen'] = dw
 	elif a.action in ('done', 'drop'):
-		if a.action == 'done':
+		if a.action == 'done' and preuves_nommees(find(load(), 'needs', a.id)):
+			a.evidence = done_preuves(a.id, a.evidence)  # spec 012 : Refus tant qu'une preuve manque
+		elif a.action == 'done':
 			manques = manques_machine(load(), a.id, a.evidence)
 			if manques:
 				raise Refus(f"{a.id} pas encore fait : {', '.join(manques)}")
@@ -1401,6 +1485,8 @@ def click(path, form):
 		return click_lancer((form.get('ids') or [''])[0].split(','))
 	if re.match(r'^/(decision/D[1-9]\d*/(valider|rejeter)|fiche/F[1-9]\d*/(relancer|abandonner)|lentille/F[1-9]\d*/eclairer)$', path):
 		return click_registre(path)
+	if re.match(r'^/besoin/n\d+/preuve/[\w.-]+/(valide|attendre)$', path):
+		return click_preuve(path)
 	if re.match(r'^/besoin/n\d+/jeter$', path):
 		return click_jeter(path)
 	return 404, 'Action inconnue.'

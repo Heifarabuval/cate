@@ -9,6 +9,7 @@ Aucun secret dans un catalogue : un connecteur nomme une variable, jamais sa val
 AGENCE_CATALOGUES : dossier des deux catalogues (fixtures des tests) ; défaut, celui de ce fichier.
 Python 3.9, stdlib seule ; aucune fonction n'importe agence.py.
 """
+import hashlib
 import json
 import os
 import re
@@ -165,3 +166,28 @@ def serveurs(cat):
 def canonique(args):
 	"""Arguments d'un appel, sérialisés une seule façon (clés triées) : la carte et l'appel se comparent ainsi."""
 	return json.dumps(args, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+
+
+def verifier_preuve(genre, valeur, racine):
+	"""Texte noté au journal d'une preuve `fichier` (chemin relatif et SHA-256 d'un fichier régulier non vide sous la
+	racine, ni lien symbolique ni ..) ou `lien` (https://) ; Invalide sinon. Une preuve `clic` ne se saisit pas."""
+	if genre == 'lien':
+		if not re.match(r'^https://\S+\Z', valeur):
+			raise Invalide('une adresse https:// est attendue')
+		return valeur
+	if genre != 'fichier':
+		raise Invalide('seul le clic de la carte de preuve la ferme')
+	if '..' in valeur.replace('\\', '/').split('/'):
+		raise Invalide('chemin avec .. refusé')
+	chemin = valeur if os.path.isabs(valeur) else os.path.join(racine, valeur)
+	if os.path.islink(chemin):
+		raise Invalide('lien symbolique refusé')
+	if not os.path.realpath(chemin).startswith(os.path.realpath(racine) + os.sep):
+		raise Invalide('fichier hors du workspace')
+	if not os.path.isfile(chemin):
+		raise Invalide('fichier absent ou pas un fichier régulier')
+	if os.path.getsize(chemin) == 0:
+		raise Invalide('fichier vide')
+	with open(chemin, 'rb') as f:
+		empreinte = hashlib.sha256(f.read()).hexdigest()
+	return f'{os.path.relpath(chemin, racine)} sha256 {empreinte}'
