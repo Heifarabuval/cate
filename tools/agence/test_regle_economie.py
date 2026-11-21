@@ -18,7 +18,9 @@ class RegleEconomie(unittest.TestCase):
 		[ligne] = [l for l in self.texte.splitlines() if 'benchmark.py comparer' in l]
 		self.assertIn('économie de jetons', ligne)
 		self.assertIn('PR', ligne)
-		self.assertIn('annuler', ligne)
+		# Trois verdicts (garder, annuler, impossible) : seul « garder » laisse partir la PR.
+		self.assertIn('sauf « garder »', ligne)
+		self.assertIn('ne part pas', ligne)
 
 	def test_le_skill_grossit_de_2_pour_cent_au_plus(self):
 		"""Règle propre à 011, plus stricte que les 5 % de 006 FR-009 : chaque octet se relit à chaque tour."""
