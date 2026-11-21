@@ -63,7 +63,7 @@ Une tâche peut aussi venir du backlog de fiches (écrit par l'interlocuteur, `a
 
 ## Lentille : sur le clic « Éclairer » seulement
 
-Une lentille (angle imposé, liste `lentilles.json`, celle du projet à côté de sa politique si elle existe) propose sur une fiche, ne tranche jamais. La carte « Éclairer » vient d'une décision structurante validée, ou de `agence lentille F<n> --carte` si l'humain en demande une. Aucun agent avant son clic. Au clic, ton message dit tout : agent neuf, brief seul (`agence lentille F<n> --hasard --json`), réponse par `agence fiche note`, ni état ni registre changés.
+Une lentille (angle imposé, liste `lentilles.json`) propose sur une fiche, ne tranche jamais. La carte « Éclairer » vient d'une décision structurante validée, ou de `agence lentille F<n> --carte` si l'humain en demande une. Aucun agent avant son clic. Au clic, ton message dit tout : agent neuf, brief seul (`agence lentille F<n> --hasard --json`), réponse par `agence fiche note`, ni état ni registre changés.
 
 ## Panneaux : chaque besoin ouvre son outil, relié à sa source
 
