@@ -306,6 +306,30 @@ class Pages(Garde):
 				self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
 		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'backlog.json'), 'content': '{}'}))
 
+	def test_texte_d_un_rapport_citant_un_fichier_d_etat_passe(self):
+		"""Issue 170 : le texte d'un `cate agent send` qui cite un fichier d'état n'est pas une écriture ; une écriture réelle reste refusée."""
+		self.installe()
+		self.orchestre()
+		f = os.path.join(self.projet, '.cate', 'tmp', 'agence', 'state.json')
+		for nom in ('state.json', 'backlog.json', 'decisions.json', 'pratiques.json'):
+			for cmd in (f'cate agent send --panel abc "agence a lu {nom} puis cp > rm sed -i"',
+			            f"cate agent send --panel abc 'le hook bloque {nom} (python, tee, mv)'"):
+				with self.subTest(cmd=cmd):
+					self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+		for cmd in (f'cate agent send --panel abc "ok" && echo {{}} > {f}', f'cate agent send --panel abc "ok"; rm {f}'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+
+	def test_substitution_dans_le_texte_d_un_envoi_reste_lue(self):
+		"""Issue 170 : entre guillemets doubles le shell exécute $(...) et les accents graves ; ce texte n'est pas vidé."""
+		self.installe()
+		self.orchestre()
+		f = os.path.join(self.projet, '.cate', 'tmp', 'agence', 'state.json')
+		for cmd in (f'cate agent send --panel abc "rapport $(echo {{}} > {f})"', f'cate agent send --panel abc "rapport `rm {f}`"'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+		self.vide(self.hook(self.pages_cmd, 'Bash', {'command': "cate agent send --panel abc 'lit $(x) > state.json et `y`'"}))
+
 	def test_plafond_agents_refuse_aux_agents(self):
 		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
 		self.installe()

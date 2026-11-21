@@ -4,7 +4,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi } from '../contract/api'
-import { AGENT_DEFS, isPromptAttachments, type AgentSessionUsageResult, type AgentId, type AgentLaunchOptions, type AgentStartRequest, type PanelAgentState } from '../contract'
+import { AGENT_DEFS, isPromptAttachments, type AgentSessionUsageResult, type AgentId, type AgentLaunchOptions, type AgentStartRequest, type PanelAgentState, type SentPrompt, type AgentPrompt } from '../contract'
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
 import type { DoneWhen } from './doneWhen'
@@ -89,16 +89,22 @@ export function startAgent(starter: AgentStarter, callerPanelId: string | undefi
   return starter.start(callerPanelId, { ...args, ...(placement ? { placement } : {}) })
 }
 
+/** Prompts before `id` that are still queued or being typed (a failed one is not waiting for a turn). */
+const waitingAhead = (prompts: readonly AgentPrompt[], id: string): number =>
+  prompts.slice(0, prompts.findIndex((other) => other.id === id)).filter((other) => other.state !== 'failed').length
+
 /** A prompt to a live agent panel, the one path for every caller
  *  (`cate agent send`, the capability, other modules): the runtime takes it
  *  and sends it once the agent can take one. Refused only when nothing ever
  *  could take it; what happens next shows in the panel's prompts. */
-export function sendToAgent(agents: AgentsCore, starter: AgentStarter, panelId: string, prompt: string, attachments?: string[]): { promptId: string } {
+export function sendToAgent(agents: AgentsCore, starter: AgentStarter, panelId: string, prompt: string, attachments?: string[]): SentPrompt {
   refuseStarting(starter, panelId)
   const state = live(agents, panelId)
   if (!state.present) throw new RpcError('gone', 'agent-not-running')
   if (attachments !== undefined && !isPromptAttachments(attachments)) throw new RpcError('rejected', 'invalid-attachments')
-  return { promptId: agents.send(panelId, prompt, attachments).id }
+  const sent = agents.send(panelId, prompt, attachments)
+  // `queued` or `sending`, behind `ahead` prompts: a busy agent takes it after its turn, not during it.
+  return { promptId: sent.id, state: sent.state, ahead: waitingAhead(agents.prompts.of(panelId), sent.id) }
 }
 
 /** Takes back a queued or failed prompt, the one path for every caller

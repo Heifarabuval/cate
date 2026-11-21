@@ -12,6 +12,7 @@ import type {
   AgentChangesSnapshot,
   AgentId,
   agentsCapability,
+  SentPrompt,
 } from '../contract'
 import type { agentApi } from '../contract/api'
 import { createAgentApiHandlers, sendToAgent } from './api'
@@ -45,7 +46,7 @@ export interface AgentsRuntime {
   /** Starts an agent for `callerPanelId` (undefined for a client). */
   start(callerPanelId: string | undefined, args: AgentStartArgs): Promise<{ panelId: string; agentId: AgentId }>
   /** `cate agent send`'s function: throws when no agent can take it. */
-  send(panelId: string, prompt: string): { promptId: string }
+  send(panelId: string, prompt: string): SentPrompt
   /** Panels whose agent is running a turn. */
   busy(): string[]
   /** Panels an agent is present in, busy or not. */
