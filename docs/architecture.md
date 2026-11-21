@@ -2257,6 +2257,13 @@ The schema, the allowed values and the presets are declared once in
 `agence watch` publishes the result as `pratiques` in `state.json` (values,
 sources, error) on every round; the `pages` guard refuses agents both files
 and the three writing commands.
+Trades and connectors (spec 012) are two catalogues shipped next to the CLI,
+`tools/agence/metiers.json` and `tools/agence/connecteurs.json`, validated by
+`tools/agence/metiers.py` (schema, no secret value) and edited only by a PR.
+The policy picks them with three keys: `metier` (default `dev`),
+`connecteurs.lecture` (default: every connector of the trade) and
+`connecteurs.ecriture` (default: none); a connector outside the trade is
+refused. The human sets them like any other key; no file of `src/` reads them.
 The backlog of cards and the decision register (spec 010) live next to it,
 in `<root>/.cate/tmp/agence/backlog.json` and `decisions.json`: hand-editable
 JSON, never committed, validated on every read (an invalid file refuses every

@@ -11,6 +11,8 @@ import os
 import re
 import tempfile
 
+import metiers
+
 ICI = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = os.path.join(ICI, 'pratiques.json')
 DEFAUT = 'neutre'
@@ -55,6 +57,8 @@ def _permis(sch, cle):
 	spec = sch['cles'][cle]
 	if 'valeurs' in spec:
 		return 'une de : ' + ', '.join(map(cle_choix, spec['valeurs']))
+	if spec.get('un'):
+		return 'une de : ' + ', '.join(_liste(sch, spec))
 	if 'entier' in spec:
 		return 'un entier de %d à %d' % tuple(spec['entier'])
 	if 'motif' in spec:
@@ -63,7 +67,9 @@ def _permis(sch, cle):
 
 
 def _table(spec):
-	with open(os.path.join(ICI, spec['parmi'])) as f:
+	"""Table d'une clé `parmi` : les catalogues de métiers et de connecteurs suivent AGENCE_CATALOGUES (spec 012)."""
+	base = metiers.dossier() if spec['parmi'] in metiers.CATALOGUES else ICI
+	with open(os.path.join(base, spec['parmi'])) as f:
 		return json.load(f)
 
 
@@ -93,8 +99,8 @@ def _phrase(spec):
 	if choix is None:
 		return f"{nom} n'accepte pas cette valeur."
 	libs = [f'« {lib} »' for _, lib in choix]
-	if 'valeurs' in spec:
-		return f"{nom} : choisissez {', '.join(libs[:-1])} ou {libs[-1]}."
+	if 'valeurs' in spec or spec.get('un'):
+		return f"{nom} : choisissez {', '.join(libs[:-1])} ou {libs[-1]}." if len(libs) > 1 else f"{nom} : choisissez {libs[0]}."
 	return f"{nom} : choisissez parmi {', '.join(libs)}, sans doublon."
 
 
@@ -108,6 +114,8 @@ def _valide(sch, cle, v):
 		return type(v) is int and spec['entier'][0] <= v <= spec['entier'][1]
 	if 'motif' in spec:
 		return isinstance(v, str) and re.search(spec['motif'], v) is not None
+	if spec.get('un'):  # une valeur de la table (spec 012 : metier)
+		return isinstance(v, str) and v in _liste(sch, spec)
 	return isinstance(v, list) and len(set(map(str, v))) == len(v) and all(isinstance(x, str) and x in _liste(sch, spec) for x in v)
 
 
@@ -178,11 +186,36 @@ def fusionner(sch, couches):
 				valeurs[k], sources[k] = v, source
 		for k, v in plat.items():
 			valeurs[k], sources[k] = v, source
+	if 'metier' in sch['cles']:
+		_metier(valeurs, origines, sources)
 	for c in sch['coherences']:
 		if all(_touche(valeurs[k], permis) for k, permis in c['si'].items()):
 			detail = ' avec '.join(f'{k} = {json.dumps(valeurs[k], ensure_ascii=False)} ({origines[sources[k]]})' for k in c['si'])
 			raise Invalide(f"combinaison refusée : {detail} : {c['message']}", c['phrase'])
 	return {'preset': preset, 'valeurs': valeurs, 'sources': sources, 'erreur': None}
+
+
+def _metier(valeurs, origines, sources):
+	"""Spec 012 (FR-002) : métier absent = dev ; lecture absente = tous les connecteurs du métier ; écriture absente =
+	aucune. Un connecteur ouvert hors du métier est refusé, avec son nom et celui du métier."""
+	try:
+		cat = metiers.charger()
+	except metiers.Invalide as err:
+		raise Invalide(f'catalogue des métiers refusé : {err}', 'Le catalogue des métiers est illisible.')
+	if valeurs['metier'] is None:
+		valeurs['metier'] = metiers.DEV
+	m = metiers.metier(cat, valeurs['metier'])
+	if valeurs['connecteurs.lecture'] is None:
+		valeurs['connecteurs.lecture'] = list(m['connecteurs'])
+	if valeurs['connecteurs.ecriture'] is None:
+		valeurs['connecteurs.ecriture'] = []
+	for cle in ('connecteurs.lecture', 'connecteurs.ecriture'):
+		for ident in valeurs[cle]:
+			if ident not in m['connecteurs']:
+				nom = metiers.connecteur(cat, ident)['nom']
+				raise Invalide(f"combinaison refusée : {cle} = {ident} « {nom} » ({origines[sources[cle]]}) hors du métier "
+				               f"{m['id']} « {m['nom']} » ({origines[sources['metier']]})",
+				               f"« {nom} » n'est pas un outil du métier « {m['nom']} ».")
 
 
 def _touche(v, permis):
@@ -332,7 +365,8 @@ def champs(sch, pol):
 		forme = next(f for f in TYPES_CHAMP if f in spec)
 		choix = _choix(spec)
 		out.append({'cle': cle, 'nom': spec['nom'], 'explique': spec['explique'], 'groupe': spec['groupe'],
-		            'portee': spec['portee'], 'question': spec.get('question'), 'forme': 'liste' if forme == 'parmi' else forme,
+		            'portee': spec['portee'], 'question': spec.get('question'),
+		            'forme': ('valeurs' if spec.get('un') else 'liste') if forme == 'parmi' else forme,
 		            'choix': None if choix is None else [{'valeur': v, 'libelle': lib} for v, lib in choix],
 		            'bornes': spec.get('entier'), 'vide': spec.get('vide'), 'defaut': defauts.get(cle),
 		            'valeur': pol['valeurs'][cle], 'origine': pol['sources'][cle]})

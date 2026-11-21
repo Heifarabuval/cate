@@ -13,7 +13,10 @@ export const AGENCE_REQUIRED = [
   'backlog.py',
   'lentilles.json',
   'pratiques.py',
-  'pratiques.json'
+  'pratiques.json',
+  'metiers.py',
+  'metiers.json',
+  'connecteurs.json'
 ].map((file) => path.join('agence', file))
 
 const NOT_SHIPPED = /^(test_.*\.py|__pycache__|fixtures|\..*)$/

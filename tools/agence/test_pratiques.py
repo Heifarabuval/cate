@@ -43,12 +43,16 @@ HORS_LISTE = {
 	'envoi.slack.fichier': 'xoxp-123-secret', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously-skip-permissions',
 	'modele.structurant': '', 'notifications.systeme': True,
 	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
+	'metier': 'boulanger', 'connecteurs.lecture': ['inconnu'], 'connecteurs.ecriture': 'factice',
 }
 # Spec 010, lot 7 (FR-010, SC-003) : modèle par rôle, proposé, jamais choisi par le code ; null hors des presets.
 # corr-008 (b) : le modèle d'un agent de travail est agents.modele seul, modele.implementation est coupée.
 MODELES = {'modele.tri': None, 'modele.interlocuteur': None, 'modele.structurant': None}
-DEFAUT = {**NEUTRE, **MODELES}  # valeurs effectives sans aucun fichier
-DEFAUT_PR_TDD = {**PR_TDD, **MODELES}
+# Spec 012, lot 1 (FR-002) : métier et droits des connecteurs, hors des presets ; dérivés du métier quand rien n'est posé.
+METIER = {'metier': 'dev', 'connecteurs.lecture': [], 'connecteurs.ecriture': []}
+DEFAUT = {**NEUTRE, **MODELES, **METIER}  # valeurs effectives sans aucun fichier
+DEFAUT_PR_TDD = {**PR_TDD, **MODELES, **METIER}
+CATALOGUES_FIXTURE = os.path.join(HERE, 'fixtures', 'metiers')
 
 
 def imbrique(plat):
@@ -375,12 +379,12 @@ class Presets(unittest.TestCase):
 
 	def test_cles_des_presets_dans_le_schema(self):
 		schema = pratiques.schema()
-		self.assertEqual(len(schema['cles']), 20)  # 12 de 005, 3 modele.* de 010 (corr-008 b), 4 de 008, 1 de 013
+		self.assertEqual(len(schema['cles']), 23)  # 12 de 005, 3 modele.* de 010 (corr-008 b), 4 de 008, 1 de 013, 3 de 012
 		for nom, p in schema['presets'].items():
 			with self.subTest(preset=nom):
 				self.assertLessEqual(set(p['valeurs']), set(schema['cles']))
 		# neutre est la base, complet sauf le modèle par rôle (null par défaut, jamais posé par un preset)
-		self.assertEqual(set(schema['presets']['neutre']['valeurs']), set(schema['cles']) - set(MODELES))
+		self.assertEqual(set(schema['presets']['neutre']['valeurs']), set(schema['cles']) - set(MODELES) - set(METIER))
 
 	def test_modele_par_role_sc003(self):
 		"""T120, SC-003 : quatre clés modele.*, chaîne ou null, null par défaut, absentes des presets livrés."""
@@ -583,6 +587,66 @@ class Commande(Base):
 		code, out, _ = self.agence('pratiques', 'brief')
 		self.assertEqual(code, 0)
 		self.assertIn('test rouge', out)
+
+
+# ---------- spec 012, lot 1, T012 : métier et droits des connecteurs (FR-002) ----------
+
+class MetierPolitique(Base):
+	"""Catalogues de fixture (AGENCE_CATALOGUES) : data-manager lit factice, balises-factice, site-factice."""
+
+	def setUp(self):
+		super().setUp()
+		env = unittest.mock.patch.dict(os.environ, {'AGENCE_CATALOGUES': CATALOGUES_FIXTURE})
+		env.start()
+		self.addCleanup(env.stop)
+
+	def test_defauts(self):
+		pol = self.charge()
+		self.assertEqual({k: pol['valeurs'][k] for k in METIER}, METIER)
+		self.assertEqual({pol['sources'][k] for k in METIER}, {'défaut'})
+
+	def test_lecture_derivee_du_metier(self):
+		self.ecrit(self.projet, {'metier': 'data-manager'})
+		pol = self.charge()
+		self.assertEqual(pol['erreur'], None)
+		self.assertEqual(pol['valeurs']['connecteurs.lecture'], ['factice', 'balises-factice', 'site-factice'])
+		self.assertEqual((pol['valeurs']['connecteurs.ecriture'], pol['sources']['connecteurs.lecture']), ([], 'défaut'))
+
+	def test_lecture_posee_l_emporte(self):
+		self.ecrit(self.projet, {'metier': 'data-manager', 'connecteurs': {'lecture': ['factice'], 'ecriture': ['factice']}})
+		pol = self.charge()
+		self.assertEqual((pol['valeurs']['connecteurs.lecture'], pol['valeurs']['connecteurs.ecriture']), (['factice'], ['factice']))
+		self.assertEqual(pol['sources']['connecteurs.lecture'], 'projet')
+
+	def test_connecteur_hors_du_metier_refuse(self):
+		for cle in ('lecture', 'ecriture'):
+			with self.subTest(cle=cle):
+				self.ecrit(self.projet, {'metier': 'data-manager', 'connecteurs': {cle: ['messagerie-factice']}})
+				err = self.charge()['erreur']
+				self.assertIn('Messagerie factice', err)
+				self.assertIn('Data manager', err)
+				with self.assertRaises(pratiques.Invalide) as ctx:
+					pratiques.verifier(self.racine, self.home)
+				self.assertIn('Messagerie factice', ctx.exception.phrase)
+				self.assertIn('Data manager', ctx.exception.phrase)
+
+	def test_metier_inconnu_refuse(self):
+		self.ecrit(self.projet, {'metier': 'boulanger'})
+		self.assertIn('metier', self.refus('boulanger'))
+
+	def test_ecriture_refusee_sans_rien_ecrire(self):
+		with self.assertRaises(pratiques.Invalide):
+			pratiques.regler(self.racine, self.home, 'connecteurs.ecriture', ['factice'])
+		self.assertFalse(os.path.exists(self.projet))
+
+	def test_show_json(self):
+		self.ecrit(self.projet, {'metier': 'data-manager'})
+		out = io.StringIO()
+		with contextlib.redirect_stdout(out):
+			self.assertEqual(agence.main(['pratiques', 'show', '--json']), 0)
+		v = json.loads(out.getvalue())['valeurs']
+		self.assertEqual((v['metier'], v['connecteurs.ecriture']), ('data-manager', []))
+		self.assertEqual(len(v['connecteurs.lecture']), 3)
 
 
 if __name__ == '__main__':

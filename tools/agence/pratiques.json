@@ -1,5 +1,11 @@
 {
  "cles": {
+  "metier": {"parmi": "metiers.json", "un": true, "groupe": "avance", "portee": "workspace",
+   "nom": "Votre métier", "explique": "Il choisit les outils branchés et ce qu'il faut voir pour qu'une tâche soit finie."},
+  "connecteurs.lecture": {"parmi": "connecteurs.json", "groupe": "avance", "portee": "workspace",
+   "nom": "Outils que les agents peuvent lire", "explique": "Les agents y lisent librement. Par défaut, tous les outils de votre métier."},
+  "connecteurs.ecriture": {"parmi": "connecteurs.json", "groupe": "avance", "portee": "workspace",
+   "nom": "Outils où les agents peuvent préparer une écriture", "explique": "Une écriture n'y part jamais seule : vous la validez d'un clic. Par défaut, aucun."},
   "livraison.mode": {"valeurs": ["pr", "main"], "groupe": "essentiel", "portee": "workspace",
    "nom": "Comment le travail vous arrive", "explique": "Par une demande de relecture que vous acceptez, ou directement sur la branche principale.",
    "choix": {"pr": "Par une demande de relecture", "main": "Directement sur la branche principale"},

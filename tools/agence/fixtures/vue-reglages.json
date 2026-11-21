@@ -3,6 +3,56 @@
  "erreur": null,
  "champs": [
   {
+   "cle": "metier",
+   "nom": "Votre métier",
+   "explique": "Il choisit les outils branchés et ce qu'il faut voir pour qu'une tâche soit finie.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "dev",
+     "libelle": "Développement"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": null,
+   "valeur": "dev",
+   "origine": "défaut"
+  },
+  {
+   "cle": "connecteurs.lecture",
+   "nom": "Outils que les agents peuvent lire",
+   "explique": "Les agents y lisent librement. Par défaut, tous les outils de votre métier.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "liste",
+   "choix": [],
+   "bornes": null,
+   "vide": null,
+   "defaut": null,
+   "valeur": [],
+   "origine": "défaut"
+  },
+  {
+   "cle": "connecteurs.ecriture",
+   "nom": "Outils où les agents peuvent préparer une écriture",
+   "explique": "Une écriture n'y part jamais seule : vous la validez d'un clic. Par défaut, aucun.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "liste",
+   "choix": [],
+   "bornes": null,
+   "vide": null,
+   "defaut": null,
+   "valeur": [],
+   "origine": "défaut"
+  },
+  {
    "cle": "livraison.mode",
    "nom": "Comment le travail vous arrive",
    "explique": "Par une demande de relecture que vous acceptez, ou directement sur la branche principale.",

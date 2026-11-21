@@ -1,0 +1,145 @@
+"""Métiers et connecteurs (spec 012) : deux catalogues JSON livrés à côté, déclarés une fois, lus par la politique,
+la garde et `agence connecteur check`.
+
+Un connecteur : {id, nom, explique, acces (mcp|api|navigateur), serveur (mcp), lecture, ecriture (noms d'outils sans
+le préfixe mcp__<serveur>__), secret {variable, fichier?} (api), panneau?}. Seul un connecteur mcp écrit, et toujours
+par une carte (la garde ne voit que les appels d'outils MCP). Un métier : {id, nom, explique, connecteurs, panneaux,
+validateur (preuves nommées ; aucune pour dev, qui garde la preuve de 005), recettes}.
+Aucun secret dans un catalogue : un connecteur nomme une variable, jamais sa valeur.
+AGENCE_CATALOGUES : dossier des deux catalogues (fixtures des tests) ; défaut, celui de ce fichier.
+Python 3.9, stdlib seule ; aucune fonction n'importe agence.py.
+"""
+import json
+import os
+import re
+
+ICI = os.path.dirname(os.path.abspath(__file__))
+CATALOGUES = ('connecteurs.json', 'metiers.json')
+ACCES = ('mcp', 'api', 'navigateur')
+TYPES_PREUVE = ('fichier', 'lien', 'clic')
+TYPES_PANNEAU = ('navigateur', 'perso')
+DEV = 'dev'
+# Motifs de secret (007 FR-012) : jetons GitHub, OpenAI ou Anthropic, Slack, AWS, clé privée.
+SECRET_RE = re.compile(r'gh[pousr]_|github_pat_|sk-|xox[abpres]-|AKIA|-----BEGIN')
+VARIABLE_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*\Z')
+
+
+class Invalide(Exception):
+	"""Catalogue refusé : le message nomme le fichier, l'id et le champ, jamais la valeur fautive."""
+
+
+def dossier():
+	return os.environ.get('AGENCE_CATALOGUES') or ICI
+
+
+def _refus(fichier, ident, champ, raison):
+	raise Invalide(f'{fichier} : {ident or "?"} : champ « {champ} » : {raison}')
+
+
+def _secrets(fichier, ident, valeur, champ=''):
+	"""Toute chaîne, à toute profondeur : un motif de secret refuse le catalogue (le champ est nommé, pas la valeur)."""
+	if isinstance(valeur, dict):
+		for k, v in valeur.items():
+			_secrets(fichier, ident, v, f'{champ}.{k}' if champ else k)
+	elif isinstance(valeur, list):
+		for v in valeur:
+			_secrets(fichier, ident, v, champ)
+	elif isinstance(valeur, str) and SECRET_RE.search(valeur):
+		_refus(fichier, ident, champ, 'valeur qui ressemble à un secret ; un catalogue nomme une variable, jamais sa valeur')
+
+
+def _objets(fichier, lignes, exiges):
+	"""Liste d'objets à id unique, champs exigés présents, aucun secret."""
+	if not isinstance(lignes, list):
+		_refus(fichier, None, 'racine', 'une liste d’objets est attendue')
+	vus = set()
+	for x in lignes:
+		ident = x.get('id') if isinstance(x, dict) else None
+		if not isinstance(ident, str) or not ident:
+			_refus(fichier, None, 'id', 'texte non vide attendu')
+		if ident in vus:
+			_refus(fichier, ident, 'id', 'en double')
+		vus.add(ident)
+		for champ in exiges:
+			if champ not in x:
+				_refus(fichier, ident, champ, 'manquant')
+		_secrets(fichier, ident, x)
+	return vus
+
+
+def _textes(fichier, ident, champ, v):
+	if not isinstance(v, list) or not all(isinstance(t, str) and t for t in v):
+		_refus(fichier, ident, champ, 'liste de textes attendue')
+
+
+def valider(connecteurs, metiers):
+	"""Invalide au premier défaut : schéma (FR-001), aucun secret (FR-006)."""
+	f = 'connecteurs.json'
+	ids = _objets(f, connecteurs, ('nom', 'explique', 'acces', 'lecture', 'ecriture'))
+	for c in connecteurs:
+		i = c['id']
+		if c['acces'] not in ACCES:
+			_refus(f, i, 'acces', 'une de : ' + ', '.join(ACCES))
+		for champ in ('lecture', 'ecriture'):
+			_textes(f, i, champ, c[champ])
+		if c['acces'] == 'mcp' and not (isinstance(c.get('serveur'), str) and c['serveur']):
+			_refus(f, i, 'serveur', 'nom du serveur MCP exigé pour un accès mcp')
+		if c['acces'] != 'mcp' and c['ecriture']:
+			_refus(f, i, 'ecriture', 'seul un connecteur mcp écrit, par une carte (api et navigateur : lecture seule en v1)')
+		if c['acces'] == 'api':
+			s = c.get('secret')
+			if not isinstance(s, dict):
+				_refus(f, i, 'secret', '{variable, fichier?} exigé pour un accès api')
+			if not isinstance(s.get('variable'), str) or not VARIABLE_RE.match(s['variable']):
+				_refus(f, i, 'secret.variable', 'nom de variable d’environnement attendu')
+	f = 'metiers.json'
+	_objets(f, metiers, ('nom', 'explique', 'connecteurs', 'panneaux', 'validateur', 'recettes'))
+	for m in metiers:
+		i = m['id']
+		_textes(f, i, 'connecteurs', m['connecteurs'])
+		inconnus = [c for c in m['connecteurs'] if c not in ids]
+		if inconnus:
+			_refus(f, i, 'connecteurs', 'connecteur inconnu : ' + ', '.join(inconnus))
+		for p in m['panneaux'] if isinstance(m['panneaux'], list) else [None]:
+			if not isinstance(p, dict) or p.get('type') not in TYPES_PANNEAU or not p.get('cible'):
+				_refus(f, i, 'panneaux.type', '{type: navigateur|perso, cible} attendu')
+		v = m['validateur']
+		if not isinstance(v, list) or bool(v) == (i == DEV):
+			_refus(f, i, 'validateur', 'au moins une preuve nommée (aucune pour dev, qui garde la preuve de « Quand une tâche est finie »)')
+		noms = set()
+		for p in v:
+			if not isinstance(p, dict) or not all(isinstance(p.get(k), str) and p[k] for k in ('nom', 'type', 'explique')):
+				_refus(f, i, 'validateur', '{nom, type, explique} attendu')
+			if p['type'] not in TYPES_PREUVE:
+				_refus(f, i, 'validateur.type', 'une de : ' + ', '.join(TYPES_PREUVE))
+			if not re.match(r'^[\w.-]+\Z', p['nom']) or p['nom'] in noms:
+				_refus(f, i, 'validateur.nom', 'nom unique, lettres, chiffres, point, tiret')
+			noms.add(p['nom'])
+		for r in m['recettes'] if isinstance(m['recettes'], list) else [None]:
+			for k in ('nom', 'declencheur', 'action', 'preuve'):
+				if not isinstance(r, dict) or not isinstance(r.get(k), str) or not r[k]:
+					_refus(f, i, f'recettes.{k}', 'texte non vide attendu')
+	if DEV not in {m['id'] for m in metiers}:
+		_refus(f, DEV, 'id', 'le métier dev est exigé (défaut de la politique)')
+
+
+def charger(chemin=None):
+	"""{'connecteurs': [...], 'metiers': [...]} validés ; Invalide sinon."""
+	chemin = chemin or dossier()
+	out = {}
+	for nom in CATALOGUES:
+		try:
+			with open(os.path.join(chemin, nom)) as f:
+				out[nom.split('.')[0]] = json.load(f)
+		except (OSError, ValueError) as err:
+			raise Invalide(f'{nom} : illisible ({type(err).__name__})')
+	valider(out['connecteurs'], out['metiers'])
+	return out
+
+
+def metier(cat, ident):
+	return next((m for m in cat['metiers'] if m['id'] == ident), None)
+
+
+def connecteur(cat, ident):
+	return next((c for c in cat['connecteurs'] if c['id'] == ident), None)
