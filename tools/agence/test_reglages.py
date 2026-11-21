@@ -167,6 +167,16 @@ class Champs(Base):
 			with self.subTest(cle=c['cle']):
 				self.assertEqual(set(c), CHAMP)
 
+	def test_tasks_de_la_spec_annonce_le_nombre_reel_de_champs(self):
+		tasks = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'specs', '008-reglages-workspace', 'tasks.md')
+		if not os.path.exists(tasks):
+			self.skipTest('specs absentes de ce dossier (tarball)')
+		with open(tasks, encoding='utf-8') as f:
+			texte = f.read()
+		n = len(self.sch['cles'])
+		self.assertIn(f'avec {n} entrées', texte)
+		self.assertIn(f'rend les {n} clés', texte)
+
 	def test_valeur_et_origine_egales_a_show(self):
 		self.ecrit(self.dev, {'preset': 'pr-tdd', 'livraison': {'methode': 'merge'}})
 		self.ecrit(self.projet, {'agents': {'max': 2}, 'tests': 'libre'})
