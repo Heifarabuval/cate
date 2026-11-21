@@ -32,6 +32,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -353,7 +354,8 @@ def seuil(a):
 	manque = [k for k in SEUIL if not isinstance(s, dict) or k not in s]
 	if manque:
 		raise Refus('seuil.json : clé manquante : %s' % ', '.join(sorted(manque)))
-	if 'hypothèse' in str(s['source']).lower():
+	sans_accent = ''.join(c for c in unicodedata.normalize('NFD', str(s['source']).lower()) if not unicodedata.combining(c))
+	if 'hypothese' in sans_accent:
 		raise Refus("seuil.json : source « %s », une hypothèse : l'humain confirme les valeurs et change la source" % s['source'])
 	return s, hashlib.sha256(octets).hexdigest()
 

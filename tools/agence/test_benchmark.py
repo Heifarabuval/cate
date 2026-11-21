@@ -830,6 +830,12 @@ class Rapport(Specs):
 		self.assertIn("hypothèse : l'humain confirme les valeurs et change la source", self.rapport(2).stderr)
 		self.assertFalse(os.path.exists(os.path.join(self.specs, 'rapport-benchmark.md')))
 
+	def test_seuil_d_hypothese_refuse_sans_accent_ni_casse(self):
+		for source in ('Hypothese 011', 'HYPOTHÈSE de travail', 'hypothèse'):  # dernier : è décomposé (NFD)
+			with self.subTest(source=source):
+				self.commit_seuil(source=source)
+				self.assertIn("l'humain confirme les valeurs et change la source", self.rapport(2).stderr)
+
 	def test_cle_manquante_du_seuil_refus_lisible(self):
 		with open(os.path.join(CAMPAGNE, 'seuil.json')) as f:
 			s = json.load(f)
