@@ -83,6 +83,11 @@ class Catalogue(unittest.TestCase):
 		self.c('factice')['acces'] = 'ftp'
 		self.refus('connecteurs.json', 'factice', 'acces')
 
+	def test_outil_en_lecture_et_en_ecriture(self):
+		"""Un outil classé des deux côtés serait lu comme une lecture : son écriture passerait sans carte."""
+		self.c('factice')['lecture'] = ['lire', 'ecrire']
+		self.refus('connecteurs.json', 'factice', 'ecriture')
+
 	def test_ecriture_sur_api_ou_navigateur(self):
 		for ident in ('balises-factice', 'site-factice'):
 			with self.subTest(ident=ident):

@@ -84,6 +84,9 @@ def valider(connecteurs, metiers):
 			_refus(f, i, 'acces', 'une de : ' + ', '.join(ACCES))
 		for champ in ('lecture', 'ecriture'):
 			_textes(f, i, champ, c[champ])
+		deux = sorted(set(c['lecture']) & set(c['ecriture']))
+		if deux:  # classé en lecture, l'outil écrirait sans carte
+			_refus(f, i, 'ecriture', 'un outil est en lecture ou en écriture, pas les deux : ' + ', '.join(deux))
 		if c['acces'] == 'mcp' and not (isinstance(c.get('serveur'), str) and SERVEUR_RE.match(c['serveur'])):
 			_refus(f, i, 'serveur', 'nom du serveur MCP exigé pour un accès mcp (lettres, chiffres, _ et -)')
 		if c['acces'] != 'mcp' and c['ecriture']:
