@@ -5,7 +5,9 @@ Tout tourne en faux HOME et en dossier temporaire : faux `gh` (fixtures/bench/bi
 `osascript`, `electron`, `npx`, `playwright`, `npm`, `claude` qui laissent un témoin s'ils sont
 appelés ; `git` est le vrai, sur un dépôt créé dans le dossier temporaire. Rien ne touche le réseau.
 """
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -17,6 +19,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, 'benchmark.py')
+sys.path.insert(0, HERE)
+import benchmark  # noqa: E402  (la porte des recettes, appelée en processus)
 FIXTURE = os.path.join(HERE, 'fixtures', 'bench')
 CAMPAGNE = os.path.join(FIXTURE, 'campagne')
 ETAT_AGENCE = os.path.join('.cate', 'tmp', 'agence', 'state.json')
@@ -394,6 +398,40 @@ class Comparer(DepotJetable):
 		self.assertEqual(r.returncode, 2)
 		self.assertIn('nexistepas', r.stderr)
 		self.assertFalse(os.path.exists(self.env['CLAUDE_ARGS']))
+
+
+class PorteDesRecettes(unittest.TestCase):
+	"""Spec 013, lot 9, T090 (#175) : une recette n'est proposée que si le rejeu de `comparer` dit « garder » ; sinon
+	elle est annulée avec la raison du rapport. Rapports de fixture, aucun rejeu lancé."""
+
+	def porte(self, texte):
+		d = tempfile.mkdtemp(prefix='porte-')
+		self.addCleanup(shutil.rmtree, d, True)
+		chemin = os.path.join(d, 'rapport.md')
+		with open(chemin, 'w') as f:
+			f.write(texte)
+		out = io.StringIO()
+		with contextlib.redirect_stdout(out):
+			code = benchmark.main(['porte', chemin])
+		return code, out.getvalue()
+
+	def test_garder_propose(self):
+		code, out = self.porte('# Comparaison\n\nVerdict : garder : aucun arbitre vert avant ne casse après.\n')
+		self.assertEqual(code, 0)
+		self.assertIn('proposer', out)
+
+	def test_regression_ou_impossible_annule_avec_la_raison(self):
+		for verdict in ('annuler : arbitre vert avant, pas après, sur 50', "verdict impossible : claude -p a rendu le code 3"):
+			with self.subTest(verdict=verdict):
+				code, out = self.porte('Verdict : %s.\n' % verdict)
+				self.assertEqual(code, 1)
+				self.assertIn('annulée', out)
+				self.assertIn(verdict, out)
+
+	def test_rapport_sans_verdict_annule(self):
+		code, out = self.porte('# rien\n')
+		self.assertEqual(code, 1)
+		self.assertIn('sans verdict', out)
 
 
 class Contamination(Banc):

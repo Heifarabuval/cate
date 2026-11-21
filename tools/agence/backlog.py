@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 ETATS = ('discussion', 'prête', 'lancée', 'faite', 'abandonnée')
 PAR_LA_CLI = ('discussion', 'prête')  # lancée, faite, abandonnée : régisseur, sur clic ou à la fermeture du besoin
 TERMINAUX = ('faite', 'abandonnée')
+SEUIL_RESUME = 50  # Q6 de la spec 013 : pas de résumé des fiches closes avant 50 (hypothèse)
 TYPES = ('bug', 'idee', 'retour', 'audit', 'tache')
 PRIORITES = ('P1', 'P2', 'P3')
 STATUTS = ('proposée', 'active', 'rejetée', 'révoquée')
@@ -516,3 +517,15 @@ def ecrire(racine, nom, contenu):
 	with os.fdopen(fd, 'w') as f:
 		json.dump(contenu, f, ensure_ascii=False, indent=1)
 	os.replace(tmp, path)
+
+
+def resume_closes(b):
+	"""Spec 013, lot 9, T091 (Q6) : coût de lecture des fiches closes, en part des octets du backlog, et à partir de
+	SEUIL_RESUME fiches closes une ligne par fiche close. Sous le seuil : gelé (013 FR-011), aucun résumé.
+	ponytail: la part en octets remplace « 5 % des jetons lus par l'interlocuteur », que rien ne mesure par lecture."""
+	closes = [f for f in b['fiches'] if f['etat'] in TERMINAUX]
+	total = len(json.dumps(b, ensure_ascii=False))
+	part = len(json.dumps(closes, ensure_ascii=False)) / total if closes and total else 0
+	actif = len(closes) >= SEUIL_RESUME
+	return {'closes': len(closes), 'seuil': SEUIL_RESUME, 'part': round(part, 3), 'actif': actif,
+	        'lignes': [f"{f['id']} {f['etat']} : {f['titre']}" for f in closes] if actif else []}
