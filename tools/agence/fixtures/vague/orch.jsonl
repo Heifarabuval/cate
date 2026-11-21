@@ -1,0 +1,8 @@
+{"type":"user","timestamp":"2026-01-01T10:00:00Z","message":{"role":"user","content":"MARQUEUR lance la vague"}}
+{"type":"assistant","timestamp":"2026-01-01T10:00:05Z","message":{"id":"v1","content":[{"type":"tool_use","id":"s1","name":"Bash","input":{"command":"cate agent start --agent claude-code --title A \"Lis en entier /tmp/brief-a.md et exécute-le.\""}},{"type":"tool_use","id":"s2","name":"Bash","input":{"command":"cate agent start --agent claude-code --title B 'MARQUEUR consigne sans forme'"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":100,"output_tokens":1}}}
+{"type":"user","timestamp":"2026-01-01T10:00:08Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"s1","content":"MARQUEUR ok"}]}}
+{"type":"user","timestamp":"2026-01-01T10:05:10Z","message":{"role":"user","content":"ok"}}
+{"type":"assistant","timestamp":"2026-01-01T10:05:15Z","message":{"id":"v2","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":100,"output_tokens":1}}}
+{"type":"user","timestamp":"2026-01-01T10:20:05Z","message":{"role":"user","content":"Rapport de B : fini, deux fichiers modifiés."}}
+{"type":"assistant","timestamp":"2026-01-01T10:20:10Z","message":{"id":"v3","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":100,"output_tokens":1}}}
+{"type":"user","timestamp":"2026-01-01T11:00:00Z","message":{"role":"user","content":"Rapport de B : fini, deux fichiers modifiés."}}

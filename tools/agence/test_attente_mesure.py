@@ -119,6 +119,7 @@ class AttenteMesure(unittest.TestCase):
 
 # Lot 011-L1 : jetons par poste, plusieurs dossiers, interventions (fixtures fixtures/bench/)
 BENCH = os.path.join(HERE, 'fixtures', 'bench')
+VAGUE = os.path.join(HERE, 'fixtures', 'vague')
 POSTES = ('jetons_entree', 'jetons_cache_cree', 'jetons_lus', 'jetons_sortie', 'jetons_total')
 NU = {'tours': 6, 'jetons_entree': 25, 'jetons_cache_cree': 185, 'jetons_lus': 7150, 'jetons_sortie': 33, 'jetons_total': 7393}
 OUTIL = {'tours': 7, 'jetons_entree': 23, 'jetons_cache_cree': 195, 'jetons_lus': 4850, 'jetons_sortie': 37, 'jetons_total': 5105}
@@ -186,7 +187,7 @@ class Bench(unittest.TestCase):
 		chemins = self.am.journaux(self.outil)
 		self.assertEqual(self.am.interventions(chemins), [
 			(t('11:00:00'), 'humain'), (t('11:00:05'), 'systeme'), (t('11:00:08'), 'systeme'),
-			(t('11:00:10'), 'systeme'), (t('11:00:20'), 'humain'), (t('11:09:50'), 'systeme'),
+			(t('11:00:10'), 'systeme'), (t('11:00:20'), 'machine'), (t('11:09:50'), 'systeme'),
 			(t('11:09:55'), 'systeme'), (t('11:10:00'), 'machine'), (t('11:10:05'), 'systeme'),
 			(t('11:10:30'), 'machine'), (t('11:12:00'), 'humain'), (t('11:12:05'), 'systeme'),
 			(t('12:00:00'), 'humain'), (t('12:00:05'), 'systeme')
@@ -197,6 +198,23 @@ class Bench(unittest.TestCase):
 		orch = [os.path.join(self.outil[0], 'orch.jsonl')]
 		kinds = [k for _, k in self.am.interventions(orch)]
 		self.assertEqual((kinds.count('machine'), kinds.count('humain')), (1, 3))  # task-notification seule
+
+	def test_k_vague_brief_machine_et_ok_humain(self):
+		"""Vague : orchestrateur et deux agents. Le premier message d'un agent lancé par `cate agent start` est machine
+		(forme « Lis en entier ... » ou lancement juste avant) ; « ok » égal à un envoi reste humain (trop court) ; un
+		texte égal à un envoi n'est machine que reçu juste après l'envoi."""
+		v = lambda n: os.path.join(VAGUE, n + '.jsonl')
+		self.assertEqual(self.am.interventions([v('orch'), v('agent-a'), v('agent-b')]), [
+			(t('10:00:00'), 'humain'), (t('10:00:05'), 'systeme'), (t('10:00:08'), 'systeme'),
+			(t('10:00:20'), 'machine'), (t('10:00:30'), 'machine'), (t('10:05:00'), 'systeme'),
+			(t('10:05:10'), 'humain'), (t('10:05:15'), 'systeme'), (t('10:20:00'), 'systeme'),
+			(t('10:20:05'), 'machine'), (t('10:20:10'), 'systeme'), (t('11:00:00'), 'humain')
+		])
+
+	def test_k_brief_reconnu_a_sa_forme_seule(self):
+		# sans le journal qui l'a lancé : la forme suffit, une consigne libre reste humaine
+		self.assertEqual(self.am.interventions([os.path.join(VAGUE, 'agent-a.jsonl')])[0], (t('10:00:20'), 'machine'))
+		self.assertEqual(self.am.interventions([os.path.join(VAGUE, 'agent-b.jsonl')])[0], (t('10:00:30'), 'humain'))
 
 	def test_k_nu_et_aucun_texte(self):
 		iv = self.am.interventions(self.am.journaux([self.nu]))

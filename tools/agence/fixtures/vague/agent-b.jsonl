@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-01-01T10:00:30Z","message":{"role":"user","content":"MARQUEUR consigne sans forme"}}
+{"type":"assistant","timestamp":"2026-01-01T10:20:00Z","message":{"id":"b1","content":[{"type":"tool_use","id":"r1","name":"Bash","input":{"command":"cate agent send --panel abc \"Rapport de B : fini, deux fichiers modifiés.\""}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":100,"output_tokens":1}}}

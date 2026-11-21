@@ -556,12 +556,12 @@ class Mesure(Specs):
 
 	def test_temps_actif_plafonne(self):
 		# Événements humains de la fenêtre [debut 10:59:00, dernier fini 12:05:00], délai depuis l'événement précédent :
-		# debut 0 ; 11:00:00 « lance » 60 ; 11:00:20 brief 10 ; 11:11:00 clic n1 30 (après la notification de 11:10:30) ;
+		# debut 0 ; 11:00:00 « lance » 60 ; 11:11:00 clic n1 30 (après la notification de 11:10:30) ;
 		# 11:12:00 « merci » 60 ; 11:15:00 fini 175 ; 12:00:00 « autre » 2700 → 180 ; 12:02:00 clic n2 115 ; 12:05:00 fini 180.
-		# Hors compte : la note « cli » de 11:11:30, le clic de 12:30:00 (après le dernier fini).
+		# Hors compte : le brief de l'agent à 11:00:20 (machine), la note « cli » de 11:11:30, le clic de 12:30:00 (après le dernier fini).
 		_, r = self.mesure()
-		self.assertEqual(r['temps_actif_s'], 0 + 60 + 10 + 30 + 60 + 175 + 180 + 115 + 180)
-		self.assertEqual(r['interventions'], 9)
+		self.assertEqual(r['temps_actif_s'], 0 + 60 + 30 + 60 + 175 + 180 + 115 + 180)
+		self.assertEqual(r['interventions'], 8)
 		self.assertEqual(r['temps_mural_s'], 66 * 60)
 		self.assertEqual(r['reprises'], 1)
 
@@ -571,12 +571,12 @@ class Mesure(Specs):
 		st['needs'][1]['journal'] = []  # sans le clic de n2 à 12:02:00, le fini de 12:05:00 part de 12:00:05
 		ecrire(self.etat, json.dumps(st))
 		_, r = self.mesure()
-		self.assertEqual(r['temps_actif_s'], 0 + 60 + 10 + 30 + 60 + 175 + 180 + 180)
+		self.assertEqual(r['temps_actif_s'], 0 + 60 + 30 + 60 + 175 + 180 + 180)
 
 	def test_plafond_lu_dans_le_seuil(self):
 		self.commit_seuil(plafond_s=60)
 		_, r = self.mesure()
-		self.assertEqual(r['temps_actif_s'], 0 + 60 + 10 + 30 + 60 + 60 + 60 + 60 + 60)
+		self.assertEqual(r['temps_actif_s'], 0 + 60 + 30 + 60 + 60 + 60 + 60 + 60)
 
 	def test_resultat_cles_et_nombres_seulement(self):
 		out, r = self.mesure()

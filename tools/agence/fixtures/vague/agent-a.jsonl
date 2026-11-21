@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-01-01T10:00:20Z","message":{"role":"user","content":"Lis en entier /tmp/brief-a.md et exécute-le."}}
+{"type":"assistant","timestamp":"2026-01-01T10:05:00Z","message":{"id":"a1","content":[{"type":"tool_use","id":"q1","name":"Bash","input":{"command":"agence ask --from A ok"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":100,"output_tokens":1}}}

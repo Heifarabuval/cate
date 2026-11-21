@@ -198,32 +198,49 @@ def evenements(path):
 				yield d, m, instant(d.get('timestamp'))
 
 
+FENETRE_S = 120  # un envoi (ou un lancement) puis sa réception dans un autre journal
+MOTS_MIN = 4  # en dessous (« ok »), un texte égal à un envoi reste humain
+BRIEF = re.compile(r'Lis en entier \S.* et exécute-le\.?', re.S)
+
+
 def envoyes(path):
-	"""Empreintes des mots passés à `cate agent send` ou `agence` dans un journal (jamais rendues)."""
-	res = set()
-	for d, m, _ in evenements(path):
+	"""([(empreinte, instant)] des mots passés à `cate agent send` ou `agence`, [instant] des `cate agent start`)
+	d'un journal ; les empreintes ne sont jamais rendues."""
+	envois, lancements = [], []
+	for d, m, t in evenements(path):
 		for b in m.get('content') if isinstance(m.get('content'), list) else []:
 			cmd = b.get('input', {}).get('command') if isinstance(b, dict) and b.get('name') == 'Bash' else None
 			try:
-				mots = shlex.split(cmd) if isinstance(cmd, str) else []
+				mots = shlex.split(cmd) if isinstance(cmd, str) and t is not None else []
 			except ValueError:
 				continue
 			for i, w in enumerate(mots):
-				if os.path.basename(w) == 'agence' or (w == 'send' and mots[i - 1:i] == ['agent']):
-					res.update(empreinte(x) for x in mots[i + 1:])
+				if w == 'start' and mots[i - 1:i] == ['agent']:
+					lancements.append(t)
 					break
-	return res
+				if os.path.basename(w) == 'agence' or (w == 'send' and mots[i - 1:i] == ['agent']):
+					envois += [(empreinte(x), t) for x in mots[i + 1:]]
+					break
+	return envois, lancements
+
+
+def juste_apres(t, instants):
+	return any(0 <= t - x <= FENETRE_S for x in instants)
 
 
 def interventions(chemins):
 	"""Couples (instant, 'humain' | 'machine' | 'systeme') triés ; aucun texte rendu (spec 011, plan décision 1).
 
-	`machine` : préfixes de cause() ou texte égal à un envoi `cate agent send` / `agence` d'un autre journal.
+	`machine` : préfixes de cause() ; brief de lancement (premier message d'un journal, à la forme « Lis en entier
+	<chemin> et exécute-le » ou reçu juste après un `cate agent start` d'un autre journal) ; texte d'au moins MOTS_MIN
+	mots égal à un envoi `cate agent send` / `agence` d'un autre journal et reçu juste après lui.
 	`systeme` : un tour `assistant` (une fois par message.id) ou un résultat d'outil."""
 	sent = [envoyes(p) for p in chemins]
 	seen, res = set(), []
 	for i, path in enumerate(chemins):
-		autres = set().union(*(s for j, s in enumerate(sent) if j != i))
+		envois = [e for j, s in enumerate(sent) if j != i for e in s[0]]
+		lancements = [x for j, s in enumerate(sent) if j != i for x in s[1]]
+		premier = True
 		for d, m, t in evenements(path):
 			if t is None:
 				continue
@@ -235,8 +252,12 @@ def interventions(chemins):
 				res.append((t, 'systeme'))
 			elif d.get('type') == 'user':
 				c = ''.join(b.get('text', '') for b in c if isinstance(b, dict)) if isinstance(c, list) else c
-				machine = kind != 'autre' or (isinstance(c, str) and empreinte(c) in autres)
-				res.append((t, 'machine' if machine else 'humain'))
+				c = c.strip() if isinstance(c, str) else ''
+				brief = premier and (BRIEF.fullmatch(c) or juste_apres(t, lancements))
+				premier = False
+				h = empreinte(c)
+				envoi = len(c.split()) >= MOTS_MIN and juste_apres(t, [x for e, x in envois if e == h])
+				res.append((t, 'machine' if kind != 'autre' or brief or envoi else 'humain'))
 	return sorted(res)
 
 
