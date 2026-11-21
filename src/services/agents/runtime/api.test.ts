@@ -212,8 +212,11 @@ describe('cate.agent.*', () => {
     const impl = agentsCapabilityImpl(agents, starter, {} as never)
     const fromCli = await handlers.send({ targetPanelId: 'term', prompt: 'one' }, ctx()) as { promptId: string }
     const fromClient = await impl.send({ panelId: 'term', prompt: 'two' }, {} as never)
-    expect(Object.keys(fromCli)).toEqual(['promptId'])
-    expect(Object.keys(fromClient)).toEqual(['promptId'])
+    expect(Object.keys(fromCli)).toEqual(['promptId', 'state', 'ahead'])
+    expect(Object.keys(fromClient)).toEqual(['promptId', 'state', 'ahead'])
+    // The caller learns it waits, and behind how many prompts.
+    expect(fromCli).toMatchObject({ state: 'queued', ahead: 0 })
+    expect(fromClient).toMatchObject({ state: 'queued', ahead: 1 })
     expect(agents.prompts.of('term').map((prompt) => [prompt.id, prompt.text, prompt.state]))
       .toEqual([[fromCli.promptId, 'one', 'queued'], [fromClient.promptId, 'two', 'queued']])
     // And both refuse an agent that is still starting the same way.

@@ -1,5 +1,5 @@
 import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
-import type { AgentConversation, AgentConversationChange } from './conversation'
+import type { SentPrompt, AgentConversation, AgentConversationChange } from './conversation'
 import type { AgentHookAgentState } from './hooks'
 import type { PanelAgentState } from './session'
 import type { AgentId } from './registry'
@@ -75,7 +75,7 @@ export const agentsCapability = defineCapability('agents', {
      *  outcome shows in the conversation's prompts. `attachments`: files that
      *  go with it, absolute paths on the runtime's machine (a prompt of only
      *  attachments may be empty). */
-    send: method<{ panelId: string; prompt: string; attachments?: string[] }, { promptId: string }>({ mutates: true }),
+    send: method<{ panelId: string; prompt: string; attachments?: string[] }, SentPrompt>({ mutates: true }),
     /** Takes back a queued or failed prompt (its text and attachments, for
      *  the composer); null when there is none. */
     withdraw: method<{ panelId: string; promptId: string }, { prompt: string; attachments: string[] }>({ mutates: true }),

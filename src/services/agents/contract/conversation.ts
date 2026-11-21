@@ -52,6 +52,14 @@ export interface AgentPrompt {
   error?: string
 }
 
+/** What `cate agent send` answers: the prompt's id and where it stands. A busy
+ *  agent takes it after its turn, behind `ahead` prompts, not during it. */
+export interface SentPrompt {
+  promptId: string
+  state: AgentPrompt['state']
+  ahead: number
+}
+
 /** A panel's agent conversation as the `agents.conversation` channel carries
  *  it: the messages and the agent's state, read together, so a turn that
  *  ended arrives with its reply. A message's id is its index. */
