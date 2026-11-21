@@ -19,7 +19,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
   agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
-  agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) ; active, rejetée, révoquée au clic
+  agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n>
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -790,13 +790,24 @@ def cmd_fiche(a):
 
 
 def cmd_decision(a):
-	"""Registre : add écrit une décision proposée ; list et show lisent. Active, rejetée, révoquée : au clic (lot 6)."""
+	"""Registre : add écrit une décision proposée et sa carte ; list et show lisent. Active, rejetée, révoquée : au clic."""
 	import backlog  # voir registres()
+	if a.action == 'add':
+		with tx() as st:  # décision et carte sous le même verrou ; l'état d'abord, comme ecrire_backlog
+			r, erreur = registres_sous_verrou()
+			if erreur:
+				raise Env(f'{erreur} ; rien écrit, corriger le fichier à la main')
+			try:
+				x = backlog.decision_ajouter(r['decisions'], a.objet, a.pourquoi, now_iso(), a.alternative or (), a.invalide or (),
+				                             a.structurante)
+			except backlog.Refus as err:
+				raise Refus(str(err))
+			carte_decision(st, r['decisions'], x)
+			dump(st)
+			backlog.ecrire(root(), 'decisions.json', r['decisions'])
+		return sortie(x, a.json, x['id'])
 	with registres() as r:
 		d = r['decisions']
-		if a.action == 'add':
-			x = backlog.decision_ajouter(d, a.objet, a.pourquoi, now_iso(), a.alternative or (), a.invalide or (), a.structurante)
-			return sortie(x, a.json, x['id'])
 		if a.action == 'show':
 			x = backlog.trouver(d['decisions'], a.id)
 			return sortie(x, a.json, decision_texte(x, long=True))
@@ -1215,6 +1226,8 @@ def click(path, form):
 	m = re.match(r'^/ask/(q\d+)$', path)
 	if m:
 		qid = m.group(1)
+		if 'clics' in find(load(), 'questions', qid):
+			return click_carte(qid, form)
 		with tx() as st:
 			q = find(st, 'questions', qid)
 			if q['answer'] is not None:
@@ -1268,7 +1281,111 @@ def click(path, form):
 		return click_perm(*m.groups())
 	if path == '/fiches/lancer':
 		return click_lancer((form.get('ids') or [''])[0].split(','))
+	if re.match(r'^/(decision/D[1-9]\d*/(valider|rejeter)|fiche/F[1-9]\d*/(relancer|abandonner))$', path):
+		return click_registre(path)
 	return 404, 'Action inconnue.'
+
+
+# ---------- registre au clic et revue de cap (spec 010, lot 6) ----------
+
+def poser_carte(st, question, options, clics):
+	"""Question du régisseur à l'humain (QuestionCard) dont l'option i mène au clic clics[i] ('' : fermer la carte)."""
+	qid = new_id(st, 'q')
+	n, _ = add_need(st, 'human', question, ref=qid, owner=OWNER_HUMAIN)
+	st['questions'].append({'id': qid, 'needId': n['id'], 'agent': None, 'question': question, 'options': options,
+	                        'action': None, 'answer': None, 'clics': clics})
+	return qid
+
+
+def fermer_carte(st, q, reponse, statut='done'):
+	q['answer'] = reponse
+	close_need(st, q['needId'], statut, f'réponse : {reponse}')
+
+
+def carte_decision(st, d, x):
+	"""Carte d'une décision proposée : Valider (active, révoque les actives qu'elle invalide), Rejeter."""
+	import backlog  # voir registres()
+	rev = ', '.join(f"{y['id']} ({y['objet']})" for y in backlog.revoquees(d, x))
+	marque = ' structurante' if x['structurante'] else ''
+	poser_carte(st, f"Décision{marque} {x['id']} : {x['objet']} ; pourquoi : {x['pourquoi']}" + (f' ; révoque {rev}' if rev else ''),
+	            [{'label': 'Valider', 'detail': 'active : elle fait foi' + (f', révoque {rev}' if rev else '')},
+	             {'label': 'Rejeter', 'detail': 'rejetée : rien ne change'}],
+	            [f"/decision/{x['id']}/valider", f"/decision/{x['id']}/rejeter"])
+
+
+def click_carte(qid, form):
+	"""Option d'une carte du régisseur : son clic, ou '' (Vu) qui la ferme ; None : déjà fait."""
+	with tx() as st:
+		q = find(st, 'questions', qid)
+		choice = (form.get('choice') or [''])[0]
+		if q['answer'] is not None:
+			return 409, 'Question déjà répondue.'
+		if not (choice.isdigit() and int(choice) < len(q['clics'])):
+			return 400, 'Choisis une option : cette carte agit au clic.'
+		cible, label = q['clics'][int(choice)], q['options'][int(choice)]['label']
+		if cible is None:
+			return 409, f'{label} : déjà fait.'
+		if not cible:
+			note(find(st, 'needs', q['needId']), f'{label} cliqué', 'clic')
+			fermer_carte(st, q, label)
+			return 303, '/'
+	return click_registre(cible)
+
+
+def click_registre(path):
+	"""Clic sur le registre ou le backlog : /decision/<id>/valider|rejeter, /fiche/<id>/relancer|abandonner. Les cartes
+	ouvertes qui proposaient ce clic le notent et grisent les options de l'objet ; sans option restante, elles ferment."""
+	import backlog  # voir registres()
+	_, genre, oid, choix = path.split('/')
+	with tx() as st:
+		r, erreur = registres_sous_verrou()
+		if erreur:
+			return 409, f'{erreur} : rien changé.'
+		try:
+			if genre == 'decision':
+				ids = backlog.decider(r['decisions'], oid, choix)
+				fait = f"{oid} {'active' if choix == 'valider' else 'rejetée'}" + (f", {', '.join(ids[1:])} révoquée(s)" if ids[1:] else '')
+			else:
+				backlog.reviser(r['backlog'], oid, choix, now_iso())
+				fait = f"{oid} {'relancée' if choix == 'relancer' else 'abandonnée'}"
+		except backlog.Refus as err:
+			return 409, f'{err} : rien changé.'
+		for q in st['questions']:
+			if q['answer'] is None and path in (q.get('clics') or []):
+				note(find(st, 'needs', q['needId']), f"{q['options'][q['clics'].index(path)]['label']} cliqué : {fait}", 'clic')
+				q['clics'] = [None if c and c.split('/')[2] == oid else c for c in q['clics']]
+				if not any(q['clics']):
+					fermer_carte(st, q, fait)
+		if genre == 'decision' and st['panels'].get('interlocuteur'):
+			notify(st['panels']['interlocuteur'], f'Registre, clic de {nom()} : {fait}.')
+		dump(st)
+		backlog.ecrire(root(), 'decisions.json' if genre == 'decision' else 'backlog.json', r['decisions' if genre == 'decision' else 'backlog'])
+	return 303, '/'
+
+
+def revue_tour(st, r, maintenant):
+	"""Tour du régisseur, sous le verrou : revue de cap due (7 jours après la précédente, sinon après la première fiche) :
+	derniereRevue posée, une carte unique si quelque chose dérive ; la carte précédente restée ouverte est remplacée."""
+	import backlog  # voir registres()
+	b = r['backlog']
+	if not backlog.revue_due(b['derniereRevue'], min((f['creee'] for f in b['fiches']), default=None), maintenant):
+		return
+	b['derniereRevue'] = maintenant
+	c = backlog.revue(b, r['decisions'], [n for n in st['needs'] if n['status'] == 'open' and n['overBudget']], maintenant)
+	if not c:
+		return
+	for q in st['questions']:
+		if q['answer'] is None and q['question'].startswith('Revue de cap'):
+			fermer_carte(st, q, 'remplacée par la revue suivante', 'dropped')
+	parties = [('en discussion depuis plus de 14 jours', [f['id'] for f in c['perimees']]),
+	           ('budgets dépassés', [f"{n['id']} {n['title']}" for n in c['depassements']]),
+	           ('décisions structurantes de la semaine', [f"{x['id']} {x['objet']}" for x in c['structurantes']]),
+	           ('vision hors référentiel', [f"{f['id']} ({f['vision']})" for f in c['horsVision']])]
+	fs = c['perimees']
+	poser_carte(st, 'Revue de cap : ' + ' ; '.join(f"{t} : {', '.join(xs)}" for t, xs in parties if xs),
+	            [{'label': f"{v} {f['id']}", 'detail': f['titre']} for f in fs for v in ('Relancer', 'Abandonner')]
+	            + [{'label': 'Vu', 'detail': 'fermer la revue'}],
+	            [f"/fiche/{f['id']}/{v}" for f in fs for v in ('relancer', 'abandonner')] + [''])
 
 
 # ---------- clic « Lancer » et fiches au tour (spec 010, lot 4) ----------
@@ -1387,6 +1504,7 @@ def fiches_tour(st):
 	st['lot'] = [i for i in st['lot'] if etats.get(i) == 'prête']
 	if st['lot']:
 		lancer_fiches(st, r, list(st['lot']), 'Place libre')
+	revue_tour(st, r, maintenant)
 	st['backlog'] = vue_backlog(st, r)
 	if json.dumps(b) != avant:
 		ecrire_backlog(st, r)
@@ -3278,7 +3396,7 @@ def parser():
 	da.add_argument('objet')
 	da.add_argument('--pourquoi', required=True)
 	da.add_argument('--alternative', action='append', help='alternative écartée (répétable)')
-	da.add_argument('--invalide', action='append', help="ce qu'elle invalide (répétable)")
+	da.add_argument('--invalide', action='append', help="ce qu'elle invalide (répétable) ; D<n> actif : révoqué au clic Valider")
 	da.add_argument('--structurante', action='store_true')
 	des.add_parser('list').add_argument('--active', action='store_true')
 	des.add_parser('show').add_argument('id')

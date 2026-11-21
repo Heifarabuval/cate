@@ -20,6 +20,8 @@ TYPES = ('bug', 'idee', 'retour', 'audit', 'tache')
 PRIORITES = ('P1', 'P2', 'P3')
 STATUTS = ('proposée', 'active', 'rejetée', 'révoquée')
 EXIGES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'budgetJetons', 'vision')  # pour passer prête
+# Référentiel des points de vision (spec 010, Q2) : couches et FR de la spec 009. Hors liste : signalée par la revue, jamais refusée.
+VISION = tuple(f'couche-{i}' for i in range(1, 5)) + tuple(f'FR-{i:03d}' for i in range(1, 15))
 
 _txt = lambda v: isinstance(v, str)  # noqa: E731
 _txt_nul = lambda v: v is None or isinstance(v, str)  # noqa: E731
@@ -251,6 +253,39 @@ def decisions_actives(d):
 	return [x for x in d['decisions'] if x['statut'] == 'active']
 
 
+def revoquees(d, x):
+	"""Décisions actives que x invalide (ids cités dans x['invalide'])."""
+	return [y for y in decisions_actives(d) if y['id'] in x['invalide'] and y['id'] != x['id']]
+
+
+def decider(d, did, choix):
+	"""Clic sur une décision proposée (lot 6) : valider la pose active et révoque les actives qu'elle invalide
+	(revoqueePar = did) ; rejeter la pose rejetée. Rend les ids changés ; Refus si elle n'est plus proposée."""
+	x = trouver(d['decisions'], did)
+	if x['statut'] != 'proposée':
+		raise Refus(f"{did} est déjà {x['statut']}")
+	if choix == 'rejeter':
+		x['statut'] = 'rejetée'
+		return [did]
+	anciennes = revoquees(d, x)
+	for y in anciennes:
+		y.update(statut='révoquée', revoqueePar=did)
+	x['statut'] = 'active'
+	return [did] + [y['id'] for y in anciennes]
+
+
+def reviser(b, fid, choix, maintenant):
+	"""Clic de la revue de cap sur une fiche en discussion : relancer remet maj à maintenant ; abandonner la passe
+	abandonnée (état terminal, rien supprimé). Refus si elle n'est plus en discussion."""
+	f = trouver(b['fiches'], fid)
+	if f['etat'] != 'discussion':
+		raise Refus(f"{fid} est {f['etat']}")
+	noter(b, fid, 'relancée (revue de cap)' if choix == 'relancer' else 'abandonnée (revue de cap)', maintenant, par='clic')
+	if choix == 'abandonner':
+		f['etat'] = 'abandonnée'
+	return f
+
+
 # ---------- détections (lot 2) : fonctions pures, aucun appel externe (SC-006) ----------
 
 def chevauche(a, b):
@@ -330,6 +365,16 @@ def revue_due(derniere, premiere_fiche, maintenant, jours=7):
 	"""7 jours après la revue précédente, sinon après la première fiche ; jamais sur un backlog vide."""
 	depuis = derniere or premiere_fiche
 	return depuis is not None and _age(depuis, maintenant) >= timedelta(days=jours)
+
+
+def revue(b, d, depassements, maintenant):
+	"""Contenu de la carte de revue de cap (FR-009) : fiches périmées, besoins dont le budget est dépassé (tels que
+	passés), décisions structurantes des 7 derniers jours, fiches dont la vision est hors référentiel ; None si rien."""
+	r = {'perimees': perimees(b['fiches'], maintenant),
+	     'depassements': list(depassements),
+	     'structurantes': [x for x in d['decisions'] if x['structurante'] and _age(x['date'], maintenant) <= timedelta(days=7)],
+	     'horsVision': [f for f in b['fiches'] if f['etat'] not in TERMINAUX and f['vision'] and f['vision'] not in VISION]}
+	return r if any(r.values()) else None
 
 
 def consomme(mesures, panneaux):
