@@ -41,11 +41,12 @@ HORS_LISTE = {
 	'tests': 'tdd-strict', 'speckit': 'souvent', 'verification': 'croisee', 'preuve': ['pr-mergee', 'deploiement'],
 	'agents.max': 17, 'declencheurs.actifs': ['T1', 'T99'], 'envoi.slack.variable': 'xoxp-123-secret',
 	'envoi.slack.fichier': 'xoxp-123-secret', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously-skip-permissions',
-	'modele.implementation': ['sonnet'], 'modele.structurant': '', 'notifications.systeme': True,
+	'modele.structurant': '', 'notifications.systeme': True,
 	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
 }
 # Spec 010, lot 7 (FR-010, SC-003) : modèle par rôle, proposé, jamais choisi par le code ; null hors des presets.
-MODELES = {'modele.tri': None, 'modele.interlocuteur': None, 'modele.implementation': None, 'modele.structurant': None}
+# corr-008 (b) : le modèle d'un agent de travail est agents.modele seul, modele.implementation est coupée.
+MODELES = {'modele.tri': None, 'modele.interlocuteur': None, 'modele.structurant': None}
 DEFAUT = {**NEUTRE, **MODELES}  # valeurs effectives sans aucun fichier
 DEFAUT_PR_TDD = {**PR_TDD, **MODELES}
 
@@ -374,7 +375,7 @@ class Presets(unittest.TestCase):
 
 	def test_cles_des_presets_dans_le_schema(self):
 		schema = pratiques.schema()
-		self.assertEqual(len(schema['cles']), 21)  # 12 de 005, 4 modele.* de 010, 4 de 008, 1 de 013
+		self.assertEqual(len(schema['cles']), 20)  # 12 de 005, 3 modele.* de 010 (corr-008 b), 4 de 008, 1 de 013
 		for nom, p in schema['presets'].items():
 			with self.subTest(preset=nom):
 				self.assertLessEqual(set(p['valeurs']), set(schema['cles']))
@@ -418,10 +419,16 @@ class ModeleParRole(Base):
 				self.assertEqual((pol['valeurs'][cle], pol['sources'][cle]), (None, 'projet'))
 
 	def test_une_commande_et_preset_sans_effet(self):
-		self.assertEqual(pratiques.regler(self.racine, self.home, 'modele.implementation', 'sonnet'), self.projet)
-		self.assertEqual(self.lit(self.projet), {'modele': {'implementation': 'sonnet'}})
+		self.assertEqual(pratiques.regler(self.racine, self.home, 'modele.structurant', 'sonnet'), self.projet)
+		self.assertEqual(self.lit(self.projet), {'modele': {'structurant': 'sonnet'}})
 		pratiques.poser_preset(self.racine, self.home, 'pr-tdd')
-		self.assertEqual(self.charge()['valeurs']['modele.implementation'], 'sonnet')  # un preset ne touche pas au modèle
+		self.assertEqual(self.charge()['valeurs']['modele.structurant'], 'sonnet')  # un preset ne touche pas au modèle
+
+	def test_une_seule_cle_pour_le_modele_d_un_agent_de_travail(self):
+		"""corr-008 (b) : coupe nette, sans alias : modele.implementation est une clé inconnue."""
+		self.assertNotIn('modele.implementation', pratiques.schema()['cles'])
+		self.ecrit(self.projet, {'modele': {'implementation': 'sonnet'}})
+		self.refus('modele.implementation', self.projet)
 
 	def test_refus_nomme_la_cle(self):
 		for v in ('opus --dangerously-skip-permissions', '', 42, ['sonnet'], True):

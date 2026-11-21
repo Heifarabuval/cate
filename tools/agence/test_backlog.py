@@ -511,8 +511,8 @@ class ModeleDefaut(Base):
 		self.agence('fiche', 'add', 'y', '--decision', 'D1')
 		self.assertEqual((self.modele('F1'), self.modele('F2')), (None, None))
 
-	def test_implementation_puis_structurant(self):
-		self.regle('modele.implementation', 'sonnet')
+	def test_agents_modele_puis_structurant(self):
+		self.regle('agents.modele', 'sonnet')
 		self.regle('modele.structurant', 'opus')
 		self.agence('decision', 'add', 'o', '--pourquoi', 'p', '--structurante')
 		self.agence('decision', 'add', 'o2', '--pourquoi', 'p')
@@ -529,7 +529,7 @@ class ModeleDefaut(Base):
 		self.assertEqual((self.modele('F1'), self.modele('F2')), (None, 'opus'))
 
 	def test_modele_explicite_garde(self):
-		self.regle('modele.implementation', 'sonnet')
+		self.regle('agents.modele', 'sonnet')
 		self.agence('fiche', 'add', 'x', '--modele', 'haiku')
 		self.assertEqual(self.modele('F1'), 'haiku')
 		self.agence('fiche', 'edit', 'F1', '--titre', 'x2')  # une édition ne repose pas le défaut
@@ -570,7 +570,7 @@ class ModeleAuLancement(test_lancer.Lancer):
 	def test_start_passe_modele_interlocuteur(self):
 		import pratiques
 		pratiques.regler(self.tmp, os.environ['HOME'], 'modele.interlocuteur', 'haiku')
-		pratiques.regler(self.tmp, os.environ['HOME'], 'modele.implementation', 'opus')  # un autre rôle n'y va pas
+		pratiques.regler(self.tmp, os.environ['HOME'], 'agents.modele', 'opus')  # un autre rôle n'y va pas
 		with agence.tx() as st:
 			st['panels'] = {}
 		self.assertEqual(self.cli('start')[0], 0)

@@ -11,7 +11,7 @@ Tu tournes dans un terminal Cate, à côté du panneau agence du projet. L'humai
 
 1. `agence decision list --active` : les décisions actives du projet. Elles font foi.
 2. `agence fiche list` : le backlog. Rien n'est perdu entre deux sessions : tout est dans ces deux fichiers, relis-les.
-3. `agence pratiques show` : la politique de flux du projet (tests, issue, livraison) et le modèle par rôle s'il est posé. Tu ne choisis jamais un modèle toi-même ; une fiche ajoutée sans `--modele` reçoit le modèle par défaut posé dans la politique (`modele.structurant` si elle cite une décision structurante, sinon `modele.implementation`), aucun s'il n'est pas posé.
+3. `agence pratiques show` : la politique de flux du projet (tests, issue, livraison) et le modèle par rôle s'il est posé. Tu ne choisis jamais un modèle toi-même ; une fiche ajoutée sans `--modele` reçoit le modèle par défaut posé dans la politique (`modele.structurant` si elle cite une décision structurante, sinon `agents.modele`, le modèle des agents de travail), aucun s'il n'est pas posé ou vaut `auto`.
 
 ## À chaque idée
 

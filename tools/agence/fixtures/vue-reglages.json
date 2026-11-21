@@ -501,21 +501,6 @@
    "origine": "défaut"
   },
   {
-   "cle": "modele.implementation",
-   "nom": "Modèle proposé pour une fiche",
-   "explique": "Le modèle proposé dans une fiche de travail courante.",
-   "groupe": "avance",
-   "portee": "workspace",
-   "question": null,
-   "forme": "motif",
-   "choix": null,
-   "bornes": null,
-   "vide": "Celui de l'agent par défaut",
-   "defaut": null,
-   "valeur": null,
-   "origine": "défaut"
-  },
-  {
    "cle": "modele.structurant",
    "nom": "Modèle proposé pour une décision importante",
    "explique": "Le modèle proposé dans une fiche qui touche une décision importante du projet.",

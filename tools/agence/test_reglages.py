@@ -240,7 +240,7 @@ HORS_LISTE = {
 	'tests': 'tdd-strict', 'speckit': 'souvent', 'verification': 'croisee', 'preuve': ['pr-mergee', 'deploiement'],
 	'agents.max': 17, 'declencheurs.actifs': ['T1', 'T99'], 'envoi.slack.variable': 'jeton-secret-1',
 	'envoi.slack.fichier': 'jeton-secret-2', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously',
-	'modele.implementation': ['sonnet'], 'modele.structurant': '', 'notifications.systeme': True,
+	'modele.structurant': '', 'notifications.systeme': True,
 	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
 }
 

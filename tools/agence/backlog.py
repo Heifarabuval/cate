@@ -222,9 +222,11 @@ def ajouter(b, titre, maintenant, **champs):
 
 def modele_propose(valeurs, ids, registre):
 	"""Modèle d'une fiche créée sans --modele (spec 010, FR-010) : modele.structurant si elle cite une décision
-	structurante, sinon modele.implementation ; null s'il n'est pas posé. Le code propose ce que l'humain a posé, rien de plus."""
-	structurante = any(x['structurante'] for x in registre if x['id'] in ids)
-	return valeurs['modele.structurant' if structurante else 'modele.implementation']
+	structurante, sinon agents.modele (celui que prend une tâche, spec 008) ; null s'il n'est pas posé ou vaut auto.
+	Le code propose ce que l'humain a posé, rien de plus."""
+	if any(x['structurante'] for x in registre if x['id'] in ids):
+		return valeurs['modele.structurant']
+	return None if valeurs['agents.modele'] == 'auto' else valeurs['agents.modele']
 
 
 def modifier(b, fid, maintenant, **champs):

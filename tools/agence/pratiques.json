@@ -64,9 +64,6 @@
   "modele.interlocuteur": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "groupe": "avance", "portee": "workspace",
    "nom": "Modèle de l'interlocuteur", "explique": "Le modèle de l'agent qui discute avec vous et écrit les fiches.",
    "vide": "Celui de l'agent par défaut"},
-  "modele.implementation": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "groupe": "avance", "portee": "workspace",
-   "nom": "Modèle proposé pour une fiche", "explique": "Le modèle proposé dans une fiche de travail courante.",
-   "vide": "Celui de l'agent par défaut"},
   "modele.structurant": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "groupe": "avance", "portee": "workspace",
    "nom": "Modèle proposé pour une décision importante", "explique": "Le modèle proposé dans une fiche qui touche une décision importante du projet.",
    "vide": "Celui de l'agent par défaut"}
