@@ -100,6 +100,20 @@ it('sends the chosen value as published, never a label', async () => {
   expect(send).toHaveBeenLastCalledWith({ kind: 'pratique.set', cle: 'zed', valeur: 'Félix' })
 })
 
+it('sends one write for a double click on « Enregistrer » while the first is pending', async () => {
+  let settle!: (value: unknown) => void
+  send.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve }))
+  render(pratiques())
+  control<HTMLInputElement>('Nom du chat', 'input[type="text"]').value = 'Félix'
+  const enregistrer = [...field('Nom du chat').querySelectorAll('button')].find((b) => b.textContent === 'Enregistrer')!
+  act(() => {
+    enregistrer.click()
+    enregistrer.click()
+  })
+  await act(async () => { settle({ ok: true }) })
+  expect(send).toHaveBeenCalledTimes(1)
+})
+
 it('folds « Avancé » by default and keeps the essentials open', () => {
   render(pratiques())
   const avance = host.querySelector('details')!
