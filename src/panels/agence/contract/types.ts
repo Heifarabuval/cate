@@ -174,15 +174,17 @@ export type BacklogView = {
   erreur: string | null
 }
 
-/** Consumed against budget over the lancées: consumed is null as soon as one is
- *  unknown (a partial sum would read as less than spent); null without a lancée. */
-export function totalLot(fiches: FicheView[]): { consomme: number | null; budget: number } | null {
+/** Consumed against budget over the lancées: each sum is null as soon as one of its
+ *  terms is unknown (a partial sum would read as less than spent or allowed);
+ *  null without a lancée. */
+export function totalLot(fiches: FicheView[]): { consomme: number | null; budget: number | null } | null {
   const lancees = fiches.filter((fiche) => fiche.etat === 'lancée')
   if (lancees.length === 0) return null
-  const unknown = lancees.some((fiche) => fiche.consomme === null)
+  const sum = (values: Array<number | null>): number | null =>
+    values.some((value) => value === null) ? null : values.reduce<number>((total, value) => total + value!, 0)
   return {
-    consomme: unknown ? null : lancees.reduce((sum, fiche) => sum + (fiche.consomme ?? 0), 0),
-    budget: lancees.reduce((sum, fiche) => sum + (fiche.budgetJetons ?? 0), 0),
+    consomme: sum(lancees.map((fiche) => fiche.consomme)),
+    budget: sum(lancees.map((fiche) => fiche.budgetJetons)),
   }
 }
 
