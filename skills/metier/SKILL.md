@@ -42,7 +42,7 @@ Rédige la description, puis propose la PR qui l'ajoute au catalogue. La personn
 
 ## Écrire : toujours par une carte
 
-Un agent n'écrit jamais directement dans un outil externe. La garde refuse tout appel d'écriture sans carte validée.
+Un agent n'écrit jamais directement dans un outil externe. Si la garde de l'agence est installée et l'outil au catalogue, elle refuse tout appel d'écriture sans carte validée.
 
 1. Prépare la carte : `agence draft new --cible outil:<connecteur>:<outil> '<arguments JSON>'`.
 2. L'humain clique Envoyer sur la page de la carte.

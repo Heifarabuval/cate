@@ -456,9 +456,11 @@ class Detections(unittest.TestCase):
 		texte = backlog.brief(f, [], ecriture=['Outil factice (factice)'])
 		self.assertIn('droits : modifier seulement src/a.ts (consigne, aucune garde ne bloque un autre fichier)', texte)
 		self.assertIn('écriture : Outil factice (factice), par carte (agence draft new --cible outil:<connecteur>:<outil>) ; '
-		              'la garde agence refuse tout appel sans carte cliquée', texte)
+		              "si la garde de l'agence est installée et l'outil au catalogue, elle refuse tout appel sans carte cliquée",
+		              texte)
 		sans = backlog.brief(f, [])
-		self.assertIn('écriture : aucun connecteur ; la garde agence refuse toute écriture par un connecteur', sans)
+		self.assertIn("écriture : aucun connecteur ; si la garde de l'agence est installée et l'outil au catalogue, elle refuse "
+		              'toute écriture par un connecteur', sans)
 
 	def test_zero_appel_externe(self):
 		def interdit(*a, **k):

@@ -430,12 +430,16 @@ def consomme(mesures, panneaux):
 	return sum(vals) if vals else None
 
 
+GARDE = "si la garde de l'agence est installée et l'outil au catalogue"
+
+
 def brief(fiche, decisions, plan=None, ecriture=()):
 	"""Texte fixe donné à l'orchestrateur : un champ par ligne, dans l'ordre, puis les décisions liées actives
 	(objet ; pourquoi). Une décision proposée, rejetée ou révoquée n'est pas citée. plan : la clé plan.validation
 	(spec 013, lot 6) ; toujours, ou structurante avec une décision liée active structurante : une ligne de plus.
 	Droits (spec 013, T072) : les fichiers de la fiche sont une consigne écrite, aucune garde ne les impose ; ecriture
-	(noms des connecteurs ouverts en écriture, spec 012) : la garde send refuse tout appel sans carte cliquée."""
+	(noms des connecteurs ouverts en écriture, spec 012) : la garde de l'agence refuse un appel sans carte cliquée, si
+	elle est installée (agence hooks install) et l'outil au catalogue ; le brief le dit tel quel."""
 	val = lambda v: (', '.join(v) if isinstance(v, list) else '' if v is None else str(v)) or '-'  # noqa: E731
 	liees = [x for x in decisions if x['id'] in fiche['decisions'] and x['statut'] == 'active']
 	return '\n'.join([f"{fiche['id']} : {fiche['titre']}"] +
@@ -447,8 +451,8 @@ def brief(fiche, decisions, plan=None, ecriture=()):
 	                  if plan == 'toujours' or (plan == 'structurante' and any(x['structurante'] for x in liees)) else []) +
 	                 [f"droits : modifier seulement {val(fiche['fichiers'])} (consigne, aucune garde ne bloque un autre fichier)",
 	                  (f"écriture : {', '.join(ecriture)}, par carte (agence draft new --cible outil:<connecteur>:<outil>) ; "
-	                   'la garde agence refuse tout appel sans carte cliquée') if ecriture else
-	                  'écriture : aucun connecteur ; la garde agence refuse toute écriture par un connecteur'])
+	                   f'{GARDE}, elle refuse tout appel sans carte cliquée') if ecriture else
+	                  f'écriture : aucun connecteur ; {GARDE}, elle refuse toute écriture par un connecteur'])
 
 
 # ---------- lentilles (lot 8, FR-007) ----------
