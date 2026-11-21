@@ -2235,7 +2235,11 @@ the folder as it is now and keeps the panel installed. Refusing removes the
 grant and never deletes the folder. From a terminal, `cate.app.*` (area
 Custom panels: `cliAppEnabled`, `cliAppControlEnabled`) lists the panels and
 the pending imports, exports a panel to `--out` and stages an import. None
-of its methods installs.
+of its methods installs. On the desktop, the custom panels page shows each
+pending import as an import card (`ImportCard`, only on a client with
+`webview`: source, fingerprint, files, permissions, red alerts, the diff of a
+replacement); Installer or Remplacer calls `apps.acceptImport` with the card's
+fingerprint, and replacing a local panel asks first.
 
 **The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
 writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,
