@@ -7,7 +7,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-PERSONNEL = re.compile(r'heifara|U02FQHK9FPD|/Users/|hermes', re.I)  # hermes couvre .hermes (spec 005, lot 2)
+# hermes couvre .hermes (spec 005, lot 2) ; .claude/state : dossier du setup d'un dev, pas de Claude Code (005, lot 4)
+PERSONNEL = re.compile(r'heifara|U02FQHK9FPD|/Users/|hermes|\.claude/state', re.I)
 # URL du fork : l'adresse du dépôt, pas un nom de personne.
 ADRESSE_FORK = re.compile(r'Heifarabuval/cate', re.I)
 # Seules lignes autorisées : la clé opaque de la valeur stockée (q303), une fois côté CLI, une fois côté panneau.

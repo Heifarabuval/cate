@@ -8,8 +8,8 @@ from test_portable import ADRESSE_FORK, PERSONNEL, REPO
 
 SKILL = os.path.join(REPO, 'skills', 'orchestrateur', 'SKILL.md')
 # 006 FR-009 : 105 % de 13 936 octets = 14 632. Relevé de l'ajout des lots passés avant sur ce fichier
-# (spec 009 T011) : 010-L4 et 4c5b8954, 13 936 -> 15 598, soit + 1 662.
-PLAFOND = 14632 + 1662
+# (spec 009 T011) : 010-L4 et 4c5b8954, 13 936 -> 15 598, soit + 1 662 ; 005-L4, 16 291 -> 16 742, soit + 451.
+PLAFOND = 14632 + 1662 + 451
 
 
 class RegleAttente(unittest.TestCase):

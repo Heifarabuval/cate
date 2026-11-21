@@ -36,5 +36,41 @@ class Lancer(unittest.TestCase):
 		self.assertNotIn(chr(0x2014), self.section)
 
 
+class Politique(unittest.TestCase):
+	"""Spec 005, lot 4, T060 : le skill lit la politique (agence pratiques) au lieu de réécrire un flux en dur."""
+
+	def setUp(self):
+		with open(SKILL, encoding='utf-8') as f:
+			self.texte = f.read()
+
+	def test_a_cite_show_et_brief(self):
+		self.assertIn('agence pratiques show', self.texte)
+		self.assertIn('agence pratiques brief', self.texte)
+
+	def test_b_aucun_flux_personnel(self):
+		for chaine in ('Hermes', 'Sonnet', '--rebase', 'un vérificateur différent par implémenteur'):
+			with self.subTest(chaine=chaine):
+				self.assertNotIn(chaine, self.texte)
+
+	def test_c_condition_de_fin_renvoie_a_la_politique(self):
+		lignes = [l for l in self.texte.splitlines() if 'ondition de fin' in l and '--done-when' in l]
+		self.assertTrue(lignes, 'ligne de la condition de fin absente')
+		for l in lignes:
+			self.assertIn('agence pratiques show', l)
+		self.assertNotRegex(self.texte, r'(pr-merged|issue-closed|ci-green):N')
+
+	def test_c_need_pr_rattache_la_pr(self):
+		self.assertRegex(self.texte, r'agence need pr <besoin> <N>')
+
+	def test_c_phrases_conditionnelles(self):
+		for cle in ('livraison.mode', 'livraison.merge', 'verification', 'agents.max'):
+			with self.subTest(cle=cle):
+				self.assertIn(f'`{cle}`', self.texte)
+
+	def test_d_invariants_gardes(self):
+		self.assertIn('Jamais de merge, push sur `main`, force-push', self.texte)
+		self.assertIn('jamais deux implémenteurs sur le même fichier', self.texte)
+
+
 if __name__ == '__main__':
 	unittest.main()
