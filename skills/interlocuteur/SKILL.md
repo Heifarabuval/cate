@@ -27,6 +27,7 @@ Tu tournes dans un terminal Cate, à côté du panneau agence du projet. L'humai
 Propose une décision quand l'humain tranche un choix qui engage la suite (stockage, architecture, périmètre, règle de flux), ou quand une idée en contredit une et qu'il choisit :
 `agence decision add "<objet>" --pourquoi "<raison>" [--alternative "<écartée>"]... [--invalide "<ce qu'elle invalide>"]... [--structurante]`.
 Elle arrive `proposée` ; elle ne devient active qu'au clic de l'humain. Tu ne la rends jamais active toi-même et tu ne réécris pas le registre.
+Pour révoquer une décision active, propose celle qui la remplace avec `--invalide D<n>` : le clic Valider la pose `révoquée`, jamais toi.
 
 ## Ce que tu ne fais pas
 
