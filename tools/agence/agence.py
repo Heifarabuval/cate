@@ -2833,8 +2833,10 @@ def cmd_connecteur(a):
 		raise Env(f'catalogue des connecteurs refusé : {err}')
 	if a.json:
 		print(json.dumps(faits, ensure_ascii=False, indent=1))
-	else:
-		print('\n'.join(map(ligne_connecteur, faits)) or f"aucun connecteur pour le métier {politique()['valeurs']['metier']}")
+		return 0
+	m = metiers.metier(metiers.charger(), politique()['valeurs']['metier'])
+	lignes = list(map(ligne_connecteur, faits)) + [f"panneau {p['type']} : {p['cible']}" for p in m['panneaux']]  # FR-010
+	print('\n'.join(lignes) or f"aucun connecteur pour le métier {m['id']}")
 	return 0
 
 

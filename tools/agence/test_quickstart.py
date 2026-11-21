@@ -21,6 +21,8 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import metiers  # noqa: E402
 REPO = os.path.dirname(os.path.dirname(HERE))
 SCRIPTS = os.path.join(REPO, 'scripts')
 FIXTURES = os.path.join(HERE, 'fixtures', 'settings')
@@ -173,7 +175,8 @@ class Amorcage(unittest.TestCase):
 		avant, apres = json.loads(self.original), lit_json(self.settings)
 		pre_avant, pre_apres = avant['hooks']['PreToolUse'], apres['hooks']['PreToolUse']
 		self.assertEqual(pre_apres[:len(pre_avant)], pre_avant)  # entrées d'origine intactes, dans l'ordre
-		self.assertEqual(len(pre_apres) - len(pre_avant), 2)  # les deux gardes du contrat
+		# les deux gardes du contrat, plus celle des serveurs des connecteurs livrés (spec 012)
+		self.assertEqual(len(pre_apres) - len(pre_avant), 2 + bool(metiers.serveurs(metiers.charger(HERE))))
 		self.assertEqual({k: v for k, v in apres.items() if k != 'hooks'}, {k: v for k, v in avant.items() if k != 'hooks'})
 		self.assertEqual({k: v for k, v in apres['hooks'].items() if k != 'PreToolUse'},
 		                 {k: v for k, v in avant['hooks'].items() if k != 'PreToolUse'})

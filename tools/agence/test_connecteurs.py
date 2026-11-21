@@ -166,6 +166,8 @@ class ConnecteurCheck(Base):
 		self.assertIn('navigateur, dernier recours, lecture seule', lignes['site-factice'])
 		self.assertIn('écriture par carte', lignes['factice'])
 		self.assertNotIn('messagerie-factice', out)  # hors du métier
+		self.assertIn('panneau navigateur : https://exemple.test/', out)  # FR-010 : panneaux du métier à ouvrir
+		self.assertIn('panneau perso : tags-attendus', out)
 
 	def test_mcp_absent_ou_non_connecte(self):
 		self.metier('chef-de-projet', ())

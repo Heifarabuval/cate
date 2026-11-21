@@ -1,4 +1,11 @@
 [
  {"id": "dev", "nom": "Développement", "explique": "Écrire et livrer du code : une tâche finit selon « Quand une tâche est finie ».",
-  "connecteurs": [], "panneaux": [], "validateur": [], "recettes": []}
+  "connecteurs": [], "panneaux": [], "validateur": [], "recettes": []},
+ {"id": "media-planner", "nom": "Media planner", "explique": "Rapprocher les dépenses réelles d'une campagne de son budget planifié et signaler l'écart.",
+  "connecteurs": ["regies-dsp", "tableur-budget"],
+  "panneaux": [{"type": "navigateur", "cible": "https://docs.google.com/spreadsheets/"}],
+  "validateur": [{"nom": "rapprochement-depenses", "type": "fichier",
+                  "explique": "L'export des totaux par régie, du budget planifié et de l'écart, enregistré dans le workspace."}],
+  "recettes": [{"nom": "rapprochement-hebdo", "declencheur": "chaque lundi", "action": "rapprocher les dépenses de la semaine du budget planifié",
+                "preuve": "rapprochement-depenses"}]}
 ]

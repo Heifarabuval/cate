@@ -146,5 +146,64 @@ class Catalogue(unittest.TestCase):
 				self.assertIsNone(metiers.SECRET_RE.search(f.read()), nom)
 
 
+# ---------- lot 5 : métier du cobaye et skill metier (FR-010, FR-012) ----------
+
+SKILL = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'skills', 'metier')
+
+
+class Cobaye(unittest.TestCase):
+	"""T051 : le media planner (hypothèse 009 Q4, research.md du lot 0), connecteurs classés au lot 0."""
+
+	def setUp(self):
+		self.cat = metiers.charger(HERE)
+		self.m = metiers.metier(self.cat, 'media-planner')
+
+	def test_metier_livre(self):
+		self.assertIsNotNone(self.m)
+		self.assertEqual([p['type'] for p in self.m['validateur']], ['fichier'])
+		self.assertTrue(self.m['recettes'])
+		self.assertTrue(self.m['panneaux'])
+
+	def test_regies_en_lecture_seule(self):
+		c = metiers.connecteur(self.cat, 'regies-dsp')
+		self.assertEqual((c['acces'], c['ecriture']), ('mcp', []))
+		self.assertIn('regies-dsp', self.m['connecteurs'])
+
+	def test_outil_qui_rend_un_jeton_jamais_autorise(self):
+		"""research.md, écart 1 : l'outil qui déchiffre les jetons n'est ni lecture ni écriture déclarée : la garde le
+		classe écriture (échec fermé) et aucune carte ne peut le viser (draft new refuse un outil non déclaré)."""
+		c, outil, sens = metiers.classer('mcp__mcp-dsp__dsp_get_token', self.cat)
+		self.assertEqual((c['id'], sens), ('regies-dsp', 'ecriture'))
+		self.assertNotIn(outil, c['lecture'] + c['ecriture'])
+
+
+class Skill(unittest.TestCase):
+	"""T050 : le skill renvoie aux commandes au lieu de recopier le catalogue."""
+
+	def setUp(self):
+		with open(os.path.join(SKILL, 'SKILL.md'), encoding='utf-8') as f:
+			self.texte = f.read()
+
+	def test_renvoie_aux_commandes(self):
+		for cmd in ('agence connecteur check', 'agence pratiques show', 'outil:'):
+			self.assertIn(cmd, self.texte)
+
+	def test_ne_recopie_aucun_id_ni_variable(self):
+		cat = metiers.charger(HERE)
+		fixtures = metiers.charger(FIXTURES)
+		ids = {c['id'] for c in cat['connecteurs'] + fixtures['connecteurs']} | {c.get('serveur') for c in cat['connecteurs']}
+		variables = {c['secret']['variable'] for c in cat['connecteurs'] + fixtures['connecteurs'] if c.get('secret')}
+		for mot in sorted((ids | variables) - {None}):
+			self.assertNotIn(mot, self.texte)
+
+	def test_evals(self):
+		with open(os.path.join(SKILL, 'evals.json'), encoding='utf-8') as f:
+			evals = json.load(f)
+		self.assertEqual(evals['skill_name'], 'metier')
+		self.assertGreaterEqual(len(evals['evals']), 3)
+		for e in evals['evals']:
+			self.assertTrue(e['prompt'] and e['expected_output'])
+
+
 if __name__ == '__main__':
 	unittest.main()

@@ -24,6 +24,7 @@ def fichiers_livres():
 	for base, filtre in (
 		('tools/agence', lambda f: (f == 'agence' or f == 'agence-hook' or f.endswith('.py')) and not f.startswith('test_')),
 		('skills/orchestrateur', lambda f: True),
+		('skills/metier', lambda f: True),
 		('src/panels/agence', lambda f: f.endswith(('.ts', '.tsx', '.json')) and '.test.' not in f),
 		('src/shells/desktop/ui/panels/agence', lambda f: f.endswith(('.ts', '.tsx')) and '.test.' not in f),
 	):
