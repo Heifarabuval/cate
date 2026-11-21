@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { AgenceOp, AgenceOpResult, PratiqueChamp, PratiqueValeur } from '@panels/agence/contract'
 import { InlineNotice } from '../../kernel/interaction'
 import { ActionButton, refusal, useAction } from './action'
@@ -25,6 +25,14 @@ export default function PremieresQuestions({ champs, disponible, onRestart, send
   const questions = champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
   const [index, setIndex] = useState(0)
   const [reponses, setReponses] = useState<Record<string, PratiqueValeur>>(() => Object.fromEntries(questions.map((champ) => [champ.cle, champ.valeur])))
+  // Free text typed but not saved with « Enregistrer »: kept on « Précédent », « Suivant » and « Terminer ».
+  const enCours = useRef<Record<string, PratiqueValeur>>({})
+  const saisies = () => ({ ...reponses, ...enCours.current })
+  const aller = (to: number) => {
+    setReponses(saisies())
+    enCours.current = {}
+    setIndex(to)
+  }
   const action = useAction()
   const restart = useAction()
   const finish = (key: string, op: AgenceOp) => void action.run(key, async () => {
@@ -61,7 +69,7 @@ export default function PremieresQuestions({ champs, disponible, onRestart, send
                 ))}
               </div>
             )
-            : <ChampControl champ={champ} value={reponses[champ.cle] ?? null} disabled={busy} onChange={answer} />}
+            : <ChampControl champ={champ} value={reponses[champ.cle] ?? null} disabled={busy} onChange={answer} onDraft={(valeur) => { enCours.current[champ.cle] = valeur }} />}
         </>
       )}
       {!disponible && (
@@ -74,12 +82,12 @@ export default function PremieresQuestions({ champs, disponible, onRestart, send
       )}
       {action.error && <InlineNotice tone="error" className="!text-primary">{action.error}</InlineNotice>}
       <div className="flex items-center gap-2">
-        {index > 0 && <ActionButton className={ACTION_PLAIN} disabled={busy} onClick={() => setIndex(index - 1)}>Précédent</ActionButton>}
+        {index > 0 && <ActionButton className={ACTION_PLAIN} disabled={busy} onClick={() => aller(index - 1)}>Précédent</ActionButton>}
         <span className="flex-1" />
         <ActionButton className={ACTION_PLAIN} disabled={blocked} busy={action.active === 'passer'} onClick={() => finish('passer', { kind: 'pratique.questions', passer: true })}>Passer</ActionButton>
         {champ && (last
-          ? <ActionButton className={ACTION} disabled={blocked} busy={action.active === 'terminer'} onClick={() => finish('terminer', { kind: 'pratique.questions', reponses })}>Terminer</ActionButton>
-          : <ActionButton className={ACTION} disabled={busy} onClick={() => setIndex(index + 1)}>Suivant</ActionButton>)}
+          ? <ActionButton className={ACTION} disabled={blocked} busy={action.active === 'terminer'} onClick={() => finish('terminer', { kind: 'pratique.questions', reponses: saisies() })}>Terminer</ActionButton>
+          : <ActionButton className={ACTION} disabled={busy} onClick={() => aller(index + 1)}>Suivant</ActionButton>)}
       </div>
     </section>
   )

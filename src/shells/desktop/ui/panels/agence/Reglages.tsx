@@ -23,11 +23,21 @@ export function enMots(champ: PratiqueChamp, value: PratiqueValeur): string {
   return Array.isArray(value) ? value.map(label).join(', ') : label(value)
 }
 
+/** A text field's value: trimmed, null when empty. */
+const texte = (raw: string): PratiqueValeur => raw.trim() || null
+
 const CONTROL = 'rounded border border-subtle bg-surface-2 px-1.5 py-0.5 text-[12px] text-primary disabled:opacity-60'
 
 /** The control of a field after its form: a list of named values, a bounded picker,
  *  one box per value of a list, a text field. `onChange` gets the value as published. */
-export function ChampControl({ champ, value, disabled, onChange }: { champ: PratiqueChamp; value: PratiqueValeur; disabled: boolean; onChange(value: PratiqueValeur): void }) {
+export function ChampControl({ champ, value, disabled, onChange, onDraft }: {
+  champ: PratiqueChamp
+  value: PratiqueValeur
+  disabled: boolean
+  onChange(value: PratiqueValeur): void
+  /** A text field's value as typed, before « Enregistrer ». */
+  onDraft?(value: PratiqueValeur): void
+}) {
   if (champ.forme === 'liste') {
     const list = Array.isArray(value) ? value : []
     return (
@@ -53,11 +63,10 @@ export function ChampControl({ champ, value, disabled, onChange }: { champ: Prat
         className="flex items-center gap-1.5"
         onSubmit={(event) => {
           event.preventDefault()
-          const text = (event.currentTarget.elements[0] as HTMLInputElement).value.trim()
-          onChange(text || null)
+          onChange(texte((event.currentTarget.elements[0] as HTMLInputElement).value))
         }}
       >
-        <input key={String(value)} type="text" aria-label={champ.nom} className={`${CONTROL} min-w-0 flex-1`} disabled={disabled} defaultValue={typeof value === 'string' ? value : ''} placeholder={champ.vide ?? ''} />
+        <input key={String(value)} type="text" aria-label={champ.nom} className={`${CONTROL} min-w-0 flex-1`} disabled={disabled} defaultValue={typeof value === 'string' ? value : ''} placeholder={champ.vide ?? ''} onChange={onDraft && ((event) => onDraft(texte(event.target.value)))} />
         <button type="submit" className={`${CONTROL} hover:text-primary`} disabled={disabled}>Enregistrer</button>
       </form>
     )

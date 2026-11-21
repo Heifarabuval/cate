@@ -125,3 +125,21 @@ it('carries the restart button when the banner has none', async () => {
   await click('Relancer le régisseur')
   expect(onRestart).toHaveBeenCalledTimes(1)
 })
+
+it('« Terminer » keeps the free text typed but not saved, also across « Précédent »', async () => {
+  const libre = [champ({}), champ({ cle: 'zed', question: 'Le nom du chat ?', forme: 'motif', choix: null, defaut: null, valeur: null, vide: 'Pas de chat' })]
+  act(() => root.render(<PremieresQuestions champs={libre} disponible send={send} />))
+  await click('Suivant')
+  const type = (text: string) => act(() => {
+    const input = host.querySelector<HTMLInputElement>('input[type="text"]')!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  type('Félix')
+  await click('Précédent')
+  await click('Suivant')
+  expect(host.querySelector<HTMLInputElement>('input[type="text"]')!.value).toBe('Félix')
+  type('Tom')
+  await click('Terminer')
+  expect(send).toHaveBeenCalledWith({ kind: 'pratique.questions', reponses: { 'foo.bar': 'r', zed: 'Tom' } })
+})
