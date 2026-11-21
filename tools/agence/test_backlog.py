@@ -671,6 +671,54 @@ class Liens(unittest.TestCase):
 		self.assertIn('à la main', msg)
 
 
+class BriefPlan(unittest.TestCase):
+	"""Spec 013, lot 6 (T061, US6) : le brief d'une fiche demande la validation du plan selon plan.validation ;
+	structurante : seule une fiche liée à une décision structurante active."""
+
+	def fiche(self, *decisions):
+		b, d = backlog.vide(), backlog.vide_decisions()
+		backlog.decision_ajouter(d, 'ordinaire', 'p', T0)
+		backlog.decision_ajouter(d, 'structurante', 'p', T0, structurante=True)
+		backlog.decision_ajouter(d, 'proposée', 'p', T0, structurante=True)
+		backlog.decider(d, 'D1', 'valider')
+		backlog.decider(d, 'D2', 'valider')
+		return backlog.ajouter(b, 'x', T0, decisions=list(decisions)), d['decisions']
+
+	def demande(self, plan, *decisions):
+		f, d = self.fiche(*decisions)
+		return 'valider le plan' in backlog.brief(f, d, plan)
+
+	def test_jamais_aucun_arret(self):
+		self.assertFalse(self.demande('jamais', 'D2'))
+		self.assertFalse(self.demande(None, 'D2'))  # clé absente
+
+	def test_structurante_seule_une_fiche_liee_a_une_decision_structurante_active(self):
+		self.assertTrue(self.demande('structurante', 'D2'))
+		self.assertFalse(self.demande('structurante', 'D1'))
+		self.assertFalse(self.demande('structurante', 'D3'))  # proposée : pas encore une décision
+		self.assertFalse(self.demande('structurante'))
+
+	def test_toujours(self):
+		self.assertTrue(self.demande('toujours'))
+
+	def test_cli_lit_la_politique(self):
+		tmp = tempfile.mkdtemp(prefix='brief-plan-')
+		self.addCleanup(shutil.rmtree, tmp, True)
+		with unittest.mock.patch.dict(os.environ, {'HOME': tmp, 'AGENCE_ROOT': tmp}), contextlib.redirect_stderr(io.StringIO()):
+			with contextlib.redirect_stdout(io.StringIO()):
+				agence.main(['fiche', 'add', 'x'])
+			out = io.StringIO()
+			with contextlib.redirect_stdout(out):
+				agence.main(['fiche', 'brief', 'F1'])
+			self.assertNotIn('valider le plan', out.getvalue())
+			with contextlib.redirect_stdout(io.StringIO()):
+				agence.main(['pratiques', 'set', 'plan.validation', 'toujours'])
+			out = io.StringIO()
+			with contextlib.redirect_stdout(out):
+				agence.main(['fiche', 'brief', 'F1'])
+			self.assertIn('valider le plan', out.getvalue())
+
+
 class CliLiens(Base):
 	"""Spec 013 lot 3 (T032) : --remplace et --doublon-de sur add et edit ; decision show liste les fiches qui la citent."""
 

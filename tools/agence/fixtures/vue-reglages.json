@@ -413,6 +413,34 @@
    "origine": "défaut"
   },
   {
+   "cle": "plan.validation",
+   "nom": "Plan validé avant le code",
+   "explique": "L'agent vous montre son plan et attend votre accord avant de coder. Plus sûr, mais vous attend davantage.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "jamais",
+     "libelle": "Jamais"
+    },
+    {
+     "valeur": "structurante",
+     "libelle": "Quand la tâche touche une décision importante"
+    },
+    {
+     "valeur": "toujours",
+     "libelle": "Toujours"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "jamais",
+   "valeur": "jamais",
+   "origine": "défaut"
+  },
+  {
    "cle": "envoi.slack.variable",
    "nom": "Nom de votre accès Slack",
    "explique": "Le nom de la variable qui porte votre accès Slack, jamais l'accès lui-même. Vaut pour tous vos projets.",

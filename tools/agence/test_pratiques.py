@@ -26,12 +26,14 @@ NEUTRE = {
 	'speckit': 'non', 'verification': 'libre', 'preuve': None, 'agents.max': 4, 'declencheurs.actifs': ['T1'],
 	'envoi.slack.variable': 'SLACK_USER_TOKEN', 'envoi.slack.fichier': None,
 	'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto',  # spec 008
+	'plan.validation': 'jamais',  # spec 013, lot 6 (Q7)
 }
 PR_TDD = {
 	'livraison.mode': 'pr', 'livraison.merge': 'clic', 'livraison.methode': 'rebase', 'issue': 'obligatoire', 'tests': 'tdd',
 	'speckit': 'au-dela-d-une-journee', 'verification': 'differente', 'preuve': ['ci-verte', 'pr-mergee'], 'agents.max': 4,
 	'declencheurs.actifs': ['T1', 'T2', 'T3'], 'envoi.slack.variable': 'SLACK_USER_TOKEN', 'envoi.slack.fichier': None,
 	'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto',
+	'plan.validation': 'jamais',
 }
 # Une valeur hors liste (ou hors type) par clé du schéma : SC-003, 100 % des clés.
 HORS_LISTE = {
@@ -40,7 +42,7 @@ HORS_LISTE = {
 	'agents.max': 17, 'declencheurs.actifs': ['T1', 'T99'], 'envoi.slack.variable': 'xoxp-123-secret',
 	'envoi.slack.fichier': 'xoxp-123-secret', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously-skip-permissions',
 	'modele.implementation': ['sonnet'], 'modele.structurant': '', 'notifications.systeme': True,
-	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme',
+	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
 }
 # Spec 010, lot 7 (FR-010, SC-003) : modèle par rôle, proposé, jamais choisi par le code ; null hors des presets.
 MODELES = {'modele.tri': None, 'modele.interlocuteur': None, 'modele.implementation': None, 'modele.structurant': None}
@@ -144,7 +146,8 @@ class Priorite(Base):
 			if v == NEUTRE[cle]:
 				v = {'livraison.mode': 'main', 'livraison.merge': 'dehors', 'agents.max': 6,
 				     'envoi.slack.variable': 'MON_JETON', 'envoi.slack.fichier': '~/.env', 'notifications.systeme': 'non',
-				     'notifications.rappel': 900, 'agents.modele': 'sonnet', 'agents.effort': 'high'}[cle]
+				     'notifications.rappel': 900, 'agents.modele': 'sonnet', 'agents.effort': 'high',
+				     'plan.validation': 'toujours'}[cle]
 			with self.subTest(cle=cle):
 				for f in (self.dev, self.projet):
 					with contextlib.suppress(FileNotFoundError):
@@ -371,7 +374,7 @@ class Presets(unittest.TestCase):
 
 	def test_cles_des_presets_dans_le_schema(self):
 		schema = pratiques.schema()
-		self.assertEqual(len(schema['cles']), 20)  # 12 de 005, 4 modele.* de 010, 4 de 008
+		self.assertEqual(len(schema['cles']), 21)  # 12 de 005, 4 modele.* de 010, 4 de 008, 1 de 013
 		for nom, p in schema['presets'].items():
 			with self.subTest(preset=nom):
 				self.assertLessEqual(set(p['valeurs']), set(schema['cles']))
@@ -436,6 +439,26 @@ class ModeleParRole(Base):
 				with open(f, 'w') as fh:
 					json.dump({'preset': nom}, fh)
 				self.assertIsNone(pratiques.charger(tmp, None)['erreur'])
+
+
+class ValidationPlan(Base):
+	"""Spec 013, lot 6 (T060, FR-007) : plan.validation vaut jamais (défaut), structurante ou toujours."""
+
+	def test_cle_absente_jamais(self):
+		pol = self.charge()
+		self.assertEqual((pol['valeurs']['plan.validation'], pol['sources']['plan.validation']), ('jamais', 'défaut'))
+
+	def test_trois_valeurs_permises(self):
+		for v in ('jamais', 'structurante', 'toujours'):
+			with self.subTest(v=v):
+				self.ecrit(self.projet, {'plan': {'validation': v}})
+				self.assertEqual(self.charge()['valeurs']['plan.validation'], v)
+
+	def test_valeur_hors_liste_refusee(self):
+		for v in ('parfois', True, None, ['toujours']):
+			with self.subTest(v=v):
+				self.ecrit(self.projet, {'plan': {'validation': v}})
+				self.refus('plan.validation', self.projet)
 
 
 # ---------- T006 : le régisseur publie la politique (FR-013) ----------

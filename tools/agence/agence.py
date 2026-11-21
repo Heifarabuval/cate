@@ -798,7 +798,8 @@ def cmd_fiche(a):
 			f = backlog.trouver(b['fiches'], a.id)
 			return sortie(f, a.json, fiche_texte(f, long=True))
 		elif a.action == 'brief':
-			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'])
+			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'],
+			                      politique()['valeurs']['plan.validation'])
 			return sortie(texte, a.json, texte)
 		elif a.action == 'plan':
 			st = load()  # place = agents.max moins les agents vivants publiés par le dernier tour du régisseur
@@ -1545,7 +1546,7 @@ def lancer_fiches(st, r, ids, entete):
 		note(n, f'fiche {fid} lancée au clic', 'clic')
 		backlog.noter(b, fid, f"lancée (besoin {n['id']})", maintenant, par='clic')
 		f.update(etat='lancée', besoin=n['id'])
-		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'])}\nbesoin {n['id']}")
+		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'], valeurs(st)['plan.validation'])}\nbesoin {n['id']}")
 	st['lot'] = [i for i in dict.fromkeys(st['lot'] + list(ids)) if i not in p['part']]
 	if briefs:
 		attentes = ', '.join(f'{i} ({m})' for i, m in p['attente'].items()) or 'aucune'

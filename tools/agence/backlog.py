@@ -428,16 +428,19 @@ def consomme(mesures, panneaux):
 	return sum(vals) if vals else None
 
 
-def brief(fiche, decisions):
+def brief(fiche, decisions, plan=None):
 	"""Texte fixe donné à l'orchestrateur : un champ par ligne, dans l'ordre, puis les décisions liées actives
-	(objet ; pourquoi). Une décision proposée, rejetée ou révoquée n'est pas citée."""
+	(objet ; pourquoi). Une décision proposée, rejetée ou révoquée n'est pas citée. plan : la clé plan.validation
+	(spec 013, lot 6) ; toujours, ou structurante avec une décision liée active structurante : une ligne de plus."""
 	val = lambda v: (', '.join(v) if isinstance(v, list) else '' if v is None else str(v)) or '-'  # noqa: E731
 	liees = [x for x in decisions if x['id'] in fiche['decisions'] and x['statut'] == 'active']
 	return '\n'.join([f"{fiche['id']} : {fiche['titre']}"] +
 	                 [f'{c} : {val(fiche[c])}' for c in
 	                  ('type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele')] +
 	                 [f"decisions : {val([x['id'] for x in liees])}"] +
-	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees])
+	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees] +
+	                 (['plan : faire valider le plan avant le code (agence ask, attendre le clic)']
+	                  if plan == 'toujours' or (plan == 'structurante' and any(x['structurante'] for x in liees)) else []))
 
 
 # ---------- lentilles (lot 8, FR-007) ----------

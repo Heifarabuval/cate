@@ -50,6 +50,9 @@
   "agents.effort": {"valeurs": ["auto", "low", "medium", "high", "xhigh", "max"], "groupe": "avance", "portee": "workspace",
    "nom": "Réflexion des agents", "explique": "Combien un agent réfléchit avant d'agir, quand la tâche ne le précise pas.",
    "choix": {"auto": "Choisie par l'orchestrateur", "low": "Courte", "medium": "Moyenne", "high": "Longue", "xhigh": "Très longue", "max": "Maximale"}},
+  "plan.validation": {"valeurs": ["jamais", "structurante", "toujours"], "groupe": "avance", "portee": "workspace",
+   "nom": "Plan validé avant le code", "explique": "L'agent vous montre son plan et attend votre accord avant de coder. Plus sûr, mais vous attend davantage.",
+   "choix": {"jamais": "Jamais", "structurante": "Quand la tâche touche une décision importante", "toujours": "Toujours"}},
   "envoi.slack.variable": {"motif": "^[A-Za-z_][A-Za-z0-9_]*$", "groupe": "avance", "portee": "dev",
    "nom": "Nom de votre accès Slack", "explique": "Le nom de la variable qui porte votre accès Slack, jamais l'accès lui-même. Vaut pour tous vos projets."},
   "envoi.slack.fichier": {"motif": "^[~/]", "nul": true, "groupe": "avance", "portee": "dev",
@@ -87,7 +90,8 @@
     "livraison.mode": "pr", "livraison.merge": "clic", "livraison.methode": "squash", "issue": "libre", "tests": "libre",
     "speckit": "non", "verification": "libre", "preuve": null, "agents.max": 4, "declencheurs.actifs": ["T1"],
     "envoi.slack.variable": "SLACK_USER_TOKEN", "envoi.slack.fichier": null,
-    "notifications.systeme": "oui", "notifications.rappel": 300, "agents.modele": "auto", "agents.effort": "auto"
+    "notifications.systeme": "oui", "notifications.rappel": 300, "agents.modele": "auto", "agents.effort": "auto",
+    "plan.validation": "jamais"
    }
   },
   "pr-tdd": {
@@ -96,7 +100,8 @@
     "livraison.mode": "pr", "livraison.merge": "clic", "livraison.methode": "rebase", "issue": "obligatoire", "tests": "tdd",
     "speckit": "au-dela-d-une-journee", "verification": "differente", "preuve": ["ci-verte", "pr-mergee"], "agents.max": 4,
     "declencheurs.actifs": ["T1", "T2", "T3"], "envoi.slack.variable": "SLACK_USER_TOKEN", "envoi.slack.fichier": null,
-    "notifications.systeme": "oui", "notifications.rappel": 300, "agents.modele": "auto", "agents.effort": "auto"
+    "notifications.systeme": "oui", "notifications.rappel": 300, "agents.modele": "auto", "agents.effort": "auto",
+    "plan.validation": "jamais"
    }
   }
  }
