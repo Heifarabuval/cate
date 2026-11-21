@@ -24,16 +24,16 @@ const shape = (rows: NeedRow[]) => rows.map((row) => ({ title: row.title, meta: 
 describe('classify', () => {
   const sections = classify(state, known(state.titles), now)
 
-  it.each([['Bloquant', 'bloquant'], ['À faire par Heifara', 'aFaire'], ['Fait', 'fait'], ['Reste à faire', 'reste']] as const)(
+  it.each([['Bloquant', 'bloquant'], ["À faire par L'humain", 'aFaire'], ['Fait', 'fait'], ['Reste à faire', 'reste']] as const)(
     'gives the lines of page_suivi for %s, in the same order with the same mentions', (name, key) => {
       const reference = expected.find((section) => section.name === name)!
       expect(sections[key]).toHaveLength(reference.count)
       expect(shape(sections[key])).toEqual(reference.needs)
     })
 
-  it('keeps a need blocking for Heifara in his section, not in Bloquant', () => {
-    expect(sections.aFaire.map((row) => row.title)).toContain('Bloquant de Heifara')
-    expect(sections.bloquant.map((row) => row.title)).not.toContain('Bloquant de Heifara')
+  it('keeps a need blocking for the human in their section, not in Bloquant', () => {
+    expect(sections.aFaire.map((row) => row.title)).toContain("Bloquant de L'humain")
+    expect(sections.bloquant.map((row) => row.title)).not.toContain("Bloquant de L'humain")
   })
 
   it('caps Fait at 20, newest first, equal dates in state order', () => {
@@ -61,8 +61,8 @@ describe('classify', () => {
 
   it('links the #N of a PR or an issue to GitHub when the repository is known, and only then', () => {
     const rows = [...sections.bloquant, ...sections.reste]
-    expect(rows.find((row) => row.title === 'PR du lot C')?.link).toEqual({ label: '#8', href: 'https://github.com/Heifarabuval/cate/pull/8' })
-    expect(rows.find((row) => row.title === 'Issue ouverte')?.link).toEqual({ label: '#7', href: 'https://github.com/Heifarabuval/cate/issues/7' })
+    expect(rows.find((row) => row.title === 'PR du lot C')?.link).toEqual({ label: '#8', href: 'https://github.com/exemple/depot/pull/8' })
+    expect(rows.find((row) => row.title === 'Issue ouverte')?.link).toEqual({ label: '#7', href: 'https://github.com/exemple/depot/issues/7' })
     expect(rows.find((row) => row.title === 'Tâche simple')?.link).toBeNull()
     const noRepo = classify({ ...state, ghRepo: null }, known(state.titles), now)
     expect([...noRepo.bloquant, ...noRepo.reste].every((row) => row.link === null)).toBe(true)
