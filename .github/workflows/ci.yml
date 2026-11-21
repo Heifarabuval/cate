@@ -92,7 +92,8 @@ jobs:
         # ubuntu-24.04, not ubuntu-latest: 26.04 no longer ships Python 3.9.
         os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # The suite takes 9 to 10 minutes on the macOS runner (80 seconds on Ubuntu).
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
