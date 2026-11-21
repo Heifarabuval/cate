@@ -311,6 +311,70 @@ class Pages(Garde):
 					self.vide(self.hook(self.pages_cmd, 'Bash', {'command': f'{pre} {args}'}))
 
 
+class PlafondAuLancement(Garde):
+	"""Spec 013 lot 2 (T020, SC-002) : `cate agent start` refusé quand le dernier compte publié par le régisseur
+	atteint agents.max (4 par défaut) ; une place libre ou un autre ordre : aucune décision ; état illisible : aucune
+	décision, un avertissement."""
+
+	START = ('cate agent start --title x "Lis le brief"', 'cate --json agent start x', 'cate agent --json start x',
+	         'cate agent start \\\n  --title x "y"')
+
+	def setUp(self):
+		super().setUp()
+		self.installe()
+		self.orchestre()
+
+	def vivants(self, active, waiting=0, maxi=4):
+		"""Compte et plafond tels que le tour du régisseur les publie."""
+		with agence.tx(self.projet) as st:
+			st['agentsActive'], st['agentsWaiting'] = active, waiting
+			st['pratiques'] = {'valeurs': {'agents.max': maxi}}
+
+	def test_aucun_tour_encore_aucune_decision(self):
+		self.assertEqual(self.bash('cate agent start x').stdout, '')
+
+	def bash(self, cmd):
+		return self.hook(self.pages_cmd, 'Bash', {'command': cmd})
+
+	def test_plafond_atteint_deny_avec_le_compte(self):
+		self.vivants(3, 1)
+		for cmd in self.START:
+			with self.subTest(cmd=cmd):
+				r = self.bash(cmd)
+				self.assertEqual(self.decision(r), 'deny')
+				raison = json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason']
+				self.assertIn('4 agents vivants sur 4', raison)
+				self.assertIn('dernier compte publié', raison)
+
+	def test_place_libre_aucune_decision(self):
+		self.vivants(2, 1)
+		for cmd in self.START:
+			with self.subTest(cmd=cmd):
+				self.assertEqual((self.bash(cmd).stdout), '')
+
+	def test_autres_ordres_cate_jamais_refuses_par_le_plafond(self):
+		self.vivants(4)
+		for cmd in ('cate agent list', 'cate agent send --panel o1 "x"', 'cate agent usage'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.bash(cmd).stdout, '')
+
+	def test_etat_illisible_aucune_decision_avertissement(self):
+		with open(os.path.join(self.projet, '.cate', 'tmp', 'agence', 'state.json'), 'w') as f:
+			f.write('{pas du json')
+		r = self.bash('cate agent start x')
+		self.assertEqual(r.returncode, 0, r.stderr)
+		out = json.loads(r.stdout)
+		self.assertNotIn('hookSpecificOutput', out)
+		self.assertIn('plafond', out['systemMessage'])
+		self.assertEqual(self.bash('agence need list').stdout, '')
+
+	def test_compte_illisible_aucune_decision_avertissement(self):
+		self.vivants('beaucoup')
+		out = json.loads(self.bash('cate agent start x').stdout)
+		self.assertNotIn('hookSpecificOutput', out)
+		self.assertIn('plafond', out['systemMessage'])
+
+
 class Interlocuteur(Garde):
 	"""Spec 010, FR-002 (T042) : la garde refuse à l'interlocuteur de lancer du travail. Le panneau appelant est trouvé
 	par la sonde (faux `cate` qui rend l'id de MOI au `panel title`), seulement sur une commande de la liste."""

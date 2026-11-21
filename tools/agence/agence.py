@@ -2940,6 +2940,33 @@ def lance(cmd):
 	return LANCE_RE.search(GLOBAUX_RE.sub(' ', re.sub(r'\\\r?\n', ' ', cmd)))
 
 
+PLAFOND_AVERTI = {'systemMessage': "Garde de plafond d'agents : état de l'agence illisible, lancement non vérifié."}
+
+
+def demarre(cmd):
+	m = lance(cmd)
+	return bool(m) and m.group(2) == 'start'
+
+
+def garde_plafond(st):
+	"""`cate agent start` (spec 013, FR-002) : deny quand le dernier compte publié par le régisseur atteint agents.max ;
+	compte ou plafond illisible : aucune décision, un avertissement. Ne compte pas elle-même : une seule source.
+	Aucun tour encore (rien publié) : aucune décision, le compte est nul. Lit la valeur publiée, jamais pratiques.py :
+	les gardes n'en dépendent pas."""
+	if st.get('pratiques') is None:
+		return None
+	try:
+		v, w, maxi = st['agentsActive'], st['agentsWaiting'], st['pratiques']['valeurs']['agents.max']
+	except (KeyError, TypeError):
+		return PLAFOND_AVERTI
+	if not all(type(x) is int for x in (v, w, maxi)):
+		return PLAFOND_AVERTI
+	if v + w < maxi:
+		return None
+	return decision('deny', f'Plafond atteint : {v + w} agents vivants sur {maxi} (dernier compte publié par le régisseur). '
+	                        f"Ferme un agent fini ou mets la tâche en file ; seul {nom()} relève le plafond (agence start --max-agents <n>).")
+
+
 def send_match(st, tool, ti):
 	"""Brouillon cliqué, pas encore utilisé, besoin ouvert, dont la cible et le texte sont exactement ceux de l'envoi."""
 	for d in st['drafts']:
@@ -2979,7 +3006,10 @@ def guard(payload, mode):
 		base = main_repo(base) or base
 	if not os.path.isfile(state_file(base)):
 		return refus
-	st = load(state_file(base))
+	try:
+		st = load(state_file(base))
+	except ValueError:  # état illisible : l'envoi demande, un lancement est averti, le reste passe
+		return refus or (PLAFOND_AVERTI if tool == 'Bash' and demarre(ti.get('command') or '') else None)
 	if est_envoi(tool):
 		d = send_match(st, tool, ti)
 		if not d:
@@ -3013,7 +3043,7 @@ def guard(payload, mode):
 		inter = st['panels'].get('interlocuteur')
 		if inter and lance(cmd) and caller_panel(SONDE) == inter:
 			return decision('deny', INTER_DENY)
-		return None
+		return garde_plafond(st) if demarre(cmd) else None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
 	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith('.cate/tmp/agence/state.json'):
