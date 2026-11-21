@@ -2320,9 +2320,13 @@ orchestrator is told once, and the need's card shows « consommé / budget jeton
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger
-buttons. The view reads and writes no file; « Ouvrir le fichier » is the
-`openPratiques` op, where the session creates the project's file with `{}` if
-it is missing and opens an editor panel on it.
+buttons. With the form view the CLI publishes beside it (`champs`, `presets`,
+`projet`, `nbProjet`, `invariants`; contract in
+`src/panels/agence/contract/fixtures/vue-reglages.json`), « Réglages » opens a
+form generated from those fields, knowing no key; each change is a
+`pratique.set|unset|preset` op the session relays to the regisseur
+(`/pratiques/...`), which validates, writes the file the key's scope names and
+answers a refusal in plain words. The view and the session write no file.
 
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a
@@ -3067,7 +3071,7 @@ and ignored, and the dialog stays until the user chooses.
 | Where | Files |
 |---|---|
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
-| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes only a missing `pratiques.json` (`{}`), at the person's click |
+| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes nothing there |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
 | Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `workspace-views.json` (per-workspace canvas pan and zoom), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 

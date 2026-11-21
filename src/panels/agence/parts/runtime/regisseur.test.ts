@@ -114,6 +114,15 @@ describe('regisseur', () => {
     await expect(handle.post('/draft/d1/send', { h: 'ancien' })).resolves.toEqual({ code: 409, message: 'texte a changé' })
   })
 
+  it('posts a list as the same field repeated, in order (several settings in one write)', async () => {
+    const handle = await acquire(tmp)
+    await settled(handle, 'running')
+    await handle.post('/pratiques/set', { cle: ['a.b', 'c'], valeur: ['2', '"x"'] })
+    const params = new URLSearchParams(ofKind('post')[0].body as string)
+    expect(params.getAll('cle')).toEqual(['a.b', 'c'])
+    expect(params.getAll('valeur')).toEqual(['2', '"x"'])
+  })
+
   it('runs one process for two references of the same root, and one per root', async () => {
     const port = await freePort()
     const first = await acquire(tmp, { port })

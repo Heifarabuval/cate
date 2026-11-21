@@ -160,15 +160,12 @@ const canvas: PanelRuntime = () => canvasPanel()
 
 const surface: PanelRuntime = () => surfacePanel()
 
-const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv' | 'trust'> = (services) => {
-  const panels = createAgencePanels({
-    root: services.root,
-    terminal: services.terminal,
-    cliEnv: (panelId) => services.cliEnv(panelId),
-    trust: services.trust,
-  })
-  return { ...panels, attach: ({ factory }) => panels.attach(factory) }
-}
+const agence: PanelRuntime<'root' | 'terminal' | 'cliEnv' | 'trust'> = (services) => createAgencePanels({
+  root: services.root,
+  terminal: services.terminal,
+  cliEnv: (panelId) => services.cliEnv(panelId),
+  trust: services.trust,
+})
 
 const boite: PanelRuntime = () => boitePanel()
 

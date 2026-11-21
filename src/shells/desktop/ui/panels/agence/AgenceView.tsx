@@ -8,6 +8,7 @@ import { DockResizeHandle } from '../../client/layout/dock'
 import { ActionButton, refusal as refusalText, useAction } from './action'
 import Backlog from './Backlog'
 import DraftReader from './DraftReader'
+import Reglages from './Reglages'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
 import TerminalPane from './TerminalPane'
@@ -43,20 +44,23 @@ type Tab = 'conversation' | 'suivi'
 
 const showValue = (value: PratiqueValeur): string => Array.isArray(value) ? value.map(showValue).join(', ') : value === null ? 'aucune' : String(value)
 
-/** The workflow policy the CLI published: its preset and origin on one line, the
- *  value and source of each key when opened, a banner when the file is invalid.
- *  It reads nothing and writes nothing: « Ouvrir le fichier » asks the session. */
-function Pratiques({ pratiques, onOpen }: { pratiques: NonNullable<AgenceSnapshot['pratiques']>; onOpen(): void }) {
+/** The workflow policy the CLI published: its preset and origin on one line, a
+ *  banner when the file is invalid, and « Réglages » when the CLI publishes the form
+ *  (an older CLI: the value and source of each key when the line is opened). */
+function Pratiques({ pratiques, onReglages }: { pratiques: NonNullable<AgenceSnapshot['pratiques']>; onReglages(): void }) {
   const [open, setOpen] = useState(false)
   const label = `Pratiques : ${pratiques.preset} (${pratiques.sources.preset ?? 'défaut'})`
+  const form = pratiques.champs !== undefined
   return (
     <div className="border-b border-subtle px-3 py-1.5 text-[12px]">
       {pratiques.erreur && <InlineNotice tone="error" className="mb-1.5 !text-primary">{`Politique invalide : ${pratiques.erreur}`}</InlineNotice>}
       <div className="flex items-center gap-2">
-        <button type="button" aria-expanded={open} className="min-w-0 flex-1 truncate text-left text-secondary hover:text-primary" onClick={() => setOpen(!open)}>{label}</button>
-        <ActionButton className={ACTION} onClick={onOpen}>Ouvrir le fichier</ActionButton>
+        {form
+          ? <span className="min-w-0 flex-1 truncate text-secondary">{label}</span>
+          : <button type="button" aria-expanded={open} className="min-w-0 flex-1 truncate text-left text-secondary hover:text-primary" onClick={() => setOpen(!open)}>{label}</button>}
+        {form && <ActionButton className={ACTION} onClick={onReglages}>Réglages</ActionButton>}
       </div>
-      {open && (
+      {open && !form && (
         <ul className="mt-1 text-secondary">
           {Object.entries(pratiques.valeurs).map(([key, value]) => (
             <li key={key} data-testid="pratique" className="break-words">{`${key} : ${showValue(value)} (${pratiques.sources[key] ?? 'défaut'})`}</li>
@@ -81,6 +85,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
   const [tab, setTab] = useState<Tab>('conversation')
   const [reading, setReading] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
+  const [reglages, setReglages] = useState(false)
   // The split is what this client shows of the panel (client state), not the document's.
   const [split, setSplit] = usePanelView(workspaceId, panelId, 'split', DEFAULT_SPLIT)
   const splitRef = useRef(split)
@@ -178,7 +183,10 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           className={`min-h-0 min-w-0 overflow-auto ${showSuivi ? 'flex-1' : 'hidden'}`}
         >
           <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
-          {snapshot.pratiques && <Pratiques pratiques={snapshot.pratiques} onOpen={() => void run({ kind: 'openPratiques' })} />}
+          {snapshot.pratiques && !reglages && <Pratiques pratiques={snapshot.pratiques} onReglages={() => setReglages(true)} />}
+          {snapshot.pratiques?.champs && reglages
+            ? <Reglages pratiques={snapshot.pratiques} disponible={snapshot.regisseur.state === 'running'} send={send} onClose={() => setReglages(false)} />
+            : <>
           {snapshot.backlog && !draft && <Backlog backlog={snapshot.backlog} send={send} />}
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
@@ -199,6 +207,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                 />
               )
               : <div className="p-4 text-[12px] text-secondary">Aucun suivi pour l&apos;instant.</div>}
+            </>}
         </section>
       </div>
     </div>

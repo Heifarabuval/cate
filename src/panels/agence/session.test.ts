@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -8,10 +8,13 @@ import { isRpcError } from '@kernel/rpc/contract'
 import { createDocument, type Json, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH, type SpawnParams, type TerminalStatus, type TerminalStatusChange } from '@services/terminal/contract'
 import type { SessionKit } from '@panels/framework/runtime'
-import type { AgenceOp, AgenceSnapshot, AgenceState, RegisseurView } from './contract'
+import type { AgenceOp, AgenceSnapshot, AgenceState, PratiquesView, RegisseurView } from './contract'
 import { AgenceSession, type AgenceSessionDeps } from './session'
 import { createRegisseurs, type RegisseurAcquire, type RegisseurHandle, type Regisseurs } from './parts/runtime/regisseur'
 import type { StateFilesRead } from './parts/runtime/stateFiles'
+
+/** The form view the regisseur publishes (spec 008, lot 1): its fixture is the contract. */
+const vueReglages = JSON.parse(readFileSync(path.join(__dirname, 'contract', 'fixtures', 'vue-reglages.json'), 'utf8')) as Required<Pick<PratiquesView, 'champs' | 'presets' | 'invariants'>>
 
 // macOS arm64 uniquement (le régisseur est un processus POSIX)
 const itPosix = it.skipIf(process.platform === 'win32')
@@ -48,13 +51,13 @@ function fakeTerminal() {
 
 function fakeRegisseurs(initial: RegisseurView['state'] = 'running') {
   const acquired: RegisseurAcquire[] = []
-  const posts: Array<{ path: string; form: Record<string, string> }> = []
+  const posts: Array<{ path: string; form: Record<string, string | string[]> }> = []
   let released = 0
   let restarts = 0
   let view: RegisseurView = { state: initial, error: initial === 'missing' ? 'agence introuvable (agence)' : null, settingsHint: null }
   const listeners = new Set<(view: RegisseurView) => void>()
   /** What the next posts answer; a function can hold the answer back. */
-  let answer: (path: string, form: Record<string, string>) => Promise<{ code: number; message: string }> = async () => ({ code: 200, message: 'ok' })
+  let answer: (path: string, form: Record<string, string | string[]>) => Promise<{ code: number; message: string }> = async () => ({ code: 200, message: 'ok' })
   return {
     regisseurs: {
       acquire(request: RegisseurAcquire): RegisseurHandle {
@@ -137,16 +140,14 @@ function setup(options: { saved?: Json; regisseur?: RegisseurView['state']; file
   const regisseurs = fakeRegisseurs(options.regisseur)
   const files = fakeFiles(options.files)
   const k = fakeKit(record(options.fields), options.saved, options.others)
-  const editors: Array<{ filePath: string; near: string }> = []
   const deps: AgenceSessionDeps = {
     root: '/repo',
     terminal: terminal.service,
     regisseurs: regisseurs.regisseurs,
     files: files.files,
-    openEditor: (filePath, near) => { editors.push({ filePath, near }); return true },
   }
   const session = new AgenceSession(k.kit, record(options.fields), deps)
-  return { session, terminal, regisseurs, files, editors, ...k }
+  return { session, terminal, regisseurs, files, ...k }
 }
 
 const snap = (session: AgenceSession): AgenceSnapshot => session.snapshot()
@@ -388,30 +389,87 @@ describe('AgenceSession', () => {
       expect(snap(session).questions.q2.methode).toBeUndefined()
     })
 
-    it('openPratiques creates the project file with {} and opens an editor panel on it', async () => {
-      const { session, editors } = setup({ fields: { root }, files: { state: state({ pratiques } as Partial<AgenceState>), readAt: 't' } })
+    // The published form view (spec 008, lot 1): the contract is the regisseur's fixture.
+    const reglages = { ...vueReglages, valeurs: { 'agents.max': 2 }, sources: { preset: 'défaut', 'agents.max': 'projet' } }
+    const withForm = (patch: Record<string, unknown> = {}) => setup({ files: { state: state({ pratiques: { ...reglages, ...patch } } as unknown as Partial<AgenceState>), readAt: 't' } })
+
+    it('keeps the form view the regisseur published: fields, presets, project file, its count, invariants', async () => {
+      const { session } = withForm()
       await session.start()
-      await expect(op(session, { kind: 'openPratiques' })).resolves.toEqual({ ok: true })
-      expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual({})
-      expect(editors).toEqual([{ filePath: file(), near: 'ag1' }])
+      const view = snap(session).pratiques!
+      expect(view.champs).toEqual(vueReglages.champs)
+      expect(view.presets).toEqual(vueReglages.presets)
+      expect(view).toMatchObject({ projet: true, nbProjet: 1, invariants: vueReglages.invariants })
     })
 
-    it('openPratiques keeps the file it finds', async () => {
-      mkdirSync(path.dirname(file()), { recursive: true })
-      writeFileSync(file(), '{"preset":"pr-tdd"}')
-      const { session, editors } = setup({ fields: { root } })
+    it('serves a policy without the form view as before (old CLI): no field, no error', async () => {
+      const { session } = setup({ files: { state: state({ pratiques } as Partial<AgenceState>), readAt: 't' } })
       await session.start()
-      await expect(op(session, { kind: 'openPratiques' })).resolves.toEqual({ ok: true })
-      expect(readFileSync(file(), 'utf8')).toBe('{"preset":"pr-tdd"}')
-      expect(editors).toHaveLength(1)
+      const view = snap(session).pratiques!
+      expect(view).toEqual(pratiques)
+      expect(view.champs).toBeUndefined()
+      expect(view.projet).toBeUndefined()
     })
 
-    it('openPratiques answers unavailable and creates no panel when the file cannot be written', async () => {
-      writeFileSync(path.join(root, '.cate'), 'a file, not a folder')
-      const { session, editors } = setup({ fields: { root } })
+    it('drops a field of the wrong shape and keeps the others', async () => {
+      const { session } = withForm({ champs: [{ cle: 3 }, ...vueReglages.champs.slice(0, 2)] })
       await session.start()
-      await expect(op(session, { kind: 'openPratiques' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
-      expect(editors).toHaveLength(0)
+      expect(snap(session).pratiques!.champs!.map((champ) => champ.cle)).toEqual(['livraison.mode', 'livraison.merge'])
+    })
+
+    it('pratique.set posts the key and its value as JSON to /pratiques/set', async () => {
+      const { session, regisseurs } = withForm()
+      await session.start()
+      await expect(op(session, { kind: 'pratique.set', cle: 'agents.max', valeur: 3 })).resolves.toEqual({ ok: true })
+      await expect(op(session, { kind: 'pratique.set', cle: 'preuve', valeur: ['ci-verte', 'rapport'] })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([
+        { path: '/pratiques/set', form: { cle: 'agents.max', valeur: '3' } },
+        { path: '/pratiques/set', form: { cle: 'preuve', valeur: '["ci-verte","rapport"]' } },
+      ])
+    })
+
+    it('pratique.unset and pratique.preset post to their routes, remplacer only when asked', async () => {
+      const { session, regisseurs } = withForm()
+      await session.start()
+      await op(session, { kind: 'pratique.unset', cle: 'agents.max' })
+      await op(session, { kind: 'pratique.preset', nom: 'pr-tdd' })
+      await op(session, { kind: 'pratique.preset', nom: 'pr-tdd', remplacer: true })
+      expect(regisseurs.posts).toEqual([
+        { path: '/pratiques/unset', form: { cle: 'agents.max' } },
+        { path: '/pratiques/preset', form: { nom: 'pr-tdd' } },
+        { path: '/pratiques/preset', form: { nom: 'pr-tdd', remplacer: '1' } },
+      ])
+    })
+
+    it('refuses a key or a preset the regisseur did not publish, without posting', async () => {
+      const { session, regisseurs } = withForm()
+      await session.start()
+      await expect(op(session, { kind: 'pratique.set', cle: 'inconnue', valeur: 1 })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(op(session, { kind: 'pratique.unset', cle: 'inconnue' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(op(session, { kind: 'pratique.preset', nom: 'inconnu' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it('answers invalid with the regisseur\'s plain phrase on a 400', async () => {
+      const { session, regisseurs } = withForm()
+      await session.start()
+      regisseurs.answer(async () => ({ code: 400, message: 'Agents en même temps : entre 1 et 16.' }))
+      await expect(op(session, { kind: 'pratique.set', cle: 'agents.max', valeur: 40 }))
+        .resolves.toEqual({ ok: false, error: 'invalid', message: 'Agents en même temps : entre 1 et 16.' })
+    })
+
+    it('answers unavailable and posts nothing when the regisseur is stopped', async () => {
+      const { session, regisseurs } = withForm()
+      await session.start()
+      regisseurs.set({ state: 'stopped' })
+      await expect(op(session, { kind: 'pratique.set', cle: 'agents.max', valeur: 3 })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it('has no openPratiques op any more, and writes no file', async () => {
+      const { session } = setup({ fields: { root }, files: { state: state({ pratiques } as Partial<AgenceState>), readAt: 't' } })
+      await session.start()
+      await expect(op(session, { kind: 'openPratiques' } as unknown as AgenceOp)).rejects.toThrow()
       expect(existsSync(file())).toBe(false)
     })
   })
@@ -741,7 +799,7 @@ describe('AgenceSession', () => {
       const k = fakeKit(panel, saved)
       const terminal = fakeTerminal()
       const files = fakeFiles({ state: state({ port, needs: [need('n1')] }), readAt: 't' })
-      const session = new AgenceSession(k.kit, panel, { root: tmp, terminal: terminal.service, regisseurs: registry, files: files.files, openEditor: () => true })
+      const session = new AgenceSession(k.kit, panel, { root: tmp, terminal: terminal.service, regisseurs: registry, files: files.files })
       return { session, terminal }
     }
 
