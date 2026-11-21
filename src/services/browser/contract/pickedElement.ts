@@ -22,10 +22,10 @@ const PICKED_FIELD_MAX = 300
 /** No prompt a pick sends is longer. */
 export const PICKED_PROMPT_MAX = 1600
 
-/** One line of page data: whitespace folded, the fence tags taken out (the
- *  page cannot close the fence), capped. */
+/** One line of page data: whitespace folded, every `<` escaped (no tag can
+ *  start in page text, so the page cannot close the fence, nested or not), capped. */
 function pageField(value: string, max: number): string {
-  const text = value.replace(/<\/?page-data>/gi, '').replace(/\s+/g, ' ').trim()
+  const text = value.replace(/</g, '&lt;').replace(/\s+/g, ' ').trim()
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
 
