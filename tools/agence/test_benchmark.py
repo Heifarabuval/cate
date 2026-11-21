@@ -316,7 +316,8 @@ class Comparer(DepotJetable):
 		self.env['PATH'] = os.path.join(FIXTURE, 'claude') + os.pathsep + self.env['PATH']
 		self.env['CLAUDE_ARGS'] = os.path.join(self.tmp, 'claude-args')
 		self.refs = {}
-		for nom, skill in (('bon', 'MODE=bon JETONS=900'), ('econome', 'MODE=bon JETONS=600'), ('casse', 'MODE=casse JETONS=300')):
+		for nom, skill in (('bon', 'MODE=bon JETONS=900'), ('econome', 'MODE=bon JETONS=600'), ('casse', 'MODE=casse JETONS=300'),
+		                   ('echec', 'MODE=echec JETONS=100')):
 			ecrire(os.path.join(self.depot, 'skills', 'orchestrateur', 'SKILL.md'), skill + '\n')
 			self.git(self.depot, 'add', '.')
 			self.git(self.depot, 'commit', '-qm', nom)
@@ -376,6 +377,17 @@ class Comparer(DepotJetable):
 			self.assertEqual(a[2:4], ['--output-format', 'json'])
 			self.assertEqual([x for x in a[4:] if x.startswith('-')], ['--permission-mode'])
 			self.assertNotIn('--ide', a)
+
+	def test_claude_en_echec_verdict_impossible(self):
+		"""Relecture : un code de sortie non nul de `claude -p` ne donne jamais « garder » (arbitre vert par hasard)."""
+		r = self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs['echec'])
+		self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+		self.assertNotIn('garder', r.stdout)
+		self.assertIn('verdict impossible', r.stdout)
+		self.assertIn('code 3', r.stdout)
+		[rapport] = self.rapports()
+		with open(rapport) as f:
+			self.assertIn('verdict impossible', f.read())
 
 	def test_ref_inconnue_refuse_sans_appel(self):
 		r = self.run_('comparer', '--avant', 'nexistepas', '--apres', self.refs['econome'])

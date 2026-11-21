@@ -14,7 +14,8 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
   rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md
   comparer --avant REF --apres REF  économie de jetons : pilotes et issue de comparaison rejoués en `claude -p`
-                      avec l'outil à chaque ref ; « annuler » (code 1) si un arbitre vert avant ne l'est plus après
+                      avec l'outil à chaque ref ; « annuler » (code 1) si un arbitre vert avant ne l'est plus après ;
+                      « verdict impossible » (code 2) si un `claude -p` sort en échec
 BRAS : nu ou outil. R : ~/.cache/agence-bench ; S : specs/011-mesure-benchmark ; D : ce dépôt.
 """
 import argparse
@@ -545,7 +546,8 @@ def poser_outil(depot, ref, clone):
 def comparer(a):
 	"""Économie de jetons (FR-011) : le sous-ensemble figé (pilotes et issue de comparaison, jamais la campagne) rejoué
 	en `claude -p` avec l'outil à --avant puis à --apres, même arbitre, même mesure ; « annuler » (code 1) dès qu'un
-	arbitre vert avant ne l'est plus après. Rapport en nombres dans S/comparaisons/<date>-<apres>.md."""
+	arbitre vert avant ne l'est plus après ; « verdict impossible » (code 2) dès qu'un `claude -p` sort en échec, le
+	rejeu s'arrête là. Rapport en nombres dans S/comparaisons/<date>-<apres>.md."""
 	sel = lire(os.path.join(a.specs, 'selection.json'))
 	refs = {}
 	for cote in ('avant', 'apres'):
@@ -557,23 +559,30 @@ def comparer(a):
 	vivier = {v['issue']: v for v in sel['vivier']}
 	issues = [t['issue'] for t in sel['pilotes']] + [sel['comparaison']['issue']]
 	os.makedirs(a.racine, exist_ok=True)
-	base, res = tempfile.mkdtemp(dir=a.racine, prefix='comparer-'), {}
+	base, res, echec = tempfile.mkdtemp(dir=a.racine, prefix='comparer-'), {}, None
 	for i in issues:
+		if echec:
+			break
 		enonce = enonce_issue(a.depot, sel['depot'], i)
 		for cote, ref in refs.items():
 			clone = os.path.join(base, '%d-%s' % (i, cote))
 			cloner(a.depot, clone, vivier[i]['base'])
 			poser_outil(a.depot, ref, clone)
 			try:  # aucune interface : -p, sortie JSON, rien sur le terminal
-				subprocess.run(['claude', '-p', enonce, '--output-format', 'json', '--permission-mode', 'acceptEdits'],
-					cwd=clone, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				code = subprocess.run(['claude', '-p', enonce, '--output-format', 'json', '--permission-mode', 'acceptEdits'],
+					cwd=clone, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
 			except FileNotFoundError:
 				raise Refus('claude introuvable sur le PATH')
+			if code:  # un rejeu coupé ne compte pas, même si l'arbitre passe par hasard
+				echec = 'claude -p a rendu le code %d sur l\'issue %d (%s)' % (code, i, cote)
+				break
 			res[i, cote] = (arbitre(a.depot, clone, vivier[i]), jetons(attente_mesure.mesurer(dossiers_de(clone)))['total'])
+	issues = [i for i in issues if (i, 'avant') in res and (i, 'apres') in res]  # rejeux complets seulement
 	casse = [i for i in issues if res[i, 'avant'][0] == 'vert' and res[i, 'apres'][0] != 'vert']
 	somme = lambda cote: None if any(res[i, cote][1] is None for i in issues) else sum(res[i, cote][1] for i in issues)
 	ent = lambda v: 'inconnus' if v is None else '%d' % v
-	verdict = ('annuler : arbitre vert avant, pas après, sur %s' % ', '.join(map(str, casse)) if casse else
+	verdict = ('verdict impossible : %s' % echec if echec else
+		'annuler : arbitre vert avant, pas après, sur %s' % ', '.join(map(str, casse)) if casse else
 		'garder : aucun arbitre vert avant ne casse après')
 	texte = '\n'.join([
 		'# Comparaison avant / après (spec 011, FR-011)', '',
@@ -588,7 +597,7 @@ def comparer(a):
 	with open(rapport, 'w', encoding='utf-8') as f:
 		f.write(texte)
 	sys.stdout.write(texte + 'rapport : %s\n' % rapport)
-	return 1 if casse else 0
+	return 2 if echec else 1 if casse else 0
 
 
 def main(argv=None):
