@@ -2327,6 +2327,11 @@ form generated from those fields, knowing no key; each change is a
 `pratique.set|unset|preset` op the session relays to the regisseur
 (`/pratiques/...`), which validates, writes the file the key's scope names and
 answers a refusal in plain words. The view and the session write no file.
+While the state says the project has no settings file (`projet: false`), or
+before the regisseur's first state, the session does not start the
+orchestrator: the view gives the panel to the first questions (the essential
+fields that carry a `question`), and the `pratique.questions` op writes every
+answer in one POST, or the `neutre` preset for « Passer », then starts it.
 
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a

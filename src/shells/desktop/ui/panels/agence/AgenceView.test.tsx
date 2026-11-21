@@ -444,3 +444,18 @@ it('shows no backlog when the state has none (old CLI)', () => {
   render(snapshot({ backlog: null }))
   expect(host.textContent).not.toContain('Backlog')
 })
+
+it('gives the whole panel to the first questions while the project has no settings file', async () => {
+  render(snapshot({ pratiques: reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
+  expect(host.querySelector('h2')!.textContent).toBe('De quelle couleur, le toit ?')
+  expect(host.querySelector('[data-testid="terminal"]')).toBeNull()
+  expect(host.textContent).not.toContain('À faire par Max')
+  await act(async () => { button('Passer')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'pratique.questions', passer: true })
+})
+
+it('asks nothing once the project has its file', () => {
+  render(snapshot({ pratiques: reglages({ projet: true, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
+  expect(button('Passer')).toBeUndefined()
+  expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
+})

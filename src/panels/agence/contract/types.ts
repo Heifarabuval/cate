@@ -226,6 +226,9 @@ export type AgenceOp =
   | { kind: 'pratique.unset'; cle: string }
   /** A preset; `remplacer`: the file keeps the preset alone. */
   | { kind: 'pratique.preset'; nom: string; remplacer?: boolean }
+  /** The end of the first questions: every answer in one write, or `passer` (the default
+   *  preset); then the orchestrator starts. Without effect once they are over. */
+  | { kind: 'pratique.questions'; reponses?: Record<string, PratiqueValeur>; passer?: boolean }
   /** « Lancer » on the checked prêtes: the regisseur plans the waves and creates the needs. */
   | { kind: 'fiches.lancer'; ids: string[] }
 

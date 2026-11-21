@@ -8,6 +8,7 @@ import { DockResizeHandle } from '../../client/layout/dock'
 import { ActionButton, refusal as refusalText, useAction } from './action'
 import Backlog from './Backlog'
 import DraftReader from './DraftReader'
+import PremieresQuestions from './PremieresQuestions'
 import Reglages from './Reglages'
 import RegisseurBanner from './RegisseurBanner'
 import SuiviList from './SuiviList'
@@ -120,6 +121,15 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
 
   if (!snapshot) {
     return <div ref={rootRef} className="h-full"><LoadingState label="Loading agence panel" className="h-full p-4 text-xs" /></div>
+  }
+  // The first questions hold the orchestrator (the session waits for them): they take the whole panel.
+  if (snapshot.pratiques?.projet === false && snapshot.pratiques.champs) {
+    return (
+      <div ref={rootRef} className="flex h-full min-w-0 flex-col overflow-auto bg-surface-1">
+        <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
+        <PremieresQuestions champs={snapshot.pratiques.champs} send={send} />
+      </div>
+    )
   }
   const draft = reading ? snapshot.drafts[reading] : undefined
   const orchestratorDown = snapshot.orchestrator === 'exited' || snapshot.orchestrator === 'failed'

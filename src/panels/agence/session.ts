@@ -3,6 +3,9 @@
 // follow-up read from the `agence` CLI's folder. It writes none of the CLI's
 // files: every action goes through the regisseur (`click()` of agence.py).
 //
+// The orchestrator waits for the regisseur's first state, and while the state
+// says the project has no settings file (`pratiques.projet: false`), for the
+// first questions to end (`pratique.questions`, or a file written elsewhere).
 // At first start the PTY launches Claude Code on `/orchestrateur`; once the
 // panel ran, a start resumes it with the terminal restore launch (the agents
 // service types the stamped session's resume command), so a daemon restart
@@ -16,7 +19,7 @@ import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalActivity, type
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
 import { classify, HUMAIN_DEFAUT, mergeState } from './contract/suivi'
-import { FICHE_ETATS, PRATIQUE_FORMES } from './contract/types'
+import { FICHE_ETATS, PRATIQUE_FORMES, PRESET_DEFAUT } from './contract/types'
 import type {
   AgenceOp,
   AgenceOpResult,
@@ -80,6 +83,9 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   /** The orchestrator ran once: titles may now be saved (the saved file is
    *  what makes the next start a resume). */
   private launched = false
+  /** start() ran and the orchestrator is not launched yet (the first questions may hold it). */
+  private pending = false
+  private resume = false
   private activity: TerminalActivity = { type: 'idle' }
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: AgenceSessionDeps) {
@@ -94,9 +100,9 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
 
   override async start(): Promise<void> {
     const saved = this.persisted<AgencePersisted>()
-    const resume = saved !== undefined
+    this.resume = saved !== undefined
     this.knownTitles = { ...saved?.knownTitles }
-    this.launched = resume
+    this.launched = this.resume
     this.offs.push(this.deps.terminal.onStatusChange((change) => {
       const id = this.state.ptyId
       if (id && Object.prototype.hasOwnProperty.call(change, id)) this.followStatus(change[id])
@@ -104,7 +110,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     this.files = this.deps.files(path.join(this.root, '.cate', 'tmp', 'agence'), () => this.refresh())
     this.refresh()
     this.startRegisseur()
-    await this.spawnOrchestrator(resume)
+    this.pending = true
+    await this.launchWhenReady()
   }
 
   protected override readonly ops = this.handlers() as OpHandlers<AgenceOp>
@@ -126,6 +133,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'fiches.lancer': ({ ids }) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === 'string' && SAFE_ID.test(id))
         ? this.click('/fiches/lancer', { ids: ids.join(',') })
         : Promise.resolve({ ok: false, error: 'invalid' }),
+      'pratique.questions': ({ reponses, passer }) => this.questions(reponses, passer === true),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
         ? { libre }
@@ -198,6 +206,39 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     return known ? this.click(path, form) : Promise.resolve({ ok: false, error: 'invalid' })
   }
 
+  /** The first questions hold the orchestrator: agence runs and its state says the
+   *  project has no settings file, or no state was read yet from a regisseur that runs. */
+  private held(): boolean {
+    const regisseur = this.regisseur?.view().state
+    if (regisseur === undefined || regisseur === 'missing') return false
+    if (!this.files?.read().state) return regisseur === 'starting' || regisseur === 'running'
+    return this.state.pratiques?.projet === false
+  }
+
+  private async launchWhenReady(): Promise<void> {
+    if (!this.pending || this.disposed || this.held()) return
+    this.pending = false
+    await this.spawnOrchestrator(this.resume)
+  }
+
+  /** The end of the first questions: one write (every answer, or the default preset), then the launch. */
+  private async questions(reponses: Record<string, PratiqueValeur> | undefined, passer: boolean): Promise<AgenceOpResult> {
+    if (!this.pending || this.state.pratiques?.projet !== false) return { ok: false, error: 'conflict', message: 'Les premières questions ont déjà une réponse.' }
+    let result: AgenceOpResult
+    if (passer) {
+      result = await this.click('/pratiques/preset', { nom: PRESET_DEFAUT })
+    } else {
+      const entries = Object.entries(reponses ?? {})
+      const known = new Set(this.state.pratiques.champs?.map((champ) => champ.cle))
+      if (entries.length === 0 || !entries.every(([cle]) => known.has(cle))) return { ok: false, error: 'invalid' }
+      result = await this.click('/pratiques/set', { cle: entries.map(([cle]) => cle), valeur: entries.map(([, valeur]) => JSON.stringify(valeur ?? null)) })
+    }
+    if (!result.ok || !this.pending) return result
+    this.pending = false
+    await this.spawnOrchestrator(this.resume)
+    return result
+  }
+
   /** Starts what died: the orchestrator (resumed in a new PTY) and the
    *  regisseur. Busy when both run. Nothing restarts by itself. */
   private async restart(): Promise<AgenceOpResult> {
@@ -263,6 +304,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     // No agence CLI: nothing to act through, so nothing is shown as actionable.
     if (regisseur.state === 'missing' || !read.state) {
       this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu', pratiques: null, backlog: null })
+      if (this.pending) void this.launchWhenReady()
       return
     }
     const state = read.state
@@ -284,6 +326,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       pratiques,
       backlog: backlogView(state.backlog),
     })
+    if (this.pending) void this.launchWhenReady()
   }
 
   /** Titles of the panels the needs link: the document's for live panels,
