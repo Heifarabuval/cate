@@ -1388,7 +1388,7 @@ def revue_tour(st, r, maintenant):
 	if not c:
 		return
 	for q in st['questions']:
-		if q['answer'] is None and q['question'].startswith('Revue de cap'):
+		if q['answer'] is None and 'clics' in q and q['question'].startswith('Revue de cap'):  # la carte du régisseur, jamais une question d'agent
 			fermer_carte(st, q, 'remplacée par la revue suivante', 'dropped')
 	parties = [('en discussion depuis plus de 14 jours', [f['id'] for f in c['perimees']]),
 	           ('budgets dépassés', [f"{n['id']} {n['title']}" for n in c['depassements']]),

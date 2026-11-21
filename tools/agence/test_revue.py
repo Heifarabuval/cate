@@ -218,6 +218,17 @@ class Revue(Carte):
 		self.assertNotEqual(q['id'], ancienne['id'])
 		self.assertEqual(self.besoin(ancienne)['status'], 'dropped')
 
+	def test_revue_suivante_ne_ferme_pas_une_question_d_agent(self):
+		code, _ = self.cli('ask', '--from', 'o1', '--option', 'A|x', '--option', 'B|y', 'Revue de cap : on garde la vague 2 ?')
+		self.assertEqual(code, 0)
+		self.fiche('vieille', 15)
+		with mock.patch.object(agence, 'now_iso', return_value=NOW):
+			self.un_tour(live=('p1',))  # p1 : la page de la question, encore ouverte
+		self.assertEqual(len(self.revues()), 2)
+		agent = next(q for q in self.questions(ouvertes=False) if 'clics' not in q)
+		self.assertIsNone(agent['answer'])
+		self.assertEqual(self.besoin(agent)['status'], 'open')
+
 	def test_relancer_remet_maj_a_maintenant(self):
 		self.fiche('vieille', 15)
 		self.tour()
