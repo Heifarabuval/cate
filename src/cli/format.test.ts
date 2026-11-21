@@ -13,4 +13,10 @@ describe('panelList', () => {
     expect(lines[2]).toMatch(/^>\s+bbbbbbbb/)
     expect(lines[3]).toMatch(/^\s+cccccccc/)
   })
+
+  it('prints a sent prompt: its id alone when typed at once, id first and the wait when queued', () => {
+    expect(formatOutput('promptId', { promptId: 'p1', state: 'sending', ahead: 0 })).toBe('p1')
+    expect(formatOutput('promptId', { promptId: 'p2', state: 'queued', ahead: 3 })).toBe('p2 queued (3 ahead)')
+    expect(formatOutput('promptId', { promptId: 'p3' })).toBe('p3')
+  })
 })

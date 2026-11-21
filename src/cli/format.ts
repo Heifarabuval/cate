@@ -221,7 +221,10 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
   },
   promptId: (value) => {
     const promptId = asObject(value)?.promptId
-    return typeof promptId === 'string' ? promptId : generic(value)
+    if (typeof promptId !== 'string') return generic(value)
+    // The id stays the first word. Typed at once: the id alone; waiting: say so (it goes out after the agent's turn).
+    const { state, ahead } = asObject(value) ?? {}
+    return state === 'queued' && typeof ahead === 'number' ? `${promptId} queued (${ahead} ahead)` : promptId
   },
   withdrawnPrompt: (value) => {
     const prompt = asObject(value)?.prompt
