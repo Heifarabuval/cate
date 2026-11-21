@@ -59,6 +59,10 @@ Une tâche peut aussi venir du backlog de fiches (écrit par l'interlocuteur, `a
 5. Clos le besoin comme les autres (`agence need done <besoin> --evidence ...`) : la fiche passe `faite` seule. Besoin abandonné : la fiche revient `prête` et attend un nouveau clic.
 6. Budget en jetons dépassé : le besoin passe en Bloquant avec « consommé / budget jetons » ; l'humain tranche (continuer, réduire, arrêter), pas toi.
 
+## Lentille : sur le clic « Éclairer » seulement
+
+Une lentille (angle imposé, liste `lentilles.json`) propose sur une fiche, ne tranche jamais. La carte « Éclairer » vient d'une décision structurante validée, ou de `agence lentille F<n> --carte` si l'humain en demande une. Aucun agent avant son clic. Au clic, ton message dit tout : agent neuf, brief seul (`agence lentille F<n> --hasard --json`), réponse par `agence fiche note`, ni état ni registre changés.
+
 ## Panneaux : chaque besoin ouvre son outil, relié à sa source
 
 | Besoin | Panneau | Commandes |

@@ -6,9 +6,15 @@ import { cpSync, mkdirSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
 /** Files an install must hold, relative to its root (the tarball's `required`). */
-export const AGENCE_REQUIRED = ['agence', 'agence-hook', 'agence.py', 'backlog.py', 'pratiques.py', 'pratiques.json'].map(
-  (file) => path.join('agence', file)
-)
+export const AGENCE_REQUIRED = [
+  'agence',
+  'agence-hook',
+  'agence.py',
+  'backlog.py',
+  'lentilles.json',
+  'pratiques.py',
+  'pratiques.json'
+].map((file) => path.join('agence', file))
 
 const NOT_SHIPPED = /^(test_.*\.py|__pycache__|fixtures|\..*)$/
 

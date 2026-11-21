@@ -9,6 +9,7 @@ import json
 import math
 import os
 import posixpath
+import random
 import re
 import tempfile
 from datetime import datetime, timedelta
@@ -436,6 +437,49 @@ def brief(fiche, decisions):
 	                  ('type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele')] +
 	                 [f"decisions : {val([x['id'] for x in liees])}"] +
 	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees])
+
+
+# ---------- lentilles (lot 8, FR-007) ----------
+
+LENTILLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lentilles.json')
+
+
+def charger_lentilles(path=LENTILLES):
+	"""La liste des lentilles (fichier de données éditable) : nom (un mot, unique), consigne, modele (null : défaut du CLI)."""
+	try:
+		with open(path) as f:
+			ls = json.load(f)
+	except (OSError, ValueError) as err:
+		raise Invalide(f'lentilles.json illisible : {err}')
+	if not isinstance(ls, list) or not ls:
+		raise Invalide('lentilles.json : une liste non vide attendue')
+	for x in ls:
+		if not (isinstance(x, dict) and set(x) == {'nom', 'consigne', 'modele'} and _txt(x['nom'])
+		        and re.fullmatch(r'[\w-]+', x['nom']) and _txt(x['consigne']) and x['consigne'].strip() and _txt_nul(x['modele'])):
+			raise Invalide(f'lentilles.json : lentille invalide {json.dumps(x, ensure_ascii=False)} (nom en un mot, consigne, modele)')
+	if len({x['nom'] for x in ls}) != len(ls):
+		raise Invalide('lentilles.json : nom en double')
+	return ls
+
+
+def tirer(lentilles, nom=None, rng=random):
+	"""La lentille nommée, sinon une tirée au hasard (rng : graine fixée par les tests)."""
+	if nom is None:
+		return rng.choice(lentilles)
+	for x in lentilles:
+		if x['nom'] == nom:
+			return x
+	raise Refus(f"lentille inconnue {nom} : {', '.join(x['nom'] for x in lentilles)}")
+
+
+def brief_lentille(fiche, lentille):
+	"""Texte donné à l'agent à contexte vierge : la consigne d'angle et la fiche seule. Ni décision, ni journal,
+	ni autre fiche (ses liens non plus)."""
+	val = lambda v: (', '.join(v) if isinstance(v, list) else '' if v is None else str(v)) or '-'  # noqa: E731
+	return '\n'.join([f"Lentille {lentille['nom']} : {lentille['consigne']}",
+	                  'Tu ne reçois que cette fiche. Propose, ne tranche pas : ta réponse est attachée à la fiche, '
+	                  "l'humain décide.", '', f"{fiche['id']} : {fiche['titre']}"] +
+	                 [f'{c} : {val(fiche[c])}' for c in ('type', 'priorite', 'preuve', 'fichiers', 'vision')])
 
 
 # ---------- fichiers ----------

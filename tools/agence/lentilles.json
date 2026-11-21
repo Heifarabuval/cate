@@ -1,0 +1,32 @@
+[
+ {
+  "nom": "inverser",
+  "consigne": "Prends le contre-pied de la fiche : et si l'on faisait l'inverse, ou rien ? Dis ce que l'inverse gagnerait et ce qu'il coûterait.",
+  "modele": null
+ },
+ {
+  "nom": "supprimer",
+  "consigne": "Cherche ce que l'on peut retirer : la fiche entière, un fichier, une étape. Dis ce qui casse si on le supprime, ou que rien ne casse.",
+  "modele": null
+ },
+ {
+  "nom": "novice",
+  "consigne": "Lis la fiche comme quelqu'un qui découvre le projet : qu'est-ce qui n'est pas compris, pas dit, ou supposé connu ?",
+  "modele": null
+ },
+ {
+  "nom": "dans-un-an",
+  "consigne": "Projette-toi dans un an : cette fiche faite, qu'est-ce qui pèse encore (maintenance, dette, coût) et qu'aurait-on voulu faire autrement ?",
+  "modele": null
+ },
+ {
+  "nom": "pire-cas",
+  "consigne": "Cherche le pire cas : ce qui peut casser, ce qui se perd, combien de temps, pour qui. Propose le garde-fou le moins cher.",
+  "modele": null
+ },
+ {
+  "nom": "agence-reelle",
+  "consigne": "Lis la fiche avec les yeux d'une petite agence réelle (peu de monde, des clients, un budget serré) : vaut-elle son coût, et que ferait-elle à la place ?",
+  "modele": null
+ }
+]
