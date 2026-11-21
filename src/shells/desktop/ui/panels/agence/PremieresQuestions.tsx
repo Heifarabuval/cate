@@ -1,12 +1,9 @@
 import { useRef, useState } from 'react'
-import type { AgenceOp, AgenceOpResult, PratiqueChamp, PratiqueValeur } from '@panels/agence/contract'
+import { premieresQuestions, type AgenceOp, type AgenceOpResult, type PratiqueChamp, type PratiqueValeur } from '@panels/agence/contract'
 import { InlineNotice } from '../../kernel/interaction'
 import { ActionButton, refusal, useAction } from './action'
 import { ChampControl } from './Reglages'
 import { ACTION, ACTION_PLAIN } from './styles'
-
-/** At most this many questions before the orchestrator first starts (spec 008, SC-006). */
-const MAX_QUESTIONS = 4
 
 /** The first questions of a workspace without a settings file (spec 008, US3): the
  *  essential fields that carry a question, one per screen, in the order published,
@@ -22,7 +19,7 @@ export default function PremieresQuestions({ champs, disponible, onRestart, send
   onRestart?: () => Promise<string | null>
   send(op: AgenceOp): Promise<unknown>
 }) {
-  const questions = champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
+  const questions = premieresQuestions(champs)
   const [index, setIndex] = useState(0)
   const [reponses, setReponses] = useState<Record<string, PratiqueValeur>>(() => Object.fromEntries(questions.map((champ) => [champ.cle, champ.valeur])))
   // Free text typed but not saved with « Enregistrer »: kept on « Précédent », « Suivant » and « Terminer ».

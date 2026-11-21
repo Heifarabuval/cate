@@ -144,6 +144,15 @@ export type PratiqueChamp = {
   origine: string
 }
 
+/** At most this many questions before the orchestrator first starts (spec 008, SC-006). */
+export const MAX_QUESTIONS = 4
+
+/** The first questions (spec 008, US3): the essential fields that carry a question,
+ *  in the order published, at most `MAX_QUESTIONS`. */
+export function premieresQuestions(champs: PratiqueChamp[]): PratiqueChamp[] {
+  return champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
+}
+
 export type PratiquePreset = { id: string; nom: string; explique: string; actif: boolean }
 
 /** The preset « Passer » and « Repartir des réglages par défaut » write (`DEFAUT` of the CLI's policy module). */

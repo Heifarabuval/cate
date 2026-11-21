@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { AgenceOp, PratiqueChamp } from '@panels/agence/contract'
+import { premieresQuestions, type AgenceOp, type PratiqueChamp } from '@panels/agence/contract'
 import PremieresQuestions from './PremieresQuestions'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -52,6 +52,8 @@ it('asks the essential questions only, one per screen, in the order received', a
 
 it('asks 4 questions at most when 6 are published (SC-006)', async () => {
   const six = Array.from({ length: 6 }, (_, n) => champ({ cle: `q${n}`, question: `Question ${n + 1} ?` }))
+  // The cap lives in the client core, so every shell asks the same four.
+  expect(premieresQuestions(six).map((c) => c.cle)).toEqual(['q0', 'q1', 'q2', 'q3'])
   act(() => root.render(<PremieresQuestions champs={six} disponible send={send} />))
   expect(host.textContent).toContain('1 sur 4')
   for (let n = 0; n < 3; n++) await click('Suivant')
