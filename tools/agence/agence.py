@@ -2388,7 +2388,8 @@ def un_tour():
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
 	try:  # le suivi des besoins reste prioritaire : un journal qui échoue ne tue pas le tour
-		declencheurs_tour(root(), {'orchestrateur': orch, 'agents': agents, 'usage': mesures}, time.time())
+		declencheurs_tour(root(), {'orchestrateur': orch, 'agents': agents, 'usage': mesures,
+		                           'actifs': pol['valeurs']['declencheurs.actifs']}, time.time())
 	except (Refus, OSError) as err:
 		log(f'déclencheurs : {err}')
 
@@ -2480,8 +2481,7 @@ def charger_table(path=None):
 		textes = all(isinstance(r[k], str) and r[k].strip() for k in ('id', 'commande', 'agentId', 'condition', 'donnee', 'indicateur'))
 		seuil_ok = r['seuil'] is None or _nombre(r['seuil'])
 		entiers = type(r['repos']) is int and r['repos'] >= 0 and type(r['plafond']) is int and r['plafond'] >= 1
-		if not (textes and seuil_ok and entiers and r['classe'] in ('A', 'B') and type(r['hypothese']) is bool
-		        and type(r.get('actif', True)) is bool):
+		if not (textes and seuil_ok and entiers and r['classe'] in ('A', 'B') and type(r['hypothese']) is bool):
 			raise Refus(f'table des déclencheurs : {ident} a un champ invalide')
 		if r['id'] in vus:
 			raise Refus(f'table des déclencheurs : {ident} en double')
@@ -2526,15 +2526,17 @@ def _cond_contexte_repos(t, inst, journal, maintenant):
 	return rendre('blanc', raison)  # ponytail: toujours à blanc en lot 2 ; `envoyer` quand la commande est activée pour le projet (lot 3)
 
 
-CONDITIONS = {'contexte-repos': _cond_contexte_repos}  # T2, T3 : lot 4 ; T4 à T10 inactives
+CONDITIONS = {'contexte-repos': _cond_contexte_repos}  # T2, T3 : spec 004 lot 4 ; T4 à T10 sans condition
 
 
 def evaluer(instantane, table, journal, maintenant):
-	"""Fonction pure : une décision par ligne active dont la condition existe. Ni entrée-sortie, ni modèle, ni cate."""
+	"""Fonction pure : une décision par ligne citée dans instantane['actifs'] (`declencheurs.actifs` de la politique)
+	dont la condition existe. Ni entrée-sortie, ni modèle, ni cate."""
+	actifs = instantane.get('actifs') or ()
 	decisions = []
 	for t in table:
 		condition = CONDITIONS.get(t['condition'])
-		if condition and t.get('actif', True):
+		if condition and t['id'] in actifs:
 			d = condition(t, instantane, journal, maintenant)
 			if d:
 				decisions.append(d)
@@ -2733,7 +2735,7 @@ def bilan(base, jours, maintenant):
 			'ignorees': verdict('ignoree'), 'refusees': verdict('refusee'),
 			'taux': round(verdict('reussi') / len(jouees), 3) if jouees else None,
 			'gain_median': _mediane(gains), 'contexte_median_blanc': _mediane(blancs)})
-		t = next((t for t in table if t['commande'] == commande and t['condition'] == 'contexte-repos' and t.get('actif', True)), None)
+		t = next((t for t in table if t['commande'] == commande and t['condition'] == 'contexte-repos'), None)
 		derniers = jouees[-5:]
 		echecs = len([l for l in derniers if l['verdict'] == 'echec'])
 		if t and echecs >= 3:  # le seuil est une hypothèse : la proposition se calcule, l'humain change la ligne de données ou dit non

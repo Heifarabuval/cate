@@ -10,8 +10,7 @@
   "repos": 600,
   "plafond": 3,
   "indicateur": "contextTokens après <= 50 % de l'avant au 2e tour suivant ; échec >= 80 %",
-  "hypothese": true,
-  "actif": true
+  "hypothese": true
  },
  {
   "id": "T2",
@@ -24,8 +23,7 @@
   "repos": 0,
   "plafond": 5,
   "indicateur": "réponse enregistrer, améliorer ou absorber dans les 30 min ; abandonner ou rien : échec",
-  "hypothese": true,
-  "actif": true
+  "hypothese": true
  },
  {
   "id": "T3",
@@ -38,8 +36,7 @@
   "repos": 604800,
   "plafond": 1,
   "indicateur": "un candidat accepté dans les 7 jours, lu comme un nouveau total exact plus bas dans le registre",
-  "hypothese": true,
-  "actif": true
+  "hypothese": true
  },
  {
   "id": "T4",
@@ -52,8 +49,7 @@
   "repos": 3600,
   "plafond": 1,
   "indicateur": "contextTokens après <= 30 000",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T5",
@@ -66,8 +62,7 @@
   "repos": 86400,
   "plafond": 1,
   "indicateur": "au moins une des 3 recommandations retenue",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T6",
@@ -80,8 +75,7 @@
   "repos": 86400,
   "plafond": 1,
   "indicateur": "un skill créé qui passe ses évals",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T7",
@@ -94,8 +88,7 @@
   "repos": 604800,
   "plafond": 1,
   "indicateur": "baisse du nombre de demandes sur les 7 jours suivants",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T8",
@@ -108,8 +101,7 @@
   "repos": 2592000,
   "plafond": 1,
   "indicateur": "une mise à jour acceptée",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T9",
@@ -122,8 +114,7 @@
   "repos": 2592000,
   "plafond": 1,
   "indicateur": "graphe régénéré et consulté",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T10",
@@ -136,7 +127,6 @@
   "repos": 86400,
   "plafond": 1,
   "indicateur": "réglage ajouté et check.py à 0 échec",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  }
 ]
