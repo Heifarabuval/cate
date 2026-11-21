@@ -116,3 +116,25 @@ it('a refusal of the runtime (fingerprint changed) shows its sentence and instal
   expect(text()).toContain('l’empreinte ne correspond pas à la carte')
   expect(button('Installer')!.disabled).toBe(false)
 })
+
+it('a double click on Installer sends one acceptImport', async () => {
+  let release!: () => void
+  acceptImport.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ appId: 'fusion-excel' }) }))
+  render(pending())
+  await click('Installer')
+  await click('Installer')
+  expect(acceptImport).toHaveBeenCalledTimes(1)
+  await act(async () => release())
+})
+
+it('a double click on Remplacer opens one confirmation, and a refusal frees the button', async () => {
+  let answer!: (ok: boolean) => void
+  confirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => { answer = resolve }))
+  render(pending({ replaces: 'local', diff: { added: [], changed: ['app.js'], removed: [] } }))
+  await click('Remplacer')
+  await click('Remplacer')
+  expect(confirm).toHaveBeenCalledTimes(1)
+  await act(async () => answer(false))
+  expect(acceptImport).not.toHaveBeenCalled()
+  expect(button('Remplacer')!.disabled).toBe(false)
+})

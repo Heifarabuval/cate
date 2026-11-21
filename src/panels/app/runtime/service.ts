@@ -25,7 +25,7 @@ export function appApiHandlers(deps: AppApiDeps) {
     export: async ({ id, out }) => {
       // Only a panel the scanner found: the id never names a path out of the folder.
       if (!deps.scanner.list().some((entry) => entry.id === id)) throw new RpcError('rejected', `app-unknown: panneau inconnu « ${id} »`)
-      const result = await exportPanel({ folder: path.join(deps.dir, id), out })
+      const result = await exportPanel({ folder: path.join(deps.dir, id), panneauxDir: deps.dir, out })
       if (!result.ok) throw new RpcError('rejected', result.error)
       return {
         out: result.out,

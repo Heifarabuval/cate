@@ -32,13 +32,14 @@ export function ImportCard({ workspaceId, item }: { workspaceId: string; item: P
 
   const run = async (action: 'accept' | 'replace' | 'drop') => {
     if (busy) return
-    if (action === 'replace' && item.replaces === 'local'
-      && !(await clientUi().confirm(`Remplacer votre panneau local « ${item.appId} » ? Ses fichiers seront écrasés.`))) return
     const apps = tryRuntimeFor(workspaceId)?.apps
     if (!apps) return setError('Workspace déconnecté : réessayer une fois reconnecté.')
+    // Busy before the confirmation: a second click must not open a second one.
     setBusy(true)
     setError(null)
     try {
+      if (action === 'replace' && item.replaces === 'local'
+        && !(await clientUi().confirm(`Remplacer votre panneau local « ${item.appId} » ? Ses fichiers seront écrasés.`))) return
       if (action === 'drop') await apps.dropImport({ importId: item.importId })
       else await apps.acceptImport({ importId: item.importId, fingerprint: item.fingerprint, ...(action === 'replace' ? { replace: true } : {}) })
     } catch (err) {

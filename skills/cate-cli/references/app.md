@@ -19,8 +19,8 @@ cate app imports                                       # the imports waiting for
   private key, a known token (`ghp_`, `sk-`, `AKIA`) or an absolute path of
   the machine (`/Users/`, `/home/`), naming the file and the line, never the
   value. Passing this check does not prove there is no secret.
-- `--out` is a path on the machine that runs the workspace, outside the
-  panel's folder.
+- `--out` is a path on the machine that runs the workspace. It must not
+  exist (nothing is overwritten) and must be outside the panels folder.
 - Give the fingerprint to the recipient by another channel than the package.
   `--empreinte` (8 hex characters at least) refuses a package whose
   fingerprint does not start with it, before anything is put on hold.

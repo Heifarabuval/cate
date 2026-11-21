@@ -56,8 +56,8 @@ it('writes a reproducible bundle whose fingerprint is the folder fingerprint, an
   fs.writeFileSync(path.join(folder, 'node_modules', 'lib', 'index.js'), 'x')
   const before = tree(folder)
 
-  const first = await exportPanel({ folder, out: path.join(root, 'a.cate-panneau') })
-  const second = await exportPanel({ folder, out: path.join(root, 'b.cate-panneau') })
+  const first = await exportPanel({ folder, panneauxDir: panneaux, out: path.join(root, 'a.cate-panneau') })
+  const second = await exportPanel({ folder, panneauxDir: panneaux, out: path.join(root, 'b.cate-panneau') })
 
   expect(first).toMatchObject({ ok: true, omitted: ['.git/', 'node_modules/'] })
   expect(fs.readFileSync(path.join(root, 'a.cate-panneau'))).toEqual(fs.readFileSync(path.join(root, 'b.cate-panneau')))
@@ -72,7 +72,7 @@ it('writes a reproducible bundle whose fingerprint is the folder fingerprint, an
 it('refuses a symbolic link without writing anything', async () => {
   const folder = writePanel('fusion', [...soundFiles('fusion'), { path: 'lien.js', data: '', link: 'index.html' }])
   const out = path.join(root, 'out.cate-panneau')
-  const result = await exportPanel({ folder, out })
+  const result = await exportPanel({ folder, panneauxDir: panneaux, out })
   expect(result).toEqual({ ok: false, error: expect.stringMatching(/lien\.js.*lien symbolique/) })
   expect(fs.existsSync(out)).toBe(false)
 })
@@ -81,7 +81,7 @@ it('refuses a secret, naming file and line but never the value', async () => {
   const value = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
   const folder = writePanel('fusion', [...soundFiles('fusion'), { path: 'conf.js', data: `const a = 1\nconst t = "${value}"` }, { path: '.env', data: 'A=1' }])
   const out = path.join(root, 'out.cate-panneau')
-  const result = await exportPanel({ folder, out })
+  const result = await exportPanel({ folder, panneauxDir: panneaux, out })
   expect(result.ok).toBe(false)
   if (result.ok) return
   expect(result.error).toMatch(/conf\.js:2/)
@@ -93,12 +93,53 @@ it('refuses a secret, naming file and line but never the value', async () => {
 it('never writes inside the panel folder', async () => {
   const folder = writePanel('fusion', soundFiles('fusion'))
   const before = tree(folder)
-  const result = await exportPanel({ folder, out: path.join(folder, 'fusion.cate-panneau') })
+  const result = await exportPanel({ folder, panneauxDir: panneaux, out: path.join(folder, 'fusion.cate-panneau') })
   expect(result).toEqual({ ok: false, error: expect.stringMatching(/dans le dossier du panneau/) })
   expect(tree(folder)).toEqual(before)
 })
 
 it('says when the panel is missing', async () => {
-  const result = await exportPanel({ folder: path.join(panneaux, 'absent'), out: path.join(root, 'x.cate-panneau') })
+  const result = await exportPanel({ folder: path.join(panneaux, 'absent'), panneauxDir: panneaux, out: path.join(root, 'x.cate-panneau') })
   expect(result).toEqual({ ok: false, error: expect.stringMatching(/absent/) })
+})
+
+it('refuses a target that already exists and leaves it untouched', async () => {
+  const folder = writePanel('fusion', soundFiles('fusion'))
+  const out = path.join(root, 'existant.txt')
+  fs.writeFileSync(out, 'à garder')
+  const result = await exportPanel({ folder, panneauxDir: panneaux, out })
+  expect(result).toEqual({ ok: false, error: expect.stringMatching(/existe déjà/) })
+  expect(fs.readFileSync(out, 'utf-8')).toBe('à garder')
+})
+
+it('refuses a symbolic link as target without writing through it', async () => {
+  const folder = writePanel('fusion', soundFiles('fusion'))
+  const victim = path.join(root, 'victime.txt')
+  fs.writeFileSync(victim, 'à garder')
+  const out = path.join(root, 'lien.cate-panneau')
+  fs.symlinkSync(victim, out)
+  const result = await exportPanel({ folder, panneauxDir: panneaux, out })
+  expect(result).toEqual({ ok: false, error: expect.stringMatching(/existe déjà/) })
+  expect(fs.readFileSync(victim, 'utf-8')).toBe('à garder')
+})
+
+it('refuses any target under the panels folder, another panel’s included', async () => {
+  const folder = writePanel('fusion', soundFiles('fusion'))
+  const other = writePanel('autre', soundFiles('autre'))
+  const before = tree(other)
+  for (const out of [path.join(other, 'index.html.bak'), path.join(panneaux, 'nouveau.cate-panneau'), path.join(panneaux, 'nouveau', 'index.html')]) {
+    const result = await exportPanel({ folder, panneauxDir: panneaux, out })
+    expect(result, out).toEqual({ ok: false, error: expect.stringMatching(/dossier des panneaux/) })
+    expect(fs.existsSync(out), out).toBe(false)
+  }
+  expect(tree(other)).toEqual(before)
+})
+
+it('refuses a target reached through a link into the panels folder', async () => {
+  const folder = writePanel('fusion', soundFiles('fusion'))
+  const via = path.join(root, 'via')
+  fs.symlinkSync(panneaux, via)
+  const result = await exportPanel({ folder, panneauxDir: panneaux, out: path.join(via, 'x.cate-panneau') })
+  expect(result).toEqual({ ok: false, error: expect.stringMatching(/dossier des panneaux/) })
+  expect(fs.existsSync(path.join(panneaux, 'x.cate-panneau'))).toBe(false)
 })
