@@ -9,6 +9,9 @@ Usage : python3 -I attente_mesure.py DOSSIER [--usage-json FICHIER|-] [--days N]
   --usage-json : sortie de `cate agent usage --json` ; seuls les panneaux `claude-code`
                  sont lus, les autres comptent « non mesurés ». Sans lui : tous les journaux.
   --days N     : sans --usage-json, ignore les journaux modifiés il y a plus de N jours.
+  --postes     : ajoute `jetons_entree`, `jetons_cache_cree` et `jetons_total` (spec 011) ; sans lui, la sortie est celle de la spec 006.
+  --prefixe=P  : DOSSIER est alors le dossier des projets ; lit `P` (chemin encodé, il commence par
+                 `-`, d'où le `=`) et ses worktrees (`P-*`).
 
 Méthode (specs/006-cout-attente-orchestrateur/mesure.md) : un tour = un message `assistant`
 avec `usage`, dédoublonné par `message.id` ; jetons lus = `cache_read_input_tokens` ; cause =
@@ -16,9 +19,11 @@ le message utilisateur qui précède ; passage d'attente = le tour qui suit un a
 contenant `agent wait`.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
+import shlex
 import statistics
 import sys
 import time
@@ -80,6 +85,8 @@ def lire(path, seen, acc):
 					seen.add(mid)
 					acc['tours'].append((cur, u.get('cache_read_input_tokens') or 0, pending))
 					acc['sortie'] += u.get('output_tokens') or 0
+					acc['entree'] += u.get('input_tokens') or 0
+					acc['cache_cree'] += u.get('cache_creation_input_tokens') or 0
 					pending = False
 				for b in blocs:
 					cmd = b.get('input', {}).get('command') if isinstance(b, dict) and b.get('name') == 'Bash' else None
@@ -121,6 +128,9 @@ def resume(acc, sessions):
 		'tours': len(tours),
 		'jetons_lus': total,
 		'jetons_sortie': acc['sortie'],
+		'jetons_entree': acc['entree'],
+		'jetons_cache_cree': acc['cache_cree'],
+		'jetons_total': total + acc['sortie'] + acc['entree'] + acc['cache_cree'],
 		'causes': {c: {'tours': sum(1 for t in tours if t[0] == c), 'jetons_lus': lus([t for t in tours if t[0] == c])} for c in CAUSES},
 		'passages_attente': {'tours': len(passages), 'jetons_lus': lus(passages), 'moyenne': moy(passages), 'mediane': med(passages), 'part': ratio(lus(passages), total)},
 		'appels_attente': {'total': len(acc['appels']), 'par_timeout': par_timeout, 'duree_s': duree, 'passages_par_10min': ratio(len(passages) * 600, duree)},
@@ -129,15 +139,28 @@ def resume(acc, sessions):
 	}
 
 
-def mesurer(dossier, panneaux=None, days=None):
-	sessions = {'lues': 0, 'non_lues': 0, 'non_mesurees': 0}
-	if panneaux is None:
-		chemins = []
+def journaux(dossiers, days=None):
+	"""Chemins des journaux de chaque dossier, triés ; Refus si l'un sort de son dossier."""
+	chemins = []
+	for dossier in dossiers:
 		for nom in sorted(os.listdir(dossier)):
 			if nom.endswith('.jsonl'):
 				p = journal(dossier, nom[:-6])
 				if p and (days is None or os.stat(p).st_mtime >= time.time() - days * 86400):
 					chemins.append(p)
+	return chemins
+
+
+def dossiers_du_prefixe(base, prefixe):
+	"""`prefixe` (chemin encodé du clone) et ses worktrees `prefixe-*` sous `base`, rien d'autre."""
+	return [os.path.join(base, n) for n in sorted(os.listdir(base))
+		if (n == prefixe or n.startswith(prefixe + '-')) and os.path.isdir(os.path.join(base, n))]
+
+
+def mesurer(dossiers, panneaux=None, days=None):
+	sessions = {'lues': 0, 'non_lues': 0, 'non_mesurees': 0}
+	if panneaux is None:
+		chemins = journaux(dossiers, days)
 	else:
 		chemins = []
 		for pan in panneaux:
@@ -146,16 +169,75 @@ def mesurer(dossier, panneaux=None, days=None):
 				sessions['non_mesurees'] += len(ids)
 				continue
 			for sid in ids:
-				p = journal(dossier, sid)
+				p = next((p for p in (journal(d, sid) for d in dossiers) if p), None)
 				if p:
 					chemins.append(p)
 				else:
 					sessions['non_lues'] += 1
-	acc, seen = {'tours': [], 'appels': {}, 'duree_s': 0, 'sortie': 0}, set()
+	acc, seen = {'tours': [], 'appels': {}, 'duree_s': 0, 'sortie': 0, 'entree': 0, 'cache_cree': 0}, set()
 	for p in chemins:
 		lire(p, seen, acc)
 	sessions['lues'] = len(chemins)
 	return resume(acc, sessions)
+
+
+def empreinte(s):
+	return hashlib.sha256(' '.join(s.split()).encode('utf-8')).hexdigest()
+
+
+def evenements(path):
+	"""(ligne, message, instant) de chaque ligne de journal qui porte un message."""
+	with open(path, encoding='utf-8', errors='replace') as f:
+		for line in f:
+			try:
+				d = json.loads(line)
+			except ValueError:
+				continue
+			m = d.get('message') if isinstance(d, dict) else None
+			if isinstance(m, dict):
+				yield d, m, instant(d.get('timestamp'))
+
+
+def envoyes(path):
+	"""Empreintes des mots passés à `cate agent send` ou `agence` dans un journal (jamais rendues)."""
+	res = set()
+	for d, m, _ in evenements(path):
+		for b in m.get('content') if isinstance(m.get('content'), list) else []:
+			cmd = b.get('input', {}).get('command') if isinstance(b, dict) and b.get('name') == 'Bash' else None
+			try:
+				mots = shlex.split(cmd) if isinstance(cmd, str) else []
+			except ValueError:
+				continue
+			for i, w in enumerate(mots):
+				if os.path.basename(w) == 'agence' or (w == 'send' and mots[i - 1:i] == ['agent']):
+					res.update(empreinte(x) for x in mots[i + 1:])
+					break
+	return res
+
+
+def interventions(chemins):
+	"""Couples (instant, 'humain' | 'machine' | 'systeme') triés ; aucun texte rendu (spec 011, plan décision 1).
+
+	`machine` : préfixes de cause() ou texte égal à un envoi `cate agent send` / `agence` d'un autre journal.
+	`systeme` : un tour `assistant` (une fois par message.id) ou un résultat d'outil."""
+	sent = [envoyes(p) for p in chemins]
+	seen, res = set(), []
+	for i, path in enumerate(chemins):
+		autres = set().union(*(s for j, s in enumerate(sent) if j != i))
+		for d, m, t in evenements(path):
+			if t is None:
+				continue
+			c, kind = m.get('content'), cause(m)
+			if d.get('type') == 'assistant' and m.get('id') not in seen:
+				seen.add(m.get('id'))
+				res.append((t, 'systeme'))
+			elif d.get('type') == 'user' and kind == 'outil':
+				res.append((t, 'systeme'))
+			elif d.get('type') == 'user':
+				c = ''.join(b.get('text', '') for b in c if isinstance(b, dict)) if isinstance(c, list) else c
+				machine = kind != 'autre' or (isinstance(c, str) and empreinte(c) in autres)
+				res.append((t, 'machine' if machine else 'humain'))
+	return sorted(res)
 
 
 def texte(d, prefixe=''):
@@ -168,19 +250,25 @@ def texte(d, prefixe=''):
 
 def main(argv=None):
 	ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-	ap.add_argument('dossier')
+	ap.add_argument('dossier', nargs='+')
+	ap.add_argument('--prefixe')
+	ap.add_argument('--postes', action='store_true')
 	ap.add_argument('--usage-json', metavar='FICHIER')
 	ap.add_argument('--days', type=int)
 	ap.add_argument('--json', action='store_true')
 	a = ap.parse_args(argv)
 	try:
-		if not os.path.isdir(a.dossier):
+		if not all(os.path.isdir(d) for d in a.dossier) or (a.prefixe and len(a.dossier) != 1):
 			raise Refus('dossier de sessions introuvable')
+		dossiers = dossiers_du_prefixe(a.dossier[0], a.prefixe) if a.prefixe else a.dossier
 		panneaux = None
 		if a.usage_json:
 			with (sys.stdin if a.usage_json == '-' else open(a.usage_json)) as f:
 				panneaux = json.load(f)
-		res = mesurer(a.dossier, panneaux, a.days)
+		res = mesurer(dossiers, panneaux, a.days)
+		if not a.postes:
+			for k in ('jetons_entree', 'jetons_cache_cree', 'jetons_total'):
+				del res[k]
 	except Refus as e:
 		print(e, file=sys.stderr)
 		return 2

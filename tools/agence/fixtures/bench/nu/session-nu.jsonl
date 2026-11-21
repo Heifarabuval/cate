@@ -1,0 +1,11 @@
+{"type":"user","timestamp":"2026-01-01T10:00:00Z","message":{"role":"user","content":"MARQUEURNU bonjour"}}
+{"type":"assistant","timestamp":"2026-01-01T10:00:10Z","message":{"id":"a1","content":[{"type":"text","text":"MARQUEURNU un"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":5}}}
+{"type":"assistant","timestamp":"2026-01-01T10:00:20Z","message":{"id":"a2","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":2,"cache_creation_input_tokens":50,"cache_read_input_tokens":1100,"output_tokens":7}}}
+{"type":"user","timestamp":"2026-01-01T10:00:25Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"MARQUEURNU sortie"}]}}
+{"type":"assistant","timestamp":"2026-01-01T10:00:30Z","message":{"id":"a3","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":1150,"output_tokens":3}}}
+{"type":"user","timestamp":"2026-01-01T10:01:00Z","message":{"role":"user","content":"MARQUEURNU deux"}}
+{"type":"assistant","timestamp":"2026-01-01T10:01:10Z","message":{"id":"a4","content":[{"type":"text","text":"MARQUEURNU quatre"}],"usage":{"input_tokens":3,"cache_creation_input_tokens":20,"cache_read_input_tokens":1200,"output_tokens":4}}}
+{"type":"assistant","timestamp":"2026-01-01T10:01:11Z","message":{"id":"a4","content":[],"usage":{"input_tokens":3,"cache_creation_input_tokens":20,"cache_read_input_tokens":1200,"output_tokens":4}}}
+{"type":"user","timestamp":"2026-01-01T10:03:00Z","message":{"role":"user","content":"MARQUEURNU trois"}}
+{"type":"assistant","timestamp":"2026-01-01T10:03:10Z","message":{"id":"a5","content":[],"usage":{"input_tokens":4,"cache_creation_input_tokens":10,"cache_read_input_tokens":1300,"output_tokens":6}}}
+{"type":"assistant","timestamp":"2026-01-01T10:03:20Z","message":{"id":"a6","content":[],"usage":{"input_tokens":5,"cache_creation_input_tokens":5,"cache_read_input_tokens":1400,"output_tokens":8}}}

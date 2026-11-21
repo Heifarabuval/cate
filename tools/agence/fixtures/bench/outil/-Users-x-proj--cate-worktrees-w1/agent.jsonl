@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-01-01T11:00:20Z","message":{"role":"user","content":"MARQUEURAGENT brief"}}
+{"type":"assistant","timestamp":"2026-01-01T11:09:50Z","message":{"id":"g1","content":[{"type":"tool_use","id":"t9","name":"Bash","input":{"command":"cate agent send --panel abc \"Rapport de l'agent :  fini, 3 fichiers modifiés.\""}}],"usage":{"input_tokens":5,"cache_creation_input_tokens":50,"cache_read_input_tokens":500,"output_tokens":8}}}
+{"type":"assistant","timestamp":"2026-01-01T11:09:55Z","message":{"id":"g2","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":600,"output_tokens":3}}}
