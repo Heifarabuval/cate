@@ -1649,6 +1649,8 @@ def need_line(st, n):
 	if n.get('seen') or n.get('costByPanel'):  # un agent est suivi : sa dépense, ou « coût inconnu » (tiret de Cate, usage illisible)
 		c = cout_besoin(n)
 		meta.append(f"coût {cout_texte(c, None in n['costByPanel'].values())}" if c is not None else 'coût inconnu')
+	if n['status'] == 'open':  # jauge de contexte (spec 013, FR-001) : une par agent vivant, « contexte inconnu » sans mesure, jamais 0
+		meta += ['contexte inconnu' if v is None else f'contexte {jetons(v)} jetons' for v in (n.get('contexte') or {}).values()]
 	perm = n.get('perm') if n['agentBlocked'] else None  # états écrits avant ce champ : pas de demande lue
 	if n['agentBlocked']:
 		meta.append("agent bloqué sur une permission ou une question")
@@ -2076,6 +2078,11 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 				n.setdefault('costByPanel', {})[p] = c
 			elif p in (usage or {}):  # agent connu de Cate sans coût lisible (tiret, négatif, NaN) : inconnu, sans effacer un coût déjà lu
 				n.setdefault('costByPanel', {}).setdefault(p, None)
+		ctx = {p: contexte(mesures, p) for p in n['panels'] if p in by_panel}  # jauge (spec 013) : agents vivants du tour seulement
+		if ctx:
+			n['contexte'] = ctx
+		else:
+			n.pop('contexte', None)
 		c = cout_besoin(n)
 		if n.get('budgetUsd') and c is not None and c > n['budgetUsd'] and not n.get('overBudgetUsd'):
 			n['overBudget'] = n['overBudgetUsd'] = True
@@ -2477,6 +2484,12 @@ def lire_mesures():
 def couts(mesures):
 	"""Coût (dollars équivalent API) par panneau ; None si les mesures n'ont pas pu être lues."""
 	return None if mesures is None else {p: r.get('costUsd') for p, r in mesures.items()}
+
+
+def contexte(mesures, p):
+	"""contextTokens du panneau dans les lignes de cate agent usage ; None s'il manque ou n'est pas un nombre positif."""
+	v = ((mesures or {}).get(p) or {}).get('contextTokens')
+	return v if _nombre(v) and v >= 0 else None
 
 
 def lire_usage():

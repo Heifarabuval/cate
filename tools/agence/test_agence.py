@@ -3809,6 +3809,46 @@ class CoutBesoin(Base):
 		self.assertIn('--budget-usd', out.getvalue())
 
 
+class JaugeContexte(Base):
+	"""Spec 013 lot 1 (T010, SC-001) : contexte de chaque agent vivant lu par le faux cate agent usage du tour,
+	« contexte inconnu » sans mesure, jamais 0."""
+
+	def setUp(self):
+		super().setUp()
+		self.booted()
+		with agence.tx() as st:
+			self.nid = agence.add_need(st, 'task', 'Implémenter', panels=['a1'])[0]['id']
+
+	def tour(self, usage, agents=({'panelId': 'a1', 'state': 'running'},)):
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'},
+		                                           {'panelId': 'a1', 'title': 'a1', 'type': 'terminal'}])
+		self.run.reply(['cate', 'agent', 'list'], list(agents))
+		self.run.reply(['cate', 'agent', 'usage'], usage)
+		agence.un_tour()
+		return agence.page_suivi(self.state())
+
+	def test_contexte_lu_et_affiche(self):
+		page = self.tour([{'panelId': 'a1', 'contextTokens': 180000, 'inputTokens': 10, 'outputTokens': 5}])
+		self.assertIn('contexte 180 000 jetons', page)
+
+	def test_sans_contexttokens_contexte_inconnu_jamais_zero(self):
+		page = self.tour([{'panelId': 'a1', 'inputTokens': 10}])
+		self.assertIn('contexte inconnu', page)
+		self.assertNotIn('contexte 0', page)
+
+	def test_usage_refuse_ou_illisible_contexte_inconnu(self):
+		self.assertIn('contexte inconnu', self.tour('pas du json'))
+
+	def test_valeurs_hostiles_contexte_inconnu(self):
+		for v in (-5, float('nan'), '180000', True):
+			self.assertIn('contexte inconnu', self.tour([{'panelId': 'a1', 'contextTokens': v}]), v)
+
+	def test_agent_parti_plus_de_jauge(self):
+		self.tour([{'panelId': 'a1', 'contextTokens': 180000}])
+		page = self.tour([], agents=())
+		self.assertNotIn('contexte', page)
+
+
 class Version(unittest.TestCase):
 	"""`agence --version` lit `<install>/BUILD`, `agence.py` vivant dans `<install>/agence/`."""
 
