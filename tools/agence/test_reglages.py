@@ -238,6 +238,15 @@ class Champs(Base):
 		with open(FIXTURE) as f:
 			self.assertEqual(json.load(f), vue)
 
+	def test_copie_identique_a_la_fixture_du_panneau(self):
+		"""Le formulaire TypeScript lit sa copie de la vue : elle suit la sortie réelle, champ pour champ."""
+		copie = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'src', 'panels', 'agence', 'contract', 'fixtures',
+		                     'vue-reglages.json')
+		if not os.path.exists(copie):
+			self.skipTest('copie du panneau absente de ce dossier (tarball sans src/)')
+		with open(FIXTURE, encoding='utf-8') as a, open(copie, encoding='utf-8') as b:
+			self.assertEqual(json.load(a), json.load(b))
+
 
 # ---------- T003 : phrases humaines (FR-005, SC-005) ----------
 

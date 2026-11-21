@@ -415,7 +415,9 @@ describe('AgenceSession', () => {
     it('drops a field of the wrong shape and keeps the others', async () => {
       const { session } = withForm({ champs: [{ cle: 3 }, ...vueReglages.champs.slice(0, 2)] })
       await session.start()
-      expect(snap(session).pratiques!.champs!.map((champ) => champ.cle)).toEqual(['livraison.mode', 'livraison.merge'])
+      expect(snap(session).pratiques!.champs!.map((champ) => champ.cle)).toEqual(
+        vueReglages.champs.slice(0, 2).map((champ) => champ.cle),
+      )
     })
 
     it('pratique.set posts the key and its value as JSON to /pratiques/set', async () => {
