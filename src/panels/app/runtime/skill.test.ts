@@ -5,7 +5,8 @@ import { parseManifest } from '../contract'
 import { contentSecurityPolicy } from './server'
 
 const skill = path.resolve(__dirname, '../../../../skills/panneau-perso')
-const read = (...parts: string[]) => fs.readFileSync(path.join(skill, ...parts), 'utf-8')
+// Windows checks the skill out with CRLF: every test here reads it with LF line ends.
+const read = (...parts: string[]) => fs.readFileSync(path.join(skill, ...parts), 'utf-8').replace(/\r\n/g, '\n')
 const LONG_DASH = String.fromCharCode(0x2014)
 
 interface Eval {

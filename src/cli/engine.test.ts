@@ -263,11 +263,11 @@ describe('help', () => {
     expect(helpText(commands, ['app'])).toMatch(/\n {2}imports +\S/)
     expect(call(['app', 'export', 'fusion', '--out', 'fusion.cate-panneau'])).toMatchObject({
       method: 'cate.app.export',
-      args: { id: 'fusion', out: '/work/repo/fusion.cate-panneau' }
+      args: { id: 'fusion', out: path.resolve('/work/repo/fusion.cate-panneau') }
     })
     expect(call(['app', 'import', 'fusion.cate-panneau', '--empreinte', 'abcd1234'])).toMatchObject({
       method: 'cate.app.import',
-      args: { source: '/work/repo/fusion.cate-panneau', fingerprint: 'abcd1234' }
+      args: { source: path.resolve('/work/repo/fusion.cate-panneau'), fingerprint: 'abcd1234' }
     })
     expect(() => parse(['app', 'export', 'fusion'])).toThrow(/missing --out <fichier>/)
 
