@@ -6,9 +6,9 @@
    "cle": "metier",
    "nom": "Votre métier",
    "explique": "Il choisit les outils branchés et ce qu'il faut voir pour qu'une tâche soit finie.",
-   "groupe": "avance",
+   "groupe": "essentiel",
    "portee": "workspace",
-   "question": null,
+   "question": "Quel est votre métier ?",
    "forme": "valeurs",
    "choix": [
     {
@@ -158,7 +158,7 @@
    "explique": "Les agents écrivent-ils d'abord un test qui échoue, puis le code qui le fait passer ?",
    "groupe": "essentiel",
    "portee": "workspace",
-   "question": "Les agents écrivent-ils un test avant le code ?",
+   "question": null,
    "forme": "valeurs",
    "choix": [
     {

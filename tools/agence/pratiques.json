@@ -1,7 +1,8 @@
 {
  "cles": {
-  "metier": {"parmi": "metiers.json", "un": true, "groupe": "avance", "portee": "workspace",
-   "nom": "Votre métier", "explique": "Il choisit les outils branchés et ce qu'il faut voir pour qu'une tâche soit finie."},
+  "metier": {"parmi": "metiers.json", "un": true, "groupe": "essentiel", "portee": "workspace",
+   "nom": "Votre métier", "explique": "Il choisit les outils branchés et ce qu'il faut voir pour qu'une tâche soit finie.",
+   "question": "Quel est votre métier ?"},
   "connecteurs.lecture": {"parmi": "connecteurs.json", "groupe": "avance", "portee": "workspace",
    "nom": "Outils que les agents peuvent lire", "explique": "Les agents y lisent librement. Par défaut, tous les outils de votre métier."},
   "connecteurs.ecriture": {"parmi": "connecteurs.json", "groupe": "avance", "portee": "workspace",
@@ -23,7 +24,6 @@
   "tests": {"valeurs": ["libre", "tdd"], "groupe": "essentiel", "portee": "workspace",
    "nom": "Tests", "explique": "Les agents écrivent-ils d'abord un test qui échoue, puis le code qui le fait passer ?",
    "choix": {"libre": "Au choix de l'agent", "tdd": "Un test qui échoue d'abord, puis le code"},
-   "question": "Les agents écrivent-ils un test avant le code ?",
    "exige": {"tdd": "Tests d'abord : pour toute logique, un test rouge vu en échec avant le code, sortie citée, puis le vert."}},
   "speckit": {"valeurs": ["non", "au-dela-d-une-journee", "toujours"], "groupe": "avance", "portee": "workspace",
    "nom": "Cahier des charges avant le code", "explique": "Quand une fonctionnalité est d'abord décrite par écrit, puis planifiée, avant d'être codée.",

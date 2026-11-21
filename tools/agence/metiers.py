@@ -191,3 +191,42 @@ def verifier_preuve(genre, valeur, racine):
 	with open(chemin, 'rb') as f:
 		empreinte = hashlib.sha256(f.read()).hexdigest()
 	return f'{os.path.relpath(chemin, racine)} sha256 {empreinte}'
+
+
+def lire_secret(variable, fichier):
+	"""Valeur d'un secret nommé : la variable d'environnement, sinon la ligne VARIABLE= du fichier .env nommé ; None
+	sinon. Seul un script d'accès s'en sert : jamais affichée, copiée, publiée ni écrite (FR-006)."""
+	if os.environ.get(variable):
+		return os.environ[variable]
+	if fichier:
+		try:
+			with open(os.path.expanduser(fichier)) as f:
+				for ligne in f:
+					if ligne.startswith(variable + '='):
+						return ligne.split('=', 1)[1].strip().strip('"\'')
+		except OSError:
+			pass
+	return None
+
+
+def etats_mcp(sortie):
+	"""{serveur normalisé: état} lu dans la sortie de `claude mcp list` (« <nom>: <commande> - ✔ Connected ») ; le nom
+	normalisé est celui des outils (« claude.ai Gmail » -> claude_ai_Gmail)."""
+	out = {}
+	for ligne in sortie.splitlines():
+		m = re.match(r'^(.+?): .* - (.+)$', ligne.strip())
+		if m:
+			out[re.sub(r'[^A-Za-z0-9_-]', '_', m.group(1))] = m.group(2).strip()
+	return out
+
+
+def acces(c, etats):
+	"""Accès d'un connecteur, en mots : mcp branché, mcp non connecté (<état>), mcp absent, api, navigateur."""
+	if c['acces'] == 'navigateur':
+		return 'navigateur, dernier recours, lecture seule'
+	if c['acces'] == 'api':
+		return 'api, lecture seule'
+	etat = etats.get(c['serveur'])
+	if etat is None:
+		return 'mcp absent'
+	return 'mcp branché' if 'Connected' in etat and not etat.startswith('!') else f'mcp non connecté ({etat})'

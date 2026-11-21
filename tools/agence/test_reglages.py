@@ -24,7 +24,10 @@ import pratiques  # noqa: E402
 from test_agence import FakeRun  # noqa: E402
 
 NOUVELLES = {'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto'}
-QUESTIONS = ['livraison.mode', 'tests', 'verification', 'agents.max']  # Q7 de 008, ordre du schéma
+# Q7 de 008, ordre du schéma ; Q4 de 012 : la question du métier remplace celle de tests, qui reste essentiel.
+QUESTIONS = ['metier', 'livraison.mode', 'verification', 'agents.max']
+ESSENTIELS = ['metier', 'livraison.mode', 'tests', 'verification', 'agents.max']
+CATALOGUES = os.path.join(HERE, 'fixtures', 'metiers')
 CHAMP = {'cle', 'nom', 'explique', 'groupe', 'portee', 'question', 'forme', 'choix', 'bornes', 'vide', 'defaut', 'valeur',
          'origine'}
 FIXTURE = os.path.join(HERE, 'fixtures', 'vue-reglages.json')
@@ -100,7 +103,7 @@ class Schema(Base):
 				self.assertIn(spec['groupe'], ('essentiel', 'avance'))
 				self.assertIn(spec['portee'], ('workspace', 'dev'))
 				self.assertNotIn('dit', spec)  # coupe nette : explique remplace dit
-				if spec['groupe'] == 'essentiel':
+				if spec['groupe'] == 'essentiel' and cle != 'tests':  # Q4 de 012 : tests sans question
 					self.assertTrue(spec.get('question'))
 				if spec.get('nul'):
 					self.assertTrue(spec.get('vide'), 'une valeur vide permise a son libellé')
@@ -116,7 +119,9 @@ class Schema(Base):
 		qs = [k for k, s in self.sch['cles'].items() if s.get('question')]
 		self.assertEqual(qs, QUESTIONS)
 		self.assertTrue(3 <= len(qs) <= 5)
-		self.assertEqual([k for k, s in self.sch['cles'].items() if s['groupe'] == 'essentiel'], QUESTIONS)
+		self.assertEqual(len(qs), 4)  # 008 SC-006 tenu
+		self.assertEqual([k for k, s in self.sch['cles'].items() if s['groupe'] == 'essentiel'], ESSENTIELS)
+		self.assertNotIn('question', self.sch['cles']['tests'])
 
 	def test_presets_nommes_valeurs_dessous(self):
 		for nom, p in self.sch['presets'].items():
@@ -190,7 +195,8 @@ class Champs(Base):
 		self.assertEqual((champs['modele.tri']['forme'], champs['modele.tri']['choix']), ('motif', None))
 		self.assertTrue(champs['preuve']['vide'])
 		self.assertIsNone(champs['tests']['vide'])
-		self.assertEqual(champs['tests']['question'], self.sch['cles']['tests']['question'])
+		self.assertEqual(champs['verification']['question'], self.sch['cles']['verification']['question'])
+		self.assertIsNone(champs['tests']['question'])  # Q4 de 012 : la question du métier la remplace
 
 	def test_projet_et_nb_projet(self):
 		pub = self.tour()
@@ -244,6 +250,42 @@ HORS_LISTE = {
 	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
 	'metier': 'jeton-secret-3', 'connecteurs.lecture': ['jeton-secret-4'], 'connecteurs.ecriture': 'jeton-secret-5',
 }
+
+
+class ChampsDuMetier(Base):
+	"""Spec 012, lot 4, T042 (SC-002) : le métier et ses droits se règlent par le formulaire, par des noms, jamais par
+	un nom d'outil MCP ni une clé technique."""
+
+	def setUp(self):
+		super().setUp()
+		env = unittest.mock.patch.dict(os.environ, {'AGENCE_CATALOGUES': CATALOGUES})
+		env.start()
+		self.addCleanup(env.stop)
+
+	def champs(self):
+		return {c['cle']: c for c in self.tour()['champs']}
+
+	def test_metier_premiere_question_choix_des_noms(self):
+		c = self.champs()['metier']
+		self.assertEqual((c['groupe'], c['forme'], c['valeur']), ('essentiel', 'valeurs', 'dev'))
+		self.assertTrue(c['question'])
+		self.assertEqual([x['libelle'] for x in c['choix']], ['Développement', 'Data manager', 'Chef de projet', 'Rédacteur'])
+		self.assertEqual([k for k, x in self.champs().items() if x['question']][0], 'metier')
+
+	def test_connecteurs_du_metier_seulement_par_leur_nom(self):
+		pratiques.regler(self.racine, self.home, 'metier', 'data-manager')
+		champs = self.champs()
+		for cle in ('connecteurs.lecture', 'connecteurs.ecriture'):
+			with self.subTest(cle=cle):
+				c = champs[cle]
+				self.assertEqual(c['forme'], 'liste')
+				self.assertEqual([x['libelle'] for x in c['choix']], ['Outil factice', 'Balises factices', 'Site factice'])
+				self.assertFalse([x for x in c['choix'] if 'mcp__' in x['libelle'] or x['libelle'] == x['valeur']])
+		self.assertEqual(champs['connecteurs.lecture']['valeur'], ['factice', 'balises-factice', 'site-factice'])
+		self.assertEqual(champs['connecteurs.ecriture']['valeur'], [])
+
+	def test_dev_aucun_connecteur_propose(self):
+		self.assertEqual(self.champs()['connecteurs.lecture']['choix'], [])
 
 
 class Phrases(Base):

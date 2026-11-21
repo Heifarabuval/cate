@@ -1078,15 +1078,12 @@ def drop_draft(st, did):
 
 def slack_token():
 	"""Jeton Slack de l'utilisateur (réglage envoi.slack) : la variable nommée, sinon le fichier .env nommé ; jamais affiché ni copié."""
+	import metiers  # lecture de secret commune aux connecteurs (spec 012, FR-006)
 	v = politique()['valeurs']
 	var, fichier = v['envoi.slack.variable'], v['envoi.slack.fichier']
-	if os.environ.get(var):
-		return os.environ[var]
-	if fichier:
-		with contextlib.suppress(OSError), open(os.path.expanduser(fichier)) as f:
-			for line in f:
-				if line.startswith(var + '='):
-					return line.split('=', 1)[1].strip().strip('"\'')
+	jeton = metiers.lire_secret(var, fichier)
+	if jeton:
+		return jeton
 	raise Refus(f"{var} absent de l'environnement" + (f' et de {fichier}' if fichier else ' (réglage envoi.slack.fichier pour un fichier .env)'))
 
 
@@ -2787,10 +2784,58 @@ def prerequis(hors_cate=False):
 	n, source = nom_source()
 	point('nom', source != 'défaut', False, f'{n} ({source})', 'git config --global agence.nom <Prénom>', info=True)
 	point('Slack, Gmail', False, False, 'non lisible depuis la CLI', 'brancher les connecteurs dans Claude Code', info=True)
+	if not pol['erreur'] and v['connecteurs.lecture'] + v['connecteurs.ecriture']:  # spec 012 : absent sous dev
+		manques = manques_connecteurs(faits_connecteurs())
+		point('connecteurs', not manques, False, ' | '.join(manques) or 'tous branchés', 'agence connecteur check', info=True)
 	for p in points if hors_cate else ():
 		if p['point'] in DANS_CATE:
 			p.update(etat='info', detail='à vérifier dans un terminal Cate', commande='agence doctor --prerequis')
 	return points
+
+
+def faits_connecteurs():
+	"""Connecteurs du métier actif (spec 012, FR-009) : accès lu en code (`claude mcp list`, l'environnement, le catalogue),
+	présence du secret (jamais sa valeur), droits. `claude mcp list` n'est lancé que pour un connecteur mcp."""
+	import metiers
+	v = politique()['valeurs']
+	cat = metiers.charger()
+	cs = [metiers.connecteur(cat, i) for i in metiers.metier(cat, v['metier'])['connecteurs']]
+	etats = {}
+	if any(c['acces'] == 'mcp' for c in cs):
+		code, out, err = RUN(['claude', 'mcp', 'list'], timeout=60)
+		etats = metiers.etats_mcp(out) if code == 0 else {}
+	faits = []
+	for c in cs:
+		s = c.get('secret')
+		secret = {'variable': s['variable'], 'present': bool(metiers.lire_secret(s['variable'], s.get('fichier')))} if s else None
+		faits.append({'id': c['id'], 'nom': c['nom'], 'acces': metiers.acces(c, etats), 'secret': secret,
+		              'lecture': c['id'] in v['connecteurs.lecture'], 'ecriture': c['id'] in v['connecteurs.ecriture']})
+	return faits
+
+
+def ligne_connecteur(f):
+	secret = f['secret'] and (f"secret présent : {f['secret']['variable']}" if f['secret']['present'] else f"secret absent : {f['secret']['variable']}")
+	droits = f"lecture {'ouverte' if f['lecture'] else 'fermée'}, " + ('écriture par carte' if f['ecriture'] else 'écriture fermée')
+	return f"{f['id']} ({f['nom']}) : " + ' ; '.join(x for x in (f['acces'], secret, droits) if x)
+
+
+def manques_connecteurs(faits):
+	return [ligne_connecteur(f) for f in faits if f['acces'] in ('mcp absent',) or f['acces'].startswith('mcp non connecté')
+	        or (f['secret'] and not f['secret']['present'])]
+
+
+def cmd_connecteur(a):
+	"""agence connecteur check [--json] : une ligne par connecteur du métier actif (lecture seule)."""
+	import metiers
+	try:
+		faits = faits_connecteurs()
+	except metiers.Invalide as err:
+		raise Env(f'catalogue des connecteurs refusé : {err}')
+	if a.json:
+		print(json.dumps(faits, ensure_ascii=False, indent=1))
+	else:
+		print('\n'.join(map(ligne_connecteur, faits)) or f"aucun connecteur pour le métier {politique()['valeurs']['metier']}")
+	return 0
 
 
 def cmd_doctor(a):
@@ -3928,6 +3973,10 @@ def parser():
 	d.add_argument('--json', action='store_true', help='avec --prerequis : sortie JSON')
 	d.add_argument('--hors-cate', action='store_true', help="avec --prerequis : hors d'un terminal Cate (amorçage), les points de Cate sortent en info")
 	d.set_defaults(fn=cmd_doctor)
+	cn = sub.add_parser('connecteur', help="connecteurs du métier actif (spec 012) : accès, secret (présence, jamais la valeur), droits")
+	cn.add_argument('action', choices=('check',))
+	cn.add_argument('--json', action='store_true')
+	cn.set_defaults(fn=cmd_connecteur)
 	g = sub.add_parser('guard', help='hook PreToolUse (JSON sur stdin)')
 	g.add_argument('--mode', choices=('send', 'pages'), required=True,
 	               help='send : envois Slack et Gmail, ask sauf brouillon cliqué identique ; pages : pages du régisseur et state.json')

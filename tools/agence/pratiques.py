@@ -209,7 +209,7 @@ def _metier(valeurs, origines, sources):
 		valeurs['connecteurs.lecture'] = list(m['connecteurs'])
 	if valeurs['connecteurs.ecriture'] is None:
 		valeurs['connecteurs.ecriture'] = []
-	for cle in ('connecteurs.lecture', 'connecteurs.ecriture'):
+	for cle in CLES_CONNECTEURS:
 		for ident in valeurs[cle]:
 			if ident not in m['connecteurs']:
 				nom = metiers.connecteur(cat, ident)['nom']
@@ -355,6 +355,7 @@ def poser_preset(racine, home, nom, dev=False, remplacer=False, ponctuel=None):
 # ---------- vue publiée pour le formulaire du panneau (spec 008, FR-003) ----------
 
 TYPES_CHAMP = ('valeurs', 'entier', 'motif', 'liste', 'parmi')
+CLES_CONNECTEURS = ('connecteurs.lecture', 'connecteurs.ecriture')
 
 
 def champs(sch, pol):
@@ -364,6 +365,9 @@ def champs(sch, pol):
 	for cle, spec in sch['cles'].items():
 		forme = next(f for f in TYPES_CHAMP if f in spec)
 		choix = _choix(spec)
+		if cle in CLES_CONNECTEURS:  # spec 012 : les connecteurs du métier actif, par leur nom
+			du_metier = metiers.metier(metiers.charger(), pol['valeurs']['metier'])['connecteurs']
+			choix = [(v, lib) for v, lib in choix if v in du_metier]
 		out.append({'cle': cle, 'nom': spec['nom'], 'explique': spec['explique'], 'groupe': spec['groupe'],
 		            'portee': spec['portee'], 'question': spec.get('question'),
 		            'forme': ('valeurs' if spec.get('un') else 'liste') if forme == 'parmi' else forme,
