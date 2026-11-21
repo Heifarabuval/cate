@@ -436,6 +436,12 @@ class Interlocuteur(Garde):
 				r = self.bash(cmd)
 				self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
 
+	def test_agent_send_passe_pour_un_agent_qui_n_est_pas_l_interlocuteur(self):
+		self.env['MOI'] = 'a7'  # un agent de travail : il rend compte à l'orchestrateur
+		r = self.bash('cate agent send --panel o1 "fini, 3 fichiers modifiés"')
+		self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
+		self.assertEqual(self.sondes(), 1)
+
 	def test_aucune_sonde_hors_de_la_liste(self):
 		for cmd in ('agence fiche add "x" --type idee', 'git status', 'agence decision list --active',
 		            'agence ask "Choix ?" --option "a|b" --option "c|d"', 'cate agent list --json'):
