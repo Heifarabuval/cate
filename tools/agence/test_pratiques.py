@@ -25,11 +25,13 @@ NEUTRE = {
 	'livraison.mode': 'pr', 'livraison.merge': 'clic', 'livraison.methode': 'squash', 'issue': 'libre', 'tests': 'libre',
 	'speckit': 'non', 'verification': 'libre', 'preuve': None, 'agents.max': 4, 'declencheurs.actifs': ['T1'],
 	'envoi.slack.variable': 'SLACK_USER_TOKEN', 'envoi.slack.fichier': None,
+	'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto',  # spec 008
 }
 PR_TDD = {
 	'livraison.mode': 'pr', 'livraison.merge': 'clic', 'livraison.methode': 'rebase', 'issue': 'obligatoire', 'tests': 'tdd',
 	'speckit': 'au-dela-d-une-journee', 'verification': 'differente', 'preuve': ['ci-verte', 'pr-mergee'], 'agents.max': 4,
 	'declencheurs.actifs': ['T1', 'T2', 'T3'], 'envoi.slack.variable': 'SLACK_USER_TOKEN', 'envoi.slack.fichier': None,
+	'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto',
 }
 # Une valeur hors liste (ou hors type) par clé du schéma : SC-003, 100 % des clés.
 HORS_LISTE = {
@@ -37,7 +39,8 @@ HORS_LISTE = {
 	'tests': 'tdd-strict', 'speckit': 'souvent', 'verification': 'croisee', 'preuve': ['pr-mergee', 'deploiement'],
 	'agents.max': 17, 'declencheurs.actifs': ['T1', 'T99'], 'envoi.slack.variable': 'xoxp-123-secret',
 	'envoi.slack.fichier': 'xoxp-123-secret', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously-skip-permissions',
-	'modele.implementation': ['sonnet'], 'modele.structurant': '',
+	'modele.implementation': ['sonnet'], 'modele.structurant': '', 'notifications.systeme': True,
+	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme',
 }
 # Spec 010, lot 7 (FR-010, SC-003) : modèle par rôle, proposé, jamais choisi par le code ; null hors des presets.
 MODELES = {'modele.tri': None, 'modele.interlocuteur': None, 'modele.implementation': None, 'modele.structurant': None}
@@ -140,7 +143,8 @@ class Priorite(Base):
 		for cle, v in PR_TDD.items():
 			if v == NEUTRE[cle]:
 				v = {'livraison.mode': 'main', 'livraison.merge': 'dehors', 'agents.max': 6,
-				     'envoi.slack.variable': 'MON_JETON', 'envoi.slack.fichier': '~/.env'}[cle]
+				     'envoi.slack.variable': 'MON_JETON', 'envoi.slack.fichier': '~/.env', 'notifications.systeme': 'non',
+				     'notifications.rappel': 900, 'agents.modele': 'sonnet', 'agents.effort': 'high'}[cle]
 			with self.subTest(cle=cle):
 				for f in (self.dev, self.projet):
 					with contextlib.suppress(FileNotFoundError):
@@ -171,7 +175,7 @@ class Refus(Base):
 				err = self.refus(self.projet, cle)
 				spec = schema['cles'][cle]
 				for permise in spec.get('valeurs') or spec.get('liste') or []:
-					self.assertIn(permise, err)
+					self.assertIn(pratiques.cle_choix(permise), err)
 
 	def test_valeurs_permises_citees(self):
 		self.ecrit(self.projet, {'tests': 'tdd-strict'})
@@ -360,27 +364,27 @@ class Brief(Base):
 
 class Presets(unittest.TestCase):
 	def test_neutre(self):
-		self.assertEqual(pratiques.schema()['presets']['neutre'], NEUTRE)
+		self.assertEqual(pratiques.schema()['presets']['neutre']['valeurs'], NEUTRE)
 
 	def test_pr_tdd(self):
-		self.assertEqual(pratiques.schema()['presets']['pr-tdd'], PR_TDD)
+		self.assertEqual(pratiques.schema()['presets']['pr-tdd']['valeurs'], PR_TDD)
 
 	def test_cles_des_presets_dans_le_schema(self):
 		schema = pratiques.schema()
-		self.assertEqual(len(schema['cles']), 16)
-		for nom, valeurs in schema['presets'].items():
+		self.assertEqual(len(schema['cles']), 20)  # 12 de 005, 4 modele.* de 010, 4 de 008
+		for nom, p in schema['presets'].items():
 			with self.subTest(preset=nom):
-				self.assertLessEqual(set(valeurs), set(schema['cles']))
+				self.assertLessEqual(set(p['valeurs']), set(schema['cles']))
 		# neutre est la base, complet sauf le modèle par rôle (null par défaut, jamais posé par un preset)
-		self.assertEqual(set(schema['presets']['neutre']), set(schema['cles']) - set(MODELES))
+		self.assertEqual(set(schema['presets']['neutre']['valeurs']), set(schema['cles']) - set(MODELES))
 
 	def test_modele_par_role_sc003(self):
 		"""T120, SC-003 : quatre clés modele.*, chaîne ou null, null par défaut, absentes des presets livrés."""
 		schema = pratiques.schema()
 		self.assertLessEqual(set(MODELES), set(schema['cles']))
-		for nom, valeurs in schema['presets'].items():
+		for nom, p in schema['presets'].items():
 			with self.subTest(preset=nom):
-				self.assertEqual(set(valeurs) & set(MODELES), set())
+				self.assertEqual(set(p['valeurs']) & set(MODELES), set())
 		tmp = tempfile.mkdtemp(prefix='pratiques-modele-')
 		self.addCleanup(shutil.rmtree, tmp, True)
 		for nom in schema['presets']:

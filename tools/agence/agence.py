@@ -17,7 +17,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence guard --mode send|pages     hook PreToolUse (JSON sur stdin) ; --mode obligatoire ; send échoue fermé (ask), pages échoue ouvert
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
-  agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
+  agence pratiques show|set|unset|preset [--remplacer]|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
   agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon modele.implementation, null s'il n'est pas posé ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond) ; --remplace F<n>, --doublon-de F<n> (spec 013) : la fiche remplacée ou doublon ne passe plus prête, lien inconnu ou en cycle refusé
   agence decision add|list|show|export [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n> ; show liste les fiches qui la citent ; export écrit docs/decisions.md (actives triées par date, spec 013), à commiter par une PR de docs ; Valider une décision structurante pose une carte « Éclairer » pour les fiches qui la citent
   agence lentille F<n> --nom N|--hasard [--carte] [--json]  lentille (spec 010, lot 8) : brief d'angle (consigne de lentilles.json + la fiche seule) ; --carte pose une carte « Éclairer » ; au clic, l'orchestrateur lance un agent à contexte vierge, sa proposition s'attache par agence fiche note, rien n'est tranché
@@ -183,6 +183,12 @@ def politique(agir=False):
 def valeurs(st):
 	"""Valeurs publiées par le dernier tour du régisseur, sinon lues dans les fichiers."""
 	return (st.get('pratiques') or politique())['valeurs']
+
+
+def publier(pol):
+	"""st['pratiques'] : la politique et la vue du formulaire du panneau (spec 008 FR-003), lues dans les mêmes fichiers."""
+	import pratiques  # voir politique()
+	return {**pol, **pratiques.vue(root(), os.environ.get('HOME'), pol, nom())}
 
 
 def plafond(st):
@@ -1266,6 +1272,9 @@ def click(path, form):
 				close_need(st, nid, 'dropped')
 				st['orphanGardes'].append(o['panel'])
 		return 303, '/'
+	m = re.match(r'^/pratiques/(set|unset|preset)$', path)
+	if m:
+		return click_pratiques(m.group(1), form)
 	m = re.match(r'^/ask/(q\d+)$', path)
 	if m:
 		qid = m.group(1)
@@ -1362,6 +1371,28 @@ def carte_eclairer(st, fiches, motif):
 		poser_carte(st, f"Éclairer : {motif} ; une lentille (angle imposé, agent à contexte vierge qui ne reçoit que la fiche) "
 		            'propose sans trancher', [{'label': f"Éclairer {f['id']}", 'detail': f['titre']} for f in fiches]
 		            + [{'label': 'Vu', 'detail': 'fermer sans lentille'}], [f"/lentille/{f['id']}/eclairer" for f in fiches] + [''])
+
+
+def click_pratiques(action, form):
+	"""Formulaire du panneau (spec 008 FR-004) : mêmes fonctions, même verrou que `agence pratiques` ; le fichier visé suit
+	la portée de la clé. Refus : 400 et la phrase simple. La vue est republiée aussitôt, sans attendre le tour."""
+	import pratiques  # voir politique()
+	racine, home = root(), os.environ.get('HOME')
+	un = lambda k: (form.get(k) or [''])[0]  # noqa: E731
+	with tx() as st:
+		try:
+			if action == 'set':
+				cles, vals = form.get('cle') or [], form.get('valeur') or []
+				paires = list(zip(cles, map(pratiques.lire_valeur, vals))) if len(cles) == len(vals) else []
+				pratiques.regler_plusieurs(racine, home, paires)
+			elif action == 'unset':
+				pratiques.retirer(racine, home, un('cle'), None)
+			else:
+				pratiques.poser_preset(racine, home, un('nom'), remplacer=un('remplacer') == '1')
+		except pratiques.Invalide as err:
+			return 400, err.phrase
+		st['pratiques'] = publier(politique())
+	return 303, '/'
 
 
 def click_carte(qid, form):
@@ -2577,7 +2608,7 @@ def un_tour():
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
 		st['garde'] = garde
-		st['pratiques'] = pol
+		st['pratiques'] = publier(pol)
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage, mesures)
 		apply(st, effects)
 		fiches_tour(st)
@@ -2624,7 +2655,7 @@ def cmd_watch(a):
 # Lot 2 : rien ne part. Une condition vraie donne `blanc`, journalisé avec la mesure avant (FR-020).
 
 TABLE_DECLENCHEURS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'declencheurs.json')
-CHAMPS_TABLE = ('id', 'commande', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
+CHAMPS_TABLE = ('id', 'commande', 'nom', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
 SETUP_JAMAIS_EN_A = ('learn', 'audit-config', 'update-config', 'fewer-permission-prompts', 'autocompact', 'skill-creator', 'claude-md-improver')  # FR-006
 MESURES = ('contextTokens', 'inputTokens', 'outputTokens', 'costUsd')
 CLES_LIGNE = ('ts', 'commande', 'classe', 'decision', 'panneau', 'raison', 'avant', 'apres', 'verdict')
@@ -2675,7 +2706,7 @@ def charger_table(path=None):
 		if not isinstance(r, dict) or any(k not in r for k in CHAMPS_TABLE):
 			manque = [k for k in CHAMPS_TABLE if not isinstance(r, dict) or k not in r]
 			raise Refus(f'table des déclencheurs : {ident} sans {", ".join(manque) or "champs"}')
-		textes = all(isinstance(r[k], str) and r[k].strip() for k in ('id', 'commande', 'agentId', 'condition', 'donnee', 'indicateur'))
+		textes = all(isinstance(r[k], str) and r[k].strip() for k in ('id', 'commande', 'nom', 'agentId', 'condition', 'donnee', 'indicateur'))
 		seuil_ok = r['seuil'] is None or _nombre(r['seuil'])
 		entiers = type(r['repos']) is int and r['repos'] >= 0 and type(r['plafond']) is int and r['plafond'] >= 1
 		if not (textes and seuil_ok and entiers and r['classe'] in ('A', 'B') and type(r['hypothese']) is bool):
@@ -3129,10 +3160,10 @@ def cmd_pratiques(a):
 		elif a.action == 'unset':
 			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev)}')
 		elif a.action == 'preset':
-			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev)}')
+			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer)}')
 		pol = pratiques.verifier(racine, home)
 	except pratiques.Invalide as err:
-		raise Env(f'pratiques : {err}')
+		raise Env(f'pratiques : {err} ({err.phrase})')
 	if a.action == 'show' and a.json:
 		print(json.dumps(pol, ensure_ascii=False, indent=1))
 	elif a.action == 'show':
@@ -3599,6 +3630,8 @@ def parser():
 		for arg in args:
 			x.add_argument(arg, help='JSON (4, null, ["ci-verte"]) ou texte' if arg == 'valeur' else None)
 		x.add_argument('--dev', action='store_true')
+		if action == 'preset':
+			x.add_argument('--remplacer', action='store_true', help='le fichier ne garde que le preset')
 	pr.set_defaults(fn=cmd_pratiques)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))

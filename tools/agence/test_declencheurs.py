@@ -28,7 +28,7 @@ PANNEAU = '3f2a9c1e-7b4d-4e0a-9d51-0a1b2c3d4e5f'
 AUTRE = '9a8b7c6d-1111-4222-8333-444455556666'
 # Midi, heure locale : J-N tombe le même jour local quel que soit le fuseau de la machine.
 MIDI = datetime(2026, 11, 20, 12, 0, 0).timestamp()
-CHAMPS_TABLE = ('commande', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
+CHAMPS_TABLE = ('commande', 'nom', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
 SETUP = ('/learn', '/audit-config', '/update-config', '/fewer-permission-prompts', '/autocompact', 'skill-creator', 'claude-md-improver')
 CLES_LIGNE = {'ts', 'commande', 'classe', 'decision', 'panneau', 'raison', 'avant', 'apres', 'verdict'}
 
@@ -123,10 +123,19 @@ class TableTest(Base):
 			self.assertIsInstance(t['hypothese'], bool)
 			self.assertIn(t['classe'], ('A', 'B'))
 
+	def test_chaque_ligne_a_un_nom_en_mots_simples(self):
+		"""Spec 008 (FR-015) : le formulaire affiche `nom` à la place de `commande`."""
+		self.assertIn('nom', agence.CHAMPS_TABLE)
+		for t in self.table:
+			self.assertTrue(isinstance(t['nom'], str) and t['nom'].strip(), t['id'])
+			self.assertNotIn(t['commande'].strip('/'), t['nom'], t['id'])
+		with self.assertRaises(agence.Refus):
+			agence.charger_table(self.ecrire([self.ligne_t(nom=' ')]))
+
 	def test_t4_a_t10_hors_de_tout_preset_et_marquees_hypothese(self):
 		presets = pratiques.schema()['presets'].values()
 		for t in self.table[3:]:
-			self.assertFalse(any(t['id'] in p['declencheurs.actifs'] for p in presets), t['id'])
+			self.assertFalse(any(t['id'] in p['valeurs']['declencheurs.actifs'] for p in presets), t['id'])
 			self.assertIs(t['hypothese'], True, t['id'])
 		self.assertTrue(all(t['hypothese'] for t in self.table))  # aucun seuil n'est une mesure
 
@@ -634,10 +643,10 @@ class ActifsTest(Base):
 		self.assertEqual([t['id'] for t in self.table if 'actif' in t], [])
 
 	def test_sous_neutre_t2_et_t3_vraies_ne_produisent_aucune_carte(self):
-		self.assertEqual(self.rendus(self.presets['neutre']['declencheurs.actifs']), ['T1'])
+		self.assertEqual(self.rendus(self.presets['neutre']['valeurs']['declencheurs.actifs']), ['T1'])
 
 	def test_sous_pr_tdd_t2_et_t3_produisent_leur_carte(self):
-		self.assertEqual(self.rendus(self.presets['pr-tdd']['declencheurs.actifs']), ['T1', 'T2', 'T3'])
+		self.assertEqual(self.rendus(self.presets['pr-tdd']['valeurs']['declencheurs.actifs']), ['T1', 'T2', 'T3'])
 
 	def test_liste_vide_ou_absente_rien_n_est_evalue(self):
 		self.assertEqual(self.rendus([]), [])

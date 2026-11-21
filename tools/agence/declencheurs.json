@@ -2,6 +2,7 @@
  {
   "id": "T1",
   "commande": "/compact",
+  "nom": "Résumer la conversation de l'orchestrateur quand elle s'allonge",
   "agentId": "claude-code",
   "condition": "contexte-repos",
   "donnee": "cate agent usage : contextTokens ; cate agent list : state, canReceivePrompt, prompts",
@@ -15,6 +16,7 @@
  {
   "id": "T2",
   "commande": "/learn",
+  "nom": "Tirer les leçons d'une tâche fusionnée",
   "agentId": "claude-code",
   "condition": "besoin-clos-par-merge",
   "donnee": "état de l'agence : besoin done par pr-merged:N",
@@ -28,6 +30,7 @@
  {
   "id": "T3",
   "commande": "/audit-config",
+  "nom": "Revoir la configuration des agents de temps en temps",
   "agentId": "claude-code",
   "condition": "jours-sans-audit",
   "donnee": "date de la dernière ligne du journal ; dernier total exact de ~/.claude/state/setup/ledger.jsonl (lecture seule)",
@@ -41,6 +44,7 @@
  {
   "id": "T4",
   "commande": "/clear",
+  "nom": "Repartir d'une conversation vide quand une vague est finie",
   "agentId": "claude-code",
   "condition": "vague-finie-contexte",
   "donnee": "état de l'agence (need list --open vide), contextTokens",
@@ -54,6 +58,7 @@
  {
   "id": "T5",
   "commande": "tooling-scout",
+  "nom": "Chercher un outil quand une même gêne revient",
   "agentId": "claude-code",
   "condition": "friction-repetee",
   "donnee": "usage.py (lecture seule), à normaliser (Q9)",
@@ -67,6 +72,7 @@
  {
   "id": "T6",
   "commande": "skill-creator",
+  "nom": "Écrire une procédure quand une même gêne revient",
   "agentId": "claude-code",
   "condition": "friction-repetee",
   "donnee": "usage.py (lecture seule), à normaliser (Q9)",
@@ -80,6 +86,7 @@
  {
   "id": "T7",
   "commande": "/fewer-permission-prompts",
+  "nom": "Réduire les demandes d'autorisation",
   "agentId": "claude-code",
   "condition": "demandes-de-permission",
   "donnee": "demandes de permission lues par l'agence sur 7 jours",
@@ -93,6 +100,7 @@
  {
   "id": "T8",
   "commande": "claude-md-improver",
+  "nom": "Améliorer les consignes du projet quand elles changent",
   "agentId": "claude-code",
   "condition": "claude-md-modifie",
   "donnee": "git log : commits touchant CLAUDE.md",
@@ -106,6 +114,7 @@
  {
   "id": "T9",
   "commande": "graphify",
+  "nom": "Mettre à jour la carte du code après des ajouts",
   "agentId": "claude-code",
   "condition": "fichiers-ajoutes",
   "donnee": "git diff --diff-filter=A depuis la date de graphify-out/",
@@ -119,6 +128,7 @@
  {
   "id": "T10",
   "commande": "/update-config",
+  "nom": "Appliquer un réglage recommandé",
   "agentId": "claude-code",
   "condition": "recommandation-de-t5",
   "donnee": "sortie de tooling-scout (carte, pas de lecture automatique)",

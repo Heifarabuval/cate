@@ -18,7 +18,16 @@ NOM_SOURCE = {'défaut': 'preset neutre'}
 
 
 class Invalide(Exception):
-	"""Politique refusée : le message cite le fichier, la clé et les valeurs permises."""
+	"""Politique refusée : le message cite le fichier, la clé et les valeurs permises (pour la CLI) ; `phrase` le dit
+	en mots simples, sans clé ni chemin (pour le formulaire du panneau, spec 008 FR-005)."""
+
+	def __init__(self, message, phrase=None):
+		super().__init__(message)
+		self.phrase = phrase or 'Ce réglage est refusé.'
+
+
+INCONNU = "Ce réglage n'existe pas."
+ILLISIBLE = 'Le fichier de réglages de ce workspace est illisible.'
 
 
 def schema(path=SCHEMA):
@@ -45,7 +54,7 @@ def lire_valeur(texte):
 def _permis(sch, cle):
 	spec = sch['cles'][cle]
 	if 'valeurs' in spec:
-		return 'une de : ' + ', '.join(spec['valeurs'])
+		return 'une de : ' + ', '.join(map(cle_choix, spec['valeurs']))
 	if 'entier' in spec:
 		return 'un entier de %d à %d' % tuple(spec['entier'])
 	if 'motif' in spec:
@@ -53,19 +62,48 @@ def _permis(sch, cle):
 	return 'une liste sans doublon parmi : ' + ', '.join(_liste(sch, spec))
 
 
+def _table(spec):
+	with open(os.path.join(ICI, spec['parmi'])) as f:
+		return json.load(f)
+
+
 def _liste(sch, spec):
+	return [r['id'] for r in _table(spec)] if 'parmi' in spec else spec['liste']
+
+
+def cle_choix(v):
+	"""Clé d'une valeur dans `choix` : le texte tel quel, sinon son JSON (300 -> "300")."""
+	return v if isinstance(v, str) else json.dumps(v)
+
+
+def _choix(spec):
+	"""[(valeur, libellé)] d'une clé à choix fermés ; None pour un entier ou un motif."""
 	if 'parmi' in spec:
-		with open(os.path.join(ICI, spec['parmi'])) as f:
-			return [r['id'] for r in json.load(f)]
-	return spec['liste']
+		return [(r['id'], r['nom']) for r in _table(spec)]
+	permis = spec.get('valeurs') or spec.get('liste')
+	return [(v, spec['choix'][cle_choix(v)]) for v in permis] if permis else None
+
+
+def _phrase(spec):
+	"""Refus d'une valeur, en mots simples : le nom du réglage et ce qu'il accepte, jamais la clé ni la valeur tapée."""
+	nom = f"« {spec['nom']} »"
+	if 'entier' in spec:
+		return f"{nom} : un nombre de %d à %d." % tuple(spec['entier'])
+	choix = _choix(spec)
+	if choix is None:
+		return f"{nom} n'accepte pas cette valeur."
+	libs = [f'« {lib} »' for _, lib in choix]
+	if 'valeurs' in spec:
+		return f"{nom} : choisissez {', '.join(libs[:-1])} ou {libs[-1]}."
+	return f"{nom} : choisissez parmi {', '.join(libs)}, sans doublon."
 
 
 def _valide(sch, cle, v):
 	spec = sch['cles'][cle]
 	if v is None:
 		return bool(spec.get('nul'))
-	if 'valeurs' in spec:
-		return isinstance(v, str) and v in spec['valeurs']
+	if 'valeurs' in spec:  # type exact : True n'est pas 1, ni False 0
+		return any(type(v) is type(x) and v == x for x in spec['valeurs'])
 	if 'entier' in spec:
 		return type(v) is int and spec['entier'][0] <= v <= spec['entier'][1]
 	if 'motif' in spec:
@@ -76,12 +114,13 @@ def _valide(sch, cle, v):
 def aplatir(sch, contenu, origine):
 	"""Fichier imbriqué -> {'preset': ..., 'livraison.mode': ...} validé clé par clé ; Invalide sinon."""
 	if not isinstance(contenu, dict):
-		raise Invalide(f'{origine} : la racine doit être un objet JSON')
+		raise Invalide(f'{origine} : la racine doit être un objet JSON', ILLISIBLE)
 	presets = sch['presets']
 	plat = {}
 	if 'preset' in contenu:
 		if contenu['preset'] not in presets:
-			raise Invalide(f"{origine} : preset {contenu['preset']!r} inconnu ; permis : {', '.join(presets)}")
+			raise Invalide(f"{origine} : preset {contenu['preset']!r} inconnu ; permis : {', '.join(presets)}",
+			               "Ce modèle de réglages n'existe pas.")
 		plat['preset'] = contenu['preset']
 
 	def descend(d, prefixe):
@@ -92,7 +131,7 @@ def aplatir(sch, contenu, origine):
 			if '.' not in k and cle in sch['cles']:
 				if not _valide(sch, cle, v):
 					raise Invalide(f"{origine} : clé « {cle} » : valeur {json.dumps(v, ensure_ascii=False)} refusée ; "
-					               f"attendu {_permis(sch, cle)}")
+					               f"attendu {_permis(sch, cle)}", _phrase(sch['cles'][cle]))
 				plat[cle] = v
 			elif '.' not in k and isinstance(v, dict) and any(c.startswith(cle + '.') for c in sch['cles']):
 				descend(v, cle + '.')
@@ -101,7 +140,7 @@ def aplatir(sch, contenu, origine):
 					k, v = next(iter(v.items()))
 					cle += '.' + k
 				raise Invalide(f"{origine} : clé inconnue « {cle} » (une seule forme : objets imbriqués) ; "
-				               f"clés permises : preset, {', '.join(sch['cles'])}")
+				               f"clés permises : preset, {', '.join(sch['cles'])}", INCONNU)
 	descend(contenu, '')
 	return plat
 
@@ -116,13 +155,13 @@ def _lire(chemin):
 	except FileNotFoundError:
 		return None
 	except (OSError, ValueError) as err:
-		raise Invalide(f'{chemin} : JSON illisible ({err})')
+		raise Invalide(f'{chemin} : JSON illisible ({err})', ILLISIBLE)
 
 
 def fusionner(sch, couches):
 	"""couches : [(source, chemin, contenu ou None)], du plus faible au plus fort. Rend la politique ; Invalide sinon."""
 	# une clé absente de neutre (modèle par rôle, spec 010 lot 7) vaut null : aucun preset livré ne la pose
-	valeurs = {**{k: None for k in sch['cles']}, **sch['presets'][DEFAUT]}
+	valeurs = {**{k: None for k in sch['cles']}, **sch['presets'][DEFAUT]['valeurs']}
 	sources = {k: 'défaut' for k in valeurs}
 	sources['preset'] = 'défaut'
 	preset = DEFAUT
@@ -135,14 +174,14 @@ def fusionner(sch, couches):
 		if 'preset' in plat:
 			preset = plat.pop('preset')
 			sources['preset'] = source
-			for k, v in sch['presets'][preset].items():
+			for k, v in sch['presets'][preset]['valeurs'].items():
 				valeurs[k], sources[k] = v, source
 		for k, v in plat.items():
 			valeurs[k], sources[k] = v, source
 	for c in sch['coherences']:
 		if all(_touche(valeurs[k], permis) for k, permis in c['si'].items()):
 			detail = ' avec '.join(f'{k} = {json.dumps(valeurs[k], ensure_ascii=False)} ({origines[sources[k]]})' for k in c['si'])
-			raise Invalide(f"combinaison refusée : {detail} : {c['message']}")
+			raise Invalide(f"combinaison refusée : {detail} : {c['message']}", c['phrase'])
 	return {'preset': preset, 'valeurs': valeurs, 'sources': sources, 'erreur': None}
 
 
@@ -176,18 +215,19 @@ def verifier(racine, home):
 
 # ---------- écriture (la CLI seule) ----------
 
-def _modifier(racine, home, dev, change):
-	"""Applique change(contenu) au fichier visé, valide la politique entière qui en résulte, puis écrit (verrou, atomique)."""
+def _modifier(racine, home, dev, change, lire=True):
+	"""Applique change(contenu) au fichier visé, valide la politique entière qui en résulte, puis écrit (verrou, atomique).
+	lire=False : part d'un objet vide, sans lire l'ancien fichier (repartir d'un fichier illisible)."""
 	chemin = fichier_dev(home) if dev else fichier_projet(racine)
 	if not chemin:
-		raise Invalide('HOME absent : pas de fichier du dev')
+		raise Invalide('HOME absent : pas de fichier du dev', 'Vos réglages de tous vos projets sont introuvables sur cette machine.')
 	d = os.path.dirname(chemin)
 	os.makedirs(d, exist_ok=True)
 	with open(os.path.join(d, '.pratiques.lock'), 'w') as verrou:
 		fcntl.flock(verrou, fcntl.LOCK_EX)
-		contenu = _lire(chemin) or {}
+		contenu = (_lire(chemin) if lire else None) or {}
 		if not isinstance(contenu, dict):
-			raise Invalide(f'{chemin} : la racine doit être un objet JSON')
+			raise Invalide(f'{chemin} : la racine doit être un objet JSON', ILLISIBLE)
 		change(contenu)
 		fusionner(schema(), _couches(racine, home, (chemin, contenu)))
 		fd, tmp = tempfile.mkstemp(dir=d, prefix='tmp-pratiques-')
@@ -203,22 +243,45 @@ def _chemin(cle):
 	return tete, fin
 
 
+def _dev(cle, dev):
+	"""Fichier visé : celui dit par la CLI (--dev), sinon la portée déclarée de la clé (routes du régisseur)."""
+	if dev is not None:
+		return dev
+	spec = schema()['cles'].get(cle)
+	if spec is None:
+		raise Invalide(f'clé inconnue « {cle} »', INCONNU)
+	return spec['portee'] == 'dev'
+
+
 def regler(racine, home, cle, valeur, dev=False):
 	if cle == 'preset':
 		return poser_preset(racine, home, valeur, dev)
+	return regler_plusieurs(racine, home, [(cle, valeur)], dev)
+
+
+def regler_plusieurs(racine, home, paires, dev=None):
+	"""Plusieurs réglages d'un seul fichier en une écriture : tous ou aucun. dev=None : la portée de chaque clé."""
+	if not paires:
+		raise Invalide('aucun réglage reçu', 'Aucun réglage reçu.')
+	portees = {_dev(cle, dev) for cle, _ in paires}
+	if len(portees) > 1:
+		raise Invalide('réglages de deux fichiers en un envoi', 'Ces réglages ne se changent pas ensemble : un à la fois.')
 
 	def change(contenu):
-		tete, fin = _chemin(cle)
-		d = contenu
-		for t in tete:
-			if not isinstance(d.get(t), dict):
-				d[t] = {}
-			d = d[t]
-		d[fin] = valeur
-	return _modifier(racine, home, dev, change)
+		for cle, valeur in paires:
+			tete, fin = _chemin(cle)
+			d = contenu
+			for t in tete:
+				if not isinstance(d.get(t), dict):
+					d[t] = {}
+				d = d[t]
+			d[fin] = valeur
+	return _modifier(racine, home, portees.pop(), change)
 
 
 def retirer(racine, home, cle, dev=False):
+	dev = _dev(cle, dev)
+
 	def change(contenu):
 		tete, fin = _chemin(cle)
 		pile = [contenu]
@@ -233,8 +296,49 @@ def retirer(racine, home, cle, dev=False):
 	return _modifier(racine, home, dev, change)
 
 
-def poser_preset(racine, home, nom, dev=False):
-	return _modifier(racine, home, dev, lambda contenu: contenu.__setitem__('preset', nom))
+def poser_preset(racine, home, nom, dev=False, remplacer=False):
+	"""remplacer : le fichier ne garde que le preset (un modèle choisi efface les réglages posés à côté)."""
+	def change(contenu):
+		if remplacer:
+			contenu.clear()
+		contenu['preset'] = nom
+	return _modifier(racine, home, dev, change, lire=not remplacer)
+
+
+# ---------- vue publiée pour le formulaire du panneau (spec 008, FR-003) ----------
+
+TYPES_CHAMP = ('valeurs', 'entier', 'motif', 'liste', 'parmi')
+
+
+def champs(sch, pol):
+	"""Un champ par clé, dans l'ordre du schéma : de quoi rendre le formulaire sans connaître aucune clé."""
+	defauts = sch['presets'][DEFAUT]['valeurs']
+	out = []
+	for cle, spec in sch['cles'].items():
+		forme = next(f for f in TYPES_CHAMP if f in spec)
+		choix = _choix(spec)
+		out.append({'cle': cle, 'nom': spec['nom'], 'explique': spec['explique'], 'groupe': spec['groupe'],
+		            'portee': spec['portee'], 'question': spec.get('question'), 'forme': 'liste' if forme == 'parmi' else forme,
+		            'choix': None if choix is None else [{'valeur': v, 'libelle': lib} for v, lib in choix],
+		            'bornes': spec.get('entier'), 'vide': spec.get('vide'), 'defaut': defauts.get(cle),
+		            'valeur': pol['valeurs'][cle], 'origine': pol['sources'][cle]})
+	return out
+
+
+def vue(racine, home, pol, humain):
+	"""Ce que le régisseur publie à côté de la politique : champs, presets, fichier du projet présent, nombre de clés qu'il
+	pose (le preset n'en est pas une), invariants rendus avec le nom de l'humain."""
+	sch = schema()
+	try:
+		contenu = _lire(fichier_projet(racine))
+		nb = len([k for k in aplatir(sch, contenu, '') if k != 'preset']) if contenu is not None else 0
+	except Invalide:
+		nb = 0
+	return {'champs': champs(sch, pol),
+	        'presets': [{'id': k, 'nom': p['nom'], 'explique': p['explique'], 'actif': k == pol['preset']}
+	                    for k, p in sch['presets'].items()],
+	        'projet': os.path.isfile(fichier_projet(racine)), 'nbProjet': nb,
+	        'invariants': [i.replace('{humain}', humain) for i in sch['invariants']]}
 
 
 # ---------- brief ----------
