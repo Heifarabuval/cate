@@ -579,5 +579,135 @@ class ModeleAuLancement(test_lancer.Lancer):
 		self.assertEqual(c.count('--model'), 1)
 
 
+class Liens(unittest.TestCase):
+	"""Spec 013 lot 3 (T030, SC-003) : `remplace` et `doublonDe`, identifiant inconnu, cycle, doublon refusé à `prête`."""
+
+	def b(self, n=3):
+		b = backlog.vide()
+		for i in range(n):
+			backlog.ajouter(b, f'f{i + 1}', T0, **COMPLETE)
+		return b
+
+	def test_fiche_neuve_porte_les_deux_listes_vides(self):
+		f = backlog.ajouter(backlog.vide(), 'x', T0)
+		self.assertEqual((f['remplace'], f['doublonDe']), ([], []))
+
+	def test_doublon_ne_passe_pas_prete_et_nomme_l_origine(self):
+		b = self.b(2)
+		backlog.modifier(b, 'F2', T0, doublonDe=['F1'])
+		with self.assertRaises(backlog.Refus) as cm:
+			backlog.transition(b, 'F2', 'prête', T0)
+		self.assertIn('F1', str(cm.exception))
+		self.assertEqual(b['fiches'][1]['etat'], 'discussion')
+		backlog.transition(b, 'F1', 'prête', T0)  # l'origine, elle, passe
+
+	def test_remplacee_ne_passe_pas_prete(self):
+		b = self.b(2)
+		backlog.modifier(b, 'F2', T0, remplace=['F1'])
+		with self.assertRaises(backlog.Refus) as cm:
+			backlog.transition(b, 'F1', 'prête', T0)
+		self.assertIn('F2', str(cm.exception))
+
+	def test_prete_marquee_doublon_refusee_rien_ne_change(self):
+		b = self.b(2)
+		backlog.transition(b, 'F2', 'prête', T0)
+		for champs, cible in (({'doublonDe': ['F1']}, 'F2'), ({'remplace': ['F2']}, 'F1')):
+			with self.subTest(champs=champs):
+				avant = json.dumps(b)
+				with self.assertRaises(backlog.Refus) as cm:
+					backlog.modifier(b, cible, T0, **champs)
+				self.assertIn('F2', str(cm.exception))
+				self.assertEqual(json.dumps(b), avant)
+
+	def test_lancee_marquee_doublon_le_lien_s_ecrit(self):
+		b = self.b(2)
+		b['fiches'][1]['etat'] = 'lancée'  # posé par le clic
+		backlog.modifier(b, 'F1', T0, remplace=['F2'])
+		self.assertEqual(b['fiches'][0]['remplace'], ['F2'])
+
+	def test_identifiant_inconnu_refuse_sans_ecriture(self):
+		b = self.b(1)
+		for champ in ('remplace', 'doublonDe'):
+			with self.subTest(champ=champ):
+				avant = json.dumps(b)
+				with self.assertRaises(backlog.Refus) as cm:
+					backlog.modifier(b, 'F1', T0, **{champ: ['F9']})
+				self.assertIn('F9', str(cm.exception))
+				self.assertEqual(json.dumps(b), avant)
+
+	def test_cycle_refuse_et_nomme(self):
+		for champ in ('remplace', 'doublonDe'):
+			with self.subTest(champ=champ):
+				b = self.b(2)
+				backlog.modifier(b, 'F1', T0, **{champ: ['F2']})
+				avant = json.dumps(b)
+				with self.assertRaises(backlog.Refus) as cm:
+					backlog.modifier(b, 'F2', T0, **{champ: ['F1']})
+				self.assertIn('F1 -> F2 -> F1', str(cm.exception).replace('F2 -> F1 -> F2', 'F1 -> F2 -> F1'))
+				self.assertEqual(json.dumps(b), avant)
+				with self.assertRaises(backlog.Refus):
+					backlog.modifier(b, 'F2', T0, **{champ: ['F2']})  # soi-même : un cycle d'un pas
+
+	def test_fichier_a_la_main_lien_inconnu_ou_cycle_invalide(self):
+		for champ in ('remplace', 'doublonDe'):
+			with self.subTest(champ=champ):
+				b = self.b(2)
+				b['fiches'][0][champ] = ['F7']
+				with self.assertRaises(backlog.Invalide):
+					backlog.valider(b)
+				b['fiches'][0][champ], b['fiches'][1][champ] = ['F2'], ['F1']
+				with self.assertRaises(backlog.Invalide):
+					backlog.valider(b)
+
+	def test_backlog_ancien_message_nomme_les_deux_champs(self):
+		b = self.b(1)
+		for c in ('remplace', 'doublonDe'):
+			del b['fiches'][0][c]
+		with self.assertRaises(backlog.Invalide) as cm:
+			backlog.valider(b)
+		msg = str(cm.exception)
+		self.assertIn('"remplace": []', msg)
+		self.assertIn('"doublonDe": []', msg)
+		self.assertIn('à la main', msg)
+
+
+class CliLiens(Base):
+	"""Spec 013 lot 3 (T032) : --remplace et --doublon-de sur add et edit ; decision show liste les fiches qui la citent."""
+
+	def test_add_et_edit_posent_les_liens(self):
+		self.agence('fiche', 'add', 'x')
+		self.assertEqual(self.agence('fiche', 'add', 'y', '--doublon-de', 'F1')[0], 0)
+		self.assertEqual(self.agence('fiche', 'edit', 'F2', '--remplace', 'F1', '--doublon-de', 'F1')[0], 0)
+		f = json.loads(self.agence('fiche', 'show', 'F2', '--json')[1])
+		self.assertEqual((f['remplace'], f['doublonDe']), (['F1'], ['F1']))
+		self.assertIn('doublonDe : F1', self.agence('fiche', 'show', 'F2')[1])
+
+	def test_lien_inconnu_code_1_rien_ecrit(self):
+		self.agence('fiche', 'add', 'x')
+		avant = self.lit(self.fichier)
+		code, _, err = self.agence('fiche', 'edit', 'F1', '--doublon-de', 'F9')
+		self.assertEqual(code, 1)
+		self.assertIn('F9', err)
+		self.assertEqual(self.lit(self.fichier), avant)
+
+	def test_doublon_prete_refusee_par_la_cli(self):
+		self.agence('fiche', 'add', 'x')
+		self.agence('fiche', 'add', 'y', '--doublon-de', 'F1', '--type', 'tache', '--preuve', 'pr-merged:', '--priorite', 'P2',
+		            '--fichier', 'src/a.ts', '--budget-jetons', '1000', '--vision', 'FR-003')
+		code, _, err = self.agence('fiche', 'etat', 'F2', 'prête')
+		self.assertEqual(code, 1)
+		self.assertIn('F1', err)
+
+	def test_decision_show_liste_les_fiches_qui_la_citent(self):
+		self.agence('decision', 'add', 'o', '--pourquoi', 'p')
+		self.agence('decision', 'add', 'o2', '--pourquoi', 'p2')
+		self.agence('fiche', 'add', 'x', '--decision', 'D1')
+		self.agence('fiche', 'add', 'y', '--decision', 'D2')
+		self.agence('fiche', 'add', 'z', '--decision', 'D1', '--decision', 'D2')
+		self.assertIn('fiches : F1, F3', self.agence('decision', 'show', 'D1')[1])
+		self.assertEqual(json.loads(self.agence('decision', 'show', 'D1', '--json')[1])['fiches'], ['F1', 'F3'])
+		self.assertNotIn('fiches', json.loads(self.lit(self.registre))['decisions'][0])  # calculé, jamais stocké
+
+
 if __name__ == '__main__':
 	unittest.main()

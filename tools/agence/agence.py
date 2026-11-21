@@ -737,7 +737,8 @@ def fiche_texte(f, long=False):
 	if not long:
 		return ligne
 	champs = [(c, ', '.join(f[c]) if isinstance(f[c], list) else f[c]) for c in
-	          ('preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin', 'creee', 'maj')]
+	          ('preuve', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin',
+	           'creee', 'maj')]
 	return '\n'.join([ligne] + [f'  {c} : {v}' for c, v in champs if v not in (None, '')] +
 	                 [f"  {j['ts']} {j['by']} : {j['text']}" for j in f['journal']])
 
@@ -747,7 +748,7 @@ def decision_texte(x, long=False):
 	if not long:
 		return ligne
 	return '\n'.join([ligne, f"  pourquoi : {x['pourquoi']}", f"  date : {x['date']}"] +
-	                 [f'  {c} : {", ".join(x[c])}' for c in ('alternatives', 'invalide') if x[c]] +
+	                 [f'  {c} : {", ".join(x[c])}' for c in ('alternatives', 'invalide', 'fiches') if x.get(c)] +
 	                 ([f"  révoquée par : {x['revoqueePar']}"] if x['revoqueePar'] else []))
 
 
@@ -759,7 +760,7 @@ def cmd_fiche(a):
 	"""Fiches du backlog : add, edit, etat et note écrivent ; list et show lisent. Lancée, faite, abandonnée : au clic."""
 	import backlog  # voir registres()
 	champs = {'titre': getattr(a, 'titre_opt', None), 'type': a.type, 'preuve': a.preuve, 'priorite': a.priorite,
-	          'fichiers': a.fichier, 'dependances': a.dependance, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
+	          'fichiers': a.fichier, 'dependances': a.dependance, 'remplace': a.remplace, 'doublonDe': a.doublon_de, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
 	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
 	champs = {k: v for k, v in champs.items() if v is not None}
 	propose = a.action == 'add' and 'modele' not in champs and politique(agir=True)['valeurs']  # spec 010, lot 7
@@ -813,8 +814,9 @@ def cmd_decision(a):
 		return sortie(x, a.json, x['id'])
 	with registres() as r:
 		d = r['decisions']
-		if a.action == 'show':
+		if a.action == 'show':  # fiches qui la citent : lien inverse calculé, jamais stocké (spec 013, FR-004)
 			x = backlog.trouver(d['decisions'], a.id)
+			x = {**x, 'fiches': [f['id'] for f in r['backlog']['fiches'] if x['id'] in f['decisions']]}
 			return sortie(x, a.json, decision_texte(x, long=True))
 		xs = backlog.decisions_actives(d) if a.active else d['decisions']
 		return sortie(xs, a.json, '\n'.join(decision_texte(x) for x in xs)) if xs or a.json else 0
@@ -3420,6 +3422,8 @@ def parser():
 		x.add_argument('--priorite', help='P1, P2 ou P3')
 		x.add_argument('--fichier', action='append', help='chemin ou dossier probable, relatif (répétable ; edit : remplace la liste)')
 		x.add_argument('--dependance', action='append', help='id de fiche (répétable)')
+		x.add_argument('--remplace', action='append', help='id de fiche que celle-ci rend caduque (répétable) : elle ne passe plus prête')
+		x.add_argument('--doublon-de', action='append', help="id de fiche d'origine (répétable) : celle-ci ne passe plus prête")
 		x.add_argument('--budget-jetons', type=int)
 		x.add_argument('--vision', help='point de la vision servi (couche ou FR de la spec 009)')
 		x.add_argument('--modele')

@@ -36,6 +36,8 @@ CHAMPS_FICHE = {
 	'priorite': lambda v: v is None or v in PRIORITES,
 	'fichiers': _liste,
 	'dependances': _liste,
+	'remplace': _liste,  # spec 013 : cette fiche rend celles-ci caduques
+	'doublonDe': _liste,  # spec 013 : même besoin que celles-ci
 	'budgetJetons': lambda v: v is None or (type(v) is int and v > 0),
 	'vision': _txt_nul,
 	'modele': _txt_nul,
@@ -57,7 +59,10 @@ CHAMPS_DECISION = {
 	'statut': lambda v: v in STATUTS,
 	'revoqueePar': _txt_nul,
 }
-EDITABLES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions')
+EDITABLES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'budgetJetons', 'vision',
+             'modele', 'decisions')
+LIENS = ('dependances', 'remplace', 'doublonDe')  # listes d'ids de fiches : inconnu ou cycle refusé
+NOUVEAUX = ('remplace', 'doublonDe')  # spec 013, coupe nette : un backlog.json plus ancien ne les a pas
 
 
 class Invalide(Exception):
@@ -96,7 +101,9 @@ def _objets(contenu, racine_cles, coll, champs, nom):
 		oid = x.get('id', '?')
 		if set(x) != set(champs):
 			inconnus, absents = sorted(set(x) - set(champs)), sorted(set(champs) - set(x))
-			raise Invalide(f"{nom} : {oid} : champs inconnus {inconnus}, absents {absents}")
+			aide = ('' if inconnus or not absents or not set(absents) <= set(NOUVEAUX) or champs is not CHAMPS_FICHE else
+			        ' (fichier écrit avant la spec 013 : ajouter à la main "remplace": [] et "doublonDe": [] à chaque fiche)')
+			raise Invalide(f"{nom} : {oid} : champs inconnus {inconnus}, absents {absents}{aide}")
 		for cle, ok in champs.items():
 			if not ok(x[cle]):
 				raise Invalide(f'{nom} : {oid} : {cle} invalide ({json.dumps(x[cle], ensure_ascii=False)})')
@@ -109,7 +116,7 @@ def valider(b):
 	_objets(b, ('seq', 'fiches', 'derniereRevue'), 'fiches', CHAMPS_FICHE, 'backlog.json')
 	if not _txt_nul(b['derniereRevue']):
 		raise Invalide('backlog.json : derniereRevue doit être une date ou null')
-	err = _dependances(b['fiches'])
+	err = _liens(b['fiches'])
 	if err:
 		raise Invalide(f'backlog.json : {err}')
 
@@ -118,27 +125,36 @@ def valider_decisions(d):
 	_objets(d, ('seq', 'decisions'), 'decisions', CHAMPS_DECISION, 'decisions.json')
 
 
-def _dependances(fiches):
-	"""Motif d'erreur (dépendance inconnue, cycle nommé) ou None."""
+def _liens(fiches):
+	"""Motif d'erreur (lien vers une fiche inconnue, cycle nommé) ou None, pour chaque lien de LIENS."""
 	par_id = {f['id']: f for f in fiches}
-	for f in fiches:
-		for dep in f['dependances']:
-			if dep not in par_id:
-				return f"{f['id']} : dépendance inconnue {dep}"
 
-	def chemin_cycle(fid, pile):
+	def chemin_cycle(cle, fid, pile):
 		if fid in pile:
 			return pile[pile.index(fid):] + [fid]
-		for dep in par_id[fid]['dependances']:
-			c = chemin_cycle(dep, pile + [fid])
+		for dep in par_id[fid][cle]:
+			c = chemin_cycle(cle, dep, pile + [fid])
 			if c:
 				return c
 		return None
-	for f in fiches:  # ponytail: parcours naïf par fiche, O(n²) au pire ; un backlog réel reste sous 100 fiches
-		c = chemin_cycle(f['id'], [])
-		if c:
-			return 'dépendances en cycle : ' + ' -> '.join(c)
+	for cle in LIENS:
+		for f in fiches:
+			for dep in f[cle]:
+				if dep not in par_id:
+					return f"{f['id']} : {'dépendance' if cle == 'dependances' else cle} inconnue {dep}"
+		for f in fiches:  # ponytail: parcours naïf par fiche, O(n²) au pire ; un backlog réel reste sous 100 fiches
+			c = chemin_cycle(cle, f['id'], [])
+			if c:
+				return f"{'dépendances' if cle == 'dependances' else cle} en cycle : " + ' -> '.join(c)
 	return None
+
+
+def origine(fiches, f):
+	"""Pourquoi f ne peut pas être prête (doublon de, remplacée par, fiche d'origine nommée), ou None."""
+	if f['doublonDe']:
+		return f"doublon de {', '.join(f['doublonDe'])}"
+	par = [g['id'] for g in fiches if f['id'] in g['remplace']]
+	return f"remplacée par {', '.join(par)}" if par else None
 
 
 def manques(f):
@@ -175,7 +191,8 @@ def _poser(b, f, champs, maintenant):
 	if neuve['etat'] == 'prête' and manques(neuve):
 		raise Refus(f"{f['id']} est prête : {', '.join(manques(neuve))} ne peut pas manquer")
 	fiches = [neuve if x is f else x for x in b['fiches']]
-	err = _dependances(fiches)
+	err = _liens(fiches) or next((f"{g['id']} est prête : {origine(fiches, g)} ; repasse-la d'abord en discussion"
+	                              for g in fiches if g['etat'] == 'prête' and origine(fiches, g)), None)
 	if err:
 		raise Refus(err)
 	b['fiches'][:] = fiches
@@ -189,7 +206,7 @@ def _modifiable(f):
 
 def ajouter(b, titre, maintenant, **champs):
 	f = {**{c: None for c in CHAMPS_FICHE}, 'id': f"F{b['seq'] + 1}", 'titre': titre, 'fichiers': [], 'dependances': [],
-	     'decisions': [], 'etat': 'discussion', 'creee': maintenant, 'maj': maintenant, 'journal': []}
+	     'remplace': [], 'doublonDe': [], 'decisions': [], 'etat': 'discussion', 'creee': maintenant, 'maj': maintenant, 'journal': []}
 	if not titre.strip():
 		raise Refus('titre vide')
 	b['fiches'].append(f)
@@ -227,6 +244,8 @@ def transition(b, fid, etat, maintenant):
 		raise Refus(f"{fid} est {f['etat']} : par le clic seulement")
 	if etat == 'prête' and manques(f):
 		raise Refus(f"{fid} ne passe pas prête, champs manquants : {', '.join(manques(f))}")
+	if etat == 'prête' and origine(b['fiches'], f):
+		raise Refus(f"{fid} ne passe pas prête : {origine(b['fiches'], f)}")
 	f['etat'], f['maj'] = etat, maintenant
 	return f
 
