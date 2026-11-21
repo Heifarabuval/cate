@@ -12,8 +12,9 @@ SKILL = os.path.join(REPO, 'skills', 'orchestrateur', 'SKILL.md')
 # 013-L1 (jauge de contexte), 16 742 -> 16 874, soit + 132 ; 010-L8 (lentille sur clic), 16 874 -> 17 348, soit + 474 ;
 # 008-L2 (options ponctuelles, réglages du workspace), 17 348 -> 17 420, soit + 72 ; 011-L6 (règle d'économie),
 # 17 420 -> 17 594, soit + 174 ; 013-L7 (carte « Jeter »), 17 594 -> 17 722, soit + 128 ; corr-011 (« verdict
-# impossible » de comparer), 17 722 -> 17 725, soit + 3.
-PLAFOND = 14632 + 1662 + 451 + 132 + 474 + 72 + 174 + 128 + 3
+# impossible » de comparer), 17 722 -> 17 725, soit + 3 ; 013 T072 (droits dans le brief), 17 725 -> 17 733,
+# soit + 8.
+PLAFOND = 14632 + 1662 + 451 + 132 + 474 + 72 + 174 + 128 + 3 + 8
 
 
 class RegleAttente(unittest.TestCase):

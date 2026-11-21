@@ -56,7 +56,7 @@ Une tâche peut aussi venir du backlog de fiches (écrit par l'interlocuteur, `a
 
 1. Au clic, le régisseur crée un besoin par fiche de la vague 1 (`--ref fiche:F<n>`, condition de fin tirée de la preuve, budget en jetons, modèle proposé) et t'envoie un seul message : la vague, les fiches en attente avec leur motif, puis le brief et le besoin de chaque fiche lancée. Lis le message en entier.
 2. Lance la vague telle quelle : un agent par besoin, en parallèle, le brief de la fiche dans son fichier de brief, `--model` si la fiche en propose un ; puis `agence need panel <besoin> <panelId>`. Ne regroupe, ne redécoupe et ne réordonne rien.
-3. Tu ne reposes aucune question couverte par le brief (titre, type, preuve, fichiers, dépendances, budget, modèle, décisions liées) : c'est le contrat. Un champ manque ou un doute : `agence fiche brief <F>`, jamais l'interlocuteur.
+3. Tu ne reposes aucune question couverte par le brief (titre, type, preuve, fichiers, dépendances, budget, modèle, décisions liées, droits) : c'est le contrat. Un champ manque ou un doute : `agence fiche brief <F>`, jamais l'interlocuteur.
 4. Les fiches en attente (chevauchement, dépendance, plafond) partent seules au tour du régisseur quand leur place se libère, sans nouveau clic ; un nouveau message te le dit. Ne les lance pas avant.
 5. Clos le besoin comme les autres (`agence need done <besoin> --evidence ...`) : la fiche passe `faite` seule. Besoin abandonné : la fiche revient `prête` et attend un nouveau clic.
 6. Budget en jetons dépassé : le besoin passe en Bloquant avec « consommé / budget jetons » ; l'humain tranche (continuer, réduire, arrêter), pas toi.

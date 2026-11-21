@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agence  # noqa: E402
 import backlog  # noqa: E402
+import pratiques  # noqa: E402
 import test_lancer  # noqa: E402  (module seul : ses classes ne tournent pas deux fois)
 
 T0 = '2026-11-20T10:00:00+00:00'
@@ -449,6 +450,16 @@ class Detections(unittest.TestCase):
 		self.assertNotIn('D3', texte)
 		self.assertEqual(texte, backlog.brief(f, d['decisions']))
 
+	def test_droits_dans_le_brief(self):
+		"""Spec 013, T072 (FR-009) : fichiers de la fiche = consigne écrite, sans garde ; connecteurs en écriture = garde."""
+		f = backlog.ajouter(backlog.vide(), 'x', T0, **COMPLETE)
+		texte = backlog.brief(f, [], ecriture=['Outil factice (factice)'])
+		self.assertIn('droits : modifier seulement src/a.ts (consigne, aucune garde ne bloque un autre fichier)', texte)
+		self.assertIn('écriture : Outil factice (factice), par carte (agence draft new --cible outil:<connecteur>:<outil>) ; '
+		              'la garde agence refuse tout appel sans carte cliquée', texte)
+		sans = backlog.brief(f, [])
+		self.assertIn('écriture : aucun connecteur ; la garde agence refuse toute écriture par un connecteur', sans)
+
 	def test_zero_appel_externe(self):
 		def interdit(*a, **k):
 			raise AssertionError('appel externe')
@@ -863,6 +874,21 @@ class Export(Base):
 		texte = self.lit(os.path.join(self.racine, 'docs', 'decisions.md'))
 		self.assertNotIn('## ', texte)
 		self.assertIn('Aucune décision active', texte)
+
+
+class BriefDroits(Base):
+	"""T072 : `agence fiche brief` cite les connecteurs ouverts en écriture par la politique du projet (catalogue de fixture)."""
+
+	def test_cli(self):
+		env = unittest.mock.patch.dict(os.environ, {'AGENCE_CATALOGUES': os.path.join(HERE, 'fixtures', 'metiers')})
+		env.start()
+		self.addCleanup(env.stop)
+		pratiques.regler_plusieurs(self.racine, self.home, [('metier', 'data-manager'), ('connecteurs.ecriture', ['factice'])])
+		self.assertEqual(self.agence('fiche', 'add', 'x', '--fichier', 'src/a.ts')[0], 0)
+		code, out, err = self.agence('fiche', 'brief', 'F1')
+		self.assertEqual(code, 0, err)
+		self.assertIn('écriture : Outil factice (factice), par carte', out)
+		self.assertIn('droits : modifier seulement src/a.ts', out)
 
 
 class ResumeDesFichesCloses(unittest.TestCase):

@@ -889,7 +889,7 @@ def cmd_fiche(a):
 			return sortie(f, a.json, fiche_texte(f, long=True))
 		elif a.action == 'brief':
 			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'],
-			                      politique()['valeurs']['plan.validation'])
+			                      politique()['valeurs']['plan.validation'], connecteurs_en_ecriture(politique()['valeurs']))
 			return sortie(texte, a.json, texte)
 		elif a.action == 'plan':
 			st = load()  # place = agents.max moins les agents vivants publiés par le dernier tour du régisseur
@@ -902,6 +902,16 @@ def cmd_fiche(a):
 			fiches = [f for f in b['fiches'] if not a.etat or f['etat'] == a.etat]
 			return sortie(fiches, a.json, '\n'.join(fiche_texte(f) for f in fiches)) if fiches or a.json else 0
 	sortie(f, a.json, f['id'])
+
+
+def connecteurs_en_ecriture(v):
+	"""« Nom (id) » des connecteurs ouverts en écriture par la politique (spec 012), pour le brief d'une fiche (013 T072)."""
+	import metiers
+	try:
+		cat = metiers.charger()
+	except metiers.Invalide:
+		return list(v['connecteurs.ecriture'])
+	return [f"{(metiers.connecteur(cat, i) or {'nom': i})['nom']} ({i})" for i in v['connecteurs.ecriture']]
 
 
 def cmd_decision(a):
@@ -1762,7 +1772,8 @@ def lancer_fiches(st, r, ids, entete):
 		note(n, f'fiche {fid} lancée au clic', 'clic')
 		backlog.noter(b, fid, f"lancée (besoin {n['id']})", maintenant, par='clic')
 		f.update(etat='lancée', besoin=n['id'])
-		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'], valeurs(st)['plan.validation'])}\nbesoin {n['id']}")
+		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'], valeurs(st)['plan.validation'], connecteurs_en_ecriture(valeurs(st)))}"
+		              f"\nbesoin {n['id']}")
 	st['lot'] = [i for i in dict.fromkeys(st['lot'] + list(ids)) if i not in p['part']]
 	if briefs:
 		attentes = ', '.join(f'{i} ({m})' for i, m in p['attente'].items()) or 'aucune'
