@@ -2861,8 +2861,10 @@ def bilan(base, jours, maintenant):
 	for l in lignes:
 		par.setdefault(l['commande'], []).append(l)
 	commandes, propositions = [], []
+	import pratiques  # voir politique()
+	actifs = pratiques.charger(base, os.environ.get('HOME'))['valeurs']['declencheurs.actifs']
 	try:
-		table = charger_table()
+		table = [t for t in charger_table() if t['id'] in actifs]  # une ligne désactivée ne propose aucun seuil
 	except Refus:
 		table = []
 	for commande, ls in sorted(par.items()):

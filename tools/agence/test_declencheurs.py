@@ -549,6 +549,16 @@ class BilanTest(Base):
 		with open(os.path.join(agence.journal_dir(self.base), avant[0]), 'rb') as f:
 			self.assertEqual(f.read(), journal_avant)
 
+	def test_ligne_desactivee_par_la_politique_aucune_proposition(self):
+		for i, verdict in enumerate(('echec', 'echec', 'reussi', 'echec', 'reussi')):
+			agence.journal_ecrire(self.base, ligne(MIDI - (9 - i) * 3600, avant=mesure(180000), apres=mesure(160000 if verdict == 'echec' else 70000), verdict=verdict))
+		self.assertEqual(len(agence.bilan(self.base, 30, MIDI)['propositions']), 1)  # T1 active sous neutre
+		pol = pratiques.fichier_projet(self.base)
+		os.makedirs(os.path.dirname(pol), exist_ok=True)
+		with open(pol, 'w') as f:
+			json.dump({'declencheurs': {'actifs': []}}, f)
+		self.assertEqual(agence.bilan(self.base, 30, MIDI)['propositions'], [])
+
 	def test_deux_echecs_sur_cinq_pas_de_proposition(self):
 		for i, verdict in enumerate(('reussi', 'echec', 'reussi', 'reussi', 'echec')):
 			agence.journal_ecrire(self.base, ligne(MIDI - (9 - i) * 3600, avant=mesure(180000), apres=mesure(160000 if verdict == 'echec' else 70000), verdict=verdict))
