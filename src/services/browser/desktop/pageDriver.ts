@@ -187,9 +187,10 @@ export class PageDriver {
   /** The debugger lets go of a guest whose renderer crashed or restarted:
    *  the next command attaches again. */
   private readonly onDebuggerDetach = (): void => {
+    this.attached = false
+    this.cancelPick?.()
     this.contents.debugger.removeListener('message', this.onDebuggerMessage)
     this.contents.debugger.removeListener('detach', this.onDebuggerDetach)
-    this.attached = false
     this.hung = false
     this.intercepting = false
     this.frames.clear()
@@ -266,6 +267,8 @@ export class PageDriver {
   }
 
   dispose(): void {
+    this.attached = false
+    this.cancelPick?.()
     this.requests.clear()
     this.log.clear()
     this.refs.clear()
@@ -339,6 +342,8 @@ export class PageDriver {
       listener = (_event, method, params) => {
         if (method === 'Overlay.inspectNodeRequested') resolve(Number(objectValue(params).backendNodeId))
         else if (method === 'Overlay.inspectModeCanceled') resolve(null)
+        // The top document changed under the picker: the pick is over.
+        else if (method === 'Page.frameNavigated' && !objectValue(objectValue(params).frame).parentId) resolve(null)
       }
       debuggee.on('message', listener)
     })
@@ -349,10 +354,11 @@ export class PageDriver {
       backendNodeId = await picked
     } finally {
       debuggee.removeListener('message', listener!)
-      // A newer pick owns the overlay once it replaced this one.
+      // A newer pick owns the overlay once it replaced this one; a debugger
+      // that let go has no overlay left to turn off.
       if (this.cancelPick === cancel) {
         this.cancelPick = undefined
-        await this.send('Overlay.setInspectMode', { mode: 'none', highlightConfig: {} }).catch(() => {})
+        if (this.attached) await this.send('Overlay.setInspectMode', { mode: 'none', highlightConfig: {} }).catch(() => {})
       }
     }
     if (backendNodeId === null || !Number.isFinite(backendNodeId)) return { result: null }
@@ -361,7 +367,9 @@ export class PageDriver {
       objectId: objectValue(object).objectId,
       returnByValue: true,
       functionDeclaration: `function () {
-        const field = /^(INPUT|TEXTAREA|SELECT)$/.test(this.tagName) || this.isContentEditable;
+        // A field's value and a script's or style's source never leave: only
+        // the rendered text (innerText), never textContent.
+        const hidden = /^(INPUT|TEXTAREA|SELECT|OPTION|SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(this.tagName) || this.isContentEditable;
         const part = (node) => {
           if (node.id && /^[A-Za-z][\\w-]*$/.test(node.id)) return '#' + node.id;
           const parent = node.parentElement;
@@ -377,7 +385,7 @@ export class PageDriver {
         const box = this.getBoundingClientRect();
         return {
           selector: parts.join(' > '),
-          text: field ? '' : String(this.innerText || this.textContent || '').slice(0, 1000),
+          text: hidden ? '' : String(this.innerText || '').slice(0, 1000),
           rect: { x: box.x, y: box.y, width: box.width, height: box.height },
         };
       }`,

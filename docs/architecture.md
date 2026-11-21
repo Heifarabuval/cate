@@ -1750,7 +1750,10 @@ downloads list and its views, and hands page work to it.
   starts Chromium's own element picker (`pickElement` in the page driver,
   outside its queue). One click sends the element's selector, role, text and
   box to the related agents through `agents.send`; Escape or the button again
-  sends nothing. A form field's value, the page's HTML and a capture never leave.
+  sends nothing; a navigation or a debugger that lets go ends the pick. A form
+  field's value, a script's or style's source, the page's HTML and a capture
+  never leave, and the prompt fences what the page controls, capped, as
+  untrusted data that is not an instruction.
 - **Every client loads the page itself.** `localhost` pages come from the
   runtime's machine through loopback routing, a typed path or `file://` URL
   is a workspace file the session turns into its `file.serveUrl` URL (never

@@ -82,3 +82,32 @@ it('ends a pick the person stops from the panel, and a new pick replaces the pen
   expect(await execute('cancelPick')).toEqual({ result: null })
   expect(await second).toEqual({ result: null })
 })
+
+it('never reads the source of a script or style, nor falls back to textContent', async () => {
+  for (const element of [
+    fakeElement('DIV', { innerText: '', textContent: 'const token = "abc123"' }),
+    fakeElement('SCRIPT', { innerText: 'const token = "abc123"', textContent: 'const token = "abc123"' }),
+    fakeElement('STYLE', { innerText: '.a{}', textContent: '.a{}' }),
+  ]) {
+    const { execute, events } = await pickingGuest(element)
+    const picking = execute('pickElement')
+    await tick()
+    events.emit('message', {}, 'Overlay.inspectNodeRequested', { backendNodeId: 7 })
+    expect((await picking).result).toMatchObject({ text: '' })
+  }
+})
+
+it('ends a pending pick when the page navigates or the debugger lets go', async () => {
+  const navigating = await pickingGuest(fakeElement('BUTTON'))
+  const first = navigating.execute('pickElement')
+  await tick()
+  navigating.events.emit('message', {}, 'Page.frameNavigated', { frame: { id: 'main', url: 'https://other.test/' } })
+  expect(await first).toEqual({ result: null })
+
+  const detaching = await pickingGuest(fakeElement('BUTTON'))
+  const second = detaching.execute('pickElement')
+  await tick()
+  detaching.events.emit('detach', {}, 'target closed')
+  expect(await second).toEqual({ result: null })
+  expect(detaching.calls.filter((method) => method === 'Overlay.setInspectMode')).toHaveLength(1)
+})
