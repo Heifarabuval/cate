@@ -320,6 +320,16 @@ class Pages(Garde):
 			with self.subTest(cmd=cmd):
 				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
 
+	def test_substitution_dans_le_texte_d_un_envoi_reste_lue(self):
+		"""Issue 170 : entre guillemets doubles le shell exécute $(...) et les accents graves ; ce texte n'est pas vidé."""
+		self.installe()
+		self.orchestre()
+		f = os.path.join(self.projet, '.cate', 'tmp', 'agence', 'state.json')
+		for cmd in (f'cate agent send --panel abc "rapport $(echo {{}} > {f})"', f'cate agent send --panel abc "rapport `rm {f}`"'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+		self.vide(self.hook(self.pages_cmd, 'Bash', {'command': "cate agent send --panel abc 'lit $(x) > state.json et `y`'"}))
+
 	def test_plafond_agents_refuse_aux_agents(self):
 		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
 		self.installe()

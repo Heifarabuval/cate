@@ -3386,7 +3386,9 @@ MESSAGE_RE = re.compile(r'(\bcate\s+agent\s+send\b[^;&|\n"\']*)("(?:[^"\\]|\\.)*
 def sans_message(cmd):
 	"""Vide le texte cité d'un `cate agent send` : c'est un message, pas une écriture (issue 170). Le reste de la
 	ligne (`&& echo x > fichier`) reste lu. ponytail: un seul argument cité, un message en heredoc reste lu en entier."""
-	return MESSAGE_RE.sub(r'\1""', cmd)
+	# entre guillemets doubles le shell exécute $(...) et les accents graves : ce texte reste lu
+	return MESSAGE_RE.sub(lambda m: m.group(0) if m.group(2)[0] == '"' and ('$(' in m.group(2) or '`' in m.group(2))
+	                      else m.group(1) + '""', cmd)
 
 
 def demarre(cmd):

@@ -207,6 +207,16 @@ describe('cate.agent.*', () => {
     await expect(rpcError(handlers.send({ targetPanelId: 'gone', prompt: 'go' }, ctx()))).resolves.toBe('agent-not-running')
   })
 
+  it('counts as ahead only the prompts still waiting or typed, not a failed one', async () => {
+    terminal.set('term', { status: 'waitingForInput', canReceivePrompt: true, session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    vi.mocked(terminal.terminals.send).mockResolvedValueOnce({ ok: false, error: 'agent-prompt-not-taken', typed: true })
+    await handlers.send({ targetPanelId: 'term', prompt: 'first' }, ctx())
+    await vi.waitFor(() => expect(agents.prompts.of('term').map((prompt) => prompt.state)).toEqual(['failed']))
+    const second = await handlers.send({ targetPanelId: 'term', prompt: 'second' }, ctx()) as { ahead: number }
+    const third = await handlers.send({ targetPanelId: 'term', prompt: 'third' }, ctx()) as { ahead: number }
+    expect([second.ahead, third.ahead]).toEqual([0, 1])
+  })
+
   it('sends from the CLI and from a client through the same function, with the same result', async () => {
     terminal.set('term', { status: 'running', canReceivePrompt: false })
     const impl = agentsCapabilityImpl(agents, starter, {} as never)
