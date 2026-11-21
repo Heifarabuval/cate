@@ -343,13 +343,20 @@ def retirer(racine, home, cle, dev=False, ponctuel=None):
 	return _modifier(racine, home, dev, change, ponctuel=ponctuel)
 
 
+def posees_par_preset(nom):
+	"""Clés que le preset pose : elles quittent la couche ponctuelle quand il est choisi (spec 008 FR-010)."""
+	return set(schema()['presets'].get(nom, {}).get('valeurs', {})) if isinstance(nom, str) else set()
+
+
 def poser_preset(racine, home, nom, dev=False, remplacer=False, ponctuel=None):
-	"""remplacer : le fichier ne garde que le preset (un modèle choisi efface les réglages posés à côté)."""
+	"""remplacer : le fichier ne garde que le preset (un modèle choisi efface les réglages posés à côté).
+	ponctuel : la couche de l'état ; les clés que le preset pose la quittent, le reste compte dans la validation."""
 	def change(contenu):
 		if remplacer:
 			contenu.clear()
 		contenu['preset'] = nom
-	return _modifier(racine, home, dev, change, lire=not remplacer, ponctuel=ponctuel)
+	reste = {k: v for k, v in (ponctuel or {}).items() if k not in posees_par_preset(nom)}
+	return _modifier(racine, home, dev, change, lire=not remplacer, ponctuel=reste)
 
 
 # ---------- vue publiée pour le formulaire du panneau (spec 008, FR-003) ----------

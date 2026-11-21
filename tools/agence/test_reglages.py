@@ -494,6 +494,29 @@ class PonctuelEfface(Base):
 		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({'notifications.systeme': 'non'}, 2))
 		self.assertEqual(self.lit(self.projet), {'agents': {'max': 2}})  # le réglage du workspace reste
 
+	def test_cli_unset_d_une_cle_ponctuelle_revient_au_workspace(self):
+		"""Même comportement que la route : la couche seule, le fichier du workspace intact."""
+		self.ecrit(self.projet, {'agents': {'max': 2}})
+		self.assertEqual(self.agence('pratiques', 'unset', 'agents.max')[0], 0)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({'notifications.systeme': 'non'}, 2))
+		self.assertEqual(self.lit(self.projet), {'agents': {'max': 2}})
+		self.assertEqual(next(c for c in st['pratiques']['champs'] if c['cle'] == 'agents.max')['origine'], 'projet')
+
+	def test_preset_retire_les_cles_ponctuelles_qu_il_pose(self):
+		"""agents.max ponctuel à 6, preset pr-tdd (4) : 4, par la route comme par la CLI (preset ou set preset)."""
+		poses = set(self.sch['presets']['pr-tdd']['valeurs'])
+		self.assertTrue({'agents.max', 'notifications.systeme'} <= poses)
+		for nom, pose in (('route', lambda: self.post('/pratiques/preset', nom='pr-tdd')[0] == 303),
+		                  ('cli preset', lambda: self.agence('pratiques', 'preset', 'pr-tdd')[0] == 0),
+		                  ('cli set preset', lambda: self.agence('pratiques', 'set', 'preset', 'pr-tdd')[0] == 0)):
+			with self.subTest(nom):
+				self.assertEqual(self.agence('start', '--max-agents', '6', '--no-notify')[0], 0)
+				self.assertTrue(pose())
+				st = agence.load()
+				self.assertEqual((st['ponctuel'], agence.plafond(st)), ({}, 4))
+				self.assertEqual(next(c for c in st['pratiques']['champs'] if c['cle'] == 'agents.max')['origine'], 'projet')
+
 
 class PonctuelValide(Base):
 	"""corr-008 (a) : une écriture se valide avec la couche ponctuelle ; refusée, rien n'est écrit et la politique publiée
@@ -516,9 +539,11 @@ class PonctuelValide(Base):
 		self.assertIn(self.c2, err)
 		self.assertFalse(os.path.exists(self.projet))
 
-	def test_preset_refuse_avec_la_couche_ponctuelle(self):
-		self.assertEqual(self.post('/pratiques/preset', nom='pr-tdd')[0], 400)
-		self.assertFalse(os.path.exists(self.projet))
+	def test_preset_valide_sans_les_cles_ponctuelles_qu_il_pose(self):
+		# pr-tdd pose agents.max (4) : le 1 ponctuel quitte la couche avant la validation, comme pour un set
+		self.assertEqual(self.post('/pratiques/preset', nom='pr-tdd')[0], 303)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st), st['pratiques']['erreur']), ({}, 4, None))
 
 	def test_la_cle_reglee_quitte_la_couche_avant_la_validation(self):
 		self.assertEqual(self.post('/pratiques/set', cle=['verification', 'agents.max'], valeur=['differente', '2'])[0], 303)

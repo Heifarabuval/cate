@@ -1619,6 +1619,20 @@ def click_jeter(path):
 	return 303, '/'
 
 
+def quitter_ponctuel(st, cles):
+	"""La valeur choisie s'applique (spec 008 FR-010) : les clés réglées quittent la couche ponctuelle ; True si l'une y était."""
+	return bool([k for k in cles if st['ponctuel'].pop(k, None) is not None])
+
+
+def retirer_reglage(pratiques, st, racine, home, cle, dev):
+	"""unset, route et CLI : une clé ponctuelle revient au réglage du workspace (la couche seule, fichier intact) ;
+	sinon la clé quitte le fichier. Rend le fichier écrit, ou None."""
+	if cle in st['ponctuel']:
+		st['ponctuel'].pop(cle)
+		return None
+	return pratiques.retirer(racine, home, cle, dev, st['ponctuel'])
+
+
 def click_pratiques(action, form):
 	"""Formulaire du panneau (spec 008 FR-004) : mêmes fonctions, même verrou que `agence pratiques` ; le fichier visé suit
 	la portée de la clé. Refus : 400 et la phrase simple. La vue est republiée aussitôt, sans attendre le tour."""
@@ -1631,14 +1645,12 @@ def click_pratiques(action, form):
 				cles, vals = form.get('cle') or [], form.get('valeur') or []
 				paires = list(zip(cles, map(pratiques.lire_valeur, vals))) if len(cles) == len(vals) else []
 				pratiques.regler_plusieurs(racine, home, paires, ponctuel=st['ponctuel'])
-				for cle, _ in paires:  # la valeur choisie s'applique (FR-010)
-					st['ponctuel'].pop(cle, None)
-			elif action == 'unset' and un('cle') in st['ponctuel']:  # revenir au réglage du workspace : la couche seule
-				st['ponctuel'].pop(un('cle'))
+				quitter_ponctuel(st, [cle for cle, _ in paires])
 			elif action == 'unset':
-				pratiques.retirer(racine, home, un('cle'), None, st['ponctuel'])
+				retirer_reglage(pratiques, st, racine, home, un('cle'), None)
 			else:
 				pratiques.poser_preset(racine, home, un('nom'), remplacer=un('remplacer') == '1', ponctuel=st['ponctuel'])
+				quitter_ponctuel(st, pratiques.posees_par_preset(un('nom')))
 		except pratiques.Invalide as err:
 			return 400, err.phrase
 		st['pratiques'] = publier(politique(st=st))
@@ -3546,13 +3558,21 @@ def cmd_pratiques(a):
 	try:
 		if a.action == 'set':
 			with tx() as st:  # la valeur choisie s'applique : sa valeur ponctuelle est retirée (spec 008 FR-010)
-				print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev, st["ponctuel"])}')
-				if st['ponctuel'].pop(a.cle, None) is not None:
+				v = pratiques.lire_valeur(a.valeur)
+				print(f'écrit : {pratiques.regler(racine, home, a.cle, v, a.dev, st["ponctuel"])}')
+				if quitter_ponctuel(st, pratiques.posees_par_preset(v) if a.cle == 'preset' else [a.cle]):
 					st['pratiques'] = publier(politique(st=st))
 		elif a.action == 'unset':
-			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev, load()["ponctuel"])}')
+			with tx() as st:  # comme la route : une clé ponctuelle revient au réglage du workspace
+				ecrit = retirer_reglage(pratiques, st, racine, home, a.cle, a.dev)
+				print(f'écrit : {ecrit}' if ecrit else f'option ponctuelle retirée : {a.cle}')
+				if not ecrit:
+					st['pratiques'] = publier(politique(st=st))
 		elif a.action == 'preset':
-			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer, load()["ponctuel"])}')
+			with tx() as st:
+				print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer, st["ponctuel"])}')
+				if quitter_ponctuel(st, pratiques.posees_par_preset(a.nom)):
+					st['pratiques'] = publier(politique(st=st))
 		pol = pratiques.verifier(racine, home, load()['ponctuel'])  # show dit la source ponctuel (spec 008)
 	except pratiques.Invalide as err:
 		raise Env(f'pratiques : {err} ({err.phrase})')
