@@ -1220,7 +1220,7 @@ or that changes shared state, is a **workspace** setting.
 | Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
-| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace shares, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
+| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace shares, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior`, `browserShowElementEnabled` (off: the panel's button that shows one element to the related agents) |
 | Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
@@ -1745,6 +1745,12 @@ downloads list and its views, and hands page work to it.
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
   macOS, so the desktop shell declares the `passkeys` feature only on macOS.
+- **The person shows an agent one element.** With `browserShowElementEnabled`
+  on (off by default) and an agent related to the panel, a toolbar button
+  starts Chromium's own element picker (`pickElement` in the page driver,
+  outside its queue). One click sends the element's selector, role, text and
+  box to the related agents through `agents.send`; Escape or the button again
+  sends nothing. A form field's value, the page's HTML and a capture never leave.
 - **Every client loads the page itself.** `localhost` pages come from the
   runtime's machine through loopback routing, a typed path or `file://` URL
   is a workspace file the session turns into its `file.serveUrl` URL (never

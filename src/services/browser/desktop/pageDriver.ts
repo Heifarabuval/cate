@@ -27,6 +27,7 @@ import {
   type BrowserObservation,
   type BrowserObservationPerformance,
   type BrowserPageIdentity,
+  type BrowserPickedElement,
   type BrowserViewportState,
 } from '../contract'
 import { BrowserObservationCache, type CachedBrowserObservation } from './observationCache'
@@ -181,6 +182,8 @@ export class PageDriver {
   /** The file chooser an agent action opened that no upload answered yet. */
   private fileChooser?: { backendNodeId: number; sessionId?: string; documentEpoch: number }
   private readonly log = new PageLog()
+  /** Ends the person's pending element pick, if any. */
+  private cancelPick?: () => void
   /** The debugger lets go of a guest whose renderer crashed or restarted:
    *  the next command attaches again. */
   private readonly onDebuggerDetach = (): void => {
@@ -281,6 +284,9 @@ export class PageDriver {
   }
 
   execute(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
+    // The person's pick waits on them, outside the queue: agents keep working.
+    if (method === 'cancelPick') { this.cancelPick?.(); return Promise.resolve({ result: null }) }
+    if (method === 'pickElement') return this.pickElement().catch((error) => ({ error: error instanceof Error ? error.message : 'browser-pick-failed' }))
     if (method === 'dialog') return this.answerDialog(args)
     // A page that waits on a dialog runs nothing else until it is answered.
     const open = this.dialogs?.current(this.contents.id)
@@ -317,6 +323,76 @@ export class PageDriver {
     // The call itself finishes once the dialog is answered; the next call
     // waits for it in the queue.
     return Promise.race([run, interrupted]).finally(() => unsubscribe?.())
+  }
+
+  /** Chromium's own element picker: the person hovers, clicks one element
+   *  (or presses Escape). Only `BrowserPickedElement` leaves the page; a
+   *  form field's value never does. Null when the person cancels. */
+  private async pickElement(): Promise<BrowserDriverResult> {
+    this.cancelPick?.()
+    const debuggee = this.contents.debugger
+    let listener: ((event: Electron.Event, method: string, params: unknown) => void) | undefined
+    let cancel: (() => void) | undefined
+    const picked = new Promise<number | null>((resolve) => {
+      cancel = () => resolve(null)
+      this.cancelPick = cancel
+      listener = (_event, method, params) => {
+        if (method === 'Overlay.inspectNodeRequested') resolve(Number(objectValue(params).backendNodeId))
+        else if (method === 'Overlay.inspectModeCanceled') resolve(null)
+      }
+      debuggee.on('message', listener)
+    })
+    let backendNodeId: number | null
+    try {
+      await this.send('Overlay.enable')
+      await this.send('Overlay.setInspectMode', { mode: 'searchForNode', highlightConfig: { showInfo: true, contentColor: { r: 111, g: 168, b: 220, a: 0.5 } } })
+      backendNodeId = await picked
+    } finally {
+      debuggee.removeListener('message', listener!)
+      // A newer pick owns the overlay once it replaced this one.
+      if (this.cancelPick === cancel) {
+        this.cancelPick = undefined
+        await this.send('Overlay.setInspectMode', { mode: 'none', highlightConfig: {} }).catch(() => {})
+      }
+    }
+    if (backendNodeId === null || !Number.isFinite(backendNodeId)) return { result: null }
+    const { object } = await this.send('DOM.resolveNode', { backendNodeId })
+    const described = objectValue((await this.send('Runtime.callFunctionOn', {
+      objectId: objectValue(object).objectId,
+      returnByValue: true,
+      functionDeclaration: `function () {
+        const field = /^(INPUT|TEXTAREA|SELECT)$/.test(this.tagName) || this.isContentEditable;
+        const part = (node) => {
+          if (node.id && /^[A-Za-z][\\w-]*$/.test(node.id)) return '#' + node.id;
+          const parent = node.parentElement;
+          const same = parent ? Array.from(parent.children).filter((child) => child.tagName === node.tagName) : [];
+          return node.tagName.toLowerCase() + (same.length > 1 ? ':nth-of-type(' + (same.indexOf(node) + 1) + ')' : '');
+        };
+        const parts = [];
+        for (let node = this; node && node.nodeType === 1; node = node.parentElement) {
+          const step = part(node);
+          parts.unshift(step);
+          if (step[0] === '#') break;
+        }
+        const box = this.getBoundingClientRect();
+        return {
+          selector: parts.join(' > '),
+          text: field ? '' : String(this.innerText || this.textContent || '').slice(0, 1000),
+          rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+        };
+      }`,
+    })).result).value
+    const ax = await this.send('Accessibility.getPartialAXTree', { backendNodeId, fetchRelatives: false }).catch(() => ({ nodes: [] }))
+    const first = objectValue(Array.isArray(ax.nodes) ? ax.nodes[0] : undefined)
+    const role = objectValue(first.role).value
+    const { selector, text, rect } = objectValue(described)
+    const element: BrowserPickedElement = {
+      selector: String(selector ?? ''),
+      role: typeof role === 'string' && role ? role : 'generic',
+      text: String(text ?? ''),
+      rect: rect as BrowserPickedElement['rect'],
+    }
+    return { result: element }
   }
 
   /** Answers the page's open dialog, then observes the page after it. */

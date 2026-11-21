@@ -84,6 +84,7 @@ beforeEach(() => {
       changes: () => ({ onEvent: () => () => {}, cancel: () => {} }),
       passwords: vi.fn(async () => []),
     },
+    settings: { subscribe: () => ({ done: new Promise(() => {}), onEvent: () => () => {}, cancel: () => {} }) },
   } as unknown as RuntimeProxy
   restoreRuntime = setRuntimeResolver((id) => (id === 'ws' ? runtime : null))
   host = document.createElement('div')

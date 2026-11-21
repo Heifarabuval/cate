@@ -31,5 +31,8 @@ export const browserSettings = defineSettings({
     browserHomepage: setting(''),
     browserSearchEngine: setting<BrowserSearchEngine>('google', oneOf('google', 'duckDuckGo', 'bing', 'brave')),
     browserNewTabBehavior: setting<BrowserNewTabBehavior>('startPage', oneOf('startPage', 'homepage')),
+    /** The panel's button that sends one clicked element (selector, role,
+     *  text, box) to the agents related to it; off until the person turns it on. */
+    browserShowElementEnabled: setting(false),
   },
 })
