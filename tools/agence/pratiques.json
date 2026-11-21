@@ -16,7 +16,11 @@
   "agents.max": {"entier": [1, 16], "dit": "plafond d'agents vivants du projet"},
   "declencheurs.actifs": {"parmi": "declencheurs.json", "dit": "identifiants des déclencheurs actifs (table declencheurs.json)"},
   "envoi.slack.variable": {"motif": "^[A-Za-z_][A-Za-z0-9_]*$", "dit": "nom de la variable d'environnement qui porte le jeton Slack (jamais le jeton)"},
-  "envoi.slack.fichier": {"motif": "^[~/]", "nul": true, "dit": "chemin d'un fichier .env qui porte cette variable, ou null (jamais le jeton)"}
+  "envoi.slack.fichier": {"motif": "^[~/]", "nul": true, "dit": "chemin d'un fichier .env qui porte cette variable, ou null (jamais le jeton)"},
+  "modele.tri": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "dit": "modèle proposé pour trier les retours ; null : modèle par défaut de l'agent CLI"},
+  "modele.interlocuteur": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "dit": "modèle passé à l'interlocuteur par agence start ; null : modèle par défaut de l'agent CLI"},
+  "modele.implementation": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "dit": "modèle proposé dans une fiche ; null : modèle par défaut de l'agent CLI"},
+  "modele.structurant": {"motif": "^[A-Za-z0-9][\\w.:\\[\\]-]*\\Z", "nul": true, "dit": "modèle proposé dans une fiche qui cite une décision structurante ; null : modèle par défaut de l'agent CLI"}
  },
  "coherences": [
   {"si": {"livraison.mode": ["main"], "preuve": ["pr-mergee", "ci-verte"]}, "message": "une preuve de PR n'a pas de sens sans PR"},

@@ -36,8 +36,13 @@ HORS_LISTE = {
 	'livraison.mode': 'branche', 'livraison.merge': 'auto', 'livraison.methode': 'fast-forward', 'issue': 'parfois',
 	'tests': 'tdd-strict', 'speckit': 'souvent', 'verification': 'croisee', 'preuve': ['pr-mergee', 'deploiement'],
 	'agents.max': 17, 'declencheurs.actifs': ['T1', 'T99'], 'envoi.slack.variable': 'xoxp-123-secret',
-	'envoi.slack.fichier': 'xoxp-123-secret',
+	'envoi.slack.fichier': 'xoxp-123-secret', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously-skip-permissions',
+	'modele.implementation': ['sonnet'], 'modele.structurant': '',
 }
+# Spec 010, lot 7 (FR-010, SC-003) : modèle par rôle, proposé, jamais choisi par le code ; null hors des presets.
+MODELES = {'modele.tri': None, 'modele.interlocuteur': None, 'modele.implementation': None, 'modele.structurant': None}
+DEFAUT = {**NEUTRE, **MODELES}  # valeurs effectives sans aucun fichier
+DEFAUT_PR_TDD = {**PR_TDD, **MODELES}
 
 
 def imbrique(plat):
@@ -84,7 +89,7 @@ class Base(unittest.TestCase):
 		self.assertTrue(pol['erreur'], 'politique acceptée à tort')
 		for m in mots:
 			self.assertIn(m, pol['erreur'])
-		self.assertEqual(pol['valeurs'], NEUTRE)  # retombe sur neutre, sans rien appliquer
+		self.assertEqual(pol['valeurs'], DEFAUT)  # retombe sur neutre, sans rien appliquer
 		return pol['erreur']
 
 
@@ -93,9 +98,9 @@ class Base(unittest.TestCase):
 class Priorite(Base):
 	def test_defaut_seul(self):
 		pol = self.charge()
-		self.assertEqual((pol['valeurs'], pol['erreur'], pol['preset']), (NEUTRE, None, 'neutre'))
+		self.assertEqual((pol['valeurs'], pol['erreur'], pol['preset']), (DEFAUT, None, 'neutre'))
 		self.assertEqual(set(pol['sources'].values()), {'défaut'})
-		self.assertEqual(set(pol['sources']), set(NEUTRE) | {'preset'})
+		self.assertEqual(set(pol['sources']), set(DEFAUT) | {'preset'})
 
 	def test_chemins(self):
 		self.assertEqual(pratiques.fichier_projet(self.racine), self.projet)
@@ -105,7 +110,7 @@ class Priorite(Base):
 	def test_preset_du_dev(self):
 		self.ecrit(self.dev, {'preset': 'pr-tdd'})
 		pol = self.charge()
-		self.assertEqual(pol['valeurs'], PR_TDD)
+		self.assertEqual(pol['valeurs'], DEFAUT_PR_TDD)
 		self.assertEqual((pol['preset'], pol['sources']['preset'], pol['sources']['tests']), ('pr-tdd', 'dev', 'dev'))
 
 	def test_cles_du_dev_par_dessus_son_preset(self):
@@ -118,8 +123,9 @@ class Priorite(Base):
 		self.ecrit(self.dev, {'preset': 'pr-tdd', 'livraison': {'methode': 'merge'}})
 		self.ecrit(self.projet, {'preset': 'neutre'})
 		pol = self.charge()
-		self.assertEqual(pol['valeurs'], NEUTRE)  # le preset du projet couvre aussi les clés du dev
-		self.assertEqual(set(pol['sources'].values()), {'projet'})
+		self.assertEqual(pol['valeurs'], DEFAUT)  # le preset du projet couvre aussi les clés du dev
+		self.assertEqual({pol['sources'][k] for k in NEUTRE} | {pol['sources']['preset']}, {'projet'})
+		self.assertEqual({pol['sources'][k] for k in MODELES}, {'défaut'})  # aucun preset ne pose de modèle
 		self.assertEqual(pol['preset'], 'neutre')
 
 	def test_cles_du_projet_en_dernier(self):
@@ -150,7 +156,7 @@ class Priorite(Base):
 
 	def test_home_absent(self):
 		self.ecrit(self.dev, {'tests': 'tdd'})
-		self.assertEqual(pratiques.charger(self.racine, None)['valeurs'], NEUTRE)
+		self.assertEqual(pratiques.charger(self.racine, None)['valeurs'], DEFAUT)
 
 
 # ---------- T002 : refus (FR-003, SC-003) ----------
@@ -274,7 +280,7 @@ class Ecriture(Base):
 	def test_preset(self):
 		pratiques.poser_preset(self.racine, self.home, 'pr-tdd', dev=True)
 		self.assertEqual(self.lit(self.dev), {'preset': 'pr-tdd'})
-		self.assertEqual(self.charge()['valeurs'], PR_TDD)
+		self.assertEqual(self.charge()['valeurs'], DEFAUT_PR_TDD)
 		with self.assertRaises(pratiques.Invalide):
 			pratiques.poser_preset(self.racine, self.home, 'inconnu')
 		self.assertFalse(os.path.exists(self.projet))
@@ -361,11 +367,60 @@ class Presets(unittest.TestCase):
 
 	def test_cles_des_presets_dans_le_schema(self):
 		schema = pratiques.schema()
-		self.assertEqual(len(schema['cles']), 12)
+		self.assertEqual(len(schema['cles']), 16)
 		for nom, valeurs in schema['presets'].items():
 			with self.subTest(preset=nom):
 				self.assertLessEqual(set(valeurs), set(schema['cles']))
-		self.assertEqual(set(schema['presets']['neutre']), set(schema['cles']))  # neutre est complet : c'est la base
+		# neutre est la base, complet sauf le modèle par rôle (null par défaut, jamais posé par un preset)
+		self.assertEqual(set(schema['presets']['neutre']), set(schema['cles']) - set(MODELES))
+
+	def test_modele_par_role_sc003(self):
+		"""T120, SC-003 : quatre clés modele.*, chaîne ou null, null par défaut, absentes des presets livrés."""
+		schema = pratiques.schema()
+		self.assertLessEqual(set(MODELES), set(schema['cles']))
+		for nom, valeurs in schema['presets'].items():
+			with self.subTest(preset=nom):
+				self.assertEqual(set(valeurs) & set(MODELES), set())
+		tmp = tempfile.mkdtemp(prefix='pratiques-modele-')
+		self.addCleanup(shutil.rmtree, tmp, True)
+		for nom in schema['presets']:
+			f = pratiques.fichier_projet(tmp)
+			os.makedirs(os.path.dirname(f), exist_ok=True)
+			with open(f, 'w') as fh:
+				json.dump({'preset': nom}, fh)
+			pol = pratiques.charger(tmp, None)
+			with self.subTest(preset=nom):
+				self.assertEqual({k: pol['valeurs'][k] for k in MODELES}, MODELES)
+				self.assertEqual({pol['sources'][k] for k in MODELES}, {'défaut'})
+
+
+class ModeleParRole(Base):
+	"""T120 : une clé modele.* se pose d'une commande (chaîne ou null), garde sa source et survit à un preset."""
+
+	def test_chaine_ou_null_par_dev_et_projet(self):
+		for cle in MODELES:
+			with self.subTest(cle=cle):
+				for f in (self.dev, self.projet):
+					with contextlib.suppress(FileNotFoundError):
+						os.remove(f)
+				self.ecrit(self.dev, imbrique({cle: 'claude-opus-5-5'}))
+				pol = self.charge()
+				self.assertEqual((pol['valeurs'][cle], pol['sources'][cle], pol['erreur']), ('claude-opus-5-5', 'dev', None))
+				self.ecrit(self.projet, imbrique({cle: None}))
+				pol = self.charge()
+				self.assertEqual((pol['valeurs'][cle], pol['sources'][cle]), (None, 'projet'))
+
+	def test_une_commande_et_preset_sans_effet(self):
+		self.assertEqual(pratiques.regler(self.racine, self.home, 'modele.implementation', 'sonnet'), self.projet)
+		self.assertEqual(self.lit(self.projet), {'modele': {'implementation': 'sonnet'}})
+		pratiques.poser_preset(self.racine, self.home, 'pr-tdd')
+		self.assertEqual(self.charge()['valeurs']['modele.implementation'], 'sonnet')  # un preset ne touche pas au modèle
+
+	def test_refus_nomme_la_cle(self):
+		for v in ('opus --dangerously-skip-permissions', '', 42, ['sonnet'], True):
+			with self.subTest(v=v):
+				self.ecrit(self.projet, {'modele': {'tri': v}})
+				self.refus('modele.tri', self.projet)
 
 	def test_presets_valides_par_le_schema(self):
 		tmp = tempfile.mkdtemp(prefix='pratiques-presets-')
@@ -398,7 +453,7 @@ class Tour(Base):
 	def test_watch_ecrit_la_politique(self):
 		agence.un_tour()
 		pub = agence.load()['pratiques']
-		self.assertEqual((pub['valeurs'], pub['erreur'], pub['preset']), (NEUTRE, None, 'neutre'))
+		self.assertEqual((pub['valeurs'], pub['erreur'], pub['preset']), (DEFAUT, None, 'neutre'))
 		self.ecrit(self.projet, {'tests': 'tdd'})
 		agence.un_tour()
 		pub = agence.load()['pratiques']
@@ -409,7 +464,7 @@ class Tour(Base):
 		agence.un_tour()
 		st = agence.load()
 		self.assertIn('tdd-strict', st['pratiques']['erreur'])
-		self.assertEqual(st['pratiques']['valeurs'], NEUTRE)
+		self.assertEqual(st['pratiques']['valeurs'], DEFAUT)
 		self.assertEqual(st['humain'], agence.nom())  # le reste du tour a eu lieu
 
 	def test_etat_ancien_complete(self):
@@ -420,7 +475,7 @@ class Tour(Base):
 			json.dump(ancien, f)
 		self.assertIsNone(agence.load()['pratiques'])
 		agence.un_tour()
-		self.assertEqual(agence.load()['pratiques']['valeurs'], NEUTRE)
+		self.assertEqual(agence.load()['pratiques']['valeurs'], DEFAUT)
 
 
 # ---------- commande `agence pratiques` (FR-004) ----------
@@ -435,8 +490,8 @@ class Commande(Base):
 	def test_show_json_neutre_source_defaut(self):
 		code, out, _ = self.agence('pratiques', 'show', '--json')
 		pol = json.loads(out)
-		self.assertEqual((code, pol['valeurs'], pol['erreur']), (0, NEUTRE, None))
-		self.assertEqual({pol['sources'][k] for k in NEUTRE}, {'défaut'})
+		self.assertEqual((code, pol['valeurs'], pol['erreur']), (0, DEFAUT, None))
+		self.assertEqual({pol['sources'][k] for k in DEFAUT}, {'défaut'})
 
 	def test_show_json_cle_du_projet(self):
 		self.ecrit(self.projet, {'tests': 'tdd'})

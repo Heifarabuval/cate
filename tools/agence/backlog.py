@@ -202,6 +202,13 @@ def ajouter(b, titre, maintenant, **champs):
 	return f
 
 
+def modele_propose(valeurs, ids, registre):
+	"""Modèle d'une fiche créée sans --modele (spec 010, FR-010) : modele.structurant si elle cite une décision
+	structurante, sinon modele.implementation ; null s'il n'est pas posé. Le code propose ce que l'humain a posé, rien de plus."""
+	structurante = any(x['structurante'] for x in registre if x['id'] in ids)
+	return valeurs['modele.structurant' if structurante else 'modele.implementation']
+
+
 def modifier(b, fid, maintenant, **champs):
 	f = trouver(b['fiches'], fid)
 	_modifiable(f)

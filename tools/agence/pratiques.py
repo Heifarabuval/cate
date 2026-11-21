@@ -121,7 +121,8 @@ def _lire(chemin):
 
 def fusionner(sch, couches):
 	"""couches : [(source, chemin, contenu ou None)], du plus faible au plus fort. Rend la politique ; Invalide sinon."""
-	valeurs = dict(sch['presets'][DEFAUT])
+	# une clé absente de neutre (modèle par rôle, spec 010 lot 7) vaut null : aucun preset livré ne la pose
+	valeurs = {**{k: None for k in sch['cles']}, **sch['presets'][DEFAUT]}
 	sources = {k: 'défaut' for k in valeurs}
 	sources['preset'] = 'défaut'
 	preset = DEFAUT

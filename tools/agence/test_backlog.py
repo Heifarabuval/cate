@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agence  # noqa: E402
 import backlog  # noqa: E402
+import test_lancer  # noqa: E402  (module seul : ses classes ne tournent pas deux fois)
 
 T0 = '2026-11-20T10:00:00+00:00'
 COMPLETE = {'type': 'tache', 'preuve': 'pr-merged:', 'priorite': 'P2', 'fichiers': ['src/a.ts'], 'budgetJetons': 10000,
@@ -492,6 +493,90 @@ class CliDetections(Base):
 		self.assertEqual(code, 0)
 		self.assertTrue(out.startswith('F1 : x\n'))
 		self.assertIn('budgetJetons : 5000', out)
+
+
+class ModeleDefaut(Base):
+	"""T121 (spec 010, lot 7, FR-010) : une fiche sans --modele reprend le modèle proposé par la politique, sinon null."""
+
+	def regle(self, cle, valeur):
+		import pratiques
+		pratiques.regler(self.racine, self.home, cle, valeur)
+
+	def modele(self, fid):
+		return json.loads(self.agence('fiche', 'show', fid, '--json')[1])['modele']
+
+	def test_sans_politique_aucun_modele(self):
+		self.agence('decision', 'add', 'o', '--pourquoi', 'p', '--structurante')
+		self.agence('fiche', 'add', 'x')
+		self.agence('fiche', 'add', 'y', '--decision', 'D1')
+		self.assertEqual((self.modele('F1'), self.modele('F2')), (None, None))
+
+	def test_implementation_puis_structurant(self):
+		self.regle('modele.implementation', 'sonnet')
+		self.regle('modele.structurant', 'opus')
+		self.agence('decision', 'add', 'o', '--pourquoi', 'p', '--structurante')
+		self.agence('decision', 'add', 'o2', '--pourquoi', 'p')
+		self.agence('fiche', 'add', 'simple')
+		self.agence('fiche', 'add', 'structurante', '--decision', 'D2', '--decision', 'D1')
+		self.agence('fiche', 'add', 'liee', '--decision', 'D2')
+		self.assertEqual([self.modele(f) for f in ('F1', 'F2', 'F3')], ['sonnet', 'opus', 'sonnet'])
+
+	def test_structurant_seul_ne_touche_que_les_structurantes(self):
+		self.regle('modele.structurant', 'opus')
+		self.agence('decision', 'add', 'o', '--pourquoi', 'p', '--structurante')
+		self.agence('fiche', 'add', 'simple')
+		self.agence('fiche', 'add', 'structurante', '--decision', 'D1')
+		self.assertEqual((self.modele('F1'), self.modele('F2')), (None, 'opus'))
+
+	def test_modele_explicite_garde(self):
+		self.regle('modele.implementation', 'sonnet')
+		self.agence('fiche', 'add', 'x', '--modele', 'haiku')
+		self.assertEqual(self.modele('F1'), 'haiku')
+		self.agence('fiche', 'edit', 'F1', '--titre', 'x2')  # une édition ne repose pas le défaut
+		self.assertEqual(self.modele('F1'), 'haiku')
+
+	def test_politique_invalide_refuse_sans_ecrire(self):
+		self.ecrit(os.path.join(self.racine, '.cate', 'tmp', 'agence', 'pratiques.json'), '{')
+		code, _, err = self.agence('fiche', 'add', 'x')
+		self.assertEqual(code, 2)
+		self.assertIn('pratiques', err)
+		self.assertFalse(os.path.exists(self.fichier))
+
+
+class ModeleAuLancement(test_lancer.Lancer):
+	"""T121 : le besoin créé au clic porte le modèle de la fiche, ou aucun ; l'interlocuteur part avec le sien s'il est posé."""
+
+	def test_besoin_porte_le_modele_ou_aucun(self):
+		with agence.verrou():
+			b = backlog.charger(self.tmp)['backlog']
+			for titre, fichier, modele in (('A', 'src/a.ts', 'sonnet'), ('B', 'src/b.ts', None)):
+				f = backlog.ajouter(b, titre, T0, **{**COMPLETE, 'fichiers': [fichier]}, modele=modele)
+				backlog.transition(b, f['id'], 'prête', T0)
+			backlog.ecrire(self.tmp, 'backlog.json', b)
+		self.assertEqual(self.clic('F1,F2')[0], 303)
+		needs = self.fiche_needs()
+		self.assertEqual((needs['fiche:F1']['model'], needs['fiche:F2']['model']), ('sonnet', None))
+
+	def starts(self):
+		return [c for c in self.run.ran('cate', 'agent', 'start') if agence.INTER_PROMPT in c]
+
+	def test_start_sans_reglage_aucun_model(self):
+		with agence.tx() as st:
+			st['panels'] = {}
+		self.assertEqual(self.cli('start')[0], 0)
+		self.assertEqual(len(self.starts()), 1)
+		self.assertNotIn('--model', self.starts()[0])
+
+	def test_start_passe_modele_interlocuteur(self):
+		import pratiques
+		pratiques.regler(self.tmp, os.environ['HOME'], 'modele.interlocuteur', 'haiku')
+		pratiques.regler(self.tmp, os.environ['HOME'], 'modele.implementation', 'opus')  # un autre rôle n'y va pas
+		with agence.tx() as st:
+			st['panels'] = {}
+		self.assertEqual(self.cli('start')[0], 0)
+		c = self.starts()[0]
+		self.assertEqual(c[c.index('--model') + 1], 'haiku')
+		self.assertEqual(c.count('--model'), 1)
 
 
 if __name__ == '__main__':

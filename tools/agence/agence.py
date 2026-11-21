@@ -5,7 +5,7 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant), avec --model si modele.interlocuteur est posé ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
   agence need add|panel|pr|done|drop|list   add --done-when : conditions de fin séparées par une virgule (pr-merged:N, issue-closed:N, ci-green:N, tests-local, report), dérivées de la politique sans elle ; need pr ID N rattache la PR ; add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
@@ -18,7 +18,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
-  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
+  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon modele.implementation, null s'il n'est pas posé ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
   agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n>
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
@@ -556,9 +556,11 @@ def interlocuteur(live, p, canvas=None):
 	enregistré dès sa création, relié au panneau agence (ou à l'orchestrateur sur un canvas)."""
 	if p.get('interlocuteur') in live:
 		return p['interlocuteur']
-	p['interlocuteur'] = adopt(live, INTERLOCUTEUR, 'terminal') or cate(
-		'agent', 'start', *(['--canvas', canvas] if canvas else []), '--agent', 'claude-code', '--title', INTERLOCUTEUR,
-		INTER_PROMPT)['panelId']
+	p['interlocuteur'] = adopt(live, INTERLOCUTEUR, 'terminal')
+	if not p['interlocuteur']:
+		modele = politique()['valeurs']['modele.interlocuteur']  # posé par l'humain seul (spec 010, FR-010) ; null : défaut du CLI
+		p['interlocuteur'] = cate('agent', 'start', *(['--canvas', canvas] if canvas else []), '--agent', 'claude-code',
+		                          '--title', INTERLOCUTEUR, *(['--model', modele] if modele else []), INTER_PROMPT)['panelId']
 	link(p['interlocuteur'], p['orchestrator'], 'context', 'Fiches')
 	return p['interlocuteur']
 
@@ -760,9 +762,12 @@ def cmd_fiche(a):
 	          'fichiers': a.fichier, 'dependances': a.dependance, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
 	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
 	champs = {k: v for k, v in champs.items() if v is not None}
+	propose = a.action == 'add' and 'modele' not in champs and politique(agir=True)['valeurs']  # spec 010, lot 7
 	with registres() as r:
 		b = r['backlog']
 		if a.action == 'add':
+			if propose:
+				champs['modele'] = backlog.modele_propose(propose, champs.get('decisions', []), r['decisions']['decisions'])
 			f = backlog.ajouter(b, a.titre, now_iso(), **champs)
 		elif a.action == 'edit':
 			f = backlog.modifier(b, a.id, now_iso(), **champs)
