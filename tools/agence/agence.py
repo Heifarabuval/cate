@@ -3380,6 +3380,15 @@ def lance(cmd):
 PLAFOND_AVERTI = {'systemMessage': "Garde de plafond d'agents : état de l'agence illisible, lancement non vérifié."}
 
 
+MESSAGE_RE = re.compile(r'(\bcate\s+agent\s+send\b[^;&|\n"\']*)("(?:[^"\\]|\\.)*"|\'[^\']*\')', re.S)
+
+
+def sans_message(cmd):
+	"""Vide le texte cité d'un `cate agent send` : c'est un message, pas une écriture (issue 170). Le reste de la
+	ligne (`&& echo x > fichier`) reste lu. ponytail: un seul argument cité, un message en heredoc reste lu en entier."""
+	return MESSAGE_RE.sub(r'\1""', cmd)
+
+
 def demarre(cmd):
 	m = lance(cmd)
 	return bool(m) and m.group(2) == 'start'
@@ -3528,6 +3537,7 @@ def guard(payload, mode):
 			pages += [st['panels'].get('suivi')] if st['panels'].get('suivi') else []
 			if any(p and p in cmd for p in pages) or re.search(r'/(draft|ask)/', cmd):
 				return decision('deny', PAGE_DENY)
+		cmd = sans_message(cmd)  # le texte d'un rapport qui cite un fichier d'état n'est pas une écriture
 		if 'state.json' in cmd and WRITE_RE.search(cmd) and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or '')):
 			return decision('deny', STATE_DENY)
 		if PRATIQUES_RE.search(cmd) or ('pratiques.json' in cmd and WRITE_RE.search(cmd) and 'agence' in cmd):
