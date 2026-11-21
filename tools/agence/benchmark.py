@@ -5,11 +5,11 @@ Python stdlib, sans modèle ni réseau hors `gh` en lecture. Ne lance aucune app
 installation de dépendances : l'humain ouvre lui-même son terminal ou son workspace dans le clone.
 
 Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
-  select --graine N   vivier éligible et tirage reproductible dans S/selection.json
+  select --graine N [--remplacer]  vivier éligible et tirage reproductible dans S/selection.json (jamais écrasé sans l'option)
   prepare ISSUE BRAS  clone neuf sans remote au commit parent dans R/ISSUE-BRAS/, énoncé R/ISSUE-BRAS.md
-  debut ISSUE BRAS    ouvre le rejeu (un seul à la fois), horodaté en UTC
+  debut ISSUE BRAS    ouvre le rejeu (un seul à la fois, seuil commité d'abord), horodaté en UTC
   fini ISSUE BRAS     horodate et lance l'arbitre : vert, rouge, non lançable ; le 4e rouge donne échec
-  controle ISSUE BRAS contamination : appels d'outil des journaux du clone qui citent la PR d'origine
+  controle ISSUE BRAS contamination : appels d'outil des journaux du clone qui citent la PR d'origine ou le dépôt D
   mesure ISSUE BRAS [--usage-json F]  résultat en nombres dans S/resultats/ISSUE-BRAS.json (F : `cate agent usage --json`)
   revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
   rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md
@@ -75,6 +75,8 @@ def taille(pr):
 
 def select(a):
 	"""Vivier : PR mergées qui ferment une issue et touchent un test unitaire hors e2e (spec, Clarifications)."""
+	if os.path.exists(os.path.join(a.specs, 'selection.json')) and not a.remplacer:
+		raise Refus('selection.json existe : le tirage est figé avant le premier rejeu (--remplacer pour le refaire)')
 	depot = gh(a.depot, 'repo', 'view', '--json', 'nameWithOwner')['nameWithOwner']
 	prs = gh(a.depot, 'pr', 'list', '-R', depot, '--state', 'merged', '--limit', '200',
 		'--json', 'number,closingIssuesReferences,files,baseRefOid,headRefOid')
@@ -149,6 +151,7 @@ def prepare(a):
 		git(clone, '-c', 'uploadpack.allowAnySHA1InWant=true', 'fetch', '-q', '--no-tags', '--depth', '1',
 			'file://' + os.path.abspath(a.depot), v['base'])
 		git(clone, 'checkout', '-q', '-b', 'rejeu', v['base'])
+		os.remove(os.path.join(clone, '.git', 'FETCH_HEAD'))  # il nomme le chemin du dépôt d'origine
 	except subprocess.CalledProcessError as e:
 		shutil.rmtree(clone)
 		raise Refus('clone impossible au commit parent : ' + e.stderr.decode(errors='replace').strip()[:200])
@@ -175,6 +178,7 @@ def prepare(a):
 def debut(a):
 	if not os.path.exists(etat_path(a)):
 		raise Refus('rejeu %s non préparé' % nom(a))
+	seuil(a)
 	if ouvert(a):
 		raise Refus('rejeu %s déjà ouvert' % ouvert(a))
 	etat = lire(etat_path(a))
@@ -251,14 +255,17 @@ def fini(a):
 	return 0 if res == 'vert' else 1
 
 
-def motifs(depot, v):
+def motifs(depot, checkout, v):
+	"""depot : nom GitHub ; checkout : chemin local du dépôt d'origine, qui contient la solution."""
+	chemins = {os.path.abspath(checkout), os.path.realpath(checkout)}
 	return [re.compile(re.escape(depot), re.I), re.compile(r'/pull/%d\b' % v['pr']),
-		re.compile(r'\bgh\s+pr\b.*\b%d\b' % v['pr'], re.S), re.compile(r'\b' + re.escape(v['head'][:7]))]
+		re.compile(r'\bgh\s+pr\b.*\b%d\b' % v['pr'], re.S), re.compile(r'\b' + re.escape(v['head'][:7]))] + [
+		re.compile(re.escape(c) + r'(?![\w.-])') for c in chemins]
 
 
-def contamination(chemins, depot, v):
-	"""Nombre d'appels d'outil (dédoublonnés par id) qui citent le dépôt d'origine, la PR ou son sha (FR-008)."""
-	res, vus = motifs(depot, v), set()
+def contamination(chemins, depot, checkout, v):
+	"""Nombre d'appels d'outil (dédoublonnés par id) qui citent le dépôt d'origine, son checkout, la PR ou son sha (FR-008)."""
+	res, vus = motifs(depot, checkout, v), set()
 	for p in chemins:
 		for _, m, _ in attente_mesure.evenements(p):
 			for b in m.get('content') if isinstance(m.get('content'), list) else []:
@@ -279,21 +286,36 @@ def dossiers_du_clone(a):
 def controle(a):
 	v, sel = rejeu(a)
 	chemins = attente_mesure.journaux(dossiers_du_clone(a))
-	n = contamination(chemins, sel['depot'], v)
+	n = contamination(chemins, sel['depot'], a.depot, v)
 	print('invalide : %d appel(s) d\'outil citent la PR d\'origine' % n if n else
 		'valide : aucun appel d\'outil ne cite la PR d\'origine (%d journaux lus)' % len(chemins))
 	return 1 if n else 0
 
 
+def premier_debut(a):
+	"""Instant du premier rejeu commencé : états des rejeux sous R et résultats sous S."""
+	d = os.path.join(a.specs, 'resultats')
+	etats = [os.path.join(a.racine, n) for n in os.listdir(a.racine)] if os.path.isdir(a.racine) else []
+	etats += [os.path.join(d, n) for n in os.listdir(d)] if os.path.isdir(d) else []
+	ts = [attente_mesure.instant(lire(p).get('debut')) for p in etats if re.search(r'/\d+-(nu|outil)\.json$', p)]
+	return min((t for t in ts if t is not None), default=None)
+
+
 def seuil(a):
-	"""(seuil, empreinte SHA-256) ; Refus si seuil.json est absent ou pas commité tel quel (FR-003)."""
+	"""(seuil, empreinte SHA-256) ; Refus si seuil.json est absent, pas commité tel quel, ou commité après le premier
+	rejeu (FR-003)."""
 	p = os.path.join(a.specs, 'seuil.json')
 	if not os.path.isfile(p):
 		raise Refus('seuil.json absent : le fixer et le commiter avant le premier rejeu')
 	suivi = subprocess.run(['git', 'ls-files', '--error-unmatch', 'seuil.json'], cwd=a.specs, capture_output=True)
 	modif = subprocess.run(['git', 'status', '--porcelain', '--', 'seuil.json'], cwd=a.specs, capture_output=True, text=True)
 	if suivi.returncode or modif.returncode or modif.stdout.strip():
-		raise Refus('seuil.json non commité : le commiter tel quel avant de mesurer ou de rendre un verdict')
+		raise Refus('seuil.json non commité : le commiter tel quel avant de rejouer, de mesurer ou de rendre un verdict')
+	date = subprocess.run(['git', 'log', '-1', '--format=%ct', '--', 'seuil.json'], cwd=a.specs, capture_output=True,
+		text=True).stdout.strip()
+	premier = premier_debut(a)
+	if premier is not None and int(date) > premier:
+		raise Refus('seuil.json commité après le premier rejeu : le seuil est fixé avant (rejeux à refaire)')
 	with open(p, 'rb') as f:
 		octets = f.read()
 	return json.loads(octets), hashlib.sha256(octets).hexdigest()
@@ -337,7 +359,7 @@ def mesure(a):
 		reg = st.get('panels', {}).get('regisseur')
 		regisseur = attente_mesure.mesurer(dossiers, [p for p in panneaux if p.get('panelId') == reg])['jetons_total']
 	finis, chemins = etat['finis'], attente_mesure.journaux(dossiers)
-	n = contamination(chemins, sel['depot'], v)
+	n = contamination(chemins, sel['depot'], a.depot, v)
 	acheve = bool(etat['debut'] and finis and ouvert(a) != nom(a))
 	ta = mur = humains = None
 	if acheve:  # fenêtre [debut, dernier fini] : debut et chaque fini sont des gestes humains
@@ -349,16 +371,24 @@ def mesure(a):
 		'issue': a.issue, 'bras': a.bras, 'outil': outil_sha(a.depot), 'seuil': empreinte, 'debut': etat['debut'], 'finis': finis,
 		'temps_actif_s': ta, 'temps_mural_s': mur, 'interventions': humains, 'reprises': max(len(finis) - 1, 0),
 		'remarques': None, 'rouge_interface': None,
-		'jetons': {'entree': m['jetons_entree'], 'cache_cree': m['jetons_cache_cree'], 'lus': m['jetons_lus'],
-			'sortie': m['jetons_sortie'], 'total': m['jetons_total'],
-			'partiel': bool(m['sessions']['non_mesurees'] or m['sessions']['non_lues'])},
+		'jetons': jetons(m),
 		'jetons_regisseur': regisseur, 'sessions': m['sessions'], 'contamination': n,
 		'etat': 'invalide' if n else 'valide' if acheve else 'inachevé'
 	}
 	ecrire(os.path.join(a.specs, 'resultats', nom(a) + '.json'), res)
-	print('%s : %s ; temps actif %s s ; temps mural %s s ; jetons %d%s' % (nom(a), res['etat'], ta, mur,
-		m['jetons_total'], ' (partiel)' if res['jetons']['partiel'] else ''))
+	print('%s : %s ; temps actif %s s ; temps mural %s s ; jetons %s%s' % (nom(a), res['etat'], ta, mur,
+		'inconnus' if res['jetons']['total'] is None else res['jetons']['total'], ' (partiel)' if res['jetons']['partiel'] else ''))
 	return 0
+
+
+def jetons(m):
+	"""Jetons par poste ; aucun journal lu : inconnus (None), pas 0."""
+	s = m['sessions']
+	postes = {'entree': 'jetons_entree', 'cache_cree': 'jetons_cache_cree', 'lus': 'jetons_lus', 'sortie': 'jetons_sortie',
+		'total': 'jetons_total'}
+	j = {k: m[v] if s['lues'] else None for k, v in postes.items()}
+	j['partiel'] = bool(s['non_mesurees'] or s['non_lues'] or not s['lues'])
+	return j
 
 
 def outil_sha(depot):
@@ -424,8 +454,8 @@ def rapport(a):
 			'remarques': None if None in rem else sum(rem), 'jetons': mediane(x['jetons']['total'] for x in xs)}
 	ratio = lambda k: mediane(r[i, 'outil'][k] / r[i, 'nu'][k] if r[i, 'nu'][k] else None for i in issues)
 	ta, mur = ratio('temps_actif_s'), ratio('temps_mural_s')
-	jet = mediane(r[i, 'outil']['jetons']['total'] / r[i, 'nu']['jetons']['total'] if r[i, 'nu']['jetons']['total'] else None
-		for i in issues)
+	jet = mediane(r[i, 'outil']['jetons']['total'] / r[i, 'nu']['jetons']['total']
+		if r[i, 'nu']['jetons']['total'] and r[i, 'outil']['jetons']['total'] is not None else None for i in issues)
 	partiels = sum(1 for x in r.values() if x['jetons']['partiel'])
 	nu, ou = bras['nu'], bras['outil']
 	qualite = ou['verts'] >= nu['verts'] and ou['reprises'] <= nu['reprises'] and (
@@ -434,7 +464,12 @@ def rapport(a):
 	manque = [nom for nom, ok in (('temps actif', ta is not None and ta <= s['temps_actif_max']), ('qualité', qualite),
 		('jetons', jet is not None and jet <= s['jetons_max'])) if not ok]
 	zone = ta is not None and bas <= ta <= haut and not any(i in issues for i in groupes['reserve'])
-	if zone and manque in ([], ['temps actif']):  # sur 10 issues seulement : la réserve tranche (spec, Clarifications)
+	# 10 issues de campagne, 15 dès que la réserve est entamée (spec, Clarifications)
+	entamee = any('%d-%s' % (i, b) in res for i in groupes['reserve'] for b in BRAS)
+	requis = len(groupes['campagne']) + (len(groupes['reserve']) if entamee else 0)
+	if len(issues) < requis:
+		verdict = 'verdict impossible (%d issues valides dans les deux bras, il en faut %d)' % (len(issues), requis)
+	elif zone and manque in ([], ['temps actif']):  # sur 10 issues seulement : la réserve tranche (spec, Clarifications)
 		verdict = 'non conclusif (temps actif %s dans la zone %s à %s) : rejouer les %d issues de réserve' % (
 			nombre(ta), nombre(bas), nombre(haut), len(groupes['reserve']))
 	else:
@@ -453,8 +488,8 @@ def rapport(a):
 			sum(1 for x in rejeux if x['etat'] == 'invalide'), sum(1 for x in rejeux if x['etat'] == 'inachevé'), partiels), '',
 		'| Issue | Bras | Temps actif (s) | Temps mural (s) | Arbitre au 1er fini | Reprises | Remarques | Jetons |',
 		'|---|---|---|---|---|---|---|---|'
-	] + ['| %d | %s | %s | %s | %s | %d | %s | %d |' % (i, b, ent(x['temps_actif_s']), ent(x['temps_mural_s']), premier(x),
-		x['reprises'], ent(x['remarques']), x['jetons']['total']) for (i, b), x in r.items()] + [
+	] + ['| %d | %s | %s | %s | %s | %d | %s | %s |' % (i, b, ent(x['temps_actif_s']), ent(x['temps_mural_s']), premier(x),
+		x['reprises'], ent(x['remarques']), ent(x['jetons']['total'])) for (i, b), x in r.items()] + [
 		'', '| Bras | Temps actif médian (s) | Temps mural médian (s) | Verts au 1er fini | Reprises | Remarques | Jetons médians |',
 		'|---|---|---|---|---|---|---|'
 	] + ['| %s | %s | %s | %d | %d | %s | %s |' % (b, ent(x['ta']), ent(x['mur']), x['verts'], x['reprises'], ent(x['remarques']),
@@ -485,7 +520,9 @@ def main(argv=None):
 	ap.add_argument('--specs', default=os.path.join(ROOT, 'specs', '011-mesure-benchmark'))
 	ap.add_argument('--depot', default=ROOT)
 	sub = ap.add_subparsers(dest='cmd', required=True)
-	sub.add_parser('select').add_argument('--graine', type=int, required=True)
+	p = sub.add_parser('select')
+	p.add_argument('--graine', type=int, required=True)
+	p.add_argument('--remplacer', action='store_true')
 	for c in ('prepare', 'debut', 'fini', 'controle', 'mesure'):
 		p = sub.add_parser(c)
 		p.add_argument('issue', type=int)

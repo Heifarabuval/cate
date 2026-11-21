@@ -101,10 +101,22 @@ class Tirage(Banc):
 		self.assertTrue(set(tires) <= {v['issue'] for v in s['vivier']})
 		self.assertTrue(all(t['premier'] in ('nu', 'outil') for k in ('pilotes', 'campagne', 'reserve') for t in s[k]))
 		self.assertEqual(s['graine'], 7)
-		r = self.run_('select', '--graine', '7')
+		r = self.run_('select', '--graine', '7', '--remplacer')
 		self.assertEqual(r.returncode, 0, r.stderr)
 		with open(os.path.join(self.specs, 'selection.json'), 'rb') as f:
 			self.assertEqual(f.read(), premier)
+
+	def test_selection_existante_jamais_ecrasee_sans_option(self):
+		self.run_('select', '--graine', '7')
+		with open(os.path.join(self.specs, 'selection.json'), 'rb') as f:
+			premier = f.read()
+		r = self.run_('select', '--graine', '8')
+		self.assertEqual(r.returncode, 2)
+		self.assertIn('selection.json existe', r.stderr)
+		with open(os.path.join(self.specs, 'selection.json'), 'rb') as f:
+			self.assertEqual(f.read(), premier)
+		self.assertEqual(self.run_('select', '--graine', '8', '--remplacer').returncode, 0)
+		self.assertEqual(self.selection()['graine'], 8)
 
 	def test_comparaison_est_la_plus_courte_hors_selection(self):
 		self.run_('select', '--graine', '7')
@@ -174,6 +186,10 @@ class Rejeu(Banc):
 		}))
 		r = self.run_('select', '--graine', '7')
 		self.assertEqual(r.returncode, 0, r.stderr)
+		self.git(self.specs, 'init', '-q')
+		shutil.copy(os.path.join(CAMPAGNE, 'seuil.json'), self.specs)
+		self.git(self.specs, 'add', 'seuil.json')
+		self.git(self.specs, 'commit', '-qm', 'seuil')
 		self.clone = os.path.join(self.racine, '50-nu')
 
 	def appliquer_correctif(self):
@@ -193,6 +209,26 @@ class Rejeu(Banc):
 		self.assertIn('f doit rendre 1.', enonce)
 		self.assertNotIn('COMMENTAIRE_INTERDIT', enonce)
 		self.assertFalse(any(n.endswith('.md') and n != 'README.md' for n in os.listdir(self.clone)))
+
+	def test_clone_sans_chemin_du_depot(self):
+		"""Le fetch laisse le chemin du dépôt d'origine dans FETCH_HEAD : le clone ne doit le garder nulle part."""
+		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
+		self.assertFalse(os.path.exists(os.path.join(self.clone, '.git', 'FETCH_HEAD')))
+		r = subprocess.run(['grep', '-rlF', self.depot, os.path.join(self.clone, '.git')], capture_output=True, text=True)
+		self.assertEqual(r.stdout, '')
+
+	def test_debut_refuse_sans_seuil_commite(self):
+		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
+		with open(os.path.join(self.specs, 'seuil.json'), 'a') as f:
+			f.write('\n')
+		r = self.run_('debut', '50', 'nu')
+		self.assertEqual(r.returncode, 2)
+		self.assertIn('seuil.json non commité', r.stderr)
+		self.assertFalse(os.path.exists(os.path.join(self.racine, 'ouvert.json')))
+		os.remove(os.path.join(self.specs, 'seuil.json'))
+		r = self.run_('debut', '50', 'nu')
+		self.assertEqual(r.returncode, 2)
+		self.assertIn('seuil.json absent', r.stderr)
 
 	def test_second_prepare_pendant_un_rejeu_ouvert_refuse(self):
 		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
@@ -300,6 +336,12 @@ class Contamination(Banc):
 				self.assertIn('1 appel', r.stdout)
 				self.assertNotIn(cmd, r.stdout + r.stderr)
 
+	def test_chemin_du_depot_cite_invalide(self):
+		self.journal('git -C %s log --all' % self.depot)
+		r = self.controle()
+		self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+		self.assertIn('1 appel', r.stdout)
+
 	def test_worktree_du_clone_lu(self):
 		self.journal('gh pr view 102', '--cate-worktrees-a')
 		self.assertEqual(self.controle().returncode, 1)
@@ -322,6 +364,7 @@ class Specs(Banc):
 	def setUp(self):
 		super().setUp()
 		os.makedirs(self.specs)
+		self.env['GIT_COMMITTER_DATE'] = '2025-12-31T00:00:00Z'  # avant le premier rejeu des fixtures
 		self.git(self.specs, 'init', '-q')
 		shutil.copy(os.path.join(CAMPAGNE, 'seuil.json'), self.specs)
 		shutil.copy(os.path.join(CAMPAGNE, 'selection.json'), self.specs)
@@ -342,6 +385,12 @@ class Specs(Banc):
 	def resultat(self, nom):
 		with open(os.path.join(self.resultats, nom + '.json')) as f:
 			return json.load(f)
+
+	def dater_seuil(self, date):
+		"""Recommite seuil.json tel quel (même empreinte) à une autre date."""
+		self.git(self.specs, 'commit', '-q', '--amend', '--no-edit', '--date', date)
+		subprocess.run(['git', 'commit', '-q', '--amend', '--no-edit'], cwd=self.specs, check=True,
+			env=dict(self.env, GIT_COMMITTER_DATE=date), capture_output=True)
 
 
 class Mesure(Specs):
@@ -449,6 +498,21 @@ class Mesure(Specs):
 		_, r = self.mesure()
 		self.assertEqual((r['etat'], r['contamination']), ('invalide', 1))
 
+	def test_sans_journal_jetons_inconnus(self):
+		shutil.rmtree(os.path.join(self.home, '.claude', 'projects'))
+		out, r = self.mesure()
+		self.assertEqual(r['sessions']['lues'], 0)
+		self.assertEqual(r['jetons'], {'entree': None, 'cache_cree': None, 'lus': None, 'sortie': None, 'total': None,
+			'partiel': True})
+		self.assertIn('jetons inconnus', out.stdout)
+
+	def test_seuil_commite_apres_le_premier_rejeu_refuse(self):
+		self.dater_seuil('2026-01-01T11:00:00Z')  # le rejeu a commencé à 10:59:00
+		r = self.run_('mesure', '14', 'outil')
+		self.assertEqual(r.returncode, 2)
+		self.assertIn('seuil.json commité après le premier rejeu', r.stderr)
+		self.assertFalse(os.path.exists(os.path.join(self.resultats, '14-outil.json')))
+
 	def test_seuil_absent_refuse(self):
 		os.remove(os.path.join(self.specs, 'seuil.json'))
 		r = self.run_('mesure', '14', 'outil')
@@ -497,7 +561,10 @@ class Revue(Specs):
 
 
 class Rapport(Specs):
-	"""T023 à T025 : verdict sur la fixture de campagne (4 issues × 2 bras, résultats écrits à la main), seuil, régisseur."""
+	"""T023 à T025 : verdict sur la fixture de campagne (10 issues × 2 bras, résultats écrits à la main), seuil, régisseur.
+
+	Les issues 15 à 20 encadrent 11 à 14 sur chaque indicateur (3 en dessous, 3 au-dessus) : les médianes à 10 issues sont celles
+	de 11 à 14, et les tests qui retouchent 11 à 14 déplacent la médiane comme sur 4 issues."""
 
 	def setUp(self):
 		super().setUp()
@@ -518,11 +585,11 @@ class Rapport(Specs):
 		with open(os.path.join(self.specs, 'rapport-benchmark.md')) as f:
 			self.assertEqual(f.read(), out)
 		for ligne in (
-			'| nu | 850 | 2100 | 3 | 1 | 6 | 90000 |',
-			'| outil | 490 | 1800 | 4 | 0 | 5 | 125000 |',
+			'| nu | 850 | 2100 | 9 | 1 | 6 | 90000 |',
+			'| outil | 490 | 1800 | 10 | 0 | 5 | 125000 |',
 			'| 12 | nu | 800 | 2400 | rouge | 1 | 1 | 200000 |',
 			'Rapports médians outil / nu : temps actif 0,55 ; jetons 1,35 (partiel) ; temps mural 1,00 (rapporté, non bloquant).',
-			'Issues comptées : 4 (campagne 4 sur 10, réserve 0 sur 5). Rejeux invalidés : 0. Inachevés : 0. Jetons partiels : 1.',
+			'Issues comptées : 10 (campagne 10 sur 10, réserve 0 sur 5). Rejeux invalidés : 0. Inachevés : 0. Jetons partiels : 1.',
 			'Rouge par interface : 1.',
 			'Jetons du régisseur et des détections déterministes : 0.',
 			'Couche 1 : passe.'
@@ -567,7 +634,40 @@ class Rapport(Specs):
 
 	def test_rejeu_invalide_retire_l_issue(self):
 		self.modifier('14-outil', etat='invalide')
-		self.assertIn('Issues comptées : 3 (campagne 3 sur 10, réserve 0 sur 5). Rejeux invalidés : 1.', self.rapport().stdout)
+		out = self.rapport().stdout
+		self.assertIn('Issues comptées : 9 (campagne 9 sur 10, réserve 0 sur 5). Rejeux invalidés : 1.', out)
+		self.assertIn('Couche 1 : verdict impossible (9 issues valides dans les deux bras, il en faut 10).', out)
+
+	def test_une_seule_issue_valide_verdict_impossible(self):
+		for i in range(12, 21):
+			for b in ('nu', 'outil'):
+				os.remove(os.path.join(self.resultats, '%d-%s.json' % (i, b)))
+		out = self.rapport().stdout
+		self.assertIn('Couche 1 : verdict impossible (1 issues valides dans les deux bras, il en faut 10).', out)
+		self.assertNotIn('passe', out.split('## Verdict')[1])
+
+	def test_reserve_entamee_il_faut_15_issues(self):
+		for i, ta in ((11, 700), (12, 568), (13, 438), (14, 666)):  # zone non conclusive : la réserve est jouée
+			self.modifier('%d-outil' % i, temps_actif_s=ta)
+		for b in ('nu', 'outil'):
+			r = self.resultat('15-' + b)
+			r['issue'] = 21
+			ecrire(os.path.join(self.resultats, '21-%s.json' % b), json.dumps(r))
+		self.assertIn('Couche 1 : verdict impossible (11 issues valides dans les deux bras, il en faut 15).', self.rapport().stdout)
+
+	def test_jetons_inconnus_rapportes(self):
+		inconnus = {'entree': None, 'cache_cree': None, 'lus': None, 'sortie': None, 'total': None, 'partiel': True}
+		self.modifier('13-nu', jetons=inconnus)
+		out = self.rapport().stdout
+		self.assertIn('| 13 | nu | 600 | 1200 | vert | 0 | 0 | - |', out)
+		self.assertIn('Jetons partiels : 2.', out)
+
+	def test_seuil_commite_apres_le_premier_rejeu_refuse(self):
+		self.dater_seuil('2026-02-11T09:00:01Z')  # premier rejeu de la fixture : 2026-02-11T09:00:00Z
+		self.assertIn('seuil.json commité après le premier rejeu', self.rapport(2).stderr)
+		self.assertFalse(os.path.exists(os.path.join(self.specs, 'rapport-benchmark.md')))
+		self.dater_seuil('2026-02-11T09:00:00Z')
+		self.rapport()
 
 	def test_part_du_regisseur_signalee(self):
 		self.modifier('12-outil', jetons_regisseur=1500)
