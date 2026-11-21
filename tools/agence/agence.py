@@ -1536,11 +1536,20 @@ def pr_du_besoin(n):
 	            None) if fin_lisible(n) else None
 
 
+def worktree_sale(path):
+	"""Vrai si le worktree porte des modifications non commitées (ou si git ne sait pas le dire) : il n'est jamais retiré."""
+	code, out, _ = RUN(['git', '-C', path, 'status', '--porcelain'])
+	return code != 0 or bool(out.strip())
+
+
 def carte_jeter(st, n):
-	"""Carte « Jeter » d'un besoin (spec 013, lot 7, #174) : Jeter agit au clic, Garder la ferme."""
+	"""Carte « Jeter » d'un besoin (spec 013, lot 7, #174) : Jeter agit au clic, Garder la ferme. Un worktree avec des
+	modifications non commitées est nommé dans la carte : le clic le garde."""
 	pr, fiche = pr_du_besoin(n), (n['ref'] or '').removeprefix('fiche:') if (n['ref'] or '').startswith('fiche:') else None
+	sales = [os.path.basename(p) for p, _ in worktrees_du_besoin(n['id']) if worktree_sale(p)]
 	poser_carte(st, f"Jeter le travail de {n['id']} « {n['title']} » : " + (f'PR #{pr} fermée sans merge, ' if pr else '')
-	            + 'worktrees du besoin retirés (modifications non commitées perdues)'
+	            + 'worktrees propres du besoin retirés'
+	            + (f" ({', '.join(sales)} gardé : modifications non commitées)" if sales else '')
 	            + (f', fiche {fiche} remise en discussion' if fiche else '') + ' ; la branche reste',
 	            [{'label': 'Jeter', 'detail': 'refusé si la PR est déjà mergée'}, {'label': 'Garder', 'detail': 'rien ne change'}],
 	            [f"/besoin/{n['id']}/jeter", ''])
@@ -1553,6 +1562,8 @@ def click_jeter(path):
 	if not carte_ouverte(st, path):
 		return 409, 'Aucune carte ouverte ne propose ce clic : rien jeté.'
 	n = find(st, 'needs', nid)
+	if n['status'] != 'open':
+		return 409, f"{nid} est {n['status']} : rien jeté."
 	pr = pr_du_besoin(n)
 	fait = []
 	if pr:
@@ -1570,7 +1581,10 @@ def click_jeter(path):
 				return 409, f'gh refuse de fermer la PR #{pr} : {(err or out).strip()[:200]} ; rien jeté.'
 		fait.append(f'PR #{pr} fermée')
 	for wt, branche in worktrees_du_besoin(nid):
-		code, out, err = RUN(['git', '-C', root(), 'worktree', 'remove', '--force', wt])
+		if worktree_sale(wt):
+			fait.append(f'worktree {os.path.basename(wt)} gardé : modifications non commitées')
+			continue
+		code, out, err = RUN(['git', '-C', root(), 'worktree', 'remove', wt])  # sans --force : git refuse aussi un worktree sale
 		fait.append(f'worktree {os.path.basename(wt)} retiré (branche {branche} gardée)' if code == 0 else
 		            f'worktree {os.path.basename(wt)} non retiré : {(err or out).strip()[:200]}')
 	with tx() as st:
@@ -2566,15 +2580,19 @@ def worktree_offers(snap, nid, live, base=None):
 
 
 def worktrees_du_besoin(nid, base=None):
-	"""[(chemin, branche)] des worktrees du besoin, nommés « <besoin>-<rôle> » (voir le skill)."""
-	code, out, _ = RUN(['git', '-C', base or root(), 'worktree', 'list', '--porcelain'])
+	"""[(chemin, branche)] des worktrees du besoin : dans <racine>/.cate/worktrees/, nommés « <besoin>-<rôle> » (voir le
+	skill) ; un worktree d'un autre dossier ou d'un autre besoin (n12-… pour n1) n'en est jamais."""
+	base = base or root()
+	code, out, _ = RUN(['git', '-C', base, 'worktree', 'list', '--porcelain'])
 	if code != 0:
 		return []
+	dossier = os.path.realpath(os.path.join(base, '.cate', 'worktrees'))
 	found = []
 	for block in out.strip().split('\n\n')[1:]:  # le premier est le dépôt principal
 		f = dict(line.split(' ', 1) for line in block.splitlines() if ' ' in line)
 		path, branch = f.get('worktree'), (f.get('branch') or '').removeprefix('refs/heads/')
-		if path and branch and os.path.basename(path).startswith(f'{nid}-'):
+		if (path and branch and re.fullmatch(rf'{re.escape(nid)}-[\w.-]+', os.path.basename(path))
+				and os.path.realpath(os.path.dirname(path)) == dossier):
 			found.append((path, branch))
 	return found
 
@@ -3871,7 +3889,7 @@ def parser():
 		x.add_argument('id')
 		x.add_argument('--evidence')
 		x.add_argument('--close', action='store_true', help="fermer aussi ses panneaux (agent en attente de saisie : --discard ; en plein tour ou éditeur non enregistré : reste) et proposer de supprimer ses worktrees mergés")
-	ns.add_parser('jeter', help="carte « Jeter » : au clic, PR fermée sans merge, worktrees du besoin retirés, fiche remise "
+	ns.add_parser('jeter', help="carte « Jeter » : au clic, PR fermée sans merge, worktrees propres du besoin retirés (un worktree non commité est gardé), fiche remise "
 	              'en discussion ; la branche reste').add_argument('id')
 	lg = ns.add_parser('log')
 	lg.add_argument('id')
