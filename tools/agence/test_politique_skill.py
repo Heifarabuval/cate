@@ -36,5 +36,66 @@ class Lancer(unittest.TestCase):
 		self.assertNotIn(chr(0x2014), self.section)
 
 
+class Politique(unittest.TestCase):
+	"""Spec 005, lot 4, T060 : le skill lit la politique (agence pratiques) au lieu de réécrire un flux en dur."""
+
+	def setUp(self):
+		with open(SKILL, encoding='utf-8') as f:
+			self.texte = f.read()
+
+	def test_a_cite_show_et_brief(self):
+		self.assertIn('agence pratiques show', self.texte)
+		self.assertIn('agence pratiques brief', self.texte)
+
+	def test_b_aucun_flux_personnel(self):
+		for chaine in ('Hermes', 'Sonnet', '--rebase', 'un vérificateur différent par implémenteur'):
+			with self.subTest(chaine=chaine):
+				self.assertNotIn(chaine, self.texte)
+
+	def test_c_condition_de_fin_renvoie_a_la_politique(self):
+		lignes = [l for l in self.texte.splitlines() if 'ondition de fin' in l and '--done-when' in l]
+		self.assertTrue(lignes, 'ligne de la condition de fin absente')
+		for l in lignes:
+			self.assertIn('agence pratiques show', l)
+		self.assertNotRegex(self.texte, r'(pr-merged|issue-closed|ci-green):N')
+
+	def test_c_need_pr_rattache_la_pr(self):
+		self.assertRegex(self.texte, r'agence need pr <besoin> <N>')
+
+	def test_c_phrases_conditionnelles(self):
+		for cle in ('livraison.mode', 'livraison.merge', 'verification', 'agents.max'):
+			with self.subTest(cle=cle):
+				self.assertIn(f'`{cle}`', self.texte)
+
+	def test_d_invariants_gardes(self):
+		self.assertIn('Jamais de merge, push sur `main`, force-push', self.texte)
+		self.assertIn('jamais deux implémenteurs sur le même fichier', self.texte)
+
+
+class Reglages(unittest.TestCase):
+	"""Spec 008, lot 2, T024 : le skill ne recopie ni le plafond, ni le rappel, ni la coupure ; les options sont ponctuelles."""
+
+	def setUp(self):
+		with open(SKILL, encoding='utf-8') as f:
+			self.texte = f.read()
+
+	def test_plus_de_valeur_recopiee(self):
+		for chaine in ('Au plus 4 agents', 'après 5 min', "l'écrit"):
+			with self.subTest(chaine=chaine):
+				self.assertNotIn(chaine, self.texte)
+
+	def test_plafond_et_options(self):
+		lignes = [l for l in self.texte.splitlines() if '--max-agents' in l]
+		self.assertTrue(lignes)
+		for l in lignes:
+			self.assertIn('agence pratiques show', l)
+			self.assertIn('ponctuel', l)
+		notif = [l for l in self.texte.splitlines() if '--no-notify' in l]
+		self.assertTrue(notif and all('ponctuel' in l and 'notifications.' in l for l in notif))
+
+	def test_modele_et_effort_du_workspace(self):
+		self.assertRegex(self.texte, r'agents\.modele[^\n]*agents\.effort')
+
+
 if __name__ == '__main__':
 	unittest.main()

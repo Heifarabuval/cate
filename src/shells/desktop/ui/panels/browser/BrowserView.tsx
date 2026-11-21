@@ -9,6 +9,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Camera,
+  Crosshair,
   Download as DownloadSimple,
   EllipsisVertical as DotsThreeVertical,
   Globe,
@@ -23,7 +24,10 @@ import { clientIdentity } from '@client/connections'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { stageSurface } from '../../client/host/surfaceRegistry'
-import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
+import { BROWSER_NEW_TAB_URL, panelsLinkedTo, queryBrowserHistoryEntries, type BrowserGuestRef, type BrowserShortcutAction } from '@services/browser/contract'
+import { showElementToAgents } from '@services/browser/client'
+import { useWorkspaceSetting } from '../../kernel/settings'
+import { useRelationMap } from '../../workspace/relations/host'
 import { browserAgentPartition, browserGrantSignIn, browserLocalDownloads, browserPageBridge, browserPartition, browserReleaseAgentPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
 import { fsClient } from '@workspace/files/client'
 import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
@@ -438,6 +442,34 @@ function BrowserContent({ workspaceId, panelId, partition, isAgentPartition, sna
     screenshotTimer.current = setTimeout(() => { setScreenshot(null); screenshotTimer.current = null }, 5000)
   }
 
+  // Showing an element to the related agents: off unless the workspace turns
+  // it on, and only on the person's click in the page (Escape or a second
+  // click on the button cancels).
+  const showElementEnabled = useWorkspaceSetting(workspaceId, 'browserShowElementEnabled') === true
+  const relations = useRelationMap(workspaceId)
+  const linkedPanels = useMemo(() => panelsLinkedTo(panelId, relations), [panelId, relations])
+  const [picking, setPicking] = useState<BrowserGuestRef | null>(null)
+  const showElement = async () => {
+    const webview = host.webview()
+    if (!webview || !bridge || !runtime) return
+    if (picking) { void bridge.execute(picking, 'cancelPick', {}); return }
+    const guest: BrowserGuestRef = { webContentsId: webview.getWebContentsId(), panelId, tabId: shownTabId }
+    setPicking(guest)
+    try {
+      await bridge.attach(guest)
+      const outcome = await showElementToAgents({
+        pick: () => bridge.execute(guest, 'pickElement', {}),
+        send: (target, prompt) => runtime.agents.send({ panelId: target, prompt }),
+      }, linkedPanels, currentUrl)
+      if (outcome === 'no-agent') clientUi().showError('No agent is related to this browser panel. Link an agent to it first.')
+    } catch { /* the page went away: nothing was sent */ } finally {
+      setPicking(null)
+    }
+  }
+  const pickingRef = useRef(picking)
+  pickingRef.current = picking
+  useEffect(() => () => { if (pickingRef.current) void bridge?.execute(pickingRef.current, 'cancelPick', {}) }, [bridge])
+
   const isBookmarked = bookmarks.some((bookmark) => bookmark.url === currentUrl)
   const canBookmark = !isStartPage(currentUrl) && !isBrowserInternalPage(currentUrl) && !currentUrl.startsWith('about:')
 
@@ -605,6 +637,18 @@ function BrowserContent({ workspaceId, panelId, partition, isAgentPartition, sna
                   <Star size={13} />
                 </button>
               </Tooltip>
+              {bridge && showElementEnabled && linkedPanels.length > 0 && (
+                <Tooltip label={picking ? 'Stop showing an element' : 'Show an element to the agent'}>
+                  <button
+                    onClick={() => void showElement()}
+                    className={`${iconButton} ${picking ? 'bg-hover text-primary' : ''}`}
+                    aria-label="Show an element to the agent"
+                    aria-pressed={picking !== null}
+                  >
+                    <Crosshair size={13} />
+                  </button>
+                </Tooltip>
+              )}
               {bridge && (
                 <Tooltip label="Screenshot">
                   <button onClick={() => void takeScreenshot()} className={iconButton} aria-label="Screenshot">

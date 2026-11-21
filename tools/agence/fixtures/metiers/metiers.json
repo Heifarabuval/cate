@@ -1,0 +1,16 @@
+[
+ {"id": "dev", "nom": "Développement", "explique": "Écrire et livrer du code.", "connecteurs": [], "panneaux": [],
+  "validateur": [], "recettes": []},
+ {"id": "data-manager", "nom": "Data manager", "explique": "Poser les balises et prouver qu'elles respectent le consentement.",
+  "connecteurs": ["factice", "balises-factice", "site-factice"],
+  "panneaux": [{"type": "navigateur", "cible": "https://exemple.test/"}, {"type": "perso", "cible": "tags-attendus"}],
+  "validateur": [{"nom": "capture-reseau", "type": "fichier", "explique": "La capture réseau qui montre le pixel après consentement."}],
+  "recettes": [{"nom": "audit-hebdo", "declencheur": "chaque lundi", "action": "comparer les balises présentes aux attendues",
+                "preuve": "capture-reseau"}]},
+ {"id": "chef-de-projet", "nom": "Chef de projet", "explique": "Mener une campagne jusqu'à l'accord du client.",
+  "connecteurs": ["messagerie-factice", "tableur-factice"], "panneaux": [],
+  "validateur": [{"nom": "accord-client", "type": "clic", "explique": "Le client a validé."}],
+  "recettes": [{"nom": "relance", "declencheur": "3 jours sans réponse", "action": "préparer une relance", "preuve": "accord-client"}]},
+ {"id": "redacteur", "nom": "Rédacteur", "explique": "Publier un article en ligne.", "connecteurs": [], "panneaux": [],
+  "validateur": [{"nom": "article-en-ligne", "type": "lien", "explique": "L'adresse de l'article publié."}], "recettes": []}
+]

@@ -20,6 +20,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 AGENCE_PY = os.path.join(HERE, 'agence.py')
 FIXTURES = os.path.join(HERE, 'fixtures', 'settings')
+SANS_MCP = os.path.join(HERE, 'fixtures', 'metiers-vides')  # spec 012 : aucun connecteur mcp
+CATALOGUES = os.path.join(HERE, 'fixtures', 'metiers')
 VRAI_HOME = pwd.getpwuid(os.getuid()).pw_dir
 VRAI_SETTINGS = os.path.join(VRAI_HOME, '.claude', 'settings.json')
 
@@ -61,7 +63,8 @@ class FauxHome(unittest.TestCase):
 		self.claude = os.path.join(self.home, '.claude')
 		self.settings = os.path.join(self.claude, 'settings.json')
 		self.env = {'HOME': self.home, 'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
-		            'GIT_CONFIG_GLOBAL': os.path.join(self.home, '.gitconfig'), 'GIT_CONFIG_NOSYSTEM': '1', 'LANG': 'C.UTF-8'}
+		            'GIT_CONFIG_GLOBAL': os.path.join(self.home, '.gitconfig'), 'GIT_CONFIG_NOSYSTEM': '1', 'LANG': 'C.UTF-8',
+		            'AGENCE_CATALOGUES': SANS_MCP}  # contrat figé des deux entrées, quel que soit le catalogue livré
 
 	def nettoie(self):
 		for d, _, _ in os.walk(self.home):  # rend les dossiers 0555 des tests supprimables
@@ -334,6 +337,50 @@ class Statut(FauxHome):
 		self.agence('hooks', 'status')
 		self.assertEqual(self.octets(), fixture('hooks-existants.json'))
 		self.assertEqual(os.listdir(self.claude), ['settings.json'])
+
+
+class ServeursDeclares(FauxHome):
+	"""Spec 012, lot 2, T023 (FR-005) : une entrée de plus, mode send, pour les serveurs MCP des connecteurs déclarés."""
+
+	def setUp(self):
+		super().setUp()
+		self.env['AGENCE_CATALOGUES'] = CATALOGUES
+
+	def statut(self):
+		return json.loads(self.agence('hooks', 'status', '--json').stdout)['statut']
+
+	def test_install_pose_le_matcher_des_serveurs(self):
+		self.assertEqual(self.agence('hooks', 'install').returncode, 0)
+		pre = self.lit()['hooks']['PreToolUse']
+		envoi = attendu()[0]
+		self.assertEqual(pre, attendu() + [{'matcher': 'mcp__(factice|messagerie-factice|tableur-factice)__.*',
+		                                    'hooks': envoi['hooks']}])
+		self.assertIn('ask', envoi['hooks'][0]['command'])  # garde introuvable : échec fermé
+		self.assertEqual(self.statut(), 'actif')
+
+	def test_serveur_de_plus_partiel_puis_reinstall(self):
+		self.agence('hooks', 'install')
+		autre = tempfile.mkdtemp(prefix='catalogues-')
+		self.addCleanup(shutil.rmtree, autre, True)
+		for nom in ('metiers.json', 'connecteurs.json'):
+			shutil.copy(os.path.join(CATALOGUES, nom), autre)
+		with open(os.path.join(autre, 'connecteurs.json')) as f:
+			cs = json.load(f)
+		cs.append({'id': 'neuf', 'nom': 'Neuf', 'explique': 'x', 'acces': 'mcp', 'serveur': 'neuf', 'lecture': [], 'ecriture': []})
+		with open(os.path.join(autre, 'connecteurs.json'), 'w') as f:
+			json.dump(cs, f)
+		self.env['AGENCE_CATALOGUES'] = autre
+		self.assertEqual(self.statut(), 'partiel')
+		self.agence('hooks', 'install')
+		self.assertEqual(self.statut(), 'actif')
+		pre = self.lit()['hooks']['PreToolUse']
+		self.assertEqual(len(pre), 3)
+		self.assertIn('neuf', pre[2]['matcher'])
+
+	def test_sans_connecteur_mcp_les_deux_entrees(self):
+		self.env['AGENCE_CATALOGUES'] = SANS_MCP
+		self.agence('hooks', 'install')
+		self.assertEqual(self.lit()['hooks']['PreToolUse'], attendu())
 
 
 if __name__ == '__main__':

@@ -3,9 +3,12 @@
 Lancer : python3 -m unittest tools/agence/test_attente_mesure.py
 Lecture seule : la fixture est copiée dans un dossier temporaire, jamais dans ~/.claude.
 """
+import calendar
 import hashlib
+import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -112,6 +115,133 @@ class AttenteMesure(unittest.TestCase):
 		j = json.loads(run(self.dossier, '--json').stdout)
 		self.assertEqual(j['causes']['autre'], {'tours': 1, 'jetons_lus': 10})
 		self.assertEqual(j['causes']['agent'], {'tours': 2, 'jetons_lus': 50})
+
+
+# Lot 011-L1 : jetons par poste, plusieurs dossiers, interventions (fixtures fixtures/bench/)
+BENCH = os.path.join(HERE, 'fixtures', 'bench')
+VAGUE = os.path.join(HERE, 'fixtures', 'vague')
+POSTES = ('jetons_entree', 'jetons_cache_cree', 'jetons_lus', 'jetons_sortie', 'jetons_total')
+NU = {'tours': 6, 'jetons_entree': 25, 'jetons_cache_cree': 185, 'jetons_lus': 7150, 'jetons_sortie': 33, 'jetons_total': 7393}
+OUTIL = {'tours': 7, 'jetons_entree': 23, 'jetons_cache_cree': 195, 'jetons_lus': 4850, 'jetons_sortie': 37, 'jetons_total': 5105}
+PROJ = '-Users-x-proj'
+
+
+def charger():
+	spec = importlib.util.spec_from_file_location('attente_mesure', SCRIPT)
+	mod = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(mod)
+	return mod
+
+
+def t(hms):
+	h, m, s = (int(x) for x in hms.split(':'))
+	return float(calendar.timegm((2026, 1, 1, h, m, s)))
+
+
+def postes(res):
+	return {k: res[k] for k in ('tours',) + POSTES}
+
+
+class Bench(unittest.TestCase):
+	def setUp(self):
+		self.am = charger()
+		self.nu = os.path.join(BENCH, 'nu')
+		self.outil = [os.path.join(BENCH, 'outil', d) for d in (PROJ, PROJ + '--cate-worktrees-w1')]
+
+	def test_i_jetons_par_poste_nu(self):
+		self.assertEqual(postes(self.am.mesurer([self.nu])), NU)  # le doublon a1/a4 n'est compté qu'une fois
+
+	def test_i_jetons_par_poste_outil(self):
+		self.assertEqual(postes(self.am.mesurer(self.outil)), OUTIL)
+
+	def test_i_cli_postes_json(self):
+		r = run(self.nu, '--json', '--postes')
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertEqual(postes(json.loads(r.stdout)), NU)
+		self.assertNotIn('MARQUEUR', r.stdout)
+
+	def test_i_sortie_par_defaut_inchangee(self):
+		j = json.loads(run(self.nu, '--json').stdout)
+		self.assertFalse(set(POSTES[:2] + POSTES[4:]) & set(j))
+
+	def test_j_plusieurs_dossiers_somme(self):
+		a, b = (self.am.mesurer([d]) for d in self.outil)
+		tous = self.am.mesurer(self.outil)
+		for k in ('tours', 'jetons_entree', 'jetons_cache_cree', 'jetons_lus', 'jetons_sortie', 'jetons_total'):
+			self.assertEqual(tous[k], a[k] + b[k], k)
+		self.assertEqual(tous['sessions']['lues'], 3)
+
+	def test_j_prefixe_prend_clone_et_worktrees_seulement(self):
+		with tempfile.TemporaryDirectory() as base:
+			for d in os.listdir(os.path.join(BENCH, 'outil')):
+				shutil.copytree(os.path.join(BENCH, 'outil', d), os.path.join(base, d))
+			for voisin in (PROJ + 'et', 'x' + PROJ):
+				shutil.copytree(os.path.join(BENCH, 'outil', PROJ), os.path.join(base, voisin))
+			pris = self.am.dossiers_du_prefixe(base, PROJ)
+			self.assertEqual([os.path.basename(p) for p in pris], [PROJ, PROJ + '--cate-worktrees-w1'])
+			self.assertEqual(postes(self.am.mesurer(pris)), OUTIL)
+			r = run(base, '--prefixe=' + PROJ, '--json', '--postes')
+			self.assertEqual((r.returncode, postes(json.loads(r.stdout))), (0, OUTIL))
+
+	def test_k_interventions_outil(self):
+		chemins = self.am.journaux(self.outil)
+		self.assertEqual(self.am.interventions(chemins), [
+			(t('11:00:00'), 'humain'), (t('11:00:05'), 'systeme'), (t('11:00:08'), 'systeme'),
+			(t('11:00:10'), 'systeme'), (t('11:00:20'), 'machine'), (t('11:09:50'), 'systeme'),
+			(t('11:09:55'), 'systeme'), (t('11:10:00'), 'machine'), (t('11:10:05'), 'systeme'),
+			(t('11:10:30'), 'machine'), (t('11:12:00'), 'humain'), (t('11:12:05'), 'systeme'),
+			(t('12:00:00'), 'humain'), (t('12:00:05'), 'systeme')
+		])
+
+	def test_k_rapport_d_agent_humain_sans_le_journal_de_l_agent(self):
+		# la reconnaissance vient de l'autre journal : sans lui, le même message reste humain
+		orch = [os.path.join(self.outil[0], 'orch.jsonl')]
+		kinds = [k for _, k in self.am.interventions(orch)]
+		self.assertEqual((kinds.count('machine'), kinds.count('humain')), (1, 3))  # task-notification seule
+
+	def test_k_vague_brief_machine_et_ok_humain(self):
+		"""Vague : orchestrateur et deux agents. Le premier message d'un agent lancé par `cate agent start` est machine
+		(forme « Lis en entier ... » ou lancement juste avant) ; « ok » égal à un envoi reste humain (trop court) ; un
+		texte égal à un envoi n'est machine que reçu juste après l'envoi."""
+		v = lambda n: os.path.join(VAGUE, n + '.jsonl')
+		self.assertEqual(self.am.interventions([v('orch'), v('agent-a'), v('agent-b')]), [
+			(t('10:00:00'), 'humain'), (t('10:00:05'), 'systeme'), (t('10:00:08'), 'systeme'),
+			(t('10:00:20'), 'machine'), (t('10:00:30'), 'machine'), (t('10:05:00'), 'systeme'),
+			(t('10:05:10'), 'humain'), (t('10:05:15'), 'systeme'), (t('10:20:00'), 'systeme'),
+			(t('10:20:05'), 'machine'), (t('10:20:10'), 'systeme'), (t('11:00:00'), 'humain')
+		])
+
+	def test_k_brief_reconnu_a_sa_forme_seule(self):
+		# sans le journal qui l'a lancé : la forme suffit, une consigne libre reste humaine
+		self.assertEqual(self.am.interventions([os.path.join(VAGUE, 'agent-a.jsonl')])[0], (t('10:00:20'), 'machine'))
+		self.assertEqual(self.am.interventions([os.path.join(VAGUE, 'agent-b.jsonl')])[0], (t('10:00:30'), 'humain'))
+
+	def test_k_nu_et_aucun_texte(self):
+		iv = self.am.interventions(self.am.journaux([self.nu]))
+		self.assertEqual([k for _, k in iv].count('humain'), 3)
+		self.assertEqual([k for _, k in iv].count('systeme'), 7)  # 6 tours, doublon exclu, + 1 tool_result
+		self.assertNotIn('MARQUEUR', repr(iv))
+		for inst, kind in iv:
+			self.assertIsInstance(inst, float)
+			self.assertIn(kind, ('humain', 'machine', 'systeme'))
+
+	def test_l_zero_modele_ni_reseau(self):
+		for mod in ('urllib.request', 'http.client', 'socket'):
+			with open(SCRIPT, encoding='utf-8') as f:
+				self.assertNotRegex(f.read(), r'(?m)^\s*(import|from)\s+' + re.escape(mod))
+		with tempfile.TemporaryDirectory() as tmp:
+			bin_ = os.path.join(tmp, 'bin')
+			os.mkdir(bin_)
+			temoin = os.path.join(tmp, 'temoin')
+			for nom in ('claude', 'curl'):
+				p = os.path.join(bin_, nom)
+				with open(p, 'w') as f:
+					f.write('#!/bin/sh\ntouch %s\nexit 1\n' % temoin)
+				os.chmod(p, 0o755)
+			env = dict(os.environ, PATH=bin_ + os.pathsep + os.environ['PATH'])
+			r = subprocess.run([sys.executable, '-I', SCRIPT, self.nu, '--json', '--postes'], env=env, capture_output=True, text=True, timeout=30)
+			self.assertEqual(r.returncode, 0, r.stderr)
+			self.assertFalse(os.path.exists(temoin))
 
 
 if __name__ == '__main__':

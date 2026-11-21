@@ -9,9 +9,10 @@ import json
 import math
 import os
 import posixpath
+import random
 import re
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 ETATS = ('discussion', 'prête', 'lancée', 'faite', 'abandonnée')
 PAR_LA_CLI = ('discussion', 'prête')  # lancée, faite, abandonnée : régisseur, sur clic ou à la fermeture du besoin
@@ -20,6 +21,8 @@ TYPES = ('bug', 'idee', 'retour', 'audit', 'tache')
 PRIORITES = ('P1', 'P2', 'P3')
 STATUTS = ('proposée', 'active', 'rejetée', 'révoquée')
 EXIGES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'budgetJetons', 'vision')  # pour passer prête
+# Référentiel des points de vision (spec 010, Q2) : couches et FR de la spec 009. Hors liste : signalée par la revue, jamais refusée.
+VISION = tuple(f'couche-{i}' for i in range(1, 5)) + tuple(f'FR-{i:03d}' for i in range(1, 15))
 
 _txt = lambda v: isinstance(v, str)  # noqa: E731
 _txt_nul = lambda v: v is None or isinstance(v, str)  # noqa: E731
@@ -34,6 +37,8 @@ CHAMPS_FICHE = {
 	'priorite': lambda v: v is None or v in PRIORITES,
 	'fichiers': _liste,
 	'dependances': _liste,
+	'remplace': _liste,  # spec 013 : cette fiche rend celles-ci caduques
+	'doublonDe': _liste,  # spec 013 : même besoin que celles-ci
 	'budgetJetons': lambda v: v is None or (type(v) is int and v > 0),
 	'vision': _txt_nul,
 	'modele': _txt_nul,
@@ -55,7 +60,10 @@ CHAMPS_DECISION = {
 	'statut': lambda v: v in STATUTS,
 	'revoqueePar': _txt_nul,
 }
-EDITABLES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions')
+EDITABLES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'budgetJetons', 'vision',
+             'modele', 'decisions')
+LIENS = ('dependances', 'remplace', 'doublonDe')  # listes d'ids de fiches : inconnu ou cycle refusé
+NOUVEAUX = ('remplace', 'doublonDe')  # spec 013, coupe nette : un backlog.json plus ancien ne les a pas
 
 
 class Invalide(Exception):
@@ -94,7 +102,9 @@ def _objets(contenu, racine_cles, coll, champs, nom):
 		oid = x.get('id', '?')
 		if set(x) != set(champs):
 			inconnus, absents = sorted(set(x) - set(champs)), sorted(set(champs) - set(x))
-			raise Invalide(f"{nom} : {oid} : champs inconnus {inconnus}, absents {absents}")
+			aide = ('' if inconnus or not absents or not set(absents) <= set(NOUVEAUX) or champs is not CHAMPS_FICHE else
+			        ' (fichier écrit avant la spec 013 : ajouter à la main "remplace": [] et "doublonDe": [] à chaque fiche)')
+			raise Invalide(f"{nom} : {oid} : champs inconnus {inconnus}, absents {absents}{aide}")
 		for cle, ok in champs.items():
 			if not ok(x[cle]):
 				raise Invalide(f'{nom} : {oid} : {cle} invalide ({json.dumps(x[cle], ensure_ascii=False)})')
@@ -107,7 +117,7 @@ def valider(b):
 	_objets(b, ('seq', 'fiches', 'derniereRevue'), 'fiches', CHAMPS_FICHE, 'backlog.json')
 	if not _txt_nul(b['derniereRevue']):
 		raise Invalide('backlog.json : derniereRevue doit être une date ou null')
-	err = _dependances(b['fiches'])
+	err = _liens(b['fiches'])
 	if err:
 		raise Invalide(f'backlog.json : {err}')
 
@@ -116,27 +126,36 @@ def valider_decisions(d):
 	_objets(d, ('seq', 'decisions'), 'decisions', CHAMPS_DECISION, 'decisions.json')
 
 
-def _dependances(fiches):
-	"""Motif d'erreur (dépendance inconnue, cycle nommé) ou None."""
+def _liens(fiches):
+	"""Motif d'erreur (lien vers une fiche inconnue, cycle nommé) ou None, pour chaque lien de LIENS."""
 	par_id = {f['id']: f for f in fiches}
-	for f in fiches:
-		for dep in f['dependances']:
-			if dep not in par_id:
-				return f"{f['id']} : dépendance inconnue {dep}"
 
-	def chemin_cycle(fid, pile):
+	def chemin_cycle(cle, fid, pile):
 		if fid in pile:
 			return pile[pile.index(fid):] + [fid]
-		for dep in par_id[fid]['dependances']:
-			c = chemin_cycle(dep, pile + [fid])
+		for dep in par_id[fid][cle]:
+			c = chemin_cycle(cle, dep, pile + [fid])
 			if c:
 				return c
 		return None
-	for f in fiches:  # ponytail: parcours naïf par fiche, O(n²) au pire ; un backlog réel reste sous 100 fiches
-		c = chemin_cycle(f['id'], [])
-		if c:
-			return 'dépendances en cycle : ' + ' -> '.join(c)
+	for cle in LIENS:
+		for f in fiches:
+			for dep in f[cle]:
+				if dep not in par_id:
+					return f"{f['id']} : {'dépendance' if cle == 'dependances' else cle} inconnue {dep}"
+		for f in fiches:  # ponytail: parcours naïf par fiche, O(n²) au pire ; un backlog réel reste sous 100 fiches
+			c = chemin_cycle(cle, f['id'], [])
+			if c:
+				return f"{'dépendances' if cle == 'dependances' else cle} en cycle : " + ' -> '.join(c)
 	return None
+
+
+def origine(fiches, f):
+	"""Pourquoi f ne peut pas être prête (doublon de, remplacée par, fiche d'origine nommée), ou None."""
+	if f['doublonDe']:
+		return f"doublon de {', '.join(f['doublonDe'])}"
+	par = [g['id'] for g in fiches if f['id'] in g['remplace']]
+	return f"remplacée par {', '.join(par)}" if par else None
 
 
 def manques(f):
@@ -173,7 +192,8 @@ def _poser(b, f, champs, maintenant):
 	if neuve['etat'] == 'prête' and manques(neuve):
 		raise Refus(f"{f['id']} est prête : {', '.join(manques(neuve))} ne peut pas manquer")
 	fiches = [neuve if x is f else x for x in b['fiches']]
-	err = _dependances(fiches)
+	err = _liens(fiches) or next((f"{g['id']} est prête : {origine(fiches, g)} ; repasse-la d'abord en discussion"
+	                              for g in fiches if g['etat'] == 'prête' and origine(fiches, g)), None)
 	if err:
 		raise Refus(err)
 	b['fiches'][:] = fiches
@@ -187,7 +207,7 @@ def _modifiable(f):
 
 def ajouter(b, titre, maintenant, **champs):
 	f = {**{c: None for c in CHAMPS_FICHE}, 'id': f"F{b['seq'] + 1}", 'titre': titre, 'fichiers': [], 'dependances': [],
-	     'decisions': [], 'etat': 'discussion', 'creee': maintenant, 'maj': maintenant, 'journal': []}
+	     'remplace': [], 'doublonDe': [], 'decisions': [], 'etat': 'discussion', 'creee': maintenant, 'maj': maintenant, 'journal': []}
 	if not titre.strip():
 		raise Refus('titre vide')
 	b['fiches'].append(f)
@@ -198,6 +218,15 @@ def ajouter(b, titre, maintenant, **champs):
 		raise
 	b['seq'] += 1
 	return f
+
+
+def modele_propose(valeurs, ids, registre):
+	"""Modèle d'une fiche créée sans --modele (spec 010, FR-010) : modele.structurant si elle cite une décision
+	structurante, sinon agents.modele (celui que prend une tâche, spec 008) ; null s'il n'est pas posé ou vaut auto.
+	Le code propose ce que l'humain a posé, rien de plus."""
+	if any(x['structurante'] for x in registre if x['id'] in ids):
+		return valeurs['modele.structurant']
+	return None if valeurs['agents.modele'] == 'auto' else valeurs['agents.modele']
 
 
 def modifier(b, fid, maintenant, **champs):
@@ -218,6 +247,8 @@ def transition(b, fid, etat, maintenant):
 		raise Refus(f"{fid} est {f['etat']} : par le clic seulement")
 	if etat == 'prête' and manques(f):
 		raise Refus(f"{fid} ne passe pas prête, champs manquants : {', '.join(manques(f))}")
+	if etat == 'prête' and origine(b['fiches'], f):
+		raise Refus(f"{fid} ne passe pas prête : {origine(b['fiches'], f)}")
 	f['etat'], f['maj'] = etat, maintenant
 	return f
 
@@ -249,6 +280,55 @@ def decision_ajouter(d, objet, pourquoi, maintenant, alternatives=(), invalide=(
 
 def decisions_actives(d):
 	return [x for x in d['decisions'] if x['statut'] == 'active']
+
+
+def registre_md(d):
+	"""Registre durable (spec 013, FR-005, Q1) : décisions actives triées par date, objet, date, pourquoi, alternatives.
+	Aucune date d'export : deux exports du même registre sont identiques. Une copie, jamais une source."""
+	lignes = ['# Décisions actives', '', "Copie du registre de l'agence écrite par `agence decision export`. "
+	          'La source reste le registre : ne pas éditer à la main, refaire l\'export.', '']
+	un = lambda s: ' '.join(s.split())  # noqa: E731  une ligne : un texte sur plusieurs lignes n'injecte aucun titre
+	for x in sorted(decisions_actives(d), key=lambda x: (x['date'], int(x['id'][1:]))):
+		lignes += [f"## {x['id']} : {un(x['objet'])}", '', f"- date : {x['date'][:10]}", f"- pourquoi : {un(x['pourquoi'])}"]
+		lignes += [f"- alternatives écartées : {', '.join(map(un, x['alternatives']))}"] if x['alternatives'] else []
+		lignes += ['- structurante'] if x['structurante'] else []
+		lignes.append('')
+	if not decisions_actives(d):
+		lignes += ['Aucune décision active.', '']
+	return '\n'.join(lignes)
+
+
+def revoquees(d, x):
+	"""Décisions actives que x invalide (ids cités dans x['invalide'])."""
+	return [y for y in decisions_actives(d) if y['id'] in x['invalide'] and y['id'] != x['id']]
+
+
+def decider(d, did, choix):
+	"""Clic sur une décision proposée (lot 6) : valider la pose active et révoque les actives qu'elle invalide
+	(revoqueePar = did) ; rejeter la pose rejetée. Rend les ids changés ; Refus si elle n'est plus proposée."""
+	x = trouver(d['decisions'], did)
+	if x['statut'] != 'proposée':
+		raise Refus(f"{did} est déjà {x['statut']}")
+	if choix == 'rejeter':
+		x['statut'] = 'rejetée'
+		return [did]
+	anciennes = revoquees(d, x)
+	for y in anciennes:
+		y.update(statut='révoquée', revoqueePar=did)
+	x['statut'] = 'active'
+	return [did] + [y['id'] for y in anciennes]
+
+
+def reviser(b, fid, choix, maintenant):
+	"""Clic de la revue de cap sur une fiche en discussion : relancer remet maj à maintenant ; abandonner la passe
+	abandonnée (état terminal, rien supprimé). Refus si elle n'est plus en discussion."""
+	f = trouver(b['fiches'], fid)
+	if f['etat'] != 'discussion':
+		raise Refus(f"{fid} est {f['etat']}")
+	noter(b, fid, 'relancée (revue de cap)' if choix == 'relancer' else 'abandonnée (revue de cap)', maintenant, par='clic')
+	if choix == 'abandonner':
+		f['etat'] = 'abandonnée'
+	return f
 
 
 # ---------- détections (lot 2) : fonctions pures, aucun appel externe (SC-006) ----------
@@ -317,8 +397,14 @@ def plan(fiches, faites, place, maximum, occupees=()):
 	return {'vagues': vagues, 'part': part, 'attente': {f: attente[f] for f in sorted(attente, key=lambda x: int(x[1:]))}}
 
 
+def _date(s):
+	"""Date ISO éditée à la main : Z (que Python 3.9 ne lit pas) vaut +00:00, sans fuseau vaut UTC."""
+	d = datetime.fromisoformat(s.replace('Z', '+00:00'))
+	return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
 def _age(depuis, maintenant):
-	return datetime.fromisoformat(maintenant) - datetime.fromisoformat(depuis)
+	return _date(maintenant) - _date(depuis)
 
 
 def perimees(fiches, maintenant, jours=14):
@@ -332,6 +418,16 @@ def revue_due(derniere, premiere_fiche, maintenant, jours=7):
 	return depuis is not None and _age(depuis, maintenant) >= timedelta(days=jours)
 
 
+def revue(b, d, depassements, maintenant):
+	"""Contenu de la carte de revue de cap (FR-009) : fiches périmées, besoins dont le budget est dépassé (tels que
+	passés), décisions structurantes des 7 derniers jours, fiches dont la vision est hors référentiel ; None si rien."""
+	r = {'perimees': perimees(b['fiches'], maintenant),
+	     'depassements': list(depassements),
+	     'structurantes': [x for x in d['decisions'] if x['structurante'] and _age(x['date'], maintenant) <= timedelta(days=7)],
+	     'horsVision': [f for f in b['fiches'] if f['etat'] not in TERMINAUX and f['vision'] and f['vision'] not in VISION]}
+	return r if any(r.values()) else None
+
+
 def consomme(mesures, panneaux):
 	"""Somme inputTokens + outputTokens des panneaux du besoin (lignes de cate agent usage par panneau) ; None si
 	aucune valeur lisible, jamais 0 par défaut."""
@@ -340,16 +436,79 @@ def consomme(mesures, panneaux):
 	return sum(vals) if vals else None
 
 
-def brief(fiche, decisions):
+GARDE = "si la garde de l'agence est installée et l'outil au catalogue"
+
+
+def brief(fiche, decisions, plan=None, ecriture=()):
 	"""Texte fixe donné à l'orchestrateur : un champ par ligne, dans l'ordre, puis les décisions liées actives
-	(objet ; pourquoi). Une décision proposée, rejetée ou révoquée n'est pas citée."""
+	(objet ; pourquoi). Une décision proposée, rejetée ou révoquée n'est pas citée. plan : la clé plan.validation
+	(spec 013, lot 6) ; toujours, ou structurante avec une décision liée active structurante : une ligne de plus.
+	Droits (spec 013, T072) : les fichiers de la fiche sont une consigne écrite, aucune garde ne les impose ; ecriture
+	(noms des connecteurs ouverts en écriture, spec 012) : la garde de l'agence refuse un appel sans carte cliquée, si
+	elle est installée (agence hooks install) et l'outil au catalogue ; le brief le dit tel quel."""
 	val = lambda v: (', '.join(v) if isinstance(v, list) else '' if v is None else str(v)) or '-'  # noqa: E731
 	liees = [x for x in decisions if x['id'] in fiche['decisions'] and x['statut'] == 'active']
 	return '\n'.join([f"{fiche['id']} : {fiche['titre']}"] +
 	                 [f'{c} : {val(fiche[c])}' for c in
 	                  ('type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele')] +
 	                 [f"decisions : {val([x['id'] for x in liees])}"] +
-	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees])
+	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees] +
+	                 (['plan : faire valider le plan avant le code (agence ask, attendre le clic)']
+	                  if plan == 'toujours' or (plan == 'structurante' and any(x['structurante'] for x in liees)) else []) +
+	                 [f"droits : modifier seulement {val(fiche['fichiers'])} (consigne, aucune garde ne bloque un autre fichier)",
+	                  (f"écriture : {', '.join(ecriture)}, par carte (agence draft new --cible outil:<connecteur>:<outil>) ; "
+	                   f'{GARDE}, elle refuse tout appel sans carte cliquée') if ecriture else
+	                  f'écriture : aucun connecteur ; {GARDE}, elle refuse toute écriture par un connecteur'])
+
+
+# ---------- lentilles (lot 8, FR-007) ----------
+
+LENTILLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lentilles.json')
+
+
+def fichier_lentilles(racine):
+	"""Le fichier de lentilles du projet, à côté de sa politique, s'il existe : il remplace la liste livrée (FR-007)."""
+	projet = chemin(racine, 'lentilles.json')
+	return projet if os.path.isfile(projet) else LENTILLES
+
+
+def charger_lentilles(path=LENTILLES):
+	"""La liste des lentilles (fichier de données éditable) : nom (un mot, unique), consigne, modele (null : défaut du CLI)."""
+	nom = 'lentilles.json' if path == LENTILLES else 'lentilles.json du projet'
+	try:
+		with open(path) as f:
+			ls = json.load(f)
+	except (OSError, ValueError) as err:
+		raise Invalide(f'{nom} illisible : {err}')
+	if not isinstance(ls, list) or not ls:
+		raise Invalide(f'{nom} : une liste non vide attendue')
+	for x in ls:
+		if not (isinstance(x, dict) and set(x) == {'nom', 'consigne', 'modele'} and _txt(x['nom'])
+		        and re.fullmatch(r'[\w-]+', x['nom']) and _txt(x['consigne']) and x['consigne'].strip() and _txt_nul(x['modele'])):
+			raise Invalide(f'{nom} : lentille invalide {json.dumps(x, ensure_ascii=False)} (nom en un mot, consigne, modele)')
+	if len({x['nom'] for x in ls}) != len(ls):
+		raise Invalide(f'{nom} : nom en double')
+	return ls
+
+
+def tirer(lentilles, nom=None, rng=random):
+	"""La lentille nommée, sinon une tirée au hasard (rng : graine fixée par les tests)."""
+	if nom is None:
+		return rng.choice(lentilles)
+	for x in lentilles:
+		if x['nom'] == nom:
+			return x
+	raise Refus(f"lentille inconnue {nom} : {', '.join(x['nom'] for x in lentilles)}")
+
+
+def brief_lentille(fiche, lentille):
+	"""Texte donné à l'agent à contexte vierge : la consigne d'angle et la fiche seule. Ni décision, ni journal,
+	ni autre fiche (ses liens non plus)."""
+	val = lambda v: (', '.join(v) if isinstance(v, list) else '' if v is None else str(v)) or '-'  # noqa: E731
+	return '\n'.join([f"Lentille {lentille['nom']} : {lentille['consigne']}",
+	                  'Tu ne reçois que cette fiche. Propose, ne tranche pas : ta réponse est attachée à la fiche, '
+	                  "l'humain décide.", '', f"{fiche['id']} : {fiche['titre']}"] +
+	                 [f'{c} : {val(fiche[c])}' for c in ('type', 'priorite', 'preuve', 'fichiers', 'vision')])
 
 
 # ---------- fichiers ----------

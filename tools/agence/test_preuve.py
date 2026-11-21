@@ -3,10 +3,12 @@
 `preuve`, évaluation pure, fermeture du besoin sur faux `gh`. HOME et dépôt jetables (test_agence.Base).
 """
 import contextlib
+import hashlib
 import io
 import os
 import sys
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
@@ -15,6 +17,7 @@ from test_agence import Base  # noqa: E402
 
 VALIDES = ('pr-merged:12', 'issue-closed:3', 'ci-green:12', 'tests-local', 'report', 'draft-sent:d1')
 URL = 'https://github.com/o/r/pull/12'
+CATALOGUES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'metiers')
 
 
 def pr(state, checks=None, url=URL):
@@ -255,6 +258,175 @@ class IssueObligatoire(Cli):
 	def test_issue_libre_sans_issue(self):
 		self.assertEqual(self.need('add', 'T')[0], 0)
 		self.assertEqual(self.need('add', '--kind', 'cmd', 'x')[0], 0)
+
+
+# ---------- spec 012, lot 3 : preuves nommées d'un métier (FR-007, FR-008) ----------
+
+class Metier(Cli):
+	"""Métiers de fixture : data-manager (capture-reseau, fichier), chef-de-projet (accord-client, clic),
+	redacteur (article-en-ligne, lien) ; dev garde la règle de 005."""
+
+	def setUp(self):
+		super().setUp()
+		env = unittest.mock.patch.dict(os.environ, {'AGENCE_CATALOGUES': CATALOGUES})
+		env.start()
+		self.addCleanup(env.stop)
+		with agence.tx() as st:
+			st['port'] = 8765
+			st['panels'] = {'orchestrator': 'o1', 'regisseur': 'r1'}
+
+	def metier(self, ident):
+		self.regler('metier', ident)
+
+	def tache(self, *argv):
+		code, nid, err = self.need('add', *argv, 'T')
+		self.assertEqual(code, 0, err)
+		return nid
+
+	def fichier(self, rel, contenu='capture'):
+		chemin = os.path.join(self.tmp, rel)
+		os.makedirs(os.path.dirname(chemin), exist_ok=True)
+		with open(chemin, 'w') as f:
+			f.write(contenu)
+		return chemin
+
+
+class GrammairePreuve(Metier):
+	"""T030."""
+
+	def test_preuve_du_metier_valide(self):
+		self.metier('data-manager')
+		self.assertEqual(self.besoin(self.tache('--done-when', 'preuve:capture-reseau'))['doneWhen'], 'preuve:capture-reseau')
+
+	def test_sans_nom_ou_inconnue_refusee_avec_les_preuves_du_metier(self):
+		self.metier('data-manager')
+		code, _, err = self.need('add', '--done-when', 'preuve:', 'T')
+		self.assertEqual(code, 2)
+		self.assertIn('preuve:NOM', err)
+		code, _, err = self.need('add', '--done-when', 'preuve:accord-client', 'T')
+		self.assertEqual(code, 2)
+		self.assertIn('capture-reseau', err)
+		self.assertEqual(self.state()['needs'], [])
+
+
+class DerivationPreuve(Metier):
+	"""T031 (FR-007)."""
+
+	def test_data_manager(self):
+		self.metier('data-manager')
+		self.assertEqual(self.besoin(self.tache())['doneWhen'], 'preuve:capture-reseau')
+
+	def test_dev_inchange(self):
+		self.assertEqual(self.besoin(self.tache())['doneWhen'], 'pr-merged:')
+
+	def test_done_when_explicite_gagne(self):
+		self.metier('data-manager')
+		self.assertEqual(self.besoin(self.tache('--done-when', 'report'))['doneWhen'], 'report')
+
+	def test_evaluer_nomme_la_preuve_et_son_type(self):
+		self.assertEqual(pratiques.evaluer('preuve:capture-reseau', {}, None, {'capture-reseau': 'fichier'}),
+		                 (False, ['preuve attendue : capture-reseau (fichier)']))
+
+
+class PreuveFichier(Metier):
+	"""T032 (FR-008) : fichier régulier non vide sous la racine ; chemin et SHA-256 au journal du besoin."""
+
+	def setUp(self):
+		super().setUp()
+		self.metier('data-manager')
+		self.nid = self.tache()
+
+	def done(self, *ev):
+		return self.need('done', self.nid, *(('--evidence',) + ev if ev else ()))
+
+	def test_sans_evidence_refus_nomme_la_preuve(self):
+		code, _, err = self.done()
+		self.assertNotEqual(code, 0)
+		self.assertIn('preuve attendue : capture-reseau (fichier)', err)
+		self.assertEqual(self.besoin(self.nid)['status'], 'open')
+
+	def test_chemins_refuses(self):
+		dehors = tempfile_dehors = os.path.join(os.path.dirname(self.tmp), 'dehors-' + os.path.basename(self.tmp))
+		with open(tempfile_dehors, 'w') as f:
+			f.write('x')
+		self.addCleanup(os.remove, dehors)
+		vide = self.fichier('vide.har', '')
+		os.makedirs(os.path.join(self.tmp, 'dossier'))
+		lien = os.path.join(self.tmp, 'lien.har')
+		os.symlink(self.fichier('vrai.har'), lien)
+		for ev in ('absent.har', vide, 'dossier', lien, dehors, 'sous/../vrai.har'):
+			with self.subTest(ev=ev):
+				code, _, err = self.done(ev)
+				self.assertNotEqual(code, 0)
+				self.assertIn('capture-reseau', err)
+				self.assertEqual(self.besoin(self.nid)['status'], 'open')
+
+	def test_fichier_non_vide_fait_avec_empreinte(self):
+		self.fichier('preuves/reseau.har', 'GET /pixel 204')
+		code, _, err = self.done('preuves/reseau.har')
+		self.assertEqual(code, 0, err)
+		n = self.besoin(self.nid)
+		self.assertEqual(n['status'], 'done')
+		h = hashlib.sha256(b'GET /pixel 204').hexdigest()
+		self.assertIn(h, n['evidence'])
+		self.assertTrue(any('preuves/reseau.har' in x['text'] and h in x['text'] for x in n.get('journal', [])), n)
+
+	def test_lien(self):
+		self.metier('redacteur')
+		nid = self.tache()
+		code, _, err = self.need('done', nid, '--evidence', 'http://exemple.test/a')
+		self.assertNotEqual(code, 0)
+		self.assertIn('https', err)
+		self.assertEqual(self.need('done', nid, '--evidence', 'https://exemple.test/a')[0], 0)
+		self.assertEqual(self.besoin(nid)['status'], 'done')
+
+
+class PreuveClic(Metier):
+	"""T033 : --evidence refusé ; la carte de preuve ferme la tâche sur « Validé », la laisse ouverte sur « Pas encore »."""
+
+	def setUp(self):
+		super().setUp()
+		self.metier('chef-de-projet')
+		self.nid = self.tache()
+
+	def carte(self):
+		code, _, err = self.need('done', self.nid)
+		self.assertNotEqual(code, 0)
+		self.assertIn('accord-client', err)
+		q = self.state()['questions'][-1]
+		self.assertEqual([o['label'] for o in q['options']], ['Validé', 'Pas encore'])
+		return q
+
+	def test_evidence_refusee(self):
+		code, _, err = self.need('done', self.nid, '--evidence', 'le client a dit oui')
+		self.assertNotEqual(code, 0)
+		self.assertIn('clic', err)
+		self.assertEqual(self.besoin(self.nid)['status'], 'open')
+
+	def test_une_seule_carte(self):
+		self.carte()
+		self.need('done', self.nid)
+		self.assertEqual(len(self.state()['questions']), 1)
+
+	def test_pas_encore_laisse_ouverte(self):
+		q = self.carte()
+		self.assertEqual(agence.click(f"/ask/{q['id']}", {'choice': ['1']})[0], 303)
+		n = self.besoin(self.nid)
+		self.assertEqual(n['status'], 'open')
+		self.assertTrue(any('accord-client attendu' in x['text'] for x in n['journal']))
+		self.assertIsNotNone(self.state()['questions'][-1]['answer'])
+
+	def test_valide_ferme(self):
+		q = self.carte()
+		self.assertEqual(agence.click(f"/ask/{q['id']}", {'choice': ['0']})[0], 303)
+		n = self.besoin(self.nid)
+		self.assertEqual(n['status'], 'done')
+		self.assertIn('accord-client', n['evidence'])
+
+	def test_route_sans_carte_refusee(self):
+		code, _ = agence.click(f'/besoin/{self.nid}/preuve/accord-client/valide', {})
+		self.assertEqual(code, 409)
+		self.assertEqual(self.besoin(self.nid)['status'], 'open')
 
 
 if __name__ == '__main__':

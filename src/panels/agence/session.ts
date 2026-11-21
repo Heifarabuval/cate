@@ -3,6 +3,9 @@
 // follow-up read from the `agence` CLI's folder. It writes none of the CLI's
 // files: every action goes through the regisseur (`click()` of agence.py).
 //
+// The orchestrator waits for the regisseur's first state, and while the state
+// says the project has no settings file (`pratiques.projet: false`), for the
+// first questions to end (`pratique.questions`, or a file written elsewhere).
 // At first start the PTY launches Claude Code on `/orchestrateur`; once the
 // panel ran, a start resumes it with the terminal restore launch (the agents
 // service types the stamped session's resume command), so a daemon restart
@@ -16,7 +19,7 @@ import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalActivity, type
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
 import { classify, HUMAIN_DEFAUT, mergeState } from './contract/suivi'
-import { FICHE_ETATS } from './contract/types'
+import { FICHE_ETATS, PRATIQUE_FORMES, PRESET_DEFAUT } from './contract/types'
 import type {
   AgenceOp,
   AgenceOpResult,
@@ -29,11 +32,13 @@ import type {
   FicheView,
   GardeState,
   PanelTitles,
+  PratiqueChamp,
+  PratiquePreset,
   PratiquesView,
+  PratiqueValeur,
   QuestionView,
 } from './contract/types'
 import { draftHash } from './parts/runtime/draftHash'
-import { ensurePratiquesFile } from './parts/runtime/pratiquesFile'
 import type { RegisseurHandle, Regisseurs } from './parts/runtime/regisseur'
 import type { StateFiles, StateFilesRead } from './parts/runtime/stateFiles'
 
@@ -45,8 +50,6 @@ export interface AgenceSessionDeps {
   regisseurs: Pick<Regisseurs, 'acquire'>
   /** Reads `<root>/.cate/tmp/agence/` (`createStateFiles`). */
   files(dir: string, onChange: (read: StateFilesRead) => void): StateFiles
-  /** An editor panel on `filePath`, beside the panel `near`; false when it could not be created. */
-  openEditor(filePath: string, near: string): boolean
 }
 
 /** The orchestrator's first launch: Claude Code on the orchestrateur skill. */
@@ -80,6 +83,9 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   /** The orchestrator ran once: titles may now be saved (the saved file is
    *  what makes the next start a resume). */
   private launched = false
+  /** start() ran and the orchestrator is not launched yet (the first questions may hold it). */
+  private pending = false
+  private resume = false
   private activity: TerminalActivity = { type: 'idle' }
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: AgenceSessionDeps) {
@@ -94,9 +100,9 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
 
   override async start(): Promise<void> {
     const saved = this.persisted<AgencePersisted>()
-    const resume = saved !== undefined
+    this.resume = saved !== undefined
     this.knownTitles = { ...saved?.knownTitles }
-    this.launched = resume
+    this.launched = this.resume
     this.offs.push(this.deps.terminal.onStatusChange((change) => {
       const id = this.state.ptyId
       if (id && Object.prototype.hasOwnProperty.call(change, id)) this.followStatus(change[id])
@@ -104,7 +110,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     this.files = this.deps.files(path.join(this.root, '.cate', 'tmp', 'agence'), () => this.refresh())
     this.refresh()
     this.startRegisseur()
-    await this.spawnOrchestrator(resume)
+    this.pending = true
+    await this.launchWhenReady()
   }
 
   protected override readonly ops = this.handlers() as OpHandlers<AgenceOp>
@@ -115,12 +122,18 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'draft.drop': ({ draftId }) => this.draftOp(draftId, 'drop', {}),
       'draft.edit': ({ draftId }) => this.draftOp(draftId, 'edit', {}),
       'orchestrator.restart': () => this.restart(),
-      openPratiques: () => this.openPratiques(),
+      // The settings form: the regisseur validates and writes (same functions, same lock as the CLI).
+      'pratique.set': ({ cle, valeur }) => this.pratique(cle, '/pratiques/set', { cle, valeur: JSON.stringify(valeur ?? null) }),
+      'pratique.unset': ({ cle }) => this.pratique(cle, '/pratiques/unset', { cle }),
+      'pratique.preset': ({ nom, remplacer }) => this.state.pratiques?.presets?.some((preset) => preset.id === nom)
+        ? this.click('/pratiques/preset', { nom, ...(remplacer ? { remplacer: '1' } : {}) })
+        : Promise.resolve({ ok: false, error: 'invalid' }),
       perm: ({ needId, reponse }) => this.perm(needId, reponse),
       // The regisseur decides which ids are still prêtes, under its lock: a second click gets its 409.
       'fiches.lancer': ({ ids }) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === 'string' && SAFE_ID.test(id))
         ? this.click('/fiches/lancer', { ids: ids.join(',') })
         : Promise.resolve({ ok: false, error: 'invalid' }),
+      'pratique.questions': ({ reponses, passer }) => this.questions(reponses, passer === true),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
         ? { libre }
@@ -171,7 +184,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   /** One click on the regisseur's form. The session host runs this panel's
    *  ops one at a time, so a second click waits for the first and then gets
    *  the regisseur's own refusal (déjà « envoyer », déjà répondue). */
-  private async click(path: string, form: Record<string, string>): Promise<AgenceOpResult> {
+  private async click(path: string, form: Record<string, string | string[]>): Promise<AgenceOpResult> {
     const regisseur = this.regisseur
     if (!regisseur || regisseur.view().state !== 'running') {
       return { ok: false, error: 'unavailable', message: regisseur?.view().error ?? 'regisseur-unavailable' }
@@ -187,16 +200,43 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     }
   }
 
-  /** The project's policy file in an editor panel beside this one. The file is
-   *  created with `{}` when missing (never overwritten), so there is something to edit;
-   *  the CLI stays the only one that writes keys into it (`agence pratiques set`). */
-  private async openPratiques(): Promise<AgenceOpResult> {
-    try {
-      const file = await ensurePratiquesFile(this.root)
-      return this.deps.openEditor(file, this.panelId) ? { ok: true } : { ok: false, error: 'unavailable', message: 'editor-unavailable' }
-    } catch (err) {
-      return { ok: false, error: 'unavailable', message: err instanceof Error ? err.message : String(err) }
+  /** A setting of a key the regisseur published; any other is refused here. */
+  private pratique(cle: string, path: string, form: Record<string, string>): Promise<AgenceOpResult> {
+    const known = this.state.pratiques?.champs?.some((champ) => champ.cle === cle)
+    return known ? this.click(path, form) : Promise.resolve({ ok: false, error: 'invalid' })
+  }
+
+  /** The first questions hold the orchestrator: agence runs and its state says the
+   *  project has no settings file, or no state was read yet from a regisseur that runs. */
+  private held(): boolean {
+    const regisseur = this.regisseur?.view().state
+    if (regisseur === undefined || regisseur === 'missing') return false
+    if (!this.files?.read().state) return regisseur === 'starting' || regisseur === 'running'
+    return this.state.pratiques?.projet === false
+  }
+
+  private async launchWhenReady(): Promise<void> {
+    if (!this.pending || this.disposed || this.held()) return
+    this.pending = false
+    await this.spawnOrchestrator(this.resume)
+  }
+
+  /** The end of the first questions: one write (every answer, or the default preset), then the launch. */
+  private async questions(reponses: Record<string, PratiqueValeur> | undefined, passer: boolean): Promise<AgenceOpResult> {
+    if (!this.pending || this.state.pratiques?.projet !== false) return { ok: false, error: 'conflict', message: 'Les premières questions ont déjà une réponse.' }
+    let result: AgenceOpResult
+    if (passer) {
+      result = await this.click('/pratiques/preset', { nom: PRESET_DEFAUT })
+    } else {
+      const entries = Object.entries(reponses ?? {})
+      const known = new Set(this.state.pratiques.champs?.map((champ) => champ.cle))
+      if (entries.length === 0 || !entries.every(([cle]) => known.has(cle))) return { ok: false, error: 'invalid' }
+      result = await this.click('/pratiques/set', { cle: entries.map(([cle]) => cle), valeur: entries.map(([, valeur]) => JSON.stringify(valeur ?? null)) })
     }
+    if (!result.ok || !this.pending) return result
+    this.pending = false
+    await this.spawnOrchestrator(this.resume)
+    return result
   }
 
   /** Starts what died: the orchestrator (resumed in a new PTY) and the
@@ -264,6 +304,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     // No agence CLI: nothing to act through, so nothing is shown as actionable.
     if (regisseur.state === 'missing' || !read.state) {
       this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu', pratiques: null, backlog: null })
+      if (this.pending) void this.launchWhenReady()
       return
     }
     const state = read.state
@@ -285,6 +326,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       pratiques,
       backlog: backlogView(state.backlog),
     })
+    if (this.pending) void this.launchWhenReady()
   }
 
   /** Titles of the panels the needs link: the document's for live panels,
@@ -324,15 +366,35 @@ function drafts(state: AgenceState, texts: Record<string, string>): Record<strin
   return out
 }
 
-/** The policy as the CLI wrote it, or null when it is absent or not shaped like one. */
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
+const isString = (x: unknown): x is string => typeof x === 'string'
+
+/** The policy as the CLI wrote it, or null when it is absent or not shaped like one. The form
+ *  view rides along when the CLI publishes it (contract: `contract/fixtures/vue-reglages.json`);
+ *  a field or preset of the wrong shape is dropped, the rest kept. */
 function pratiquesView(raw: unknown): PratiquesView | null {
-  const value = raw as Partial<PratiquesView> | null | undefined
-  const isRecord = (x: unknown): x is Record<string, never> => typeof x === 'object' && x !== null && !Array.isArray(x)
-  if (!value || typeof value.preset !== 'string' || !isRecord(value.valeurs) || !isRecord(value.sources)) return null
-  return { preset: value.preset, valeurs: value.valeurs, sources: value.sources, erreur: typeof value.erreur === 'string' && value.erreur ? value.erreur : null }
+  if (!isRecord(raw) || typeof raw.preset !== 'string' || !isRecord(raw.valeurs) || !isRecord(raw.sources)) return null
+  const view: PratiquesView = {
+    preset: raw.preset,
+    valeurs: raw.valeurs as Record<string, PratiqueValeur>,
+    sources: raw.sources as Record<string, string>,
+    erreur: typeof raw.erreur === 'string' && raw.erreur ? raw.erreur : null,
+  }
+  if (Array.isArray(raw.champs)) view.champs = raw.champs.filter(isChamp)
+  if (Array.isArray(raw.presets)) view.presets = raw.presets.filter((preset): preset is PratiquePreset => isRecord(preset) && isString(preset.id) && isString(preset.nom) && isString(preset.explique) && typeof preset.actif === 'boolean')
+  if (typeof raw.projet === 'boolean') view.projet = raw.projet
+  if (typeof raw.nbProjet === 'number') view.nbProjet = raw.nbProjet
+  if (Array.isArray(raw.invariants)) view.invariants = raw.invariants.filter(isString)
+  return view
 }
 
-const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
+function isChamp(x: unknown): x is PratiqueChamp {
+  return isRecord(x) && isString(x.cle) && isString(x.nom) && isString(x.explique) && isString(x.origine)
+    && (x.groupe === 'essentiel' || x.groupe === 'avance') && (x.portee === 'workspace' || x.portee === 'dev')
+    && (PRATIQUE_FORMES as readonly unknown[]).includes(x.forme)
+    && (x.choix === null || (Array.isArray(x.choix) && x.choix.every((choix) => isRecord(choix) && isString(choix.libelle))))
+    && (x.bornes === null || (Array.isArray(x.bornes) && x.bornes.length === 2 && x.bornes.every((n) => typeof n === 'number')))
+}
 const numberOrNull = (x: unknown): number | null => typeof x === 'number' && Number.isFinite(x) ? x : null
 
 /** The backlog the regisseur published (contract: `contract/fixtures/vue-backlog.json`), or

@@ -20,5 +20,8 @@ export const cateApiSettings = defineSettings({
     cliEditorControlEnabled: setting(true),
     cliAgentReadEnabled: setting(true),
     cliAgentControlEnabled: setting(true),
+    /** `cate app`: list, export and put custom panels on hold; installing stays a click in Cate. */
+    cliAppEnabled: setting(true),
+    cliAppControlEnabled: setting(true),
   },
 })

@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-01-01T12:00:00Z","message":{"role":"user","content":"MARQUEUR autre"}}
+{"type":"assistant","timestamp":"2026-01-01T12:00:05Z","message":{"id":"p1","content":[],"usage":{"input_tokens":4,"cache_creation_input_tokens":40,"cache_read_input_tokens":400,"output_tokens":5}}}

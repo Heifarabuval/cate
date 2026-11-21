@@ -67,7 +67,7 @@ export default function Backlog({ backlog, send }: { backlog: BacklogView; send(
             </div>
           )
       })}
-      {total && <p data-testid="total" className="mt-1 text-secondary">{`Total du lot : ${jetons(total.consomme)} / ${jetons(total.budget)} jetons`}</p>}
+      {total && <p data-testid="total" className="mt-1 text-secondary">{`Total des fiches lancées : ${jetons(total.consomme)} / ${jetons(total.budget)} jetons`}</p>}
       <div className="mt-1.5 flex items-center gap-2">
         <ActionButton
           className={ACTION}

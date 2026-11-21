@@ -355,24 +355,72 @@ it('lists every value with its source when the line is opened', () => {
   ])
 })
 
-it('asks the session to open the file, and writes nothing itself', async () => {
+it('has no « Ouvrir le fichier » any more', () => {
   render(snapshot({ pratiques: pratiques() }))
   act(() => button('Pratiques : pr-tdd (dev)')!.click())
-  await act(async () => { button('Ouvrir le fichier')!.click() })
-  expect(send).toHaveBeenCalledWith({ kind: 'openPratiques' })
+  expect(button('Ouvrir le fichier')).toBeUndefined()
 })
 
 it('shows an invalid policy as a banner that names the key, the rest of the panel still there', () => {
   render(snapshot({ pratiques: pratiques({ erreur: 'pratiques.json : clé inconnue « livraison.mthode »' }) }))
   expect(host.textContent).toContain('clé inconnue « livraison.mthode »')
-  expect(button('Ouvrir le fichier')).toBeDefined()
   expect(host.textContent).toContain('À faire par Max')
 })
 
 it('shows nothing about the policy when the state has none (old CLI)', () => {
   render(snapshot({ pratiques: null }))
   expect(host.textContent).not.toContain('Pratiques')
-  expect(button('Ouvrir le fichier')).toBeUndefined()
+  expect(button('Réglages')).toBeUndefined()
+})
+
+const champ: NonNullable<NonNullable<AgenceSnapshot['pratiques']>['champs']>[number] = {
+  cle: 'foo.bar', nom: 'Couleur du toit', explique: 'La teinte des tuiles.', groupe: 'essentiel', portee: 'workspace', question: null,
+  forme: 'valeurs', choix: [{ valeur: 'r', libelle: 'Rouge' }, { valeur: 'b', libelle: 'Bleu' }], bornes: null, vide: null,
+  defaut: 'r', valeur: 'r', origine: 'défaut',
+}
+const reglages = (patch: Partial<NonNullable<AgenceSnapshot['pratiques']>> = {}) => pratiques({
+  champs: [champ], presets: [{ id: 'calme', nom: 'Tranquille', explique: 'Peu de choses.', actif: true }], projet: true, nbProjet: 0, invariants: [], ...patch,
+})
+
+it('opens the settings form from « Réglages », in place of the follow-up, and comes back', () => {
+  render(snapshot({ pratiques: reglages() }))
+  act(() => button('Réglages')!.click())
+  const column = host.querySelector('[data-testid="suivi-column"]')!
+  expect(column.querySelector('[data-testid="reglage"][data-nom="Couleur du toit"]')).not.toBeNull()
+  expect(column.textContent).not.toContain('À faire par Max')
+  act(() => button('Fermer les réglages')!.click())
+  expect(column.textContent).toContain('À faire par Max')
+})
+
+it('sends what the form asks through the session', async () => {
+  render(snapshot({ pratiques: reglages() }))
+  act(() => button('Réglages')!.click())
+  const select = host.querySelector<HTMLSelectElement>('[data-nom="Couleur du toit"] select')!
+  await act(async () => {
+    select.selectedIndex = 1
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(send).toHaveBeenCalledWith({ kind: 'pratique.set', cle: 'foo.bar', valeur: 'b' })
+})
+
+it('has a line « Accès des agents à Cate » that opens the CLI page of the settings', () => {
+  const ui = installMockClientUi()
+  render(snapshot({ pratiques: reglages() }))
+  act(() => button('Réglages')!.click())
+  act(() => button('Accès des agents à Cate')!.click())
+  expect(ui.openSettings).toHaveBeenCalledWith('cli')
+})
+
+it('says the settings are unavailable when the regisseur does not run', () => {
+  render(snapshot({ pratiques: reglages(), regisseur: { state: 'stopped', error: null, settingsHint: null } }))
+  act(() => button('Réglages')!.click())
+  expect(host.textContent).toContain('Réglages indisponibles')
+})
+
+it('keeps the policy line alone, without « Réglages », for a state without fields', () => {
+  render(snapshot({ pratiques: pratiques() }))
+  expect(host.textContent).toContain('Pratiques : pr-tdd (dev)')
+  expect(button('Réglages')).toBeUndefined()
 })
 
 const backlog: NonNullable<AgenceSnapshot['backlog']> = {
@@ -395,4 +443,43 @@ it('shows the backlog in the follow-up column and launches through the session',
 it('shows no backlog when the state has none (old CLI)', () => {
   render(snapshot({ backlog: null }))
   expect(host.textContent).not.toContain('Backlog')
+})
+
+it('gives the whole panel to the first questions while the project has no settings file', async () => {
+  render(snapshot({ pratiques: reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
+  expect(host.querySelector('h2')!.textContent).toBe('De quelle couleur, le toit ?')
+  expect(host.querySelector('[data-testid="terminal"]')).toBeNull()
+  expect(host.textContent).not.toContain('À faire par Max')
+  await act(async () => { button('Passer')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'pratique.questions', passer: true })
+})
+
+it('asks nothing once the project has its file', () => {
+  render(snapshot({ pratiques: reglages({ projet: true, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
+  expect(button('Passer')).toBeUndefined()
+  expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
+})
+
+it('says to restart a regisseur that stopped during the first questions, with one restart button', async () => {
+  const questions = reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] })
+  for (const error of ["agence watch s'est arrêté (SIGKILL)", null]) {
+    send.mockClear()
+    render(snapshot({ pratiques: questions, orchestrator: 'starting', regisseur: { state: 'stopped', error, settingsHint: null } }))
+    expect(host.textContent).toContain('relancez-le avec « Relancer le régisseur »')
+    await act(async () => { button('Passer')!.click() })
+    expect(send).not.toHaveBeenCalled()
+    expect([...host.querySelectorAll('button')].filter((b) => b.textContent === 'Relancer le régisseur')).toHaveLength(1)
+    await act(async () => { button('Relancer le régisseur')!.click() })
+    expect(send).toHaveBeenCalledWith({ kind: 'orchestrator.restart' })
+  }
+})
+
+it('keeps « Accès des agents à Cate » usable when the regisseur is stopped and the policy unreadable (FR-016)', () => {
+  const ui = installMockClientUi()
+  render(snapshot({ pratiques: reglages({ erreur: 'illisible' }), regisseur: { state: 'stopped', error: null, settingsHint: null } }))
+  act(() => button('Réglages')!.click())
+  const acces = button('Accès des agents à Cate')!
+  expect(acces.disabled).toBe(false)
+  act(() => acces.click())
+  expect(ui.openSettings).toHaveBeenCalledWith('cli')
 })

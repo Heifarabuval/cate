@@ -87,3 +87,13 @@ it('waits for the first snapshot', () => {
   expect(host.querySelector('[data-testid="webview"]')).toBeNull()
   expect(text()).toContain('Chargement')
 })
+
+it('an installed panel that changed lists the changed files and mounts no page before the click', () => {
+  render(snapshot({ changes: { added: ['neuf.js'], changed: ['app.js'], removed: ['vieux.css'] } }))
+  expect(text()).toContain('app.js')
+  expect(text()).toContain('neuf.js')
+  expect(text()).toContain('vieux.css')
+  expect(host.querySelector('[data-testid="webview"]')).toBeNull()
+  act(() => button('Autoriser').click())
+  expect(send).toHaveBeenCalledWith({ kind: 'grant', fingerprint: 'fp-1' })
+})

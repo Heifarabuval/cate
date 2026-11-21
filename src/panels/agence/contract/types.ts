@@ -104,7 +104,59 @@ export type PratiquesView = {
   valeurs: Record<string, PratiqueValeur>
   sources: Record<string, string>
   erreur: string | null
+  /** The form view (spec 008, `vue()` of the CLI; contract: `contract/fixtures/vue-reglages.json`).
+   *  Absent from an older CLI. */
+  champs?: PratiqueChamp[]
+  presets?: PratiquePreset[]
+  /** The project's file exists; false asks the first questions before the orchestrator starts. */
+  projet?: boolean
+  /** How many keys this workspace's file sets (its preset not counted). */
+  nbProjet?: number
+  /** The rules no setting changes, in words, without a control. */
+  invariants?: string[]
 }
+
+/** How a setting is chosen: one named value, an integer within bounds, free text, several named values. */
+export const PRATIQUE_FORMES = ['valeurs', 'entier', 'motif', 'liste'] as const
+export type PratiqueForme = typeof PRATIQUE_FORMES[number]
+
+/** One setting as the regisseur publishes it, already in words: the view renders it without knowing any key. */
+export type PratiqueChamp = {
+  cle: string
+  nom: string
+  explique: string
+  groupe: 'essentiel' | 'avance'
+  /** `dev`: the person's file for all their projects, on the runtime's machine. */
+  portee: 'workspace' | 'dev'
+  /** The first questions' wording; null for a setting they do not ask. */
+  question: string | null
+  forme: PratiqueForme
+  /** One label per allowed value (`valeurs`, `liste`); null otherwise. */
+  choix: Array<{ valeur: PratiqueValeur; libelle: string }> | null
+  /** `entier`: lowest and highest. */
+  bornes: [number, number] | null
+  /** What a null value means, in words. */
+  vide: string | null
+  /** The default preset's value. */
+  defaut: PratiqueValeur
+  valeur: PratiqueValeur
+  /** `défaut`, `dev`, `projet` or `ponctuel`. */
+  origine: string
+}
+
+/** At most this many questions before the orchestrator first starts (spec 008, SC-006). */
+export const MAX_QUESTIONS = 4
+
+/** The first questions (spec 008, US3): the essential fields that carry a question,
+ *  in the order published, at most `MAX_QUESTIONS`. */
+export function premieresQuestions(champs: PratiqueChamp[]): PratiqueChamp[] {
+  return champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
+}
+
+export type PratiquePreset = { id: string; nom: string; explique: string; actif: boolean }
+
+/** The preset « Passer » and « Repartir des réglages par défaut » write (`DEFAUT` of the CLI's policy module). */
+export const PRESET_DEFAUT = 'neutre'
 
 /** The states of a fiche (`ETATS` of tools/agence/backlog.py). */
 export const FICHE_ETATS = ['discussion', 'prête', 'lancée', 'faite', 'abandonnée'] as const
@@ -131,15 +183,17 @@ export type BacklogView = {
   erreur: string | null
 }
 
-/** Consumed against budget over the lancées: consumed is null as soon as one is
- *  unknown (a partial sum would read as less than spent); null without a lancée. */
-export function totalLot(fiches: FicheView[]): { consomme: number | null; budget: number } | null {
+/** Consumed against budget over the lancées: each sum is null as soon as one of its
+ *  terms is unknown (a partial sum would read as less than spent or allowed);
+ *  null without a lancée. */
+export function totalLot(fiches: FicheView[]): { consomme: number | null; budget: number | null } | null {
   const lancees = fiches.filter((fiche) => fiche.etat === 'lancée')
   if (lancees.length === 0) return null
-  const unknown = lancees.some((fiche) => fiche.consomme === null)
+  const sum = (values: Array<number | null>): number | null =>
+    values.some((value) => value === null) ? null : values.reduce<number>((total, value) => total + value!, 0)
   return {
-    consomme: unknown ? null : lancees.reduce((sum, fiche) => sum + (fiche.consomme ?? 0), 0),
-    budget: lancees.reduce((sum, fiche) => sum + (fiche.budgetJetons ?? 0), 0),
+    consomme: sum(lancees.map((fiche) => fiche.consomme)),
+    budget: sum(lancees.map((fiche) => fiche.budgetJetons)),
   }
 }
 
@@ -177,8 +231,15 @@ export type AgenceOp =
   /** Oui or Non to the permission an agent waits on (need `needId`): the
    *  regisseur re-reads the agent's screen before it types. */
   | { kind: 'perm'; needId: string; reponse: 'oui' | 'non' }
-  /** Opens the project's `pratiques.json` in an editor panel, created with `{}` when it is missing. */
-  | { kind: 'openPratiques' }
+  /** One setting of the form, written by the regisseur (`/pratiques/set`) in the file its scope names. */
+  | { kind: 'pratique.set'; cle: string; valeur: PratiqueValeur }
+  /** « Revenir au défaut »: the key leaves the file. */
+  | { kind: 'pratique.unset'; cle: string }
+  /** A preset; `remplacer`: the file keeps the preset alone. */
+  | { kind: 'pratique.preset'; nom: string; remplacer?: boolean }
+  /** The end of the first questions: every answer in one write, or `passer` (the default
+   *  preset); then the orchestrator starts. Without effect once they are over. */
+  | { kind: 'pratique.questions'; reponses?: Record<string, PratiqueValeur>; passer?: boolean }
   /** « Lancer » on the checked prêtes: the regisseur plans the waves and creates the needs. */
   | { kind: 'fiches.lancer'; ids: string[] }
 

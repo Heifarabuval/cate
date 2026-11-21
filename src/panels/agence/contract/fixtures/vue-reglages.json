@@ -1,0 +1,591 @@
+{
+ "preset": "neutre",
+ "erreur": null,
+ "champs": [
+  {
+   "cle": "metier",
+   "nom": "Votre métier",
+   "explique": "Il choisit les outils branchés et ce qu'il faut voir pour qu'une tâche soit finie.",
+   "groupe": "essentiel",
+   "portee": "workspace",
+   "question": "Quel est votre métier ?",
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "dev",
+     "libelle": "Développement"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": null,
+   "valeur": "dev",
+   "origine": "défaut"
+  },
+  {
+   "cle": "connecteurs.lecture",
+   "nom": "Outils que les agents peuvent lire",
+   "explique": "Les agents y lisent librement. Par défaut, tous les outils de votre métier.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "liste",
+   "choix": [],
+   "bornes": null,
+   "vide": null,
+   "defaut": null,
+   "valeur": [],
+   "origine": "défaut"
+  },
+  {
+   "cle": "connecteurs.ecriture",
+   "nom": "Outils où les agents peuvent préparer une écriture",
+   "explique": "Une écriture n'y part jamais seule : vous la validez d'un clic. Par défaut, aucun.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "liste",
+   "choix": [],
+   "bornes": null,
+   "vide": null,
+   "defaut": null,
+   "valeur": [],
+   "origine": "défaut"
+  },
+  {
+   "cle": "livraison.mode",
+   "nom": "Comment le travail vous arrive",
+   "explique": "Par une demande de relecture que vous acceptez, ou directement sur la branche principale.",
+   "groupe": "essentiel",
+   "portee": "workspace",
+   "question": "Comment voulez-vous recevoir le travail des agents ?",
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "pr",
+     "libelle": "Par une demande de relecture"
+    },
+    {
+     "valeur": "main",
+     "libelle": "Directement sur la branche principale"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "pr",
+   "valeur": "pr",
+   "origine": "défaut"
+  },
+  {
+   "cle": "livraison.merge",
+   "nom": "Qui fusionne le travail",
+   "explique": "Vous acceptez le travail par le bouton du panneau, ou vous le faites ailleurs, par exemple sur GitHub.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "clic",
+     "libelle": "Vous, par le bouton du panneau"
+    },
+    {
+     "valeur": "dehors",
+     "libelle": "Vous, ailleurs (GitHub)"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "clic",
+   "valeur": "clic",
+   "origine": "défaut"
+  },
+  {
+   "cle": "livraison.methode",
+   "nom": "Forme de l'historique",
+   "explique": "Comment le travail accepté s'inscrit dans l'historique du projet.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "squash",
+     "libelle": "Une seule étape par tâche"
+    },
+    {
+     "valeur": "rebase",
+     "libelle": "Les étapes rejouées une par une"
+    },
+    {
+     "valeur": "merge",
+     "libelle": "Les étapes et une étape de fusion"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "squash",
+   "valeur": "squash",
+   "origine": "défaut"
+  },
+  {
+   "cle": "issue",
+   "nom": "Ticket par tâche",
+   "explique": "Chaque tâche porte-t-elle un ticket qui la décrit et la suit ?",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "libre",
+     "libelle": "Si utile"
+    },
+    {
+     "valeur": "obligatoire",
+     "libelle": "Toujours"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "libre",
+   "valeur": "libre",
+   "origine": "défaut"
+  },
+  {
+   "cle": "tests",
+   "nom": "Tests",
+   "explique": "Les agents écrivent-ils d'abord un test qui échoue, puis le code qui le fait passer ?",
+   "groupe": "essentiel",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "libre",
+     "libelle": "Au choix de l'agent"
+    },
+    {
+     "valeur": "tdd",
+     "libelle": "Un test qui échoue d'abord, puis le code"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "libre",
+   "valeur": "libre",
+   "origine": "défaut"
+  },
+  {
+   "cle": "speckit",
+   "nom": "Cahier des charges avant le code",
+   "explique": "Quand une fonctionnalité est d'abord décrite par écrit, puis planifiée, avant d'être codée.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "non",
+     "libelle": "Jamais"
+    },
+    {
+     "valeur": "au-dela-d-une-journee",
+     "libelle": "Au-delà d'une journée de travail"
+    },
+    {
+     "valeur": "toujours",
+     "libelle": "Toujours"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "non",
+   "valeur": "non",
+   "origine": "défaut"
+  },
+  {
+   "cle": "verification",
+   "nom": "Relecture",
+   "explique": "Qui relit le travail et relance ses preuves avant qu'il vous arrive.",
+   "groupe": "essentiel",
+   "portee": "workspace",
+   "question": "Un second agent relit-il chaque travail ?",
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "libre",
+     "libelle": "Par l'agent lui-même"
+    },
+    {
+     "valeur": "differente",
+     "libelle": "Par un second agent"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "libre",
+   "valeur": "libre",
+   "origine": "défaut"
+  },
+  {
+   "cle": "preuve",
+   "nom": "Quand une tâche est finie",
+   "explique": "Ce qu'il faut voir pour qu'une tâche passe en fait.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "liste",
+   "choix": [
+    {
+     "valeur": "pr-mergee",
+     "libelle": "Demande fusionnée"
+    },
+    {
+     "valeur": "ci-verte",
+     "libelle": "Contrôles automatiques verts"
+    },
+    {
+     "valeur": "tests-locaux",
+     "libelle": "Tests lancés"
+    },
+    {
+     "valeur": "rapport",
+     "libelle": "Compte rendu"
+    }
+   ],
+   "bornes": null,
+   "vide": "Selon la façon de recevoir le travail",
+   "defaut": null,
+   "valeur": null,
+   "origine": "défaut"
+  },
+  {
+   "cle": "agents.max",
+   "nom": "Agents en même temps",
+   "explique": "Combien d'agents travaillent à la fois au plus. Plus d'agents va plus vite, mais prend plus de mémoire et coûte plus.",
+   "groupe": "essentiel",
+   "portee": "workspace",
+   "question": "Combien d'agents au plus en même temps ?",
+   "forme": "entier",
+   "choix": null,
+   "bornes": [
+    1,
+    16
+   ],
+   "vide": null,
+   "defaut": 4,
+   "valeur": 2,
+   "origine": "projet"
+  },
+  {
+   "cle": "declencheurs.actifs",
+   "nom": "Entretien automatique",
+   "explique": "Les tâches d'entretien que l'agence vous propose quand le moment s'y prête.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "liste",
+   "choix": [
+    {
+     "valeur": "T1",
+     "libelle": "Résumer la conversation de l'orchestrateur quand elle s'allonge"
+    },
+    {
+     "valeur": "T2",
+     "libelle": "Tirer les leçons d'une tâche fusionnée"
+    },
+    {
+     "valeur": "T3",
+     "libelle": "Revoir la configuration des agents de temps en temps"
+    },
+    {
+     "valeur": "T4",
+     "libelle": "Repartir d'une conversation vide quand une vague est finie"
+    },
+    {
+     "valeur": "T5",
+     "libelle": "Chercher un outil quand une même gêne revient"
+    },
+    {
+     "valeur": "T6",
+     "libelle": "Écrire une procédure quand une même gêne revient"
+    },
+    {
+     "valeur": "T7",
+     "libelle": "Réduire les demandes d'autorisation"
+    },
+    {
+     "valeur": "T8",
+     "libelle": "Améliorer les consignes du projet quand elles changent"
+    },
+    {
+     "valeur": "T9",
+     "libelle": "Mettre à jour la carte du code après des ajouts"
+    },
+    {
+     "valeur": "T10",
+     "libelle": "Appliquer un réglage recommandé"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": [
+    "T1"
+   ],
+   "valeur": [
+    "T1"
+   ],
+   "origine": "défaut"
+  },
+  {
+   "cle": "notifications.systeme",
+   "nom": "Notification du Mac",
+   "explique": "Prévenir par une notification du Mac quand l'agence vous attend.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "oui",
+     "libelle": "Oui"
+    },
+    {
+     "valeur": "non",
+     "libelle": "Non"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "oui",
+   "valeur": "oui",
+   "origine": "défaut"
+  },
+  {
+   "cle": "notifications.rappel",
+   "nom": "Rappel",
+   "explique": "Un seul rappel si vous n'avez pas répondu à ce qui vous attend.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": 0,
+     "libelle": "Jamais"
+    },
+    {
+     "valeur": 300,
+     "libelle": "Après 5 minutes"
+    },
+    {
+     "valeur": 900,
+     "libelle": "Après 15 minutes"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": 300,
+   "valeur": 300,
+   "origine": "défaut"
+  },
+  {
+   "cle": "agents.modele",
+   "nom": "Modèle des agents",
+   "explique": "Le modèle d'une tâche quand elle n'en précise pas.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "auto",
+     "libelle": "Choisi par l'orchestrateur"
+    },
+    {
+     "valeur": "haiku",
+     "libelle": "Rapide et économique"
+    },
+    {
+     "valeur": "sonnet",
+     "libelle": "Équilibré"
+    },
+    {
+     "valeur": "opus",
+     "libelle": "Le plus capable"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "auto",
+   "valeur": "auto",
+   "origine": "défaut"
+  },
+  {
+   "cle": "agents.effort",
+   "nom": "Réflexion des agents",
+   "explique": "Combien un agent réfléchit avant d'agir, quand la tâche ne le précise pas.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "auto",
+     "libelle": "Choisie par l'orchestrateur"
+    },
+    {
+     "valeur": "low",
+     "libelle": "Courte"
+    },
+    {
+     "valeur": "medium",
+     "libelle": "Moyenne"
+    },
+    {
+     "valeur": "high",
+     "libelle": "Longue"
+    },
+    {
+     "valeur": "xhigh",
+     "libelle": "Très longue"
+    },
+    {
+     "valeur": "max",
+     "libelle": "Maximale"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "auto",
+   "valeur": "auto",
+   "origine": "défaut"
+  },
+  {
+   "cle": "plan.validation",
+   "nom": "Plan validé avant le code",
+   "explique": "L'agent vous montre son plan et attend votre accord avant de coder. Plus sûr, mais vous attend davantage.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "jamais",
+     "libelle": "Jamais"
+    },
+    {
+     "valeur": "structurante",
+     "libelle": "Quand la tâche touche une décision importante"
+    },
+    {
+     "valeur": "toujours",
+     "libelle": "Toujours"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "jamais",
+   "valeur": "jamais",
+   "origine": "défaut"
+  },
+  {
+   "cle": "envoi.slack.variable",
+   "nom": "Nom de votre accès Slack",
+   "explique": "Le nom de la variable qui porte votre accès Slack, jamais l'accès lui-même. Vaut pour tous vos projets.",
+   "groupe": "avance",
+   "portee": "dev",
+   "question": null,
+   "forme": "motif",
+   "choix": null,
+   "bornes": null,
+   "vide": null,
+   "defaut": "SLACK_USER_TOKEN",
+   "valeur": "SLACK_USER_TOKEN",
+   "origine": "défaut"
+  },
+  {
+   "cle": "envoi.slack.fichier",
+   "nom": "Fichier de votre accès Slack",
+   "explique": "Le fichier qui porte cette variable, s'il y en a un, jamais l'accès lui-même. Vaut pour tous vos projets.",
+   "groupe": "avance",
+   "portee": "dev",
+   "question": null,
+   "forme": "motif",
+   "choix": null,
+   "bornes": null,
+   "vide": "Aucun fichier",
+   "defaut": null,
+   "valeur": null,
+   "origine": "défaut"
+  },
+  {
+   "cle": "modele.tri",
+   "nom": "Modèle pour trier les retours",
+   "explique": "Le modèle proposé pour trier les retours des agents.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "motif",
+   "choix": null,
+   "bornes": null,
+   "vide": "Celui de l'agent par défaut",
+   "defaut": null,
+   "valeur": null,
+   "origine": "défaut"
+  },
+  {
+   "cle": "modele.interlocuteur",
+   "nom": "Modèle de l'interlocuteur",
+   "explique": "Le modèle de l'agent qui discute avec vous et écrit les fiches.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "motif",
+   "choix": null,
+   "bornes": null,
+   "vide": "Celui de l'agent par défaut",
+   "defaut": null,
+   "valeur": null,
+   "origine": "défaut"
+  },
+  {
+   "cle": "modele.structurant",
+   "nom": "Modèle proposé pour une décision importante",
+   "explique": "Le modèle proposé dans une fiche qui touche une décision importante du projet.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "motif",
+   "choix": null,
+   "bornes": null,
+   "vide": "Celui de l'agent par défaut",
+   "defaut": null,
+   "valeur": null,
+   "origine": "défaut"
+  }
+ ],
+ "presets": [
+  {
+   "id": "neutre",
+   "nom": "Simple",
+   "explique": "Peu de règles : le travail arrive par une demande de relecture, sans étape imposée.",
+   "actif": true
+  },
+  {
+   "id": "pr-tdd",
+   "nom": "Rigoureux : PR et tests d'abord",
+   "explique": "Un ticket par tâche, un test qui échoue avant le code, une relecture par un second agent, fini quand les contrôles sont verts et la demande fusionnée.",
+   "actif": false
+  }
+ ],
+ "projet": true,
+ "nbProjet": 1,
+ "invariants": [
+  "Seul le clic de L'humain envoie en son nom (Slack, mail, issue, review, PR) : un agent prépare un brouillon.",
+  "Aucun agent ne merge, ne pousse ni ne force-push (sauf le --force-with-lease d'un rebase demandé).",
+  "Aucun secret dans un brief, un commit, un message ou la politique.",
+  "Une tâche ne passe en fait que sur preuve (commande et résultat, lien de PR)."
+ ]
+}

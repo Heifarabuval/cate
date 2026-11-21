@@ -20,6 +20,17 @@ vi.mock('../../client/document', async (importOriginal) => {
 })
 import { runSurfaceRequest } from '@client/host'
 
+const showElementSetting = { on: false }
+vi.mock('../../kernel/settings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../kernel/settings')>()),
+  useWorkspaceSetting: (_ws: string, key: string) => (key === 'browserShowElementEnabled' ? showElementSetting.on : undefined),
+}))
+const relationMap = { current: {} as Record<string, { id: string; fromPanelId: string; toPanelId: string; kind: 'use' }> }
+vi.mock('../../workspace/relations/host', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../workspace/relations/host')>()),
+  useRelationMap: () => relationMap.current,
+}))
+
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'cate://newtab', title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null, ...patch })
@@ -41,6 +52,8 @@ const partitionListeners = new Set<() => void>()
 const agentPartition = vi.fn(async (partition: string, panelId: string) => `${partition.replace(/^persist:/, '')}-a-${panelId}`)
 const grantSignIn = vi.fn(async (_partition: string, _domain: string) => 2)
 const releaseAgentPartition = vi.fn(async (_partition: string) => {})
+const execute = vi.fn(async (_guest: unknown, _method: string, _args: unknown): Promise<unknown> => ({ result: null }))
+const agentSend = vi.fn(async (_args: { panelId: string; prompt: string }) => ({}))
 
 function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean; strict?: boolean } = {}) {
   const view = (
@@ -55,6 +68,10 @@ beforeEach(() => {
   agentPartition.mockClear()
   grantSignIn.mockClear()
   releaseAgentPartition.mockClear()
+  execute.mockReset()
+  agentSend.mockClear()
+  showElementSetting.on = false
+  relationMap.current = {}
   installMockClientUi()
   installClientIdentity(createClientIdentity({ device: { name: 'test', publicKey: 'f' }, features: ['webview', 'pageDriver'] }))
   preparing = new Set()
@@ -71,7 +88,7 @@ beforeEach(() => {
   })
   installBrowserPageBridge({
     protectPage: vi.fn(async () => {}),
-    attach: vi.fn(async () => {}), restartIfHung: vi.fn(async () => false), onDialog: () => () => {}, onPassword: () => () => {},
+    attach: vi.fn(async () => {}), execute, restartIfHung: vi.fn(async () => false), onDialog: () => () => {}, onPassword: () => () => {},
     onOpenTab: () => () => {},
     onShortcut: () => () => {},
     onDownloads: () => () => {},
@@ -84,6 +101,8 @@ beforeEach(() => {
       changes: () => ({ onEvent: () => () => {}, cancel: () => {} }),
       passwords: vi.fn(async () => []),
     },
+    settings: { subscribe: () => ({ done: new Promise(() => {}), onEvent: () => () => {}, cancel: () => {} }) },
+    agents: { send: agentSend },
   } as unknown as RuntimeProxy
   restoreRuntime = setRuntimeResolver((id) => (id === 'ws' ? runtime : null))
   host = document.createElement('div')
@@ -278,5 +297,56 @@ describe('BrowserView', () => {
     render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })]), { strict: true })
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(loadURL).toHaveBeenCalledWith('https://a.test/')
+  })
+
+  describe('show an element to the agent', () => {
+    const button = () => host.querySelector<HTMLButtonElement>('button[aria-label="Show an element to the agent"]')
+    const showPage = () => {
+      render(snapshotOf([tab({ url: 'https://a.test/page?token=x', nav: 1 })]))
+      Object.assign(host.querySelector('webview')!, { getWebContentsId: () => 42 })
+    }
+
+    it('stays hidden while the setting is off or no panel is related', () => {
+      relationMap.current = { r: { id: 'r', fromPanelId: 'agent', toPanelId: 'p1', kind: 'use' } }
+      showPage()
+      expect(button()).toBeNull()
+      showElementSetting.on = true
+      relationMap.current = {}
+      showPage()
+      expect(button()).toBeNull()
+    })
+
+    it('picks one element and sends it, fenced as page data, to the related agent', async () => {
+      showElementSetting.on = true
+      relationMap.current = { r: { id: 'r', fromPanelId: 'agent', toPanelId: 'p1', kind: 'use' } }
+      showPage()
+      let click!: (value: unknown) => void
+      execute.mockImplementation((_guest, method) => method === 'pickElement'
+        ? new Promise((resolve) => { click = resolve })
+        : Promise.resolve({ result: null }))
+      await act(async () => { button()!.click() })
+      expect(button()!.getAttribute('aria-pressed')).toBe('true')
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ webContentsId: 42, panelId: 'p1' }), 'pickElement', {})
+      await act(async () => { click({ result: { selector: '#save', role: 'button', text: 'Save', rect: { x: 1, y: 2, width: 3, height: 4 } } }) })
+      expect(agentSend).toHaveBeenCalledWith({ panelId: 'agent', prompt: expect.stringContaining('<page-data>') })
+      expect(agentSend.mock.calls[0][0].prompt).not.toContain('token=x')
+      expect(button()!.getAttribute('aria-pressed')).toBe('false')
+    })
+
+    it('a second click on the button cancels the pick and sends nothing', async () => {
+      showElementSetting.on = true
+      relationMap.current = { r: { id: 'r', fromPanelId: 'p1', toPanelId: 'agent', kind: 'use' } }
+      showPage()
+      let finish!: (value: unknown) => void
+      execute.mockImplementation((_guest, method) => method === 'pickElement'
+        ? new Promise((resolve) => { finish = resolve })
+        : Promise.resolve({ result: null }))
+      await act(async () => { button()!.click() })
+      await act(async () => { button()!.click() })
+      expect(execute).toHaveBeenCalledWith(expect.anything(), 'cancelPick', {})
+      await act(async () => { finish({ result: null }) })
+      expect(agentSend).not.toHaveBeenCalled()
+      expect(button()!.getAttribute('aria-pressed')).toBe('false')
+    })
   })
 })

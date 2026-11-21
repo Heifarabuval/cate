@@ -49,7 +49,7 @@ lines.once('line', (line) => {
         res.end(JSON.stringify({ code, message }))
       }
       if (form.get('token') !== token) return reply(403, 403, 'Jeton invalide')
-      log({ event: 'post', method: req.method, url: req.url, accept: req.headers.accept, form: Object.fromEntries(form) })
+      log({ event: 'post', method: req.method, url: req.url, accept: req.headers.accept, form: Object.fromEntries(form), body })
       if (form.get('h') === 'ancien') return reply(409, 409, 'texte a changé')
       // A slow click (an issue being created): replies after FAKE_AGENCE_DELAY ms.
       const delay = form.get('h') === 'lent' ? Number(process.env.FAKE_AGENCE_DELAY ?? 500) : 0

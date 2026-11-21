@@ -59,8 +59,9 @@ export interface RegisseurHandle {
   onChange(listener: (view: RegisseurView) => void): () => void
   /** A form POST with the token and `Accept: application/json`: the CLI's
    *  `{code, message}`, refusals included. Rejects with
-   *  `regisseur-unavailable` when the process does not run. */
-  post(path: string, form: Record<string, string>): Promise<RegisseurReply>
+   *  `regisseur-unavailable` when the process does not run. A list is the
+   *  same field repeated, in order. */
+  post(path: string, form: Record<string, string | string[]>): Promise<RegisseurReply>
   /** Starts the process again when it is not running nor starting; false
    *  otherwise (and without trust: trust coming back starts it). */
   restart(): boolean
@@ -297,7 +298,7 @@ export function createRegisseurs(options: RegisseursOptions): Regisseurs {
           const response = await fetch(`http://127.0.0.1:${port}${path}`, {
             method: 'POST',
             headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ ...form, token: proc.token }).toString(),
+            body: new URLSearchParams([...Object.entries(form).flatMap(([key, value]) => [value].flat().map((one) => [key, one])), ['token', proc.token]]).toString(),
             signal: AbortSignal.timeout(POST_TIMEOUT_MS),
           })
           const reply = await response.json() as Partial<RegisseurReply>

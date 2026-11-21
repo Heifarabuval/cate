@@ -1,14 +1,25 @@
 import { TriangleAlert } from 'lucide-react'
-import { useApps } from './useApps'
+import { clientHas } from '@client/connections'
+import { ImportCard } from './ImportCard'
+import { useApps, useImports } from './useApps'
 
-/** The custom panels of `~/.cate/panneaux/`, and why a folder does not load. */
+/** The custom panels of `~/.cate/panneaux/`, why a folder does not load, and
+ *  the imports waiting for a click (only on a client that can show a panel). */
 export function AppsPage({ workspaceId }: { workspaceId: string }) {
   const list = useApps(workspaceId)
+  const imports = useImports(workspaceId)
   if (!list) return <div className="flex h-full items-center justify-center bg-surface-4 text-xs text-muted">Chargement</div>
   const blocked = list.some((entry) => entry.status === 'blocked')
   return (
     <div className="h-full overflow-auto bg-surface-4 p-4 text-sm text-secondary">
       <h2 className="mb-3 text-sm font-medium text-primary">Panneaux perso</h2>
+      {clientHas('webview') && imports.length > 0 && (
+        <div className="mb-4 flex flex-col gap-2">
+          <h3 className="text-xs font-medium text-primary">Imports en attente de votre accord</h3>
+          {/* Keyed by fingerprint: a card whose import changed starts over. */}
+          {imports.map((item) => <ImportCard key={`${item.importId}:${item.fingerprint}`} workspaceId={workspaceId} item={item} />)}
+        </div>
+      )}
       {blocked && <p className="mb-3 text-xs text-muted">Workspace non approuvé : aucun panneau perso ne se charge.</p>}
       {list.length === 0 && <p className="text-xs text-muted">Aucun panneau. Un panneau est un dossier de ~/.cate/panneaux/.</p>}
       <ul className="flex flex-col gap-2">

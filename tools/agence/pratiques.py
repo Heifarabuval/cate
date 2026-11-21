@@ -11,6 +11,8 @@ import os
 import re
 import tempfile
 
+import metiers
+
 ICI = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = os.path.join(ICI, 'pratiques.json')
 DEFAUT = 'neutre'
@@ -18,7 +20,16 @@ NOM_SOURCE = {'défaut': 'preset neutre'}
 
 
 class Invalide(Exception):
-	"""Politique refusée : le message cite le fichier, la clé et les valeurs permises."""
+	"""Politique refusée : le message cite le fichier, la clé et les valeurs permises (pour la CLI) ; `phrase` le dit
+	en mots simples, sans clé ni chemin (pour le formulaire du panneau, spec 008 FR-005)."""
+
+	def __init__(self, message, phrase=None):
+		super().__init__(message)
+		self.phrase = phrase or 'Ce réglage est refusé.'
+
+
+INCONNU = "Ce réglage n'existe pas."
+ILLISIBLE = 'Le fichier de réglages de ce workspace est illisible.'
 
 
 def schema(path=SCHEMA):
@@ -45,7 +56,9 @@ def lire_valeur(texte):
 def _permis(sch, cle):
 	spec = sch['cles'][cle]
 	if 'valeurs' in spec:
-		return 'une de : ' + ', '.join(spec['valeurs'])
+		return 'une de : ' + ', '.join(map(cle_choix, spec['valeurs']))
+	if spec.get('un'):
+		return 'une de : ' + ', '.join(_liste(sch, spec))
 	if 'entier' in spec:
 		return 'un entier de %d à %d' % tuple(spec['entier'])
 	if 'motif' in spec:
@@ -53,35 +66,69 @@ def _permis(sch, cle):
 	return 'une liste sans doublon parmi : ' + ', '.join(_liste(sch, spec))
 
 
+def _table(spec):
+	"""Table d'une clé `parmi` : les catalogues de métiers et de connecteurs suivent AGENCE_CATALOGUES (spec 012)."""
+	base = metiers.dossier() if spec['parmi'] in metiers.CATALOGUES else ICI
+	with open(os.path.join(base, spec['parmi'])) as f:
+		return json.load(f)
+
+
 def _liste(sch, spec):
+	return [r['id'] for r in _table(spec)] if 'parmi' in spec else spec['liste']
+
+
+def cle_choix(v):
+	"""Clé d'une valeur dans `choix` : le texte tel quel, sinon son JSON (300 -> "300")."""
+	return v if isinstance(v, str) else json.dumps(v)
+
+
+def _choix(spec):
+	"""[(valeur, libellé)] d'une clé à choix fermés ; None pour un entier ou un motif."""
 	if 'parmi' in spec:
-		with open(os.path.join(ICI, spec['parmi'])) as f:
-			return [r['id'] for r in json.load(f)]
-	return spec['liste']
+		return [(r['id'], r['nom']) for r in _table(spec)]
+	permis = spec.get('valeurs') or spec.get('liste')
+	return [(v, spec['choix'][cle_choix(v)]) for v in permis] if permis else None
+
+
+def _phrase(spec):
+	"""Refus d'une valeur, en mots simples : le nom du réglage et ce qu'il accepte, jamais la clé ni la valeur tapée."""
+	nom = f"« {spec['nom']} »"
+	if 'entier' in spec:
+		return f"{nom} : un nombre de %d à %d." % tuple(spec['entier'])
+	choix = _choix(spec)
+	if choix is None:
+		return f"{nom} n'accepte pas cette valeur."
+	libs = [f'« {lib} »' for _, lib in choix]
+	if 'valeurs' in spec or spec.get('un'):
+		return f"{nom} : choisissez {', '.join(libs[:-1])} ou {libs[-1]}." if len(libs) > 1 else f"{nom} : choisissez {libs[0]}."
+	return f"{nom} : choisissez parmi {', '.join(libs)}, sans doublon."
 
 
 def _valide(sch, cle, v):
 	spec = sch['cles'][cle]
 	if v is None:
 		return bool(spec.get('nul'))
-	if 'valeurs' in spec:
-		return isinstance(v, str) and v in spec['valeurs']
+	if 'valeurs' in spec:  # type exact : True n'est pas 1, ni False 0
+		return any(type(v) is type(x) and v == x for x in spec['valeurs'])
 	if 'entier' in spec:
 		return type(v) is int and spec['entier'][0] <= v <= spec['entier'][1]
 	if 'motif' in spec:
 		return isinstance(v, str) and re.search(spec['motif'], v) is not None
+	if spec.get('un'):  # une valeur de la table (spec 012 : metier)
+		return isinstance(v, str) and v in _liste(sch, spec)
 	return isinstance(v, list) and len(set(map(str, v))) == len(v) and all(isinstance(x, str) and x in _liste(sch, spec) for x in v)
 
 
 def aplatir(sch, contenu, origine):
 	"""Fichier imbriqué -> {'preset': ..., 'livraison.mode': ...} validé clé par clé ; Invalide sinon."""
 	if not isinstance(contenu, dict):
-		raise Invalide(f'{origine} : la racine doit être un objet JSON')
+		raise Invalide(f'{origine} : la racine doit être un objet JSON', ILLISIBLE)
 	presets = sch['presets']
 	plat = {}
 	if 'preset' in contenu:
 		if contenu['preset'] not in presets:
-			raise Invalide(f"{origine} : preset {contenu['preset']!r} inconnu ; permis : {', '.join(presets)}")
+			raise Invalide(f"{origine} : preset {contenu['preset']!r} inconnu ; permis : {', '.join(presets)}",
+			               "Ce modèle de réglages n'existe pas.")
 		plat['preset'] = contenu['preset']
 
 	def descend(d, prefixe):
@@ -92,7 +139,7 @@ def aplatir(sch, contenu, origine):
 			if '.' not in k and cle in sch['cles']:
 				if not _valide(sch, cle, v):
 					raise Invalide(f"{origine} : clé « {cle} » : valeur {json.dumps(v, ensure_ascii=False)} refusée ; "
-					               f"attendu {_permis(sch, cle)}")
+					               f"attendu {_permis(sch, cle)}", _phrase(sch['cles'][cle]))
 				plat[cle] = v
 			elif '.' not in k and isinstance(v, dict) and any(c.startswith(cle + '.') for c in sch['cles']):
 				descend(v, cle + '.')
@@ -101,7 +148,7 @@ def aplatir(sch, contenu, origine):
 					k, v = next(iter(v.items()))
 					cle += '.' + k
 				raise Invalide(f"{origine} : clé inconnue « {cle} » (une seule forme : objets imbriqués) ; "
-				               f"clés permises : preset, {', '.join(sch['cles'])}")
+				               f"clés permises : preset, {', '.join(sch['cles'])}", INCONNU)
 	descend(contenu, '')
 	return plat
 
@@ -116,12 +163,13 @@ def _lire(chemin):
 	except FileNotFoundError:
 		return None
 	except (OSError, ValueError) as err:
-		raise Invalide(f'{chemin} : JSON illisible ({err})')
+		raise Invalide(f'{chemin} : JSON illisible ({err})', ILLISIBLE)
 
 
 def fusionner(sch, couches):
 	"""couches : [(source, chemin, contenu ou None)], du plus faible au plus fort. Rend la politique ; Invalide sinon."""
-	valeurs = dict(sch['presets'][DEFAUT])
+	# une clé absente de neutre (modèle par rôle, spec 010 lot 7) vaut null : aucun preset livré ne la pose
+	valeurs = {**{k: None for k in sch['cles']}, **sch['presets'][DEFAUT]['valeurs']}
 	sources = {k: 'défaut' for k in valeurs}
 	sources['preset'] = 'défaut'
 	preset = DEFAUT
@@ -134,61 +182,98 @@ def fusionner(sch, couches):
 		if 'preset' in plat:
 			preset = plat.pop('preset')
 			sources['preset'] = source
-			for k, v in sch['presets'][preset].items():
+			for k, v in sch['presets'][preset]['valeurs'].items():
 				valeurs[k], sources[k] = v, source
 		for k, v in plat.items():
 			valeurs[k], sources[k] = v, source
+	if 'metier' in sch['cles']:
+		_metier(valeurs, origines, sources)
 	for c in sch['coherences']:
 		if all(_touche(valeurs[k], permis) for k, permis in c['si'].items()):
 			detail = ' avec '.join(f'{k} = {json.dumps(valeurs[k], ensure_ascii=False)} ({origines[sources[k]]})' for k in c['si'])
-			raise Invalide(f"combinaison refusée : {detail} : {c['message']}")
+			raise Invalide(f"combinaison refusée : {detail} : {c['message']}", c['phrase'])
 	return {'preset': preset, 'valeurs': valeurs, 'sources': sources, 'erreur': None}
+
+
+def _metier(valeurs, origines, sources):
+	"""Spec 012 (FR-002) : métier absent = dev ; lecture absente = tous les connecteurs du métier ; écriture absente =
+	aucune. Un connecteur ouvert hors du métier est refusé, avec son nom et celui du métier."""
+	try:
+		cat = metiers.charger()
+	except metiers.Invalide as err:
+		raise Invalide(f'catalogue des métiers refusé : {err}', 'Le catalogue des métiers est illisible.')
+	if valeurs['metier'] is None:
+		valeurs['metier'] = metiers.DEV
+	m = metiers.metier(cat, valeurs['metier'])
+	if valeurs['connecteurs.lecture'] is None:
+		valeurs['connecteurs.lecture'] = list(m['connecteurs'])
+	if valeurs['connecteurs.ecriture'] is None:
+		valeurs['connecteurs.ecriture'] = []
+	for cle in CLES_CONNECTEURS:
+		for ident in valeurs[cle]:
+			if ident not in m['connecteurs']:
+				nom = metiers.connecteur(cat, ident)['nom']
+				raise Invalide(f"combinaison refusée : {cle} = {ident} « {nom} » ({origines[sources[cle]]}) hors du métier "
+				               f"{m['id']} « {m['nom']} » ({origines[sources['metier']]})",
+				               f"« {nom} » n'est pas un outil du métier « {m['nom']} ».")
 
 
 def _touche(v, permis):
 	return any(x in permis for x in v) if isinstance(v, list) else v in permis
 
 
-def _couches(racine, home, remplace=None):
+def _couches(racine, home, remplace=None, ponctuel=None):
+	"""ponctuel : {'agents.max': 6}, les options du dernier `agence start` (spec 008 FR-009), en dernier."""
 	out = []
 	for source, chemin in (('dev', fichier_dev(home)), ('projet', fichier_projet(racine))):
 		contenu = remplace[1] if remplace and remplace[0] == chemin else _lire(chemin)
 		out.append((source, chemin, contenu))
+	if ponctuel:
+		imbrique = {}
+		for cle, v in ponctuel.items():
+			tete, fin = _chemin(cle)
+			d = imbrique
+			for t in tete:
+				d = d.setdefault(t, {})
+			d[fin] = v
+		out.append(('ponctuel', 'option de agence start', imbrique))
 	return out
 
 
-def charger(racine, home):
+def charger(racine, home, ponctuel=None):
 	"""Politique effective. Fichier invalide : valeurs de neutre et `erreur` renseignée (seuls ceux qui agissent refusent)."""
 	sch = schema()
 	try:
-		return fusionner(sch, _couches(racine, home))
+		return fusionner(sch, _couches(racine, home, ponctuel=ponctuel))
 	except Invalide as err:
 		pol = fusionner(sch, [])
 		pol['erreur'] = str(err)
 		return pol
 
 
-def verifier(racine, home):
+def verifier(racine, home, ponctuel=None):
 	"""check : Invalide si l'un des fichiers ou leur combinaison est refusé ; n'écrit rien."""
-	return fusionner(schema(), _couches(racine, home))
+	return fusionner(schema(), _couches(racine, home, ponctuel=ponctuel))
 
 
 # ---------- écriture (la CLI seule) ----------
 
-def _modifier(racine, home, dev, change):
-	"""Applique change(contenu) au fichier visé, valide la politique entière qui en résulte, puis écrit (verrou, atomique)."""
+def _modifier(racine, home, dev, change, lire=True, ponctuel=None):
+	"""Applique change(contenu) au fichier visé, valide la politique entière qui en résulte avec la couche ponctuelle qui
+	restera (celle de l'état), puis écrit (verrou, atomique). Refus : rien d'écrit, la politique publiée reste valide.
+	lire=False : part d'un objet vide, sans lire l'ancien fichier (repartir d'un fichier illisible)."""
 	chemin = fichier_dev(home) if dev else fichier_projet(racine)
 	if not chemin:
-		raise Invalide('HOME absent : pas de fichier du dev')
+		raise Invalide('HOME absent : pas de fichier du dev', 'Vos réglages de tous vos projets sont introuvables sur cette machine.')
 	d = os.path.dirname(chemin)
 	os.makedirs(d, exist_ok=True)
 	with open(os.path.join(d, '.pratiques.lock'), 'w') as verrou:
 		fcntl.flock(verrou, fcntl.LOCK_EX)
-		contenu = _lire(chemin) or {}
+		contenu = (_lire(chemin) if lire else None) or {}
 		if not isinstance(contenu, dict):
-			raise Invalide(f'{chemin} : la racine doit être un objet JSON')
+			raise Invalide(f'{chemin} : la racine doit être un objet JSON', ILLISIBLE)
 		change(contenu)
-		fusionner(schema(), _couches(racine, home, (chemin, contenu)))
+		fusionner(schema(), _couches(racine, home, (chemin, contenu), ponctuel))
 		fd, tmp = tempfile.mkstemp(dir=d, prefix='tmp-pratiques-')
 		with os.fdopen(fd, 'w') as f:
 			json.dump(contenu, f, ensure_ascii=False, indent=1)
@@ -202,22 +287,48 @@ def _chemin(cle):
 	return tete, fin
 
 
-def regler(racine, home, cle, valeur, dev=False):
+def _dev(cle, dev):
+	"""Fichier visé : celui dit par la CLI (--dev), sinon la portée déclarée de la clé (routes du régisseur)."""
+	if dev is not None:
+		return dev
+	spec = schema()['cles'].get(cle)
+	if spec is None:
+		raise Invalide(f'clé inconnue « {cle} »', INCONNU)
+	return spec['portee'] == 'dev'
+
+
+def regler(racine, home, cle, valeur, dev=False, ponctuel=None):
 	if cle == 'preset':
-		return poser_preset(racine, home, valeur, dev)
+		return poser_preset(racine, home, valeur, dev, ponctuel=ponctuel)
+	return regler_plusieurs(racine, home, [(cle, valeur)], dev, ponctuel)
+
+
+def regler_plusieurs(racine, home, paires, dev=None, ponctuel=None):
+	"""Plusieurs réglages d'un seul fichier en une écriture : tous ou aucun. dev=None : la portée de chaque clé.
+	ponctuel : la couche de l'état ; une clé réglée la quitte (spec 008 FR-010), le reste compte dans la validation."""
+	if not paires:
+		raise Invalide('aucun réglage reçu', 'Aucun réglage reçu.')
+	portees = {_dev(cle, dev) for cle, _ in paires}
+	if len(portees) > 1:
+		raise Invalide('réglages de deux fichiers en un envoi', 'Ces réglages ne se changent pas ensemble : un à la fois.')
 
 	def change(contenu):
-		tete, fin = _chemin(cle)
-		d = contenu
-		for t in tete:
-			if not isinstance(d.get(t), dict):
-				d[t] = {}
-			d = d[t]
-		d[fin] = valeur
-	return _modifier(racine, home, dev, change)
+		for cle, valeur in paires:
+			tete, fin = _chemin(cle)
+			d = contenu
+			for t in tete:
+				if not isinstance(d.get(t), dict):
+					d[t] = {}
+				d = d[t]
+			d[fin] = valeur
+	reglees = {cle for cle, _ in paires}
+	reste = {k: v for k, v in (ponctuel or {}).items() if k not in reglees}
+	return _modifier(racine, home, portees.pop(), change, ponctuel=reste)
 
 
-def retirer(racine, home, cle, dev=False):
+def retirer(racine, home, cle, dev=False, ponctuel=None):
+	dev = _dev(cle, dev)
+
 	def change(contenu):
 		tete, fin = _chemin(cle)
 		pile = [contenu]
@@ -229,11 +340,64 @@ def retirer(racine, home, cle, dev=False):
 		for parent, t in reversed(list(zip(pile, tete))):  # objets vidés retirés
 			if not parent[t]:
 				del parent[t]
-	return _modifier(racine, home, dev, change)
+	return _modifier(racine, home, dev, change, ponctuel=ponctuel)
 
 
-def poser_preset(racine, home, nom, dev=False):
-	return _modifier(racine, home, dev, lambda contenu: contenu.__setitem__('preset', nom))
+def posees_par_preset(nom):
+	"""Clés que le preset pose : elles quittent la couche ponctuelle quand il est choisi (spec 008 FR-010)."""
+	return set(schema()['presets'].get(nom, {}).get('valeurs', {})) if isinstance(nom, str) else set()
+
+
+def poser_preset(racine, home, nom, dev=False, remplacer=False, ponctuel=None):
+	"""remplacer : le fichier ne garde que le preset (un modèle choisi efface les réglages posés à côté).
+	ponctuel : la couche de l'état ; les clés que le preset pose la quittent, le reste compte dans la validation."""
+	def change(contenu):
+		if remplacer:
+			contenu.clear()
+		contenu['preset'] = nom
+	reste = {k: v for k, v in (ponctuel or {}).items() if k not in posees_par_preset(nom)}
+	return _modifier(racine, home, dev, change, lire=not remplacer, ponctuel=reste)
+
+
+# ---------- vue publiée pour le formulaire du panneau (spec 008, FR-003) ----------
+
+TYPES_CHAMP = ('valeurs', 'entier', 'motif', 'liste', 'parmi')
+CLES_CONNECTEURS = ('connecteurs.lecture', 'connecteurs.ecriture')
+
+
+def champs(sch, pol):
+	"""Un champ par clé, dans l'ordre du schéma : de quoi rendre le formulaire sans connaître aucune clé."""
+	defauts = sch['presets'][DEFAUT]['valeurs']
+	out = []
+	for cle, spec in sch['cles'].items():
+		forme = next(f for f in TYPES_CHAMP if f in spec)
+		choix = _choix(spec)
+		if cle in CLES_CONNECTEURS:  # spec 012 : les connecteurs du métier actif, par leur nom
+			du_metier = metiers.metier(metiers.charger(), pol['valeurs']['metier'])['connecteurs']
+			choix = [(v, lib) for v, lib in choix if v in du_metier]
+		out.append({'cle': cle, 'nom': spec['nom'], 'explique': spec['explique'], 'groupe': spec['groupe'],
+		            'portee': spec['portee'], 'question': spec.get('question'),
+		            'forme': ('valeurs' if spec.get('un') else 'liste') if forme == 'parmi' else forme,
+		            'choix': None if choix is None else [{'valeur': v, 'libelle': lib} for v, lib in choix],
+		            'bornes': spec.get('entier'), 'vide': spec.get('vide'), 'defaut': defauts.get(cle),
+		            'valeur': pol['valeurs'][cle], 'origine': pol['sources'][cle]})
+	return out
+
+
+def vue(racine, home, pol, humain):
+	"""Ce que le régisseur publie à côté de la politique : champs, presets, fichier du projet présent, nombre de clés qu'il
+	pose (le preset n'en est pas une), invariants rendus avec le nom de l'humain."""
+	sch = schema()
+	try:
+		contenu = _lire(fichier_projet(racine))
+		nb = len([k for k in aplatir(sch, contenu, '') if k != 'preset']) if contenu is not None else 0
+	except Invalide:
+		nb = 0
+	return {'champs': champs(sch, pol),
+	        'presets': [{'id': k, 'nom': p['nom'], 'explique': p['explique'], 'actif': k == pol['preset']}
+	                    for k, p in sch['presets'].items()],
+	        'projet': os.path.isfile(fichier_projet(racine)), 'nbProjet': nb,
+	        'invariants': [i.replace('{humain}', humain) for i in sch['invariants']]}
 
 
 # ---------- brief ----------
@@ -253,8 +417,9 @@ def brief(pol, humain):
 
 # ---------- preuve de fin (FR-009, FR-010) ----------
 
-FORMES = 'pr-merged:N, issue-closed:N, ci-green:N, tests-local, report, draft-sent:ID'
-CONDITION_RE = re.compile(r'^(?:(pr-merged|issue-closed|ci-green):(\d*)|(tests-local|report)|(draft-sent):([\w.-]+))$')
+FORMES = 'pr-merged:N, issue-closed:N, ci-green:N, tests-local, report, draft-sent:ID, preuve:NOM'
+CONDITION_RE = re.compile(r'^(?:(pr-merged|issue-closed|ci-green):(\d*)|(tests-local|report)|(draft-sent):([\w.-]+)'
+                          r'|(preuve):([\w.-]+))$')
 VERS_CONDITION = {'pr-mergee': 'pr-merged:', 'ci-verte': 'ci-green:', 'tests-locaux': 'tests-local', 'rapport': 'report'}
 ATTENDU = {'pr-merged': 'MERGED', 'issue-closed': 'CLOSED'}
 MANQUE = {'pr-merged': 'PR non mergée', 'issue-closed': 'issue non fermée', 'ci-green': 'checks non verts',
@@ -262,20 +427,34 @@ MANQUE = {'pr-merged': 'PR non mergée', 'issue-closed': 'issue non fermée', 'c
           'draft-sent': 'brouillon non envoyé'}
 
 
-def conditions(done_when, saisie=False):
+def conditions(done_when, saisie=False, preuves=None):
 	"""'ci-green:12,pr-merged:12' -> [('ci-green', '12'), ('pr-merged', '12')] ; Invalide hors grammaire.
-	saisie : le numéro est exigé (la forme dérivée garde N vide jusqu'à `agence need pr`)."""
+	saisie : le numéro est exigé (la forme dérivée garde N vide jusqu'à `agence need pr`).
+	preuves : {nom: type} du métier actif (spec 012) ; une preuve:NOM hors de la liste est refusée."""
 	out = []
 	for brut in done_when.split(','):
 		m = CONDITION_RE.match(brut)
 		if not m or (saisie and m.group(1) and not m.group(2)):
 			raise Invalide(f'--done-when : « {brut} » hors grammaire ; formes permises, séparées par une virgule : {FORMES}')
-		out.append((m.group(1), m.group(2)) if m.group(1) else (m.group(3), None) if m.group(3) else (m.group(4), m.group(5)))
+		out.append((m.group(1), m.group(2)) if m.group(1) else (m.group(3), None) if m.group(3) else
+		           (m.group(4), m.group(5)) if m.group(4) else (m.group(6), m.group(7)))
+		if preuves is not None and m.group(6) and m.group(7) not in preuves:
+			raise Invalide(f'--done-when : preuve « {m.group(7)} » inconnue du métier actif ; preuves du métier : '
+			               + (', '.join(preuves) or 'aucune (métier dev : formes de « Quand une tâche est finie »)'))
 	return out
 
 
+def preuves_du_metier(valeurs):
+	"""{nom: type} des preuves nommées du métier actif (spec 012) ; {} pour dev."""
+	m = metiers.metier(metiers.charger(), valeurs.get('metier') or metiers.DEV)
+	return {p['nom']: p['type'] for p in (m['validateur'] if m else [])}
+
+
 def done_when_defaut(valeurs):
-	"""Condition de fin d'une tâche créée sans --done-when : `preuve`, sinon dérivée du mode ; N vide pour une PR."""
+	"""Condition de fin d'une tâche créée sans --done-when : les preuves du métier (spec 012, FR-007), sinon pour dev
+	`preuve`, sinon dérivée du mode ; N vide pour une PR."""
+	if valeurs.get('metier') not in (None, metiers.DEV):
+		return ','.join('preuve:' + nom for nom in preuves_du_metier(valeurs))
 	preuve = valeurs['preuve'] or (['pr-mergee'] if valeurs['livraison.mode'] == 'pr' else ['rapport'])
 	return ','.join(VERS_CONDITION[p] for p in preuve)
 
@@ -289,13 +468,16 @@ def rattacher(done_when, num):
 	                for nom, arg in conds)
 
 
-def evaluer(done_when, faits, evidence=None):
+def evaluer(done_when, faits, evidence=None, preuves=None):
 	"""(fait, manques). faits : {N: {'state', 'url', 'checks'}} relevé par le tour (checks : état du rollup, None
-	inconnu). Les conditions humaines (tests-local, report) et draft-sent ne sont vraies que sur une preuve déclarée."""
+	inconnu). Les conditions humaines (tests-local, report) et draft-sent ne sont vraies que sur une preuve déclarée.
+	preuve:NOM (spec 012) n'est jamais vraie ici : `need done` la contrôle ; le manque dit son nom et son type."""
 	manques = []
 	for nom, arg in conditions(done_when):
 		f = faits.get(arg) if arg else None
-		if nom not in ('pr-merged', 'issue-closed', 'ci-green'):
+		if nom == 'preuve':
+			manque = f"preuve attendue : {arg} ({(preuves or {}).get(arg, 'inconnue')})"
+		elif nom not in ('pr-merged', 'issue-closed', 'ci-green'):
 			manque = None if evidence else MANQUE[nom]
 		elif not arg:
 			manque = f'{nom} sans numéro : PR non rattachée (agence need pr <besoin> <N>)'

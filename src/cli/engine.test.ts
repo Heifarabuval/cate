@@ -12,6 +12,8 @@ import {
   type CliDeps,
 } from './engine'
 import { CATE_API } from '@panels/api'
+import { cliAccessDenied } from '@kernel/api/contract'
+import { cateApiSettings } from '@kernel/api/contract/settings'
 
 const commands = buildCommands(CATE_API)
 const parse = (argv: string[]) => parseCommandLine(argv, commands, '/work/repo')
@@ -248,6 +250,37 @@ describe('help', () => {
     const agent = helpText(commands, ['agent'])
     expect(agent).toMatch(/\n {2}read +Print an agent panel's conversation/)
     expect(agent).not.toContain('panel list')
+  })
+
+  it('generates cate app export and import from their specs, behind the custom panels area (spec 007 T401)', () => {
+    const exported = find('app export')
+    const help = commandHelp(exported, { width: 120, color: false })
+    expect(help).toContain('  cate app export <id> --out <fichier>')
+    expect(help).toContain(exported.method.summary!)
+    expect(help).toMatch(/--out <fichier> +\S/)
+    expect(exported.method.access).toBe('control')
+    expect(commandHelp(find('app import'), { width: 120, color: false })).toContain('  cate app import <source> [--empreinte <début>]')
+    expect(helpText(commands, ['app'])).toMatch(/\n {2}imports +\S/)
+    expect(call(['app', 'export', 'fusion', '--out', 'fusion.cate-panneau'])).toMatchObject({
+      method: 'cate.app.export',
+      args: { id: 'fusion', out: path.resolve('/work/repo/fusion.cate-panneau') }
+    })
+    expect(call(['app', 'import', 'fusion.cate-panneau', '--empreinte', 'abcd1234'])).toMatchObject({
+      method: 'cate.app.import',
+      args: { source: path.resolve('/work/repo/fusion.cate-panneau'), fingerprint: 'abcd1234' }
+    })
+    expect(() => parse(['app', 'export', 'fusion'])).toThrow(/missing --out <fichier>/)
+
+    const settings: Record<string, unknown> = { cliEnabled: true, ...Object.fromEntries(Object.entries(cateApiSettings.keys).map(([key, def]) => [key, def.default])) }
+    const read = (key: string) => settings[key]
+    const area = exported.method.area!
+    expect([area.read?.key, area.control.key]).toEqual(['cliAppEnabled', 'cliAppControlEnabled'])
+    expect(cliAccessDenied(area, 'control', read)).toBeNull()
+    settings.cliAppControlEnabled = false
+    expect(cliAccessDenied(area, 'control', read)).toMatch(/^app-control-disabled: /)
+    expect(cliAccessDenied(area, 'read', read)).toBeNull()
+    settings.cliAppEnabled = false
+    expect(cliAccessDenied(area, 'read', read)).toMatch(/^app-read-disabled: /)
   })
 
   it('wraps to the width and bolds headings only with color', () => {

@@ -2,6 +2,7 @@
  {
   "id": "T1",
   "commande": "/compact",
+  "nom": "Résumer la conversation de l'orchestrateur quand elle s'allonge",
   "agentId": "claude-code",
   "condition": "contexte-repos",
   "donnee": "cate agent usage : contextTokens ; cate agent list : state, canReceivePrompt, prompts",
@@ -10,12 +11,12 @@
   "repos": 600,
   "plafond": 3,
   "indicateur": "contextTokens après <= 50 % de l'avant au 2e tour suivant ; échec >= 80 %",
-  "hypothese": true,
-  "actif": true
+  "hypothese": true
  },
  {
   "id": "T2",
   "commande": "/learn",
+  "nom": "Tirer les leçons d'une tâche fusionnée",
   "agentId": "claude-code",
   "condition": "besoin-clos-par-merge",
   "donnee": "état de l'agence : besoin done par pr-merged:N",
@@ -24,12 +25,12 @@
   "repos": 0,
   "plafond": 5,
   "indicateur": "réponse enregistrer, améliorer ou absorber dans les 30 min ; abandonner ou rien : échec",
-  "hypothese": true,
-  "actif": true
+  "hypothese": true
  },
  {
   "id": "T3",
   "commande": "/audit-config",
+  "nom": "Revoir la configuration des agents de temps en temps",
   "agentId": "claude-code",
   "condition": "jours-sans-audit",
   "donnee": "date de la dernière ligne du journal ; dernier total exact de ~/.claude/state/setup/ledger.jsonl (lecture seule)",
@@ -38,12 +39,12 @@
   "repos": 604800,
   "plafond": 1,
   "indicateur": "un candidat accepté dans les 7 jours, lu comme un nouveau total exact plus bas dans le registre",
-  "hypothese": true,
-  "actif": true
+  "hypothese": true
  },
  {
   "id": "T4",
   "commande": "/clear",
+  "nom": "Repartir d'une conversation vide quand une vague est finie",
   "agentId": "claude-code",
   "condition": "vague-finie-contexte",
   "donnee": "état de l'agence (need list --open vide), contextTokens",
@@ -52,12 +53,12 @@
   "repos": 3600,
   "plafond": 1,
   "indicateur": "contextTokens après <= 30 000",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T5",
   "commande": "tooling-scout",
+  "nom": "Chercher un outil quand une même gêne revient",
   "agentId": "claude-code",
   "condition": "friction-repetee",
   "donnee": "usage.py (lecture seule), à normaliser (Q9)",
@@ -66,12 +67,12 @@
   "repos": 86400,
   "plafond": 1,
   "indicateur": "au moins une des 3 recommandations retenue",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T6",
   "commande": "skill-creator",
+  "nom": "Écrire une procédure quand une même gêne revient",
   "agentId": "claude-code",
   "condition": "friction-repetee",
   "donnee": "usage.py (lecture seule), à normaliser (Q9)",
@@ -80,12 +81,12 @@
   "repos": 86400,
   "plafond": 1,
   "indicateur": "un skill créé qui passe ses évals",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T7",
   "commande": "/fewer-permission-prompts",
+  "nom": "Réduire les demandes d'autorisation",
   "agentId": "claude-code",
   "condition": "demandes-de-permission",
   "donnee": "demandes de permission lues par l'agence sur 7 jours",
@@ -94,12 +95,12 @@
   "repos": 604800,
   "plafond": 1,
   "indicateur": "baisse du nombre de demandes sur les 7 jours suivants",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T8",
   "commande": "claude-md-improver",
+  "nom": "Améliorer les consignes du projet quand elles changent",
   "agentId": "claude-code",
   "condition": "claude-md-modifie",
   "donnee": "git log : commits touchant CLAUDE.md",
@@ -108,12 +109,12 @@
   "repos": 2592000,
   "plafond": 1,
   "indicateur": "une mise à jour acceptée",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T9",
   "commande": "graphify",
+  "nom": "Mettre à jour la carte du code après des ajouts",
   "agentId": "claude-code",
   "condition": "fichiers-ajoutes",
   "donnee": "git diff --diff-filter=A depuis la date de graphify-out/",
@@ -122,12 +123,12 @@
   "repos": 2592000,
   "plafond": 1,
   "indicateur": "graphe régénéré et consulté",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  },
  {
   "id": "T10",
   "commande": "/update-config",
+  "nom": "Appliquer un réglage recommandé",
   "agentId": "claude-code",
   "condition": "recommandation-de-t5",
   "donnee": "sortie de tooling-scout (carte, pas de lecture automatique)",
@@ -136,7 +137,6 @@
   "repos": 86400,
   "plafond": 1,
   "indicateur": "réglage ajouté et check.py à 0 échec",
-  "hypothese": true,
-  "actif": false
+  "hypothese": true
  }
 ]

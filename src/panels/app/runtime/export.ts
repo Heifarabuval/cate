@@ -57,10 +57,21 @@ export async function readPanel(folder: string, id = path.basename(folder)): Pro
 
 export type ExportResult = { ok: true; out: string; fingerprint: string; omitted: string[] } | { ok: false; error: string }
 
-export async function exportPanel(options: { folder: string; out: string }): Promise<ExportResult> {
+/** `p` with its nearest existing ancestor resolved through links (the rest may not exist yet). */
+async function resolveThroughLinks(p: string): Promise<string> {
+  const real = await fs.promises.realpath(p).catch(() => undefined)
+  if (real) return real
+  const parent = path.dirname(p)
+  return parent === p ? p : path.join(await resolveThroughLinks(parent), path.basename(p))
+}
+
+export async function exportPanel(options: { folder: string; panneauxDir: string; out: string }): Promise<ExportResult> {
   const folder = path.resolve(options.folder)
   const out = path.resolve(options.out)
   if (pathHasPrefix(pathKey(out), pathKey(folder))) return { ok: false, error: 'le paquet ne peut pas être écrit dans le dossier du panneau' }
+  // `--out` is the caller's: never a way to write into the panels folder (SC-003), by a link either.
+  const panneaux = await resolveThroughLinks(path.resolve(options.panneauxDir))
+  if (pathHasPrefix(pathKey(await resolveThroughLinks(path.dirname(out))), pathKey(panneaux))) return { ok: false, error: 'le paquet ne peut pas être écrit dans le dossier des panneaux' }
   const read = await readPanel(folder)
   if (!read.ok) return { ok: false, error: read.error }
   const secrets = scanSecrets(read.texts)
@@ -68,7 +79,9 @@ export async function exportPanel(options: { folder: string; out: string }): Pro
     const where = secrets.map((secret) => `${secret.path}${secret.line ? `:${secret.line}` : ''} (${secret.kind})`).join(', ')
     return { ok: false, error: `export refusé, secret probable : ${where}` }
   }
-  const written = await fs.promises.writeFile(out, serializeBundle(read.panel, nodeBundleCodec)).then(() => true, () => false)
-  if (!written) return { ok: false, error: `le paquet ne peut pas être écrit dans « ${out} »` }
+  // `wx`: an existing file, or a link even dangling, is refused, never overwritten or followed.
+  const written = await fs.promises.writeFile(out, serializeBundle(read.panel, nodeBundleCodec), { flag: 'wx' }).then(() => undefined, (err: NodeJS.ErrnoException) => err)
+  if (written?.code === 'EEXIST') return { ok: false, error: `« ${out} » existe déjà : choisir un fichier qui n’existe pas, rien n’est écrasé` }
+  if (written) return { ok: false, error: `le paquet ne peut pas être écrit dans « ${out} »` }
   return { ok: true, out, fingerprint: read.panel.fingerprint, omitted: read.omitted }
 }

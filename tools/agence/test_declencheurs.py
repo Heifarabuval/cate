@@ -22,12 +22,13 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
+import pratiques  # noqa: E402
 
 PANNEAU = '3f2a9c1e-7b4d-4e0a-9d51-0a1b2c3d4e5f'
 AUTRE = '9a8b7c6d-1111-4222-8333-444455556666'
 # Midi, heure locale : J-N tombe le même jour local quel que soit le fuseau de la machine.
 MIDI = datetime(2026, 11, 20, 12, 0, 0).timestamp()
-CHAMPS_TABLE = ('commande', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
+CHAMPS_TABLE = ('commande', 'nom', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
 SETUP = ('/learn', '/audit-config', '/update-config', '/fewer-permission-prompts', '/autocompact', 'skill-creator', 'claude-md-improver')
 CLES_LIGNE = {'ts', 'commande', 'classe', 'decision', 'panneau', 'raison', 'avant', 'apres', 'verdict'}
 
@@ -49,11 +50,12 @@ def agent(state='waitingForInput', peut=True, prompts=None, agent_id='claude-cod
 	        'state': state, 'canReceivePrompt': peut, 'prompts': prompts or []}
 
 
-def instantane(ctx, usage=True, **kw):
-	"""Ce que un_tour lit : l'orchestrateur, cate agent list, cate agent usage (contextTokens absent = null)."""
+def instantane(ctx, usage=True, actifs=('T1',), **kw):
+	"""Ce que un_tour lit : l'orchestrateur, cate agent list, cate agent usage (contextTokens absent = null), et
+	`declencheurs.actifs` de la politique (preset neutre par défaut)."""
 	# contextTokens absent du champ : le lot 1 n'est pas mergé, ou l'agent ne compte pas ses jetons
 	m = mesure(ctx) if ctx is not None else {'inputTokens': 5, 'outputTokens': 5, 'costUsd': None}
-	return {'orchestrateur': PANNEAU, 'agents': [agent(**kw)], 'usage': {PANNEAU: m} if usage else None}
+	return {'orchestrateur': PANNEAU, 'agents': [agent(**kw)], 'usage': {PANNEAU: m} if usage else None, 'actifs': list(actifs)}
 
 
 def ligne(ts, commande='/compact', classe='A', decision='envoyer', raison='ctx>=150000', avant=None, apres=None, verdict=None, panneau=PANNEAU):
@@ -121,9 +123,19 @@ class TableTest(Base):
 			self.assertIsInstance(t['hypothese'], bool)
 			self.assertIn(t['classe'], ('A', 'B'))
 
-	def test_t4_a_t10_sont_inactives_et_marquees_hypothese(self):
+	def test_chaque_ligne_a_un_nom_en_mots_simples(self):
+		"""Spec 008 (FR-015) : le formulaire affiche `nom` à la place de `commande`."""
+		self.assertIn('nom', agence.CHAMPS_TABLE)
+		for t in self.table:
+			self.assertTrue(isinstance(t['nom'], str) and t['nom'].strip(), t['id'])
+			self.assertNotIn(t['commande'].strip('/'), t['nom'], t['id'])
+		with self.assertRaises(agence.Refus):
+			agence.charger_table(self.ecrire([self.ligne_t(nom=' ')]))
+
+	def test_t4_a_t10_hors_de_tout_preset_et_marquees_hypothese(self):
+		presets = pratiques.schema()['presets'].values()
 		for t in self.table[3:]:
-			self.assertIs(t['actif'], False, t['id'])
+			self.assertFalse(any(t['id'] in p['valeurs']['declencheurs.actifs'] for p in presets), t['id'])
 			self.assertIs(t['hypothese'], True, t['id'])
 		self.assertTrue(all(t['hypothese'] for t in self.table))  # aucun seuil n'est une mesure
 
@@ -546,6 +558,16 @@ class BilanTest(Base):
 		with open(os.path.join(agence.journal_dir(self.base), avant[0]), 'rb') as f:
 			self.assertEqual(f.read(), journal_avant)
 
+	def test_ligne_desactivee_par_la_politique_aucune_proposition(self):
+		for i, verdict in enumerate(('echec', 'echec', 'reussi', 'echec', 'reussi')):
+			agence.journal_ecrire(self.base, ligne(MIDI - (9 - i) * 3600, avant=mesure(180000), apres=mesure(160000 if verdict == 'echec' else 70000), verdict=verdict))
+		self.assertEqual(len(agence.bilan(self.base, 30, MIDI)['propositions']), 1)  # T1 active sous neutre
+		pol = pratiques.fichier_projet(self.base)
+		os.makedirs(os.path.dirname(pol), exist_ok=True)
+		with open(pol, 'w') as f:
+			json.dump({'declencheurs': {'actifs': []}}, f)
+		self.assertEqual(agence.bilan(self.base, 30, MIDI)['propositions'], [])
+
 	def test_deux_echecs_sur_cinq_pas_de_proposition(self):
 		for i, verdict in enumerate(('reussi', 'echec', 'reussi', 'reussi', 'echec')):
 			agence.journal_ecrire(self.base, ligne(MIDI - (9 - i) * 3600, avant=mesure(180000), apres=mesure(160000 if verdict == 'echec' else 70000), verdict=verdict))
@@ -597,6 +619,45 @@ class BilanTest(Base):
 				agence.main(argv)
 			self.assertIn(attendu, sortie.getvalue())
 		self.assertIn('declencheurs bilan', agence.__doc__)
+
+
+# ---------- spec 005, lot 4, T061 : declencheurs.actifs ----------
+
+class ActifsTest(Base):
+	"""La table ne porte plus `actif` : la politique (`declencheurs.actifs`) dit quelles lignes l'évaluateur regarde."""
+
+	def setUp(self):
+		super().setUp()
+		self.presets = pratiques.schema()['presets']
+
+	def cond(self, t, inst, journal, maintenant):
+		"""Condition toujours vraie : T2 et T3 n'ont pas encore la leur (spec 004, lot 4)."""
+		return {'declencheur': t['id'], 'commande': t['commande'], 'classe': t['classe'], 'decision': 'carte',
+		        'panneau': PANNEAU, 'raison': 'merge:1', 'avant': mesure(1)}
+
+	def rendus(self, actifs):
+		with unittest.mock.patch.dict(agence.CONDITIONS, {'besoin-clos-par-merge': self.cond, 'jours-sans-audit': self.cond}):
+			return [d['declencheur'] for d in self.evaluer(instantane(900000, actifs=actifs))]
+
+	def test_la_table_livree_ne_porte_plus_actif(self):
+		self.assertEqual([t['id'] for t in self.table if 'actif' in t], [])
+
+	def test_sous_neutre_t2_et_t3_vraies_ne_produisent_aucune_carte(self):
+		self.assertEqual(self.rendus(self.presets['neutre']['valeurs']['declencheurs.actifs']), ['T1'])
+
+	def test_sous_pr_tdd_t2_et_t3_produisent_leur_carte(self):
+		self.assertEqual(self.rendus(self.presets['pr-tdd']['valeurs']['declencheurs.actifs']), ['T1', 'T2', 'T3'])
+
+	def test_liste_vide_ou_absente_rien_n_est_evalue(self):
+		self.assertEqual(self.rendus([]), [])
+		snap = instantane(900000)
+		del snap['actifs']
+		self.assertEqual(self.evaluer(snap), [])
+
+	def test_identifiant_inconnu_refuse_par_la_politique(self):
+		with self.assertRaises(pratiques.Invalide) as ctx:
+			pratiques.aplatir(pratiques.schema(), {'declencheurs': {'actifs': ['T1', 'T42']}}, 'projet')
+		self.assertIn('declencheurs.actifs', str(ctx.exception))
 
 
 # ---------- T025 : non-capture et « jamais » ----------
@@ -726,6 +787,15 @@ class UnTourTest(Base):
 		agence.RUN = refuse
 		agence.un_tour()  # ne lève pas
 		self.assertEqual([x['decision'] for x in self.lignes()], ['sans-mesure'])
+
+	def test_le_tour_suit_declencheurs_actifs_de_la_politique(self):
+		chemin = pratiques.fichier_projet(self.base)
+		os.makedirs(os.path.dirname(chemin), exist_ok=True)
+		with open(chemin, 'w') as f:
+			json.dump({'declencheurs': {'actifs': []}}, f)
+		agence.un_tour()
+		self.assertEqual(self.fichiers(), [])  # T1 retiré par le projet : aucune décision, rien au journal
+		self.assertEqual(self.envois(), [])
 
 	def test_un_tour_qui_echoue_dans_le_journal_ne_tue_pas_le_regisseur(self):
 		with unittest.mock.patch.object(agence, 'journal_ecrire', side_effect=OSError('disque plein')):

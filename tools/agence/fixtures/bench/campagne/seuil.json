@@ -1,0 +1,8 @@
+{
+ "source": "valeurs confirmées (fixture de test)",
+ "temps_actif_max": 0.7,
+ "jetons_max": 1.5,
+ "non_conclusif": [0.65, 0.75],
+ "plafond_s": 180,
+ "remarques_marge": 0.1
+}

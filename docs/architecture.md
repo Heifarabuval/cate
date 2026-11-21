@@ -1220,7 +1220,7 @@ or that changes shared state, is a **workspace** setting.
 | Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
-| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace shares, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
+| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace shares, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior`, `browserShowElementEnabled` (off: the panel's button that shows one element to the related agents) |
 | Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
@@ -1745,6 +1745,15 @@ downloads list and its views, and hands page work to it.
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
   macOS, so the desktop shell declares the `passkeys` feature only on macOS.
+- **The person shows an agent one element.** With `browserShowElementEnabled`
+  on (off by default) and an agent related to the panel, a toolbar button
+  starts Chromium's own element picker (`pickElement` in the page driver,
+  outside its queue). One click sends the element's selector, role, text and
+  box to the related agents through `agents.send`; Escape or the button again
+  sends nothing; a navigation or a debugger that lets go ends the pick. A form
+  field's value, a script's or style's source, the page's HTML and a capture
+  never leave, and the prompt fences what the page controls, capped, as
+  untrusted data that is not an instruction.
 - **Every client loads the page itself.** `localhost` pages come from the
   runtime's machine through loopback routing, a typed path or `file://` URL
   is a workspace file the session turns into its `file.serveUrl` URL (never
@@ -2232,7 +2241,14 @@ folder of that panel only. One changed byte sends it back to `needs-grant`
 before any reload, with `changes` (files added, changed, removed) in the
 snapshot. Its card fingerprint is the folder's. Granting that card accepts
 the folder as it is now and keeps the panel installed. Refusing removes the
-grant and never deletes the folder.
+grant and never deletes the folder. From a terminal, `cate.app.*` (area
+Custom panels: `cliAppEnabled`, `cliAppControlEnabled`) lists the panels and
+the pending imports, exports a panel to `--out` and stages an import. None
+of its methods installs. On the desktop, the custom panels page shows each
+pending import as an import card (`ImportCard`, only on a client with
+`webview`: source, fingerprint, files, permissions, red alerts, the diff of a
+replacement); Installer or Remplacer calls `apps.acceptImport` with the card's
+fingerprint, and replacing a local panel asks first.
 
 **The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
 writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,
@@ -2257,6 +2273,15 @@ The schema, the allowed values and the presets are declared once in
 `agence watch` publishes the result as `pratiques` in `state.json` (values,
 sources, error) on every round; the `pages` guard refuses agents both files
 and the three writing commands.
+Trades and connectors (spec 012) are two catalogues shipped next to the CLI,
+`tools/agence/metiers.json` and `tools/agence/connecteurs.json`, validated by
+`tools/agence/metiers.py` (schema, no secret value) and edited only by a PR.
+The shipped catalogues hold only the `dev` trade and no connector; the tests
+read theirs from `tools/agence/fixtures/metiers/` (`AGENCE_CATALOGUES`).
+The policy picks them with three keys: `metier` (default `dev`),
+`connecteurs.lecture` (default: every connector of the trade) and
+`connecteurs.ecriture` (default: none); a connector outside the trade is
+refused. The human sets them like any other key; no file of `src/` reads them.
 The backlog of cards and the decision register (spec 010) live next to it,
 in `<root>/.cate/tmp/agence/backlog.json` and `decisions.json`: hand-editable
 JSON, never committed, validated on every read (an invalid file refuses every
@@ -2265,6 +2290,9 @@ lock (schema in `tools/agence/backlog.py`, shipped next to the CLI); the
 `pages` guard refuses agents any direct write of both files. A card moves
 `discussion` <-> `prête` through the CLI; `lancée`, `faite` and `abandonnée`,
 like a decision becoming `active`, come from a click only.
+The lenses (`agence lentille`) come from `tools/agence/lentilles.json`; a
+project's `<root>/.cate/tmp/agence/lentilles.json`, when present, replaces that
+list, and an invalid one refuses the command.
 The regisseur publishes the backlog as `backlog` in `state.json` (cards, waves, waits, file error; shape in `src/panels/agence/contract/fixtures/vue-backlog.json`), the panel's snapshot carries it (null for a CLI that publishes none), and « Lancer (n) » is the `fiches.lancer` op, a POST of the checked ids to `/fiches/lancer`.
 Each project has one **interlocutor**: `agence start` starts a Claude Code
 terminal titled `Interlocuteur` with `/interlocuteur` (the bundled skill
@@ -2297,9 +2325,18 @@ orchestrator is told once, and the need's card shows « consommé / budget jeton
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger
-buttons. The view reads and writes no file; « Ouvrir le fichier » is the
-`openPratiques` op, where the session creates the project's file with `{}` if
-it is missing and opens an editor panel on it.
+buttons. With the form view the CLI publishes beside it (`champs`, `presets`,
+`projet`, `nbProjet`, `invariants`; contract in
+`src/panels/agence/contract/fixtures/vue-reglages.json`), « Réglages » opens a
+form generated from those fields, knowing no key; each change is a
+`pratique.set|unset|preset` op the session relays to the regisseur
+(`/pratiques/...`), which validates, writes the file the key's scope names and
+answers a refusal in plain words. The view and the session write no file.
+While the state says the project has no settings file (`projet: false`), or
+before the regisseur's first state, the session does not start the
+orchestrator: the view gives the panel to the first questions (the essential
+fields that carry a `question`), and the `pratique.questions` op writes every
+answer in one POST, or the `neutre` preset for « Passer », then starts it.
 
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a
@@ -3044,7 +3081,7 @@ and ignored, and the dialog stays until the user chooses.
 | Where | Files |
 |---|---|
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
-| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes only a missing `pratiques.json` (`{}`), at the person's click |
+| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes nothing there |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
 | Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `workspace-views.json` (per-workspace canvas pan and zoom), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 

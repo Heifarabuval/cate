@@ -21,7 +21,7 @@ it('logs a panels folder that cannot be created instead of swallowing it, and th
   const log = { warn: vi.fn() }
   const register = vi.fn()
   const panels = createAppPanels({ dir: path.join(base, 'fichier', 'panneaux'), grantsFile: path.join(base, 'app-grants.json'), trust, clientHas: () => true, log })
-  panels.attach({ rpc: { register } })
+  panels.attach({ rpc: { register }, router: { registerService: vi.fn() } })
   expect(register).toHaveBeenCalledOnce()
   await vi.waitFor(() => expect(log.warn).toHaveBeenCalled())
   expect(String(log.warn.mock.calls[0].join(' '))).toMatch(/panneaux/)
@@ -30,10 +30,14 @@ it('logs a panels folder that cannot be created instead of swallowing it, and th
 
 it('serves the pending imports and their install on apps, the quarantine next to the grants file', async () => {
   const register = vi.fn()
+  const registerService = vi.fn()
   const data = path.join(base, 'data')
   const panels = createAppPanels({ dir: path.join(base, 'panneaux'), grantsFile: path.join(data, 'app-grants.json'), trust, clientHas: () => true })
-  panels.attach({ rpc: { register } })
+  panels.attach({ rpc: { register }, router: { registerService } })
   const impl = register.mock.calls[0][1]
+  // `cate.app.*` lists and stages, never installs (SC-003).
+  expect(registerService.mock.calls[0][0].namespace).toBe('app')
+  expect(Object.keys(registerService.mock.calls[0][1]).sort()).toEqual(['export', 'import', 'imports', 'list'])
   await vi.waitFor(() => expect(fs.existsSync(path.join(data, 'app-imports'))).toBe(true))
   expect(impl.imports()).toEqual([])
   await expect(impl.acceptImport({ importId: 'inconnu', fingerprint: 'f' }, { connection: { id: 1 } })).rejects.toMatchObject({ code: 'rejected' })

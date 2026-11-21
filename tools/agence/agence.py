@@ -5,7 +5,7 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant), avec --model si modele.interlocuteur est posé ; --no-notify et --max-agents sont ponctuels (spec 008) : valables jusqu'au prochain agence start, jamais écrits dans la politique
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
   agence need add|panel|pr|done|drop|list   add --done-when : conditions de fin séparées par une virgule (pr-merged:N, issue-closed:N, ci-green:N, tests-local, report), dérivées de la politique sans elle ; need pr ID N rattache la PR ; add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
@@ -17,9 +17,10 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence guard --mode send|pages     hook PreToolUse (JSON sur stdin) ; --mode obligatoire ; send échoue fermé (ask), pages échoue ouvert
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
-  agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
-  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
-  agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) ; active, rejetée, révoquée au clic
+  agence pratiques show|set|unset|preset [--remplacer]|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
+  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon agents.modele, null s'il n'est pas posé ou vaut auto ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond) ; --remplace F<n>, --doublon-de F<n> (spec 013) : la fiche remplacée ou doublon ne passe plus prête, lien inconnu ou en cycle refusé
+  agence decision add|list|show|export [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n> ; show liste les fiches qui la citent ; export écrit docs/decisions.md (actives triées par date, spec 013), à commiter par une PR de docs ; Valider une décision structurante pose une carte « Éclairer » pour les fiches qui la citent
+  agence lentille F<n> --nom N|--hasard [--carte] [--json]  lentille (spec 010, lot 8) : brief d'angle (consigne de lentilles.json, celui du projet s'il existe, + la fiche seule) ; --carte pose une carte « Éclairer » ; au clic, l'orchestrateur lance un agent à contexte vierge, sa proposition s'attache par agence fiche note, rien n'est tranché
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -59,7 +60,7 @@ AVERTISSEMENT_REFS = ('agence : attention, un terminal Cate enregistre la sortie
                       "les adresses et les identifiants affichés y restent, hors de la rétention de 14 jours et de « Tout effacer ».")
 KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
-                      r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
+                      r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+|outil:[\w-]+:[\w.-]+)$')
 ORCH_PROMPT = '/orchestrateur'
 INTERLOCUTEUR, INTER_PROMPT = 'Interlocuteur', '/interlocuteur'  # spec 010 : un par projet, il écrit des fiches
 INTER_DENY = "l'interlocuteur ne lance rien : il écrit des fiches (agence fiche add), l'humain lance au clic."
@@ -165,15 +166,16 @@ def draft_path(did):
 
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
-	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
+	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'ponctuel': {},
 	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None,
 	        'backlog': None, 'lot': []}  # backlog : vue publiée pour le panneau agence ; lot : fiches cliquées qui attendent leur place
 
 
-def politique(agir=False):
-	"""Politique effective (pratiques.py). agir : une commande qui agit selon elle refuse (Env) une politique en erreur."""
+def politique(agir=False, st=None):
+	"""Politique effective (pratiques.py). agir : une commande qui agit selon elle refuse (Env) une politique en erreur.
+	st : l'état, dont la couche ponctuelle du dernier `agence start` (spec 008) ; sans lui, l'état sur disque."""
 	import pratiques  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
-	pol = pratiques.charger(root(), os.environ.get('HOME'))
+	pol = pratiques.charger(root(), os.environ.get('HOME'), (st or load())['ponctuel'])
 	if agir and pol['erreur']:
 		raise Env(f"pratiques invalides, rien fait : {pol['erreur']} (agence pratiques check)")
 	return pol
@@ -181,11 +183,17 @@ def politique(agir=False):
 
 def valeurs(st):
 	"""Valeurs publiées par le dernier tour du régisseur, sinon lues dans les fichiers."""
-	return (st.get('pratiques') or politique())['valeurs']
+	return (st.get('pratiques') or politique(st=st))['valeurs']
+
+
+def publier(pol):
+	"""st['pratiques'] : la politique et la vue du formulaire du panneau (spec 008 FR-003), lues dans les mêmes fichiers."""
+	import pratiques  # voir politique()
+	return {**pol, **pratiques.vue(root(), os.environ.get('HOME'), pol, nom())}
 
 
 def plafond(st):
-	return valeurs(st)['agents.max']  # agents vivants, en plein tour ou en attente ; la clé maxAgents d'un état ancien est ignorée
+	return valeurs(st)['agents.max']  # agents vivants, en plein tour ou en attente
 
 
 def load(path=None):
@@ -299,7 +307,8 @@ def dollars(c):
 def need_text(n):
 	"""Besoin et son journal, une ligne chacun."""
 	head = f"{n['id']}\t{n['status']}\t{n['kind']}\t{qui(n)}\t{n['title']}"
-	voulu = ' '.join(f'--{k} {n[k]}' for k in ('model', 'effort') if n.get(k))  # à passer à cate agent start
+	orig = n.get('origines') or {}  # besoin ou workspace (spec 008) ; absent d'un besoin ancien
+	voulu = ' '.join(f'--{k} {n[k]}' + (f' ({orig[k]})' if k in orig else '') for k in ('model', 'effort') if n.get(k))
 	return '\n'.join([head] + ([f'\tréglages : {voulu}'] if voulu else []) + [f"\t{j['ts']}\t{j['by']}\t{j['text']}" for j in n.get('journal', [])])
 
 
@@ -320,6 +329,87 @@ def fin_lisible(n):
 		return bool(n['doneWhen']) and bool(pratiques.conditions(n['doneWhen']))
 	except pratiques.Invalide:
 		return False
+
+
+def preuves_nommees(n):
+	"""Noms des preuve:NOM de la condition de fin (spec 012)."""
+	import pratiques  # voir politique()
+	return [arg for nom, arg in pratiques.conditions(n['doneWhen']) if nom == 'preuve'] if fin_lisible(n) else []
+
+
+def done_preuves(nid, evidence):
+	"""need done d'une tâche de métier (spec 012, FR-008) : --evidence contrôlée pour une preuve fichier ou lien (journal :
+	chemin et SHA-256, ou lien) ; une preuve clic pose la carte de preuve, seul le clic de l'humain la ferme.
+	Rend la preuve de fermeture quand tout est reçu ; Refus sinon."""
+	import metiers
+	import pratiques  # voir politique()
+	types = pratiques.preuves_du_metier(politique(agir=True)['valeurs'])
+	n = find(load(), 'needs', nid)
+	noms = preuves_nommees(n)
+	inconnues = [x for x in noms if x not in types]
+	if inconnues:
+		raise Refus(f"{nid} : preuve {', '.join(inconnues)} inconnue du métier actif (preuves : {', '.join(types) or 'aucune'})")
+	recues = dict(n.get('preuves') or {})
+	a_saisir = [x for x in noms if x not in recues and types[x] != 'clic']
+	clics = [x for x in noms if x not in recues and types[x] == 'clic']
+	if evidence:
+		if not a_saisir:
+			raise Refus(f"{nid} : preuve {', '.join(clics)} (clic) : --evidence refusé, seul le clic de {nom()} sur la carte de preuve la ferme")
+		x = a_saisir.pop(0)  # ponytail: une --evidence pour la première preuve à saisir ; deux preuves fichier : deux appels
+		try:
+			texte = metiers.verifier_preuve(types[x], evidence, root())
+		except metiers.Invalide as err:
+			raise Refus(f'{nid} : preuve {x} ({types[x]}) refusée : {err}')
+		with tx() as st:
+			m = find(st, 'needs', nid)
+			m.setdefault('preuves', {})[x] = texte
+			note(m, f'preuve {x} : {texte}', 'cli')
+		recues[x] = texte
+	if a_saisir:
+		raise Refus(f"{nid} pas encore fait : " + ', '.join(f'preuve attendue : {x} ({types[x]})' for x in a_saisir))
+	if clics:
+		with tx() as st:
+			qids = [carte_preuve(st, find(st, 'needs', nid), x) for x in clics]
+		raise Refus(f"{nid} pas encore fait : preuve {', '.join(clics)} attendue : carte de preuve {', '.join(qids)}, "
+		            f"la tâche se ferme sur le clic « Validé » de {nom()}")
+	return '; '.join(f'{k} : {v}' for k, v in recues.items())
+
+
+def carte_preuve(st, n, x):
+	"""Carte de preuve clic (spec 012) : « Validé » ou « Pas encore » ; une seule ouverte par besoin et preuve."""
+	import metiers
+	base = f"/besoin/{n['id']}/preuve/{x}/"
+	for q in st['questions']:
+		if q['answer'] is None and base + 'valide' in (q.get('clics') or []):
+			return q['id']
+	m = metiers.metier(metiers.charger(), politique()['valeurs']['metier'])
+	explique = next((p['explique'] for p in m['validateur'] if p['nom'] == x), '') if m else ''
+	return poser_carte(st, f"Preuve « {x} » de « {n['title']} » : {explique}",
+	                   [{'label': 'Validé', 'detail': 'la tâche passe en fait'},
+	                    {'label': 'Pas encore', 'detail': 'la tâche reste ouverte'}], [base + 'valide', base + 'attendre'])
+
+
+def click_preuve(path):
+	"""Clic sur une carte de preuve ouverte : « Validé » note la preuve et ferme la tâche quand tout est reçu ;
+	« Pas encore » la laisse ouverte, journal « <preuve> attendu ». Sans carte ouverte qui propose ce clic : 409."""
+	_, _, nid, _, x, choix = path.split('/')
+	with tx() as st:
+		q = next((q for q in st['questions'] if q['answer'] is None and path in (q.get('clics') or [])), None)
+		if q is None:
+			return 409, 'Aucune carte de preuve ouverte ne propose ce clic.'
+		n = find(st, 'needs', nid)
+		label = q['options'][q['clics'].index(path)]['label']
+		fermer_carte(st, q, label)
+		if choix == 'attendre':
+			note(n, f'{x} attendu : {nom()} a répondu « {label} »', 'clic')
+			return 303, '/'
+		n.setdefault('preuves', {})[x] = f'clic de {nom()} « {label} »'
+		note(n, f'preuve {x} : clic de {nom()} « {label} »', 'clic')
+		if n['status'] == 'open' and all(k in n['preuves'] for k in preuves_nommees(n)):
+			close_need(st, nid, 'done', '; '.join(f'{k} : {v}' for k, v in n['preuves'].items()))
+			apply(st, [('close', p, nid) for p in n['panels']])
+			notify(st['panels'].get('orchestrator'), f"{nom()} a validé la preuve {x} : {n['title']} ({nid}) est fait.")
+	return 303, '/'
 
 
 def nums_fin(n):
@@ -426,7 +516,6 @@ def notify(panel, msg):
 		log(f'message à {panel} non remis : {e}')
 
 
-RAPPEL = 300  # secondes sans réponse avant l'unique rappel
 TOAST = ['osascript', '-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)',
          '-e', 'end run', '--']  # script constant : titre et texte passent en arguments, jamais dans le script
 
@@ -509,19 +598,23 @@ def jours_valides(v):
 
 
 def cmd_start(a):
+	"""Les options sont ponctuelles (spec 008 FR-009) : la couche est remplacée par les seules options passées, jamais
+	écrite dans la politique ; refusée comme un réglage (bornes et cohérences, phrase du schéma)."""
 	require_cate()
-	if a.max_agents is not None:
-		import pratiques  # voir politique()
-		try:
-			pratiques.regler(root(), os.environ.get('HOME'), 'agents.max', a.max_agents)
-		except pratiques.Invalide as err:
-			raise Env(f'pratiques : {err}')
+	import pratiques  # voir politique()
+	ponctuel = {k: v for k, v in (('agents.max', a.max_agents),
+	                              ('notifications.systeme', None if a.notify is None else 'oui' if a.notify else 'non'))
+	            if v is not None}
+	try:
+		pratiques.verifier(root(), os.environ.get('HOME'), ponctuel)
+	except pratiques.Invalide as err:
+		raise Env(f'pratiques : {err} ({err.phrase})')
 	live = live_rows()
 	if live is None:
 		raise Refus('cate panel list illisible')
 	with tx() as st:
-		if a.notify is not None:
-			st['notify'] = a.notify
+		st['ponctuel'] = ponctuel
+		st['pratiques'] = publier(politique(st=st))
 		p = st['panels']
 		orch = p.get('orchestrator')
 		if orch not in live:
@@ -556,9 +649,11 @@ def interlocuteur(live, p, canvas=None):
 	enregistré dès sa création, relié au panneau agence (ou à l'orchestrateur sur un canvas)."""
 	if p.get('interlocuteur') in live:
 		return p['interlocuteur']
-	p['interlocuteur'] = adopt(live, INTERLOCUTEUR, 'terminal') or cate(
-		'agent', 'start', *(['--canvas', canvas] if canvas else []), '--agent', 'claude-code', '--title', INTERLOCUTEUR,
-		INTER_PROMPT)['panelId']
+	p['interlocuteur'] = adopt(live, INTERLOCUTEUR, 'terminal')
+	if not p['interlocuteur']:
+		modele = politique()['valeurs']['modele.interlocuteur']  # posé par l'humain seul (spec 010, FR-010) ; null : défaut du CLI
+		p['interlocuteur'] = cate('agent', 'start', *(['--canvas', canvas] if canvas else []), '--agent', 'claude-code',
+		                          '--title', INTERLOCUTEUR, *(['--model', modele] if modele else []), INTER_PROMPT)['panelId']
 	link(p['interlocuteur'], p['orchestrator'], 'context', 'Fiches')
 	return p['interlocuteur']
 
@@ -637,7 +732,7 @@ def shq(s):
 
 def cmd_need(a):
 	if a.action == 'add':
-		if (a.ref or '').startswith('fiche:'):  # seul le clic « Lancer » crée le besoin d'une fiche (lancer_fiches)
+		if (a.ref or '').strip().lower().startswith('fiche:'):  # seul le clic « Lancer » crée le besoin d'une fiche, en toute casse
 			raise Refus('la référence fiche: est réservée au clic « Lancer » : agence fiche, puis le clic de l\'humain.')
 		panels = load()['panels']
 		me = caller_panel() if a.panel or panels.get('interlocuteur') else None  # une seule sonde pour les deux usages
@@ -647,14 +742,20 @@ def cmd_need(a):
 		done_when = a.done_when
 		if done_when is not None:
 			try:
-				pratiques.conditions(done_when, saisie=True)
+				pratiques.conditions(done_when, saisie=True, preuves=pratiques.preuves_du_metier(politique(agir=True)['valeurs'])
+				                     if 'preuve:' in done_when else None)
 			except pratiques.Invalide as err:
 				raise Env(str(err))
+		origines = {k: 'besoin' for k in ('model', 'effort') if getattr(a, k)}
 		if a.kind == 'task':
 			v = politique(agir=True)['valeurs']
 			if v['issue'] == 'obligatoire' and not a.issue:
 				raise Refus('issue obligatoire (pratiques) : une tâche porte --issue N')
 			done_when = done_when or pratiques.done_when_defaut(v)
+			for k, cle in (('model', 'agents.modele'), ('effort', 'agents.effort')):  # spec 008 FR-012 : l'option l'emporte
+				if not getattr(a, k) and v[cle] != 'auto':
+					setattr(a, k, v[cle])
+					origines[k] = 'workspace'
 		by_orch = bool(a.panel) and me is not None and me == panels.get('orchestrator')
 		with tx() as st:
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
@@ -662,6 +763,7 @@ def cmd_need(a):
 			                source=a.frm, panels=a.panel or (), done_when=done_when, acceptance=a.acceptance,
 			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue,
 			                budget_jetons=a.budget_jetons)
+			n.setdefault('origines', origines)  # besoin rendu tel quel (doublon) : ses origines restent
 			if by_orch:
 				launch(n, a.panel)
 		print(n['id'])
@@ -682,7 +784,9 @@ def cmd_need(a):
 				raise Refus(f"{a.id} n'a pas de condition de PR à rattacher (doneWhen : {n['doneWhen']})")
 			n['doneWhen'] = dw
 	elif a.action in ('done', 'drop'):
-		if a.action == 'done':
+		if a.action == 'done' and preuves_nommees(find(load(), 'needs', a.id)):
+			a.evidence = done_preuves(a.id, a.evidence)  # spec 012 : Refus tant qu'une preuve manque
+		elif a.action == 'done':
 			manques = manques_machine(load(), a.id, a.evidence)
 			if manques:
 				raise Refus(f"{a.id} pas encore fait : {', '.join(manques)}")
@@ -691,6 +795,12 @@ def cmd_need(a):
 			n = close_need(st, a.id, 'done' if a.action == 'done' else 'dropped', a.evidence)
 			n['closeSkip'] = me
 			apply(st, [('close', p, n['id']) for p in n['panels'] if p != me] if a.close else [])
+	elif a.action == 'jeter':  # spec 013 lot 7 : une carte, rien fermé ni retiré sans le clic de l'humain
+		with tx() as st:
+			n = find(st, 'needs', a.id)
+			if n['status'] != 'open':
+				raise Refus(f"{a.id} est {n['status']} : plus rien à jeter")
+			carte_jeter(st, n)
 	elif a.action == 'log':
 		if not a.text.strip():
 			raise Refus('décision vide')
@@ -735,7 +845,8 @@ def fiche_texte(f, long=False):
 	if not long:
 		return ligne
 	champs = [(c, ', '.join(f[c]) if isinstance(f[c], list) else f[c]) for c in
-	          ('preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin', 'creee', 'maj')]
+	          ('preuve', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin',
+	           'creee', 'maj')]
 	return '\n'.join([ligne] + [f'  {c} : {v}' for c, v in champs if v not in (None, '')] +
 	                 [f"  {j['ts']} {j['by']} : {j['text']}" for j in f['journal']])
 
@@ -745,7 +856,7 @@ def decision_texte(x, long=False):
 	if not long:
 		return ligne
 	return '\n'.join([ligne, f"  pourquoi : {x['pourquoi']}", f"  date : {x['date']}"] +
-	                 [f'  {c} : {", ".join(x[c])}' for c in ('alternatives', 'invalide') if x[c]] +
+	                 [f'  {c} : {", ".join(x[c])}' for c in ('alternatives', 'invalide', 'fiches') if x.get(c)] +
 	                 ([f"  révoquée par : {x['revoqueePar']}"] if x['revoqueePar'] else []))
 
 
@@ -757,12 +868,15 @@ def cmd_fiche(a):
 	"""Fiches du backlog : add, edit, etat et note écrivent ; list et show lisent. Lancée, faite, abandonnée : au clic."""
 	import backlog  # voir registres()
 	champs = {'titre': getattr(a, 'titre_opt', None), 'type': a.type, 'preuve': a.preuve, 'priorite': a.priorite,
-	          'fichiers': a.fichier, 'dependances': a.dependance, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
+	          'fichiers': a.fichier, 'dependances': a.dependance, 'remplace': a.remplace, 'doublonDe': a.doublon_de, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
 	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
 	champs = {k: v for k, v in champs.items() if v is not None}
+	propose = a.action == 'add' and 'modele' not in champs and politique(agir=True)['valeurs']  # spec 010, lot 7
 	with registres() as r:
 		b = r['backlog']
 		if a.action == 'add':
+			if propose:
+				champs['modele'] = backlog.modele_propose(propose, champs.get('decisions', []), r['decisions']['decisions'])
 			f = backlog.ajouter(b, a.titre, now_iso(), **champs)
 		elif a.action == 'edit':
 			f = backlog.modifier(b, a.id, now_iso(), **champs)
@@ -774,7 +888,8 @@ def cmd_fiche(a):
 			f = backlog.trouver(b['fiches'], a.id)
 			return sortie(f, a.json, fiche_texte(f, long=True))
 		elif a.action == 'brief':
-			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'])
+			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'],
+			                      politique()['valeurs']['plan.validation'], connecteurs_en_ecriture(politique()['valeurs']))
 			return sortie(texte, a.json, texte)
 		elif a.action == 'plan':
 			st = load()  # place = agents.max moins les agents vivants publiés par le dernier tour du régisseur
@@ -789,19 +904,84 @@ def cmd_fiche(a):
 	sortie(f, a.json, f['id'])
 
 
+def connecteurs_en_ecriture(v):
+	"""« Nom (id) » des connecteurs ouverts en écriture par la politique (spec 012), pour le brief d'une fiche (013 T072)."""
+	import metiers
+	try:
+		cat = metiers.charger()
+	except metiers.Invalide:
+		return list(v['connecteurs.ecriture'])
+	return [f"{(metiers.connecteur(cat, i) or {'nom': i})['nom']} ({i})" for i in v['connecteurs.ecriture']]
+
+
 def cmd_decision(a):
-	"""Registre : add écrit une décision proposée ; list et show lisent. Active, rejetée, révoquée : au clic (lot 6)."""
+	"""Registre : add écrit une décision proposée et sa carte ; list et show lisent. Active, rejetée, révoquée : au clic."""
 	import backlog  # voir registres()
+	if a.action == 'add':
+		with tx() as st:  # décision et carte sous le même verrou ; l'état d'abord, comme ecrire_backlog
+			r, erreur = registres_sous_verrou()
+			if erreur:
+				raise Env(f'{erreur} ; rien écrit, corriger le fichier à la main')
+			try:
+				x = backlog.decision_ajouter(r['decisions'], a.objet, a.pourquoi, now_iso(), a.alternative or (), a.invalide or (),
+				                             a.structurante)
+			except backlog.Refus as err:
+				raise Refus(str(err))
+			carte_decision(st, r['decisions'], x)
+			dump(st)
+			backlog.ecrire(root(), 'decisions.json', r['decisions'])
+		return sortie(x, a.json, x['id'])
 	with registres() as r:
 		d = r['decisions']
-		if a.action == 'add':
-			x = backlog.decision_ajouter(d, a.objet, a.pourquoi, now_iso(), a.alternative or (), a.invalide or (), a.structurante)
-			return sortie(x, a.json, x['id'])
-		if a.action == 'show':
+		if a.action == 'export':  # registre durable (spec 013, Q1) : un fichier du dépôt, commité par une PR de docs
+			code, top, _ = RUN(['git', 'rev-parse', '--show-toplevel'])  # le dépôt courant, worktree compris
+			cible = os.path.abspath(a.out) if a.out else os.path.join(top.strip() if code == 0 else root(), 'docs', 'decisions.md')
+			os.makedirs(os.path.dirname(cible), exist_ok=True)
+			fd, tmp = tempfile.mkstemp(dir=os.path.dirname(cible), prefix='.tmp-decisions-')
+			try:
+				with os.fdopen(fd, 'w') as f:
+					f.write(backlog.registre_md(d))
+				os.chmod(tmp, 0o644)
+				os.replace(tmp, cible)
+			except BaseException:
+				os.unlink(tmp)
+				raise
+			return print(cible)
+		if a.action == 'show':  # fiches qui la citent : lien inverse calculé, jamais stocké (spec 013, FR-004)
 			x = backlog.trouver(d['decisions'], a.id)
+			x = {**x, 'fiches': [f['id'] for f in r['backlog']['fiches'] if x['id'] in f['decisions']]}
 			return sortie(x, a.json, decision_texte(x, long=True))
 		xs = backlog.decisions_actives(d) if a.active else d['decisions']
 		return sortie(xs, a.json, '\n'.join(decision_texte(x) for x in xs)) if xs or a.json else 0
+
+
+def cmd_lentille(a):
+	"""Brief d'une lentille (lecture seule), ou --carte : une carte « Éclairer » ; aucun agent lancé ici."""
+	import backlog  # voir registres()
+	if a.carte:
+		with tx() as st:
+			if not st['port']:
+				raise Refus("régisseur non démarré : l'orchestrateur lance d'abord « agence boot »")
+			r, erreur = registres_sous_verrou()
+			if erreur:
+				raise Env(f'{erreur} ; rien écrit, corriger le fichier à la main')
+			try:
+				f = backlog.trouver(r['backlog']['fiches'], a.id)
+			except backlog.Refus as err:
+				raise Refus(str(err))
+			if f['etat'] in backlog.TERMINAUX:
+				raise Refus(f"{a.id} est {f['etat']}")
+			carte_eclairer(st, [f], f'{a.id} à la demande')
+		return 0
+	try:
+		x = backlog.tirer(backlog.charger_lentilles(backlog.fichier_lentilles(root())), a.nom)
+	except backlog.Invalide as err:
+		raise Env(str(err))
+	except backlog.Refus as err:
+		raise Refus(str(err))
+	with registres() as r:
+		texte = backlog.brief_lentille(backlog.trouver(r['backlog']['fiches'], a.id), x)
+	return sortie({'nom': x['nom'], 'modele': x['modele'], 'brief': texte}, a.json, texte)
 
 
 # ---------- brouillons ----------
@@ -812,8 +992,10 @@ def cmd_draft(a):
 		refuse_interlocuteur()
 		if not CIBLE_RE.match(a.cible or ''):
 			raise Refus('cible invalide : slack:<canal>, mail:<adresse>, issue:<owner/repo>, '
-			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>')
+			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>, outil:<connecteur>:<outil>')
 		texte = sys.stdin.read() if a.texte == '-' else a.texte
+		if a.cible.startswith('outil:'):
+			texte = carte_outil(a.cible, texte)
 		with tx() as st:
 			if not st['port']:
 				raise Refus("régisseur non démarré : l'orchestrateur lance d'abord « agence boot »")
@@ -863,6 +1045,38 @@ def cmd_draft(a):
 	return 0
 
 
+def carte_outil(cible, texte):
+	"""Carte d'écriture (spec 012, FR-004) : connecteur connu, outil d'écriture déclaré, écriture ouverte par la politique,
+	arguments en objet JSON ; rend le texte canonique (celui que la garde compare à l'appel)."""
+	import metiers
+	_, ident, outil = cible.split(':', 2)
+	try:
+		cat = metiers.charger()
+	except metiers.Invalide as err:
+		raise Refus(f'catalogue des connecteurs refusé : {err}')
+	c = metiers.connecteur(cat, ident)
+	if c is None:
+		raise Refus(f'connecteur inconnu : {ident} (agence pratiques show : connecteurs.lecture et connecteurs.ecriture)')
+	if outil not in c['ecriture']:
+		raise Refus(f"« {outil} » n'est pas un outil d'écriture déclaré de « {c['nom']} » : aucune carte possible")
+	pol = politique(agir=True)
+	if ident not in pol['valeurs']['connecteurs.ecriture']:
+		nom_cle = pol_schema_nom('connecteurs.ecriture')
+		raise Refus(f"écriture fermée pour « {c['nom']} » : seul {nom()} l'ouvre (réglage « {nom_cle} » du panneau agence)")
+	try:
+		args = json.loads(texte)
+	except ValueError:
+		args = None
+	if not isinstance(args, dict):
+		raise Refus("texte d'une carte d'écriture : les arguments de l'outil en objet JSON")
+	return metiers.canonique(args)
+
+
+def pol_schema_nom(cle):
+	import pratiques  # voir politique()
+	return pratiques.schema()['cles'][cle]['nom']
+
+
 def drop_draft(st, did):
 	d = find(st, 'drafts', did)
 	if d['statut'] not in ('à valider', 'envoyer'):
@@ -874,15 +1088,12 @@ def drop_draft(st, did):
 
 def slack_token():
 	"""Jeton Slack de l'utilisateur (réglage envoi.slack) : la variable nommée, sinon le fichier .env nommé ; jamais affiché ni copié."""
+	import metiers  # lecture de secret commune aux connecteurs (spec 012, FR-006)
 	v = politique()['valeurs']
 	var, fichier = v['envoi.slack.variable'], v['envoi.slack.fichier']
-	if os.environ.get(var):
-		return os.environ[var]
-	if fichier:
-		with contextlib.suppress(OSError), open(os.path.expanduser(fichier)) as f:
-			for line in f:
-				if line.startswith(var + '='):
-					return line.split('=', 1)[1].strip().strip('"\'')
+	jeton = metiers.lire_secret(var, fichier)
+	if jeton:
+		return jeton
 	raise Refus(f"{var} absent de l'environnement" + (f' et de {fichier}' if fichier else ' (réglage envoi.slack.fichier pour un fichier .env)'))
 
 
@@ -1139,6 +1350,12 @@ def click(path, form):
 				       f"{nom()} a cliqué Envoyer sur le brouillon {did} ({d['cible']}). Envoie-le maintenant par l'outil MCP "
 				       f"avec exactement le texte de « agence draft show {did} », puis « agence draft sent {did} --evidence <lien> ».")
 				return 303, '/'
+			if kind == 'outil':  # spec 012 : un appel identique passe, une fois ; l'agent appelle, le régisseur n'appelle aucun MCP
+				note(find(st, 'needs', d['needId']), f"Envoyer cliqué sur {did} ({d['cible']})", 'clic')
+				notify(d['agent'] or st['panels'].get('orchestrator'),
+				       f"{nom()} a validé la carte {did} ({nom_connecteur(d['cible'])}). Appelle l'outil une fois, avec exactement "
+				       f"les arguments de « agence draft show {did} », puis « agence draft sent {did} --evidence <résultat> ».")
+				return 303, '/'
 			try:
 				link_url = send_slack(d) if kind == 'slack' else send_gh(d)
 			except Refus as e:
@@ -1212,9 +1429,14 @@ def click(path, form):
 				close_need(st, nid, 'dropped')
 				st['orphanGardes'].append(o['panel'])
 		return 303, '/'
+	m = re.match(r'^/pratiques/(set|unset|preset)$', path)
+	if m:
+		return click_pratiques(m.group(1), form)
 	m = re.match(r'^/ask/(q\d+)$', path)
 	if m:
 		qid = m.group(1)
+		if 'clics' in find(load(), 'questions', qid):
+			return click_carte(qid, form)
 		with tx() as st:
 			q = find(st, 'questions', qid)
 			if q['answer'] is not None:
@@ -1268,7 +1490,263 @@ def click(path, form):
 		return click_perm(*m.groups())
 	if path == '/fiches/lancer':
 		return click_lancer((form.get('ids') or [''])[0].split(','))
+	if re.match(r'^/(decision/D[1-9]\d*/(valider|rejeter)|fiche/F[1-9]\d*/(relancer|abandonner)|lentille/F[1-9]\d*/eclairer)$', path):
+		return click_registre(path)
+	if re.match(r'^/besoin/n\d+/preuve/[\w.-]+/(valide|attendre)$', path):
+		return click_preuve(path)
+	if re.match(r'^/besoin/n\d+/jeter$', path):
+		return click_jeter(path)
 	return 404, 'Action inconnue.'
+
+
+# ---------- registre au clic et revue de cap (spec 010, lot 6) ----------
+
+def poser_carte(st, question, options, clics):
+	"""Question du régisseur à l'humain (QuestionCard) dont l'option i mène au clic clics[i] ('' : fermer la carte)."""
+	qid = new_id(st, 'q')
+	n, _ = add_need(st, 'human', question, ref=qid, owner=OWNER_HUMAIN)
+	st['questions'].append({'id': qid, 'needId': n['id'], 'agent': None, 'question': question, 'options': options,
+	                        'action': None, 'answer': None, 'clics': clics})
+	return qid
+
+
+def fermer_carte(st, q, reponse, statut='done'):
+	q['answer'] = reponse
+	close_need(st, q['needId'], statut, f'réponse : {reponse}')
+
+
+def carte_decision(st, d, x):
+	"""Carte d'une décision proposée : Valider (active, révoque les actives qu'elle invalide), Rejeter."""
+	import backlog  # voir registres()
+	rev = ', '.join(f"{y['id']} ({y['objet']})" for y in backlog.revoquees(d, x))
+	marque = ' structurante' if x['structurante'] else ''
+	poser_carte(st, f"Décision{marque} {x['id']} : {x['objet']} ; pourquoi : {x['pourquoi']}" + (f' ; révoque {rev}' if rev else ''),
+	            [{'label': 'Valider', 'detail': 'active : elle fait foi' + (f', révoque {rev}' if rev else '')},
+	             {'label': 'Rejeter', 'detail': 'rejetée : rien ne change'}],
+	            [f"/decision/{x['id']}/valider", f"/decision/{x['id']}/rejeter"])
+
+
+def carte_eclairer(st, fiches, motif):
+	"""Carte « Éclairer » (lot 8) : une option par fiche ; son clic demande une lentille à l'orchestrateur. Aucune fiche : rien."""
+	if fiches:
+		poser_carte(st, f"Éclairer : {motif} ; une lentille (angle imposé, agent à contexte vierge qui ne reçoit que la fiche) "
+		            'propose sans trancher', [{'label': f"Éclairer {f['id']}", 'detail': f['titre']} for f in fiches]
+		            + [{'label': 'Vu', 'detail': 'fermer sans lentille'}], [f"/lentille/{f['id']}/eclairer" for f in fiches] + [''])
+
+
+def carte_ouverte(st, path):
+	"""Une carte encore ouverte propose ce clic : un POST nu ou rejoué n'agit pas."""
+	return any(q['answer'] is None and path in (q.get('clics') or []) for q in st['questions'])
+
+
+def pr_du_besoin(n):
+	"""Numéro de la PR rattachée au besoin (pr-merged:N ou ci-green:N), sinon None."""
+	import pratiques  # voir politique()
+	return next((arg for nom, arg in pratiques.conditions(n['doneWhen']) if nom in ('pr-merged', 'ci-green') and arg),
+	            None) if fin_lisible(n) else None
+
+
+def worktree_sale(path):
+	"""Vrai si le worktree porte des modifications non commitées (ou si git ne sait pas le dire) : il n'est jamais retiré."""
+	code, out, _ = RUN(['git', '-C', path, 'status', '--porcelain'])
+	return code != 0 or bool(out.strip())
+
+
+def carte_jeter(st, n):
+	"""Carte « Jeter » d'un besoin (spec 013, lot 7, #174) : Jeter agit au clic, Garder la ferme. Un worktree avec des
+	modifications non commitées est nommé dans la carte : le clic le garde."""
+	pr, fiche = pr_du_besoin(n), (n['ref'] or '').removeprefix('fiche:') if (n['ref'] or '').startswith('fiche:') else None
+	sales = [os.path.basename(p) for p, _ in worktrees_du_besoin(n['id']) if worktree_sale(p)]
+	poser_carte(st, f"Jeter le travail de {n['id']} « {n['title']} » : " + (f'PR #{pr} fermée sans merge, ' if pr else '')
+	            + 'worktrees propres du besoin retirés'
+	            + (f" ({', '.join(sales)} gardé : modifications non commitées)" if sales else '')
+	            + (f', fiche {fiche} remise en discussion' if fiche else '') + ' ; la branche reste',
+	            [{'label': 'Jeter', 'detail': 'refusé si la PR est déjà mergée'}, {'label': 'Garder', 'detail': 'rien ne change'}],
+	            [f"/besoin/{n['id']}/jeter", ''])
+
+
+def click_jeter(path):
+	"""Clic « Jeter » : gh et git hors transaction, puis fiche, besoin et carte sous le verrou. PR mergée : 409, rien jeté."""
+	import backlog  # voir registres()
+	nid, st = path.split('/')[2], load()
+	if not carte_ouverte(st, path):
+		return 409, 'Aucune carte ouverte ne propose ce clic : rien jeté.'
+	n = find(st, 'needs', nid)
+	if n['status'] != 'open':
+		return 409, f"{nid} est {n['status']} : rien jeté."
+	pr = pr_du_besoin(n)
+	fait = []
+	if pr:
+		repo = gh_repo(st)
+		code, out, err = RUN(['gh', 'pr', 'view', pr, '-R', repo, '--json', 'state'], timeout=GH_TIMEOUT)
+		try:
+			etat = json.loads(out)['state']
+		except (ValueError, TypeError, KeyError):
+			return 409, f'État de la PR #{pr} illisible : rien jeté.'
+		if etat == 'MERGED':
+			return 409, f'PR #{pr} déjà mergée : rien jeté.'
+		if etat == 'OPEN':
+			code, out, err = RUN(['gh', 'pr', 'close', pr, '-R', repo], timeout=GH_TIMEOUT)
+			if code:
+				return 409, f'gh refuse de fermer la PR #{pr} : {(err or out).strip()[:200]} ; rien jeté.'
+		fait.append(f'PR #{pr} fermée')
+	for wt, branche in worktrees_du_besoin(nid):
+		if worktree_sale(wt):
+			fait.append(f'worktree {os.path.basename(wt)} gardé : modifications non commitées')
+			continue
+		code, out, err = RUN(['git', '-C', root(), 'worktree', 'remove', wt])  # sans --force : git refuse aussi un worktree sale
+		fait.append(f'worktree {os.path.basename(wt)} retiré (branche {branche} gardée)' if code == 0 else
+		            f'worktree {os.path.basename(wt)} non retiré : {(err or out).strip()[:200]}')
+	with tx() as st:
+		n = find(st, 'needs', nid)
+		if (n['ref'] or '').startswith('fiche:'):
+			r, erreur = registres_sous_verrou()
+			f = None if erreur else next((f for f in r['backlog']['fiches'] if f['id'] == n['ref'][len('fiche:'):]), None)
+			if f and f['etat'] == 'lancée' and f['besoin'] == nid:
+				backlog.noter(r['backlog'], f['id'], f'travail jeté (besoin {nid}), remise en discussion', now_iso(), par='clic')
+				f.update(etat='discussion', besoin=None)
+				ecrire_backlog(st, r)
+				fait.append(f"fiche {f['id']} en discussion")
+		texte = ' ; '.join(fait) or 'rien à fermer'
+		note(n, f'Jeter cliqué : {texte}', 'clic')
+		if n['status'] == 'open':
+			close_need(st, nid, 'dropped', texte)
+			apply(st, [('close', p, nid) for p in n['panels']])
+		for q in st['questions']:
+			if q['answer'] is None and path in (q.get('clics') or []):
+				fermer_carte(st, q, f'Jeter : {texte}')
+		notify(st['panels'].get('orchestrator'), f'{nom()} a jeté le travail de {nid} : {texte}.')
+	return 303, '/'
+
+
+def quitter_ponctuel(st, cles):
+	"""La valeur choisie s'applique (spec 008 FR-010) : les clés réglées quittent la couche ponctuelle ; True si l'une y était."""
+	return bool([k for k in cles if st['ponctuel'].pop(k, None) is not None])
+
+
+def retirer_reglage(pratiques, st, racine, home, cle, dev):
+	"""unset, route et CLI : une clé ponctuelle revient au réglage du workspace (la couche seule, fichier intact) ;
+	sinon la clé quitte le fichier. Rend le fichier écrit, ou None."""
+	if cle in st['ponctuel']:
+		st['ponctuel'].pop(cle)
+		return None
+	return pratiques.retirer(racine, home, cle, dev, st['ponctuel'])
+
+
+def click_pratiques(action, form):
+	"""Formulaire du panneau (spec 008 FR-004) : mêmes fonctions, même verrou que `agence pratiques` ; le fichier visé suit
+	la portée de la clé. Refus : 400 et la phrase simple. La vue est republiée aussitôt, sans attendre le tour."""
+	import pratiques  # voir politique()
+	racine, home = root(), os.environ.get('HOME')
+	un = lambda k: (form.get(k) or [''])[0]  # noqa: E731
+	with tx() as st:
+		try:
+			if action == 'set':
+				cles, vals = form.get('cle') or [], form.get('valeur') or []
+				paires = list(zip(cles, map(pratiques.lire_valeur, vals))) if len(cles) == len(vals) else []
+				pratiques.regler_plusieurs(racine, home, paires, ponctuel=st['ponctuel'])
+				quitter_ponctuel(st, [cle for cle, _ in paires])
+			elif action == 'unset':
+				retirer_reglage(pratiques, st, racine, home, un('cle'), None)
+			else:
+				pratiques.poser_preset(racine, home, un('nom'), remplacer=un('remplacer') == '1', ponctuel=st['ponctuel'])
+				quitter_ponctuel(st, pratiques.posees_par_preset(un('nom')))
+		except pratiques.Invalide as err:
+			return 400, err.phrase
+		st['pratiques'] = publier(politique(st=st))
+	return 303, '/'
+
+
+def click_carte(qid, form):
+	"""Option d'une carte du régisseur : son clic, ou '' (Vu) qui la ferme ; None : déjà fait."""
+	with tx() as st:
+		q = find(st, 'questions', qid)
+		choice = (form.get('choice') or [''])[0]
+		if q['answer'] is not None:
+			return 409, 'Question déjà répondue.'
+		if not (choice.isdigit() and int(choice) < len(q['clics'])):
+			return 400, 'Choisis une option : cette carte agit au clic.'
+		cible, label = q['clics'][int(choice)], q['options'][int(choice)]['label']
+		if cible is None:
+			return 409, f'{label} : déjà fait.'
+		if not cible:
+			note(find(st, 'needs', q['needId']), f'{label} cliqué', 'clic')
+			fermer_carte(st, q, label)
+			return 303, '/'
+	return click(cible, {})  # la route du clic proposé, comme un POST direct
+
+
+def click_registre(path):
+	"""Clic sur le registre ou le backlog : /decision/<id>/valider|rejeter, /fiche/<id>/relancer|abandonner. Les cartes
+	ouvertes qui proposaient ce clic le notent et grisent les options de l'objet ; sans option restante, elles ferment."""
+	import backlog  # voir registres()
+	_, genre, oid, choix = path.split('/')
+	with tx() as st:
+		r, erreur = registres_sous_verrou()
+		if erreur:
+			return 409, f'{erreur} : rien changé.'
+		try:
+			if genre == 'decision':
+				ids = backlog.decider(r['decisions'], oid, choix)
+				fait = f"{oid} {'active' if choix == 'valider' else 'rejetée'}" + (f", {', '.join(ids[1:])} révoquée(s)" if ids[1:] else '')
+			elif genre == 'lentille':
+				if backlog.trouver(r['backlog']['fiches'], oid)['etat'] in backlog.TERMINAUX:
+					raise backlog.Refus(f'{oid} est terminée')
+				if not carte_ouverte(st, path):
+					raise backlog.Refus(f'aucune carte ouverte ne propose ce clic sur {oid}')  # POST nu ou rejoué
+				fait = f'lentille demandée sur {oid}'
+			else:
+				backlog.reviser(r['backlog'], oid, choix, now_iso())
+				fait = f"{oid} {'relancée' if choix == 'relancer' else 'abandonnée'}"
+		except backlog.Refus as err:
+			return 409, f'{err} : rien changé.'
+		for q in st['questions']:
+			if q['answer'] is None and path in (q.get('clics') or []):
+				note(find(st, 'needs', q['needId']), f"{q['options'][q['clics'].index(path)]['label']} cliqué : {fait}", 'clic')
+				q['clics'] = [None if c and c.split('/')[2] == oid else c for c in q['clics']]
+				if not any(q['clics']):
+					fermer_carte(st, q, fait)
+		if genre == 'decision' and st['panels'].get('interlocuteur'):
+			notify(st['panels']['interlocuteur'], f'Registre, clic de {nom()} : {fait}.')
+		if genre == 'lentille':  # le clic de l'humain est le seul déclencheur ; l'orchestrateur lance, le régisseur jamais
+			notify(st['panels'].get('orchestrator'),
+			       f"{nom()} demande une lentille sur {oid} : agence lentille {oid} --hasard --json donne nom, modèle et brief ; "
+			       f"lance un agent à contexte vierge avec ce brief seul, attache sa proposition par agence fiche note {oid} "
+			       f"\"lentille <nom> : ...\", puis ferme son panneau. Elle propose, ne tranche rien.")
+			dump(st)
+			return 303, '/'
+		x = backlog.trouver(r['decisions']['decisions'], oid) if genre == 'decision' else None
+		if x and x['structurante'] and x['statut'] == 'active':
+			carte_eclairer(st, [f for f in r['backlog']['fiches'] if oid in f['decisions'] and f['etat'] not in backlog.TERMINAUX],
+			               f"{oid} {x['objet']} est structurante")
+		dump(st)
+		backlog.ecrire(root(), 'decisions.json' if genre == 'decision' else 'backlog.json', r['decisions' if genre == 'decision' else 'backlog'])
+	return 303, '/'
+
+
+def revue_tour(st, r, maintenant):
+	"""Tour du régisseur, sous le verrou : revue de cap due (7 jours après la précédente, sinon après la première fiche) :
+	derniereRevue posée, une carte unique si quelque chose dérive ; la carte précédente restée ouverte est remplacée."""
+	import backlog  # voir registres()
+	b = r['backlog']
+	if not backlog.revue_due(b['derniereRevue'], min((f['creee'] for f in b['fiches']), default=None), maintenant):
+		return
+	b['derniereRevue'] = maintenant
+	c = backlog.revue(b, r['decisions'], [n for n in st['needs'] if n['status'] == 'open' and n['overBudget']], maintenant)
+	if not c:
+		return
+	for q in st['questions']:
+		if q['answer'] is None and 'clics' in q and q['question'].startswith('Revue de cap'):  # la carte du régisseur, jamais une question d'agent
+			fermer_carte(st, q, 'remplacée par la revue suivante', 'dropped')
+	parties = [('en discussion depuis plus de 14 jours', [f['id'] for f in c['perimees']]),
+	           ('budgets dépassés', [f"{n['id']} {n['title']}" for n in c['depassements']]),
+	           ('décisions structurantes de la semaine', [f"{x['id']} {x['objet']}" for x in c['structurantes']]),
+	           ('vision hors référentiel', [f"{f['id']} ({f['vision']})" for f in c['horsVision']])]
+	fs = c['perimees']
+	poser_carte(st, 'Revue de cap : ' + ' ; '.join(f"{t} : {', '.join(xs)}" for t, xs in parties if xs),
+	            [{'label': f"{v} {f['id']}", 'detail': f['titre']} for f in fs for v in ('Relancer', 'Abandonner')]
+	            + [{'label': 'Vu', 'detail': 'fermer la revue'}],
+	            [f"/fiche/{f['id']}/{v}" for f in fs for v in ('relancer', 'abandonner')] + [''])
 
 
 # ---------- clic « Lancer » et fiches au tour (spec 010, lot 4) ----------
@@ -1306,7 +1784,8 @@ def lancer_fiches(st, r, ids, entete):
 		note(n, f'fiche {fid} lancée au clic', 'clic')
 		backlog.noter(b, fid, f"lancée (besoin {n['id']})", maintenant, par='clic')
 		f.update(etat='lancée', besoin=n['id'])
-		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'])}\nbesoin {n['id']}")
+		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'], valeurs(st)['plan.validation'], connecteurs_en_ecriture(valeurs(st)))}"
+		              f"\nbesoin {n['id']}")
 	st['lot'] = [i for i in dict.fromkeys(st['lot'] + list(ids)) if i not in p['part']]
 	if briefs:
 		attentes = ', '.join(f'{i} ({m})' for i, m in p['attente'].items()) or 'aucune'
@@ -1387,6 +1866,7 @@ def fiches_tour(st):
 	st['lot'] = [i for i in st['lot'] if etats.get(i) == 'prête']
 	if st['lot']:
 		lancer_fiches(st, r, list(st['lot']), 'Place libre')
+	revue_tour(st, r, maintenant)
 	st['backlog'] = vue_backlog(st, r)
 	if json.dumps(b) != avant:
 		ecrire_backlog(st, r)
@@ -1526,6 +2006,8 @@ def need_line(st, n):
 	if n.get('seen') or n.get('costByPanel'):  # un agent est suivi : sa dépense, ou « coût inconnu » (tiret de Cate, usage illisible)
 		c = cout_besoin(n)
 		meta.append(f"coût {cout_texte(c, None in n['costByPanel'].values())}" if c is not None else 'coût inconnu')
+	if n['status'] == 'open':  # jauge de contexte (spec 013, FR-001) : une par agent vivant, « contexte inconnu » sans mesure, jamais 0
+		meta += ['contexte inconnu' if v is None else f'contexte {jetons(v)} jetons' for v in (n.get('contexte') or {}).values()]
 	perm = n.get('perm') if n['agentBlocked'] else None  # états écrits avant ce champ : pas de demande lue
 	if n['agentBlocked']:
 		meta.append("agent bloqué sur une permission ou une question")
@@ -1608,7 +2090,13 @@ def page_draft(st, did):
 	with open(draft_path(did)) as f:
 		texte = f.read()
 	kind = d['cible'].split(':', 1)[0]
-	label = {'issue': 'Issue', 'pr': 'Pull request', 'comment': 'Commentaire', 'slack': 'Message Slack', 'mail': 'Mail'}[kind]
+	label = {'issue': 'Issue', 'pr': 'Pull request', 'comment': 'Commentaire', 'slack': 'Message Slack', 'mail': 'Mail',
+	         'outil': 'Écriture'}[kind]
+	montre = render_md(texte)  # le bouton Envoyer porte l'empreinte du texte du fichier, jamais celle de l'affichage
+	if kind == 'outil':  # spec 012 (FR-004) : l'outil par le nom du connecteur, les arguments lisibles
+		label = 'Écriture dans ' + nom_connecteur(d['cible'])
+		with contextlib.suppress(ValueError):
+			montre = f'<pre>{e(json.dumps(json.loads(texte), ensure_ascii=False, indent=1))}</pre>'
 	actions = ''
 	if d['statut'] == 'à valider':
 		actions = (btn(f'/draft/{did}/edit', 'Modifier') + btn(f'/draft/{did}/drop', 'Abandonner', 'no')
@@ -1618,11 +2106,22 @@ def page_draft(st, did):
 			actions = '<p class="meta"><b>Envoi incertain : vérifie le canal avant de renvoyer.</b></p>' + actions
 	link_html = f' · <a href="{e(d["url"])}">{e(d["url"])}</a>' if d['url'] else ''
 	body = (f'<div class="sub"><a href="/">Suivi</a> · {label} · {e(d["cible"])} · {e(d["statut"])}{link_html}</div>'
-	        f'<h1>{e(d["titre"] or "")}</h1><div class="box markdown-body">{render_md(texte)}</div>'
+	        f'<h1>{e(d["titre"] or "")}</h1><div class="box markdown-body">{montre}</div>'
 	        f'<div style="text-align:right">{actions}</div>'
 	        '<p class="meta">Modifier ouvre le texte dans un éditeur ; enregistrer puis recharger cette page. '
 	        'Seul le bouton Envoyer fait partir ce texte.</p>')
 	return layout(f'Brouillon {did}', body)
+
+
+def nom_connecteur(cible):
+	"""« Outil factice (ecrire) » pour outil:factice:ecrire ; l'id brut si le catalogue est illisible."""
+	import metiers
+	_, ident, outil = cible.split(':', 2)
+	with contextlib.suppress(metiers.Invalide):
+		c = metiers.connecteur(metiers.charger(), ident)
+		if c:
+			return f"{c['nom']} ({outil})"
+	return f'{ident} ({outil})'
 
 
 def page_ask(st, qid):
@@ -1953,6 +2452,11 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 				n.setdefault('costByPanel', {})[p] = c
 			elif p in (usage or {}):  # agent connu de Cate sans coût lisible (tiret, négatif, NaN) : inconnu, sans effacer un coût déjà lu
 				n.setdefault('costByPanel', {}).setdefault(p, None)
+		ctx = {p: contexte(mesures, p) for p in n['panels'] if p in by_panel}  # jauge (spec 013) : agents vivants du tour seulement
+		if ctx:
+			n['contexte'] = ctx
+		else:
+			n.pop('contexte', None)
 		c = cout_besoin(n)
 		if n.get('budgetUsd') and c is not None and c > n['budgetUsd'] and not n.get('overBudgetUsd'):
 			n['overBudget'] = n['overBudgetUsd'] = True
@@ -1980,14 +2484,15 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 				n, neuf = add_need(st, 'human', f'Fermer le panneau « {titre} » (sans agent) ?', ref=f'orphan:{p}', owner=OWNER_HUMAIN)
 				if neuf:
 					n['orphan'] = {'panel': p, 'title': titre}
-	for n in st['needs']:  # une notification par ligne qui attend, un rappel, puis rien ; le réglage se relit à chaque tour
+	reglages = valeurs(st)  # notifications.* (spec 008), relues à chaque tour
+	for n in st['needs']:  # une notification par ligne qui attend, un rappel, puis rien
 		if not attend(n):
 			n.pop('notifTs', None)  # la ligne repart de zéro si elle attend de nouveau
 			n.pop('notifRappel', None)
-		elif st['notify']:
+		elif reglages['notifications.systeme'] == 'oui':
 			if 'notifTs' not in n:
 				n['notifTs'], prefixe = now, ''
-			elif not n.get('notifRappel') and now - n['notifTs'] >= RAPPEL:
+			elif reglages['notifications.rappel'] and not n.get('notifRappel') and now - n['notifTs'] >= reglages['notifications.rappel']:
 				n['notifRappel'], prefixe = True, 'Rappel : '
 			else:
 				continue
@@ -2092,17 +2597,27 @@ def worktree_offers(snap, nid, live, base=None):
 	need = next((n for n in snap['needs'] if n['id'] == nid), None)
 	if not need or any(p in live for p in need['panels']):
 		return []
-	code, out, _ = RUN(['git', '-C', base or root(), 'worktree', 'list', '--porcelain'])
+	found = worktrees_du_besoin(nid, base)
+	repo = gh_repo(snap) if found else None
+	return [(nid, p, b) for p, b in found if worktree_ok(repo, p, b)]
+
+
+def worktrees_du_besoin(nid, base=None):
+	"""[(chemin, branche)] des worktrees du besoin : dans <racine>/.cate/worktrees/, nommés « <besoin>-<rôle> » (voir le
+	skill) ; un worktree d'un autre dossier ou d'un autre besoin (n12-… pour n1) n'en est jamais."""
+	base = base or root()
+	code, out, _ = RUN(['git', '-C', base, 'worktree', 'list', '--porcelain'])
 	if code != 0:
 		return []
+	dossier = os.path.realpath(os.path.join(base, '.cate', 'worktrees'))
 	found = []
 	for block in out.strip().split('\n\n')[1:]:  # le premier est le dépôt principal
 		f = dict(line.split(' ', 1) for line in block.splitlines() if ' ' in line)
 		path, branch = f.get('worktree'), (f.get('branch') or '').removeprefix('refs/heads/')
-		if path and branch and os.path.basename(path).startswith(f'{nid}-'):
+		if (path and branch and re.fullmatch(rf'{re.escape(nid)}-[\w.-]+', os.path.basename(path))
+				and os.path.realpath(os.path.dirname(path)) == dossier):
 			found.append((path, branch))
-	repo = gh_repo(snap) if found else None
-	return [(nid, p, b) for p, b in found if worktree_ok(repo, p, b)]
+	return found
 
 
 def pr_mergee(repo, branch, tip):
@@ -2310,10 +2825,60 @@ def prerequis(hors_cate=False):
 	n, source = nom_source()
 	point('nom', source != 'défaut', False, f'{n} ({source})', 'git config --global agence.nom <Prénom>', info=True)
 	point('Slack, Gmail', False, False, 'non lisible depuis la CLI', 'brancher les connecteurs dans Claude Code', info=True)
+	if not pol['erreur'] and v['connecteurs.lecture'] + v['connecteurs.ecriture']:  # spec 012 : absent sous dev
+		manques = manques_connecteurs(faits_connecteurs())
+		point('connecteurs', not manques, False, ' | '.join(manques) or 'tous branchés', 'agence connecteur check', info=True)
 	for p in points if hors_cate else ():
 		if p['point'] in DANS_CATE:
 			p.update(etat='info', detail='à vérifier dans un terminal Cate', commande='agence doctor --prerequis')
 	return points
+
+
+def faits_connecteurs():
+	"""Connecteurs du métier actif (spec 012, FR-009) : accès lu en code (`claude mcp list`, l'environnement, le catalogue),
+	présence du secret (jamais sa valeur), droits. `claude mcp list` n'est lancé que pour un connecteur mcp."""
+	import metiers
+	v = politique()['valeurs']
+	cat = metiers.charger()
+	cs = [metiers.connecteur(cat, i) for i in metiers.metier(cat, v['metier'])['connecteurs']]
+	etats = {}
+	if any(c['acces'] == 'mcp' for c in cs):
+		code, out, err = RUN(['claude', 'mcp', 'list'], timeout=60)
+		etats = metiers.etats_mcp(out) if code == 0 else {}
+	faits = []
+	for c in cs:
+		s = c.get('secret')
+		secret = {'variable': s['variable'], 'present': bool(metiers.lire_secret(s['variable'], s.get('fichier')))} if s else None
+		faits.append({'id': c['id'], 'nom': c['nom'], 'acces': metiers.acces(c, etats), 'secret': secret,
+		              'lecture': c['id'] in v['connecteurs.lecture'], 'ecriture': c['id'] in v['connecteurs.ecriture']})
+	return faits
+
+
+def ligne_connecteur(f):
+	secret = f['secret'] and (f"secret présent : {f['secret']['variable']}" if f['secret']['present'] else f"secret absent : {f['secret']['variable']}")
+	droits = f"lecture {'ouverte' if f['lecture'] else 'fermée'}, " + ('écriture par carte' if f['ecriture'] else 'écriture fermée')
+	return f"{f['id']} ({f['nom']}) : " + ' ; '.join(x for x in (f['acces'], secret, droits) if x)
+
+
+def manques_connecteurs(faits):
+	return [ligne_connecteur(f) for f in faits if f['acces'] in ('mcp absent',) or f['acces'].startswith('mcp non connecté')
+	        or (f['secret'] and not f['secret']['present'])]
+
+
+def cmd_connecteur(a):
+	"""agence connecteur check [--json] : une ligne par connecteur du métier actif (lecture seule)."""
+	import metiers
+	try:
+		faits = faits_connecteurs()
+	except metiers.Invalide as err:
+		raise Env(f'catalogue des connecteurs refusé : {err}')
+	if a.json:
+		print(json.dumps(faits, ensure_ascii=False, indent=1))
+		return 0
+	m = metiers.metier(metiers.charger(), politique()['valeurs']['metier'])
+	lignes = list(map(ligne_connecteur, faits)) + [f"panneau {p['type']} : {p['cible']}" for p in m['panneaux']]  # FR-010
+	print('\n'.join(lignes) or f"aucun connecteur pour le métier {m['id']}")
+	return 0
 
 
 def cmd_doctor(a):
@@ -2356,6 +2921,12 @@ def couts(mesures):
 	return None if mesures is None else {p: r.get('costUsd') for p, r in mesures.items()}
 
 
+def contexte(mesures, p):
+	"""contextTokens du panneau dans les lignes de cate agent usage ; None s'il manque ou n'est pas un nombre positif."""
+	v = ((mesures or {}).get(p) or {}).get('contextTokens')
+	return v if _nombre(v) and v >= 0 else None
+
+
 def lire_usage():
 	return couts(lire_mesures())
 
@@ -2373,14 +2944,14 @@ def un_tour():
 	mesures = lire_mesures()  # idem : une lecture par tour, None si Cate la refuse
 	usage = couts(mesures)
 	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
-	pol = politique()  # invalide : neutre et erreur publiée, le tour continue
+	pol = politique(st=snap)  # invalide : neutre et erreur publiée, le tour continue
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
 		st['garde'] = garde
-		st['pratiques'] = pol
+		st['pratiques'] = publier(pol)
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage, mesures)
 		apply(st, effects)
 		fiches_tour(st)
@@ -2388,7 +2959,8 @@ def un_tour():
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
 	try:  # le suivi des besoins reste prioritaire : un journal qui échoue ne tue pas le tour
-		declencheurs_tour(root(), {'orchestrateur': orch, 'agents': agents, 'usage': mesures}, time.time())
+		declencheurs_tour(root(), {'orchestrateur': orch, 'agents': agents, 'usage': mesures,
+		                           'actifs': pol['valeurs']['declencheurs.actifs']}, time.time())
 	except (Refus, OSError) as err:
 		log(f'déclencheurs : {err}')
 
@@ -2426,7 +2998,7 @@ def cmd_watch(a):
 # Lot 2 : rien ne part. Une condition vraie donne `blanc`, journalisé avec la mesure avant (FR-020).
 
 TABLE_DECLENCHEURS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'declencheurs.json')
-CHAMPS_TABLE = ('id', 'commande', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
+CHAMPS_TABLE = ('id', 'commande', 'nom', 'agentId', 'condition', 'donnee', 'seuil', 'classe', 'repos', 'plafond', 'indicateur', 'hypothese')
 SETUP_JAMAIS_EN_A = ('learn', 'audit-config', 'update-config', 'fewer-permission-prompts', 'autocompact', 'skill-creator', 'claude-md-improver')  # FR-006
 MESURES = ('contextTokens', 'inputTokens', 'outputTokens', 'costUsd')
 CLES_LIGNE = ('ts', 'commande', 'classe', 'decision', 'panneau', 'raison', 'avant', 'apres', 'verdict')
@@ -2477,11 +3049,10 @@ def charger_table(path=None):
 		if not isinstance(r, dict) or any(k not in r for k in CHAMPS_TABLE):
 			manque = [k for k in CHAMPS_TABLE if not isinstance(r, dict) or k not in r]
 			raise Refus(f'table des déclencheurs : {ident} sans {", ".join(manque) or "champs"}')
-		textes = all(isinstance(r[k], str) and r[k].strip() for k in ('id', 'commande', 'agentId', 'condition', 'donnee', 'indicateur'))
+		textes = all(isinstance(r[k], str) and r[k].strip() for k in ('id', 'commande', 'nom', 'agentId', 'condition', 'donnee', 'indicateur'))
 		seuil_ok = r['seuil'] is None or _nombre(r['seuil'])
 		entiers = type(r['repos']) is int and r['repos'] >= 0 and type(r['plafond']) is int and r['plafond'] >= 1
-		if not (textes and seuil_ok and entiers and r['classe'] in ('A', 'B') and type(r['hypothese']) is bool
-		        and type(r.get('actif', True)) is bool):
+		if not (textes and seuil_ok and entiers and r['classe'] in ('A', 'B') and type(r['hypothese']) is bool):
 			raise Refus(f'table des déclencheurs : {ident} a un champ invalide')
 		if r['id'] in vus:
 			raise Refus(f'table des déclencheurs : {ident} en double')
@@ -2526,15 +3097,17 @@ def _cond_contexte_repos(t, inst, journal, maintenant):
 	return rendre('blanc', raison)  # ponytail: toujours à blanc en lot 2 ; `envoyer` quand la commande est activée pour le projet (lot 3)
 
 
-CONDITIONS = {'contexte-repos': _cond_contexte_repos}  # T2, T3 : lot 4 ; T4 à T10 inactives
+CONDITIONS = {'contexte-repos': _cond_contexte_repos}  # T2, T3 : spec 004 lot 4 ; T4 à T10 sans condition
 
 
 def evaluer(instantane, table, journal, maintenant):
-	"""Fonction pure : une décision par ligne active dont la condition existe. Ni entrée-sortie, ni modèle, ni cate."""
+	"""Fonction pure : une décision par ligne citée dans instantane['actifs'] (`declencheurs.actifs` de la politique)
+	dont la condition existe. Ni entrée-sortie, ni modèle, ni cate."""
+	actifs = instantane.get('actifs') or ()
 	decisions = []
 	for t in table:
 		condition = CONDITIONS.get(t['condition'])
-		if condition and t.get('actif', True):
+		if condition and t['id'] in actifs:
 			d = condition(t, instantane, journal, maintenant)
 			if d:
 				decisions.append(d)
@@ -2715,8 +3288,10 @@ def bilan(base, jours, maintenant):
 	for l in lignes:
 		par.setdefault(l['commande'], []).append(l)
 	commandes, propositions = [], []
+	import pratiques  # voir politique()
+	actifs = pratiques.charger(base, os.environ.get('HOME'))['valeurs']['declencheurs.actifs']
 	try:
-		table = charger_table()
+		table = [t for t in charger_table() if t['id'] in actifs]  # une ligne désactivée ne propose aucun seuil
 	except Refus:
 		table = []
 	for commande, ls in sorted(par.items()):
@@ -2733,7 +3308,7 @@ def bilan(base, jours, maintenant):
 			'ignorees': verdict('ignoree'), 'refusees': verdict('refusee'),
 			'taux': round(verdict('reussi') / len(jouees), 3) if jouees else None,
 			'gain_median': _mediane(gains), 'contexte_median_blanc': _mediane(blancs)})
-		t = next((t for t in table if t['commande'] == commande and t['condition'] == 'contexte-repos' and t.get('actif', True)), None)
+		t = next((t for t in table if t['commande'] == commande and t['condition'] == 'contexte-repos'), None)
 		derniers = jouees[-5:]
 		echecs = len([l for l in derniers if l['verdict'] == 'echec'])
 		if t and echecs >= 3:  # le seuil est une hypothèse : la proposition se calcule, l'humain change la ligne de données ou dit non
@@ -2802,15 +3377,48 @@ def lance(cmd):
 	return LANCE_RE.search(GLOBAUX_RE.sub(' ', re.sub(r'\\\r?\n', ' ', cmd)))
 
 
-def send_match(st, tool, ti):
-	"""Brouillon cliqué, pas encore utilisé, besoin ouvert, dont la cible et le texte sont exactement ceux de l'envoi."""
+PLAFOND_AVERTI = {'systemMessage': "Garde de plafond d'agents : état de l'agence illisible, lancement non vérifié."}
+
+
+def demarre(cmd):
+	m = lance(cmd)
+	return bool(m) and m.group(2) == 'start'
+
+
+def garde_plafond(st):
+	"""`cate agent start` (spec 013, FR-002) : deny quand le dernier compte publié par le régisseur atteint agents.max ;
+	compte ou plafond illisible : aucune décision, un avertissement. Ne compte pas elle-même : une seule source.
+	Aucun tour encore (rien publié) : aucune décision, le compte est nul. Lit la valeur publiée, jamais pratiques.py :
+	les gardes n'en dépendent pas."""
+	if st.get('pratiques') is None:
+		return None
+	try:
+		v, w, maxi = st['agentsActive'], st['agentsWaiting'], st['pratiques']['valeurs']['agents.max']
+	except (KeyError, TypeError):
+		return PLAFOND_AVERTI
+	if not all(type(x) is int for x in (v, w, maxi)):
+		return PLAFOND_AVERTI
+	if v + w < maxi:
+		return None
+	return decision('deny', f'Plafond atteint : {v + w} agents vivants sur {maxi} (dernier compte publié par le régisseur). '
+	                        f"Ferme un agent fini ou mets la tâche en file ; seul {nom()} relève le plafond (réglage « Agents en même temps » du panneau agence).")
+
+
+def send_match(st, tool, ti, cible=None):
+	"""Brouillon cliqué, pas encore utilisé, besoin ouvert, dont la cible et le texte sont exactement ceux de l'envoi.
+	cible : carte d'écriture outil:<connecteur>:<outil> (spec 012), arguments comparés sous forme canonique."""
 	for d in st['drafts']:
 		if d['statut'] != 'envoyer' or d.get('allowed') or d['texte'] is None:
 			continue
 		with contextlib.suppress(Refus):
 			if find(st, 'needs', d['needId'])['status'] != 'open':
 				continue
-		if d['cible'].startswith('mail:'):
+		if cible:
+			import metiers  # seulement pour une carte : l'envoi Slack ou mail n'en dépend pas
+			with contextlib.suppress(ValueError):
+				if d['cible'] == cible and metiers.canonique(json.loads(d['texte'])) == metiers.canonique(ti):
+					return d
+		elif d['cible'].startswith('mail:'):
 			if (ti.get('to') == [d['cible'][5:]] and not ti.get('cc') and not ti.get('bcc') and not ti.get('htmlBody')
 					and not ti.get('draftId') and not ti.get('attachments')
 					and d['texte'] == (ti.get('body') or '').strip() and (not d['titre'] or d['titre'] == ti.get('subject'))):
@@ -2818,8 +3426,7 @@ def send_match(st, tool, ti):
 	return None
 
 
-def est_envoi(tool):
-	return tool.endswith('slack_send_message') or tool.endswith('Gmail__send_message')
+AUCUNE = {'hookSpecificOutput': {'hookEventName': 'PreToolUse'}}  # mode send, aucune décision : le flux normal de Claude Code
 
 
 def envoi_ask(tool):
@@ -2827,24 +3434,27 @@ def envoi_ask(tool):
 	                       "(seul un brouillon agence cliqué, cible et texte identiques, passe sans question).")
 
 
-def guard(payload, mode):
-	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
-	de canal) ; 'pages' : pages du régisseur, fichiers écrits par la CLI, et refus à l'interlocuteur de ce qui lance
-	(lance() : la sonde de l'appelant ne tourne que sur ces commandes, bornée à SONDE secondes ; en échec, elle laisse passer)."""
-	tool = payload.get('tool_name') or ''
-	ti = payload.get('tool_input') or {}
-	refus = envoi_ask(tool) if mode == 'send' else None
-	if (mode == 'send') != est_envoi(tool):
-		return refus
+def _base(payload):
+	"""Racine du projet orchestré de l'appel (dépôt principal pour un worktree) ; None hors projet orchestré."""
 	base = os.environ.get('CLAUDE_PROJECT_DIR') or payload.get('cwd') or os.getcwd()
 	if not os.path.isfile(state_file(base)):
 		base = main_repo(base) or base
-	if not os.path.isfile(state_file(base)):
-		return refus
-	st = load(state_file(base))
-	if est_envoi(tool):
-		d = send_match(st, tool, ti)
-		if not d:
+	return base if os.path.isfile(state_file(base)) else None
+
+
+def garde_envoi(payload, tool, ti):
+	"""Mode send. Envoi Slack ou mail (ENVOI_MATCHER) : allow sur brouillon cliqué identique, sinon ask. Outil d'un
+	serveur déclaré par un connecteur (spec 012, FR-003) : lecture ouverte, aucune décision (None) ; lecture fermée,
+	deny ; écriture, deny sauf carte cliquée, non utilisée, besoin ouvert, outil et arguments identiques (un appel).
+	Hors projet orchestré : lecture libre, écriture refusée (aucune carte possible). Autre outil : None."""
+	if re.fullmatch(ENVOI_MATCHER, tool):
+		refus = envoi_ask(tool)
+		base = _base(payload)
+		if not base or not tool.endswith(('slack_send_message', 'Gmail__send_message')):
+			return refus
+		try:
+			load(state_file(base))
+		except ValueError:  # état illisible : l'envoi demande
 			return refus
 		with tx(base) as cur:  # une autorisation par clic : la suivante redemande
 			d = send_match(cur, tool, ti)
@@ -2852,6 +3462,59 @@ def guard(payload, mode):
 				return refus
 			d['allowed'] = True
 		return decision('allow', f"Brouillon {d['id']} validé par le clic de {nom()} (cible et texte identiques).")
+	try:
+		import metiers
+		import pratiques
+		cl = metiers.classer(tool, metiers.charger())
+	except Exception as err:  # noqa: BLE001 : catalogue ou module introuvable, échec fermé
+		return decision('deny', f'catalogue des connecteurs illisible ({type(err).__name__}) : {tool} refusé')
+	if cl is None:
+		return None
+	c, outil, sens = cl
+	cible = f"outil:{c['id']}:{outil}"
+	base = _base(payload)
+	if base is None:
+		return None if sens == 'lecture' else decision('deny', f"Écriture par « {c['nom']} » hors d'un projet orchestré par l'agence : aucune carte possible.")
+	try:
+		st = load(state_file(base))
+	except ValueError:
+		return decision('deny', 'état de l’agence illisible : outil de connecteur refusé')
+	pol = pratiques.charger(base, os.environ.get('HOME'), st.get('ponctuel'))
+	if pol['erreur']:
+		return decision('deny', f"politique refusée, outil de « {c['nom']} » refusé : {pol['erreur']}")
+	v = pol['valeurs']
+	if sens == 'lecture':
+		return None if c['id'] in v['connecteurs.lecture'] else decision(
+			'deny', f"Lecture fermée pour « {c['nom']} » : seul {nom()} l'ouvre (réglage « {pol_schema_nom('connecteurs.lecture')} »).")
+	if outil not in c['ecriture']:
+		return decision('deny', f"« {outil} » n'est pas une écriture déclarée de « {c['nom']} » : refusé, aucune carte possible.")
+	if c['id'] not in v['connecteurs.ecriture']:
+		return decision('deny', f"Écriture fermée pour « {c['nom']} » : seul {nom()} l'ouvre (réglage « {pol_schema_nom('connecteurs.ecriture')} »).")
+	with tx(base) as cur:  # une carte, un appel : marquée utilisée dans la même transaction
+		d = send_match(cur, tool, ti, cible)
+		if d:
+			d['allowed'] = True
+	if not d:
+		return decision('deny', f"Écriture par « {c['nom']} » sans carte validée : prépare la carte « agence draft new --cible {cible} "
+		                        f"'<arguments JSON>' », {nom()} la valide d'un clic, puis refais exactement cet appel.")
+	return decision('allow', f"Carte {d['id']} validée par le clic de {nom()} (outil et arguments identiques).")
+
+
+def guard(payload, mode):
+	"""Décision PreToolUse ou None. mode 'send' : garde_envoi ; 'pages' : pages du régisseur, fichiers écrits par la CLI,
+	et refus à l'interlocuteur de ce qui lance (lance() : la sonde de l'appelant ne tourne que sur ces commandes, bornée
+	à SONDE secondes ; en échec, elle laisse passer)."""
+	tool = payload.get('tool_name') or ''
+	ti = payload.get('tool_input') or {}
+	if mode == 'send':
+		return garde_envoi(payload, tool, ti)
+	base = _base(payload)
+	if base is None:
+		return None
+	try:
+		st = load(state_file(base))
+	except ValueError:  # état illisible : un lancement est averti, le reste passe
+		return PLAFOND_AVERTI if tool == 'Bash' and demarre(ti.get('command') or '') else None
 	port = st.get('port')
 	local = re.compile(rf'(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]):{port}\b') if port else None
 	if tool == 'Bash':
@@ -2875,7 +3538,7 @@ def guard(payload, mode):
 		inter = st['panels'].get('interlocuteur')
 		if inter and lance(cmd) and caller_panel(SONDE) == inter:
 			return decision('deny', INTER_DENY)
-		return None
+		return garde_plafond(st) if demarre(cmd) else None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
 	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith('.cate/tmp/agence/state.json'):
@@ -2894,14 +3557,25 @@ def cmd_pratiques(a):
 	racine, home = root(), os.environ.get('HOME')
 	try:
 		if a.action == 'set':
-			print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev)}')
+			with tx() as st:  # la valeur choisie s'applique : sa valeur ponctuelle est retirée (spec 008 FR-010)
+				v = pratiques.lire_valeur(a.valeur)
+				print(f'écrit : {pratiques.regler(racine, home, a.cle, v, a.dev, st["ponctuel"])}')
+				if quitter_ponctuel(st, pratiques.posees_par_preset(v) if a.cle == 'preset' else [a.cle]):
+					st['pratiques'] = publier(politique(st=st))
 		elif a.action == 'unset':
-			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev)}')
+			with tx() as st:  # comme la route : une clé ponctuelle revient au réglage du workspace
+				ecrit = retirer_reglage(pratiques, st, racine, home, a.cle, a.dev)
+				print(f'écrit : {ecrit}' if ecrit else f'option ponctuelle retirée : {a.cle}')
+				if not ecrit:
+					st['pratiques'] = publier(politique(st=st))
 		elif a.action == 'preset':
-			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev)}')
-		pol = pratiques.verifier(racine, home)
+			with tx() as st:
+				print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer, st["ponctuel"])}')
+				if quitter_ponctuel(st, pratiques.posees_par_preset(a.nom)):
+					st['pratiques'] = publier(politique(st=st))
+		pol = pratiques.verifier(racine, home, load()['ponctuel'])  # show dit la source ponctuel (spec 008)
 	except pratiques.Invalide as err:
-		raise Env(f'pratiques : {err}')
+		raise Env(f'pratiques : {err} ({err.phrase})')
 	if a.action == 'show' and a.json:
 		print(json.dumps(pol, ensure_ascii=False, indent=1))
 	elif a.action == 'show':
@@ -2920,7 +3594,7 @@ def cmd_guard(a):
 	if a.mode == 'send':  # échec fermé : toute erreur rend ask (agence-hook rend aussi ask si ce processus échoue)
 		try:
 			payload = json.loads(sys.stdin.read())
-			res = guard(payload, 'send') if isinstance(payload, dict) else envoi_ask('?')
+			res = (guard(payload, 'send') or AUCUNE) if isinstance(payload, dict) else envoi_ask('?')
 		except Exception as err:  # noqa: BLE001 : aucune exception ne doit laisser passer un envoi
 			res = decision('ask', f'garde agence en échec ({type(err).__name__}) : envoi à confirmer')
 		print(json.dumps(res, ensure_ascii=False))
@@ -2942,13 +3616,26 @@ def cmd_guard(a):
 HOOK_MARQUE = 'agence-hook'  # une entrée agence se reconnaît à sa commande, rien d'autre n'est lu ni modifié
 _HOOK_SH = 'sh -c \'f="$HOME/.cate/runtime/$(cat "$HOME/.cate/runtime/current" 2>/dev/null)/agence/agence-hook"; [ -x "$f" ] && exec "$f" %s\''
 ASK_INTROUVABLE = "garde agence introuvable : envoi à confirmer"
-HOOK_ENTREES = [
-	{'matcher': 'mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$',
+ENVOI_MATCHER = 'mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$'
+HOOK_ENTREES = [  # contrat figé ; hook_entrees() y ajoute les serveurs des connecteurs déclarés (spec 012)
+	{'matcher': ENVOI_MATCHER,
 	 'hooks': [{'type': 'command', 'command': _HOOK_SH % ('send; printf %s "{\\"hookSpecificOutput\\":{\\"hookEventName\\":\\"PreToolUse\\",'
 	                                                       '\\"permissionDecision\\":\\"ask\\",\\"permissionDecisionReason\\":\\"' + ASK_INTROUVABLE + '\\"}}"')}]},
 	{'matcher': 'Bash|WebFetch|Write|Edit|MultiEdit',
 	 'hooks': [{'type': 'command', 'command': _HOOK_SH % 'pages; exit 0'}]},
 ]
+
+
+def hook_entrees():
+	"""Entrées attendues : le contrat, plus une entrée send (échec fermé, comme l'envoi) dont le matcher couvre les serveurs
+	MCP des connecteurs déclarés (FR-005) ; aucune de plus sans connecteur mcp ou si le catalogue est illisible."""
+	import metiers
+	try:
+		srv = metiers.serveurs(metiers.charger())
+	except metiers.Invalide:
+		srv = []
+	extra = [{'matcher': f"mcp__({'|'.join(srv)})__.*", 'hooks': json.loads(json.dumps(HOOK_ENTREES[0]['hooks']))}] if srv else []
+	return json.loads(json.dumps(HOOK_ENTREES)) + extra
 
 
 def settings_defaut():
@@ -2985,12 +3672,14 @@ def _est_agence(h):
 
 
 def garde_statut(data):
-	"""actif : les deux entrées du contrat telles quelles et aucune autre commande agence-hook ; inactif : aucune ; partiel sinon."""
+	"""actif : les entrées attendues (hook_entrees) telles quelles et aucune autre commande agence-hook ; inactif : aucune ;
+	partiel sinon (dont un serveur déclaré après l'installation)."""
 	pre = ((data or {}).get('hooks') or {}).get('PreToolUse') or []
 	agence_ = [h for e in pre for h in e.get('hooks', []) if _est_agence(h)]
 	if not agence_:
 		return 'inactif'
-	return 'actif' if all(e in pre for e in HOOK_ENTREES) and len(agence_) == len(HOOK_ENTREES) else 'partiel'
+	attendues = hook_entrees()
+	return 'actif' if all(e in pre for e in attendues) and len(agence_) == len(attendues) else 'partiel'
 
 
 def sans_gardes(data):
@@ -3088,7 +3777,7 @@ def cmd_hooks(a):
 	if a.action == 'install':
 		apres = avant if garde_statut(avant) == 'actif' else sans_gardes(avant or {})
 		if apres is not avant:
-			apres.setdefault('hooks', {}).setdefault('PreToolUse', []).extend(json.loads(json.dumps(HOOK_ENTREES)))
+			apres.setdefault('hooks', {}).setdefault('PreToolUse', []).extend(hook_entrees())
 	else:
 		apres = None if avant is None else sans_gardes(avant)
 	ecrit = apres != avant
@@ -3192,9 +3881,9 @@ def parser():
 	sub = p.add_subparsers(dest='cmd', required=True)
 	s = sub.add_parser('start')
 	s.add_argument('--notify', action=argparse.BooleanOptionalAction, default=None,
-	               help="notification système quand une ligne attend l'humain (activée par défaut ; --no-notify la coupe pour ce projet, relue à chaque tour)")
+	               help="ponctuel, jusqu'au prochain start : notification système quand une ligne attend l'humain (réglage durable : notifications.systeme)")
 	s.add_argument('--max-agents', type=entier_positif, metavar='N',
-	               help="plafond d'agents vivants pour ce projet : écrit agents.max dans sa politique (agence pratiques show ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
+	               help="ponctuel, jusqu'au prochain start : plafond d'agents vivants (réglage durable : agents.max, voir pratiques show ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
 	s.set_defaults(fn=cmd_start)
 	b = sub.add_parser('boot')
 	b.add_argument('--from', dest='frm')
@@ -3231,6 +3920,8 @@ def parser():
 		x.add_argument('id')
 		x.add_argument('--evidence')
 		x.add_argument('--close', action='store_true', help="fermer aussi ses panneaux (agent en attente de saisie : --discard ; en plein tour ou éditeur non enregistré : reste) et proposer de supprimer ses worktrees mergés")
+	ns.add_parser('jeter', help="carte « Jeter » : au clic, PR fermée sans merge, worktrees propres du besoin retirés (un worktree non commité est gardé), fiche remise "
+	              'en discussion ; la branche reste').add_argument('id')
 	lg = ns.add_parser('log')
 	lg.add_argument('id')
 	lg.add_argument('text', metavar='décision')
@@ -3252,6 +3943,8 @@ def parser():
 		x.add_argument('--priorite', help='P1, P2 ou P3')
 		x.add_argument('--fichier', action='append', help='chemin ou dossier probable, relatif (répétable ; edit : remplace la liste)')
 		x.add_argument('--dependance', action='append', help='id de fiche (répétable)')
+		x.add_argument('--remplace', action='append', help='id de fiche que celle-ci rend caduque (répétable) : elle ne passe plus prête')
+		x.add_argument('--doublon-de', action='append', help="id de fiche d'origine (répétable) : celle-ci ne passe plus prête")
 		x.add_argument('--budget-jetons', type=int)
 		x.add_argument('--vision', help='point de la vision servi (couche ou FR de la spec 009)')
 		x.add_argument('--modele')
@@ -3276,13 +3969,23 @@ def parser():
 	da.add_argument('objet')
 	da.add_argument('--pourquoi', required=True)
 	da.add_argument('--alternative', action='append', help='alternative écartée (répétable)')
-	da.add_argument('--invalide', action='append', help="ce qu'elle invalide (répétable)")
+	da.add_argument('--invalide', action='append', help="ce qu'elle invalide (répétable) ; D<n> actif : révoqué au clic Valider")
 	da.add_argument('--structurante', action='store_true')
 	des.add_parser('list').add_argument('--active', action='store_true')
 	des.add_parser('show').add_argument('id')
+	des.add_parser('export', help='écrit docs/decisions.md du dépôt git courant (ou --out) : décisions actives triées '
+	               'par date, à commiter par une PR de docs').add_argument('--out', help='fichier à écrire à la place')
 	for x in des.choices.values():
 		x.add_argument('--json', action='store_true')
 	de.set_defaults(fn=cmd_decision)
+	le = sub.add_parser('lentille', help="lentille (spec 010, lot 8) : brief d'angle sur une fiche seule, ou --carte ; un agent seulement au clic")
+	le.add_argument('id')
+	lg_ = le.add_mutually_exclusive_group(required=True)
+	lg_.add_argument('--nom', help='nom dans lentilles.json (celui du projet, à côté de sa politique, remplace la liste livrée)')
+	lg_.add_argument('--hasard', action='store_true', help='tirée dans lentilles.json')
+	lg_.add_argument('--carte', action='store_true', help="pose une carte « Éclairer » : l'humain clique, l'orchestrateur lance")
+	le.add_argument('--json', action='store_true')
+	le.set_defaults(fn=cmd_lentille)
 
 	d = sub.add_parser('draft')
 	ds = d.add_subparsers(dest='action', required=True)
@@ -3321,6 +4024,10 @@ def parser():
 	d.add_argument('--json', action='store_true', help='avec --prerequis : sortie JSON')
 	d.add_argument('--hors-cate', action='store_true', help="avec --prerequis : hors d'un terminal Cate (amorçage), les points de Cate sortent en info")
 	d.set_defaults(fn=cmd_doctor)
+	cn = sub.add_parser('connecteur', help="connecteurs du métier actif (spec 012) : accès, secret (présence, jamais la valeur), droits")
+	cn.add_argument('action', choices=('check',))
+	cn.add_argument('--json', action='store_true')
+	cn.set_defaults(fn=cmd_connecteur)
 	g = sub.add_parser('guard', help='hook PreToolUse (JSON sur stdin)')
 	g.add_argument('--mode', choices=('send', 'pages'), required=True,
 	               help='send : envois Slack et Gmail, ask sauf brouillon cliqué identique ; pages : pages du régisseur et state.json')
@@ -3357,6 +4064,8 @@ def parser():
 		for arg in args:
 			x.add_argument(arg, help='JSON (4, null, ["ci-verte"]) ou texte' if arg == 'valeur' else None)
 		x.add_argument('--dev', action='store_true')
+		if action == 'preset':
+			x.add_argument('--remplacer', action='store_true', help='le fichier ne garde que le preset')
 	pr.set_defaults(fn=cmd_pratiques)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))

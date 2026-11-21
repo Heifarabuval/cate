@@ -61,3 +61,4 @@ export function createBrowserDataStore(browserData: CapabilityProxy<typeof brows
     },
   }
 }
+export { showElementToAgents, type ShowElementDeps } from './showElement'

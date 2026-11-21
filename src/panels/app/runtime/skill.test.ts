@@ -5,7 +5,8 @@ import { parseManifest } from '../contract'
 import { contentSecurityPolicy } from './server'
 
 const skill = path.resolve(__dirname, '../../../../skills/panneau-perso')
-const read = (...parts: string[]) => fs.readFileSync(path.join(skill, ...parts), 'utf-8')
+// Windows checks the skill out with CRLF: every test here reads it with LF line ends.
+const read = (...parts: string[]) => fs.readFileSync(path.join(skill, ...parts), 'utf-8').replace(/\r\n/g, '\n')
 const LONG_DASH = String.fromCharCode(0x2014)
 
 interface Eval {
@@ -55,5 +56,15 @@ describe('skill panneau-perso, jalon 1', () => {
     expect(text).toContain('~/.cate/panneaux/')
     expect(text).not.toMatch(/panneau navigateur|file:\/\/\//)
     expect(text).not.toContain(LONG_DASH)
+  })
+
+  it('shares with cate app export and import, never by copying into the panels folder (spec 007 T404)', () => {
+    const sharing = read('SKILL.md').split(/\n## Partage\n/)[1]?.split(/\n## /)[0] ?? ''
+    expect(sharing).toContain('cate app export')
+    expect(sharing).toContain('cate app import')
+    expect(sharing).toContain("seul l'utilisateur installe, par un clic dans Cate")
+    expect(sharing).toMatch(/jamais[^.]*secret/i)
+    expect(sharing).toMatch(/jamais[^.]*chemin absolu/i)
+    expect(sharing).not.toMatch(/copi\w+ (son|le) dossier|cate app install/)
   })
 })

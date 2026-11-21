@@ -1,0 +1,14 @@
+{
+ "panels": {"orchestrator": "p1", "regisseur": "p9"},
+ "needs": [
+  {"id": "n1", "journal": [
+   {"ts": "2026-01-01T11:11:00+00:00", "by": "clic", "text": "MARQUEUR Envoyer cliqué"},
+   {"ts": "2026-01-01T11:11:30+00:00", "by": "cli", "text": "MARQUEUR dit par un agent"}
+  ]},
+  {"id": "n2", "journal": [
+   {"ts": "2026-01-01T12:02:00+00:00", "by": "clic", "text": "MARQUEUR réponse"},
+   {"ts": "2026-01-01T12:30:00+00:00", "by": "clic", "text": "MARQUEUR après la fin du rejeu"}
+  ]},
+  {"id": "n3"}
+ ]
+}

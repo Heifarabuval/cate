@@ -28,7 +28,9 @@ BLOQUANTS = ('python3', 'terminal Cate', 'CLI livrée', 'agent start --model', '
 DANS_CATE = ('terminal Cate', 'CLI livrée', 'agent start --model', 'agent usage', 'type agence', 'réglages CLI', 'skill')
 
 
-class Prerequis(Base):
+class Monde(Base):
+	"""Tout est là : HOME, install, socket et réponses simulées ; les classes de tests retirent un point."""
+
 	def setUp(self):
 		super().setUp()
 		self.home = os.path.join(self.tmp, 'home')
@@ -65,7 +67,7 @@ class Prerequis(Base):
 			f.write('---\nname: orchestrateur\n---\n')
 		os.makedirs(os.path.join(self.home, '.claude'))
 		with open(os.path.join(self.home, '.claude', 'settings.json'), 'w') as f:
-			json.dump({'hooks': {'PreToolUse': agence.HOOK_ENTREES}}, f)
+			json.dump({'hooks': {'PreToolUse': agence.hook_entrees()}}, f)
 
 	def reglages(self, valeurs):
 		with open(os.path.join(self.ws, 'settings.json'), 'w') as f:
@@ -89,6 +91,8 @@ class Prerequis(Base):
 		self.assertTrue(p['commande'], p)
 		return p
 
+
+class Prerequis(Monde):
 	# ---- tout va bien ----
 
 	def test_tout_ok_code_0(self):
@@ -186,7 +190,7 @@ class Prerequis(Base):
 		os.remove(settings)
 		self.assertIn('agence hooks install', self.manque('gardes')['commande'])
 		with open(settings, 'w') as f:
-			json.dump({'hooks': {'PreToolUse': agence.HOOK_ENTREES[:1]}}, f)
+			json.dump({'hooks': {'PreToolUse': agence.hook_entrees()[:1]}}, f)
 		self.assertIn('partiel', self.manque('gardes')['detail'])
 
 	def test_skill_absent_non_bloquant(self):
@@ -326,6 +330,31 @@ class Prerequis(Base):
 		with redirect_stdout(out):
 			agence.main(['doctor'])
 		self.assertIn(out.getvalue().split('\n')[0].split(' ')[0], ('oui', 'non'))
+
+
+class PointConnecteurs(Monde):
+	"""Spec 012, lot 4, T043 : point `connecteurs`, info par manque, jamais bloquant ; absent sous dev."""
+
+	def setUp(self):
+		super().setUp()
+		vieux = os.environ.get('AGENCE_CATALOGUES')
+		self.addCleanup(lambda: os.environ.pop('AGENCE_CATALOGUES', None) if vieux is None else os.environ.__setitem__('AGENCE_CATALOGUES', vieux))
+		os.environ['AGENCE_CATALOGUES'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'metiers')
+		os.environ.pop('GTM_FACTICE', None)
+		self.run.reply(['claude', 'mcp', 'list'], 'factice: node f.js - ✔ Connected\n')
+
+	def connecteurs(self):
+		return [p for p in agence.prerequis() if p['point'] == 'connecteurs']
+
+	def test_absent_sous_dev(self):
+		self.assertEqual(self.connecteurs(), [])
+
+	def test_manques_en_info_non_bloquant(self):
+		pratiques.regler(self.tmp, self.home, 'metier', 'data-manager')
+		(p,) = self.connecteurs()
+		self.assertEqual((p['etat'], p['bloquant'], p['commande']), ('info', False, 'agence connecteur check'))
+		self.assertIn('secret absent : GTM_FACTICE', p['detail'])
+		self.assertNotIn('factice :', p['detail'])  # branché : pas un manque
 
 
 if __name__ == '__main__':

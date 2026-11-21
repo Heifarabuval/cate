@@ -1,0 +1,12 @@
+[
+ {"id": "factice", "nom": "Outil factice", "explique": "Connecteur de test : un serveur MCP qui lit et qui écrit.",
+  "acces": "mcp", "serveur": "factice", "lecture": ["lire"], "ecriture": ["ecrire"]},
+ {"id": "balises-factice", "nom": "Balises factices", "explique": "Connecteur de test par API, en lecture seule.",
+  "acces": "api", "lecture": [], "ecriture": [], "secret": {"variable": "GTM_FACTICE"}},
+ {"id": "site-factice", "nom": "Site factice", "explique": "Connecteur de test par le navigateur, en lecture seule.",
+  "acces": "navigateur", "lecture": [], "ecriture": [], "panneau": "https://exemple.test/"},
+ {"id": "messagerie-factice", "nom": "Messagerie factice", "explique": "Connecteur de test : lire un fil, envoyer un message.",
+  "acces": "mcp", "serveur": "messagerie-factice", "lecture": ["lire_fil"], "ecriture": ["envoyer"]},
+ {"id": "tableur-factice", "nom": "Tableur factice", "explique": "Connecteur de test : lire et écrire des cellules.",
+  "acces": "mcp", "serveur": "tableur-factice", "lecture": ["lire_valeurs"], "ecriture": ["ecrire_valeurs"]}
+]

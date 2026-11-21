@@ -38,11 +38,11 @@
   ]
  },
  {
-  "name": "À faire par Heifara",
+  "name": "À faire par L'humain",
   "count": 8,
   "needs": [
    {
-    "title": "Bloquant de Heifara",
+    "title": "Bloquant de L'humain",
     "meta": [],
     "actions": []
    },
@@ -264,7 +264,7 @@
      "#7",
      "débloque C011",
      "acceptation : test vert",
-     "panneau : Agence : cate"
+     "panneau : Agence : depot"
     ],
     "actions": []
    },
@@ -290,7 +290,7 @@
    {
     "title": "Autre dépôt",
     "meta": [
-     "débloque Heifarabuval/autre#13"
+     "débloque exemple/autre#13"
     ],
     "actions": []
    }

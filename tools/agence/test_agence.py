@@ -1512,7 +1512,8 @@ class Tour(Base):
 		self.assertEqual(self.cli('start', '--max-agents', '3')[0], 0)
 		self.assertEqual(agence.plafond(self.state()), 3)
 		self.cli('start')
-		self.assertEqual(agence.plafond(self.state()), 3)  # sans option, le réglage ne bouge pas
+		self.assertEqual(agence.plafond(self.state()), 4)  # spec 008 : ponctuel, le workspace reprend la main
+		self.cli('start', '--max-agents', '3')
 		for bad in ('0', '-1', 'x'):
 			with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
 				agence.main(['start', '--max-agents', bad])
@@ -1765,10 +1766,10 @@ class TourGarde(Base):
 		self.booted()
 		agence.un_tour()
 		self.assertEqual(self.state()['garde'], 'inactif')
-		self.settings(agence.HOOK_ENTREES)
+		self.settings(agence.hook_entrees())
 		agence.un_tour()
 		self.assertEqual(self.state()['garde'], 'actif')
-		self.settings(agence.HOOK_ENTREES[1:])
+		self.settings(agence.hook_entrees()[1:])
 		agence.un_tour()
 		self.assertEqual(self.state()['garde'], 'partiel')
 
@@ -2042,7 +2043,7 @@ class ModeleEffort(Base):
 	def test_need_show_rend_les_reglages_voulus(self):
 		self.booted()
 		self.cli('need', 'add', '--kind', 'task', '--model', 'sonnet', '--effort', 'low', 'T')
-		self.assertIn('--model sonnet --effort low', self.cli('need', 'show', 'n1')[1])
+		self.assertIn('--model sonnet (besoin) --effort low (besoin)', self.cli('need', 'show', 'n1')[1])
 
 	def test_suivi_montre_modele_et_effort_lus_dans_agent_list(self):
 		self.need()
@@ -3533,34 +3534,32 @@ class Notification(Base):
 
 	def test_reglage_coupe_et_se_lit_a_chaque_tour(self):
 		self.need(owner='heifara', panels=['b1'])
-		with agence.tx() as st:
-			st['notify'] = False
+		pratiques.regler(self.tmp, os.environ['HOME'], 'notifications.systeme', 'non')
 		self.assertFalse(self.tour())
-		with agence.tx() as st:
-			st['notify'] = True
+		pratiques.regler(self.tmp, os.environ['HOME'], 'notifications.systeme', 'oui')
 		self.assertEqual(len(self.tour(now=1010.0)), 1)  # coupée, rien n'a été marqué : la ligne notifie à la réactivation
 
 	def test_start_no_notify_et_notify(self):
-		self.assertTrue(self.state()['notify'])
+		"""Spec 008 : l'option est ponctuelle, le réglage durable est notifications.systeme."""
+		self.assertEqual(self.state()['ponctuel'], {})
 		self.assertEqual(self.cli('start', '--no-notify')[0], 0)
-		self.assertFalse(self.state()['notify'])
+		self.assertEqual(self.state()['ponctuel'], {'notifications.systeme': 'non'})
 		self.assertEqual(self.cli('start', '--notify')[0], 0)
-		self.assertTrue(self.state()['notify'])
-		self.cli('start')
-		self.assertTrue(self.state()['notify'])  # sans option, le réglage ne bouge pas
+		self.assertEqual(self.state()['ponctuel'], {'notifications.systeme': 'oui'})
 		self.cli('start', '--no-notify')
 		self.cli('start')
-		self.assertFalse(self.state()['notify'])
+		self.assertEqual(self.state()['ponctuel'], {})  # sans option, le workspace reprend la main
 
 	def test_etat_ancien_relu(self):
 		path = agence.state_file()
 		with open(path) as f:
 			old = json.load(f)
-		old.pop('notify')
+		old.pop('ponctuel')
+		old['notify'] = False  # clé d'un état ancien, plus lue (spec 008)
 		with open(path, 'w') as f:
 			json.dump(old, f)
 		self.need(owner='heifara', panels=['b1'])
-		self.assertTrue(agence.load()['notify'])
+		self.assertEqual(agence.load()['ponctuel'], {})
 		self.assertEqual(len(self.tour()), 1)
 
 	def test_envoi_hors_transaction_timeout_court(self):
@@ -3807,6 +3806,46 @@ class CoutBesoin(Base):
 			with self.assertRaises(SystemExit):
 				agence.main(['need', 'add', '--help'])
 		self.assertIn('--budget-usd', out.getvalue())
+
+
+class JaugeContexte(Base):
+	"""Spec 013 lot 1 (T010, SC-001) : contexte de chaque agent vivant lu par le faux cate agent usage du tour,
+	« contexte inconnu » sans mesure, jamais 0."""
+
+	def setUp(self):
+		super().setUp()
+		self.booted()
+		with agence.tx() as st:
+			self.nid = agence.add_need(st, 'task', 'Implémenter', panels=['a1'])[0]['id']
+
+	def tour(self, usage, agents=({'panelId': 'a1', 'state': 'running'},)):
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'},
+		                                           {'panelId': 'a1', 'title': 'a1', 'type': 'terminal'}])
+		self.run.reply(['cate', 'agent', 'list'], list(agents))
+		self.run.reply(['cate', 'agent', 'usage'], usage)
+		agence.un_tour()
+		return agence.page_suivi(self.state())
+
+	def test_contexte_lu_et_affiche(self):
+		page = self.tour([{'panelId': 'a1', 'contextTokens': 180000, 'inputTokens': 10, 'outputTokens': 5}])
+		self.assertIn('contexte 180 000 jetons', page)
+
+	def test_sans_contexttokens_contexte_inconnu_jamais_zero(self):
+		page = self.tour([{'panelId': 'a1', 'inputTokens': 10}])
+		self.assertIn('contexte inconnu', page)
+		self.assertNotIn('contexte 0', page)
+
+	def test_usage_refuse_ou_illisible_contexte_inconnu(self):
+		self.assertIn('contexte inconnu', self.tour('pas du json'))
+
+	def test_valeurs_hostiles_contexte_inconnu(self):
+		for v in (-5, float('nan'), '180000', True):
+			self.assertIn('contexte inconnu', self.tour([{'panelId': 'a1', 'contextTokens': v}]), v)
+
+	def test_agent_parti_plus_de_jauge(self):
+		self.tour([{'panelId': 'a1', 'contextTokens': 180000}])
+		page = self.tour([], agents=())
+		self.assertNotIn('contexte', page)
 
 
 class Version(unittest.TestCase):

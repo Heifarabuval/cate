@@ -1,0 +1,12 @@
+{
+ "graine": 7,
+ "depot": "exemple/depot",
+ "vivier": [
+  {"issue": 14, "pr": 114, "base": "1111111111111111111111111111111111111111", "head": "abcdef0123456789abcdef0123456789abcdef01", "tests": ["a.test.ts"], "taille": 10},
+  {"issue": 50, "pr": 150, "base": "BASE", "head": "2222222222222222222222222222222222222222", "tests": ["test_lib.py"], "taille": 3}
+ ],
+ "pilotes": [{"issue": 1, "premier": "nu"}, {"issue": 2, "premier": "outil"}],
+ "campagne": [{"issue": 11, "premier": "nu"}, {"issue": 12, "premier": "outil"}, {"issue": 13, "premier": "nu"}, {"issue": 14, "premier": "outil"}, {"issue": 15, "premier": "nu"}, {"issue": 16, "premier": "nu"}, {"issue": 17, "premier": "outil"}, {"issue": 18, "premier": "nu"}, {"issue": 19, "premier": "outil"}, {"issue": 20, "premier": "nu"}],
+ "reserve": [{"issue": 21, "premier": "nu"}, {"issue": 22, "premier": "outil"}, {"issue": 23, "premier": "nu"}, {"issue": 24, "premier": "outil"}, {"issue": 25, "premier": "nu"}],
+ "comparaison": {"issue": 50}
+}
