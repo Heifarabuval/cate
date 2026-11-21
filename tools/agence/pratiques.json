@@ -53,7 +53,7 @@
   "plan.validation": {"valeurs": ["jamais", "structurante", "toujours"], "groupe": "avance", "portee": "workspace",
    "nom": "Plan validé avant le code", "explique": "L'agent vous montre son plan et attend votre accord avant de coder. Plus sûr, mais vous attend davantage.",
    "choix": {"jamais": "Jamais", "structurante": "Quand la tâche touche une décision importante", "toujours": "Toujours"}},
-  "envoi.slack.variable": {"motif": "^[A-Za-z_][A-Za-z0-9_]*$", "groupe": "avance", "portee": "dev",
+  "envoi.slack.variable": {"motif": "^[A-Za-z_][A-Za-z0-9_]*\\Z", "groupe": "avance", "portee": "dev",
    "nom": "Nom de votre accès Slack", "explique": "Le nom de la variable qui porte votre accès Slack, jamais l'accès lui-même. Vaut pour tous vos projets."},
   "envoi.slack.fichier": {"motif": "^[~/]", "nul": true, "groupe": "avance", "portee": "dev",
    "nom": "Fichier de votre accès Slack", "explique": "Le fichier qui porte cette variable, s'il y en a un, jamais l'accès lui-même. Vaut pour tous vos projets.",

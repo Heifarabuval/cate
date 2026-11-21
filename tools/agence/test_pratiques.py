@@ -424,6 +424,14 @@ class ModeleParRole(Base):
 		pratiques.poser_preset(self.racine, self.home, 'pr-tdd')
 		self.assertEqual(self.charge()['valeurs']['modele.structurant'], 'sonnet')  # un preset ne touche pas au modèle
 
+	def test_motifs_a_fin_stricte(self):
+		"""corr-008 (d) : `$` accepte un saut de ligne final ; toute clé à motif finit par \\Z, comme les clés modele."""
+		for cle, spec in pratiques.schema()['cles'].items():
+			if 'motif' in spec and spec['motif'].endswith('$'):
+				self.fail(f'{cle} : motif terminé par $')
+		self.ecrit(self.dev, {'envoi': {'slack': {'variable': 'SLACK_USER_TOKEN\n'}}})
+		self.refus('envoi.slack.variable', self.dev)
+
 	def test_une_seule_cle_pour_le_modele_d_un_agent_de_travail(self):
 		"""corr-008 (b) : coupe nette, sans alias : modele.implementation est une clé inconnue."""
 		self.assertNotIn('modele.implementation', pratiques.schema()['cles'])
