@@ -49,6 +49,17 @@ it('asks the essential questions only, one per screen, in the order received', a
   expect(button('Terminer')).toBeDefined()
 })
 
+it('asks 4 questions at most when 6 are published (SC-006)', async () => {
+  const six = Array.from({ length: 6 }, (_, n) => champ({ cle: `q${n}`, question: `Question ${n + 1} ?` }))
+  act(() => root.render(<PremieresQuestions champs={six} send={send} />))
+  expect(host.textContent).toContain('1 sur 4')
+  for (let n = 0; n < 3; n++) await click('Suivant')
+  expect(heading()).toBe('Question 4 ?')
+  expect(button('Terminer')).toBeDefined()
+  await click('Terminer')
+  expect(Object.keys((send.mock.calls[0][0] as { reponses: object }).reponses)).toEqual(['q0', 'q1', 'q2', 'q3'])
+})
+
 it('preselects the default answer', () => {
   render()
   const checked = host.querySelector<HTMLInputElement>('input[type="radio"]:checked')!

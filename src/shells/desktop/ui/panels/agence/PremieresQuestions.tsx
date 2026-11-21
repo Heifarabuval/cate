@@ -5,12 +5,15 @@ import { ActionButton, refusal, useAction } from './action'
 import { ChampControl } from './Reglages'
 import { ACTION, ACTION_PLAIN } from './styles'
 
+/** At most this many questions before the orchestrator first starts (spec 008, SC-006). */
+const MAX_QUESTIONS = 4
+
 /** The first questions of a workspace without a settings file (spec 008, US3): the
  *  essential fields that carry a question, one per screen, in the order published,
  *  the current answer preselected. « Terminer » sends every answer at once, « Passer »
  *  keeps the defaults; the session then starts the orchestrator. */
 export default function PremieresQuestions({ champs, send }: { champs: PratiqueChamp[]; send(op: AgenceOp): Promise<unknown> }) {
-  const questions = champs.filter((champ) => champ.groupe === 'essentiel' && champ.question)
+  const questions = champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
   const [index, setIndex] = useState(0)
   const [reponses, setReponses] = useState<Record<string, PratiqueValeur>>(() => Object.fromEntries(questions.map((champ) => [champ.cle, champ.valeur])))
   const action = useAction()
