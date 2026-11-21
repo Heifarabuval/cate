@@ -1,0 +1,9 @@
+#!/bin/sh
+# Faux gh des tests de benchmark.py : rend les JSON de $FAUX_GH, n'appelle jamais le réseau.
+echo "gh $*" >> "$FAUX_GH/appels"
+case "$1 $2" in
+	"pr list") cat "$FAUX_GH/prs.json" ;;
+	"repo view") echo '{"nameWithOwner":"exemple/depot"}' ;;
+	"issue view") cat "$FAUX_GH/issue-$3.json" ;;
+	*) echo "faux gh : $*" >&2; exit 1 ;;
+esac
