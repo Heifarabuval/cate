@@ -12,12 +12,15 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   controle ISSUE BRAS contamination : appels d'outil des journaux du clone qui citent la PR d'origine ou le dépôt D
   mesure ISSUE BRAS [--usage-json F]  résultat en nombres dans S/resultats/ISSUE-BRAS.json (F : `cate agent usage --json`)
   revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
-  rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md
+  rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md ;
+                      « verdict impossible » (code 2) s'il manque des issues valides dans les deux bras
   comparer --avant REF --apres REF  économie de jetons : pilotes et issue de comparaison rejoués en `claude -p`
                       avec l'outil à chaque ref ; « annuler » (code 1) si un arbitre vert avant ne l'est plus après ;
                       « verdict impossible » (code 2) si un `claude -p` sort en échec
   porte RAPPORT       recette (spec 013, lot 9) : « proposer » (0) si le rapport dit garder, sinon « annulée » (1)
 BRAS : nu ou outil. R : ~/.cache/agence-bench ; S : specs/011-mesure-benchmark ; D : ce dépôt.
+Code 2 : refus (message sur la sortie d'erreur) ou verdict impossible. Tant que la source de seuil.json dit « hypothèse »,
+debut, mesure et rapport refusent : l'humain confirme les valeurs et change la source.
 """
 import argparse
 import hashlib
@@ -42,6 +45,7 @@ TAILLES = (('pilotes', 2), ('campagne', 10), ('reserve', 5))
 REPRISES = 3
 LOCK = 'package-lock.json'
 OUTIL = ('skills', 'tools/agence', 'CLAUDE.md')  # l'outil que `comparer` pose à chaque ref
+SEUIL = ('source', 'temps_actif_max', 'jetons_max', 'non_conclusif', 'plafond_s', 'remarques_marge')
 TEST = re.compile(r'(\.test\.tsx?|(^|/)test_[^/]*\.py)$')
 
 
@@ -200,9 +204,14 @@ def debut(a):
 	etat = lire(etat_path(a))
 	if etat['debut']:
 		raise Refus('rejeu %s déjà commencé' % nom(a))
+	try:  # création exclusive : deux `debut` en course, un seul prend la place
+		fd = os.open(os.path.join(a.racine, 'ouvert.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+	except FileExistsError:
+		raise Refus('rejeu %s déjà ouvert' % ouvert(a))
+	with os.fdopen(fd, 'w', encoding='utf-8') as f:
+		f.write(json.dumps({'rejeu': nom(a)}, indent=1, sort_keys=True) + '\n')
 	etat['debut'] = maintenant()
 	ecrire(etat_path(a), etat)
-	ecrire(os.path.join(a.racine, 'ouvert.json'), {'rejeu': nom(a)})
 	print('début %s : %s' % (nom(a), etat['debut']))
 	return 0
 
@@ -338,7 +347,16 @@ def seuil(a):
 		raise Refus('seuil.json commité après le premier rejeu : le seuil est fixé avant (rejeux à refaire)')
 	with open(p, 'rb') as f:
 		octets = f.read()
-	return json.loads(octets), hashlib.sha256(octets).hexdigest()
+	try:
+		s = json.loads(octets)
+	except ValueError:
+		raise Refus('seuil.json illisible : JSON invalide')
+	manque = [k for k in SEUIL if not isinstance(s, dict) or k not in s]
+	if manque:
+		raise Refus('seuil.json : clé manquante : %s' % ', '.join(sorted(manque)))
+	if 'hypothèse' in str(s['source']).lower():
+		raise Refus("seuil.json : source « %s », une hypothèse : l'humain confirme les valeurs et change la source" % s['source'])
+	return s, hashlib.sha256(octets).hexdigest()
 
 
 def clics(clone):
@@ -436,7 +454,10 @@ def revue(a):
 		clone = os.path.join(a.racine, k)
 		git(clone, 'add', '-A', '-N')  # fichiers nouveaux visibles dans le diff
 		print('--- diff %d/%d ---\n%s' % (i, len(noms), git(clone, 'diff', base[res[k]['issue']]).decode(errors='replace')))
-		r = dict(res[k], remarques=int(input('remarques (nombre) : ')),
+		saisie = input('remarques (nombre) : ').strip()
+		if not saisie.isdigit():
+			raise Refus('remarques : un nombre entier attendu, %r refusé' % saisie[:20])
+		r = dict(res[k], remarques=int(saisie),
 			rouge_interface=input('rouge par interface (o/n) : ').strip().lower().startswith('o'))
 		ecrire(os.path.join(a.specs, 'resultats', k + '.json'), r)
 	return 0
@@ -488,7 +509,8 @@ def rapport(a):
 	entamee = any('%d-%s' % (i, b) in res for i in groupes['reserve'] for b in BRAS)
 	requis = len(groupes['campagne']) + (len(groupes['reserve']) if entamee else 0)
 	if len(issues) < requis:
-		verdict = 'verdict impossible (%d issues valides dans les deux bras, il en faut %d)' % (len(issues), requis)
+		verdict = 'verdict impossible (%d issue%s valide%s dans les deux bras, il en faut %d)' % (
+			len(issues), *(('s', 's') if len(issues) > 1 else ('', '')), requis)
 	elif zone and manque in ([], ['temps actif']):  # sur 10 issues seulement : la réserve tranche (spec, Clarifications)
 		verdict = 'non conclusif (temps actif %s dans la zone %s à %s) : rejouer les %d issues de réserve' % (
 			nombre(ta), nombre(bas), nombre(haut), len(groupes['reserve']))
@@ -531,7 +553,7 @@ def rapport(a):
 	with open(os.path.join(a.specs, 'rapport-benchmark.md'), 'w', encoding='utf-8') as f:
 		f.write(texte)
 	sys.stdout.write(texte)
-	return 0
+	return 2 if verdict.startswith('verdict impossible') else 0
 
 
 def poser_outil(depot, ref, clone):
@@ -561,23 +583,26 @@ def comparer(a):
 	issues = [t['issue'] for t in sel['pilotes']] + [sel['comparaison']['issue']]
 	os.makedirs(a.racine, exist_ok=True)
 	base, res, echec = tempfile.mkdtemp(dir=a.racine, prefix='comparer-'), {}, None
-	for i in issues:
-		if echec:
-			break
-		enonce = enonce_issue(a.depot, sel['depot'], i)
-		for cote, ref in refs.items():
-			clone = os.path.join(base, '%d-%s' % (i, cote))
-			cloner(a.depot, clone, vivier[i]['base'])
-			poser_outil(a.depot, ref, clone)
-			try:  # aucune interface : -p, sortie JSON, rien sur le terminal
-				code = subprocess.run(['claude', '-p', enonce, '--output-format', 'json', '--permission-mode', 'acceptEdits'],
-					cwd=clone, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
-			except FileNotFoundError:
-				raise Refus('claude introuvable sur le PATH')
-			if code:  # un rejeu coupé ne compte pas, même si l'arbitre passe par hasard
-				echec = 'claude -p a rendu le code %d sur l\'issue %d (%s)' % (code, i, cote)
+	try:
+		for i in issues:
+			if echec:
 				break
-			res[i, cote] = (arbitre(a.depot, clone, vivier[i]), jetons(attente_mesure.mesurer(dossiers_de(clone)))['total'])
+			enonce = enonce_issue(a.depot, sel['depot'], i)
+			for cote, ref in refs.items():
+				clone = os.path.join(base, '%d-%s' % (i, cote))
+				cloner(a.depot, clone, vivier[i]['base'])
+				poser_outil(a.depot, ref, clone)
+				try:  # aucune interface : -p, sortie JSON, rien sur le terminal
+					code = subprocess.run(['claude', '-p', enonce, '--output-format', 'json', '--permission-mode', 'acceptEdits'],
+						cwd=clone, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+				except FileNotFoundError:
+					raise Refus('claude introuvable sur le PATH')
+				if code:  # un rejeu coupé ne compte pas, même si l'arbitre passe par hasard
+					echec = 'claude -p a rendu le code %d sur l\'issue %d (%s)' % (code, i, cote)
+					break
+				res[i, cote] = (arbitre(a.depot, clone, vivier[i]), jetons(attente_mesure.mesurer(dossiers_de(clone)))['total'])
+	finally:
+		shutil.rmtree(base, ignore_errors=True)
 	issues = [i for i in issues if (i, 'avant') in res and (i, 'apres') in res]  # rejeux complets seulement
 	casse = [i for i in issues if res[i, 'avant'][0] == 'vert' and res[i, 'apres'][0] != 'vert']
 	somme = lambda cote: None if any(res[i, cote][1] is None for i in issues) else sum(res[i, cote][1] for i in issues)
@@ -593,10 +618,16 @@ def comparer(a):
 		ent(res[i, 'apres'][1])) for i in issues] + [
 		'', 'Jetons : avant %s, après %s.' % (ent(somme('avant')), ent(somme('apres'))), '', 'Verdict : %s.' % verdict
 	]) + '\n'
-	rapport = os.path.join(a.specs, 'comparaisons', '%s-%s.md' % (maintenant()[:10], refs['apres'][:12]))
-	os.makedirs(os.path.dirname(rapport), exist_ok=True)
-	with open(rapport, 'w', encoding='utf-8') as f:
-		f.write(texte)
+	racine, n = os.path.join(a.specs, 'comparaisons', '%s-%s' % (maintenant()[:10], refs['apres'][:12])), 1
+	os.makedirs(os.path.dirname(racine), exist_ok=True)
+	while True:  # même date, même ref : suffixe, jamais d'écrasement
+		rapport = racine + ('-%d' % n if n > 1 else '') + '.md'
+		try:
+			with open(rapport, 'x', encoding='utf-8') as f:
+				f.write(texte)
+			break
+		except FileExistsError:
+			n += 1
 	sys.stdout.write(texte + 'rapport : %s\n' % rapport)
 	return 2 if echec else 1 if casse else 0
 

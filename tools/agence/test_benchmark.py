@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, 'benchmark.py')
@@ -23,6 +24,7 @@ sys.path.insert(0, HERE)
 import benchmark  # noqa: E402  (la porte des recettes, appelée en processus)
 FIXTURE = os.path.join(HERE, 'fixtures', 'bench')
 CAMPAGNE = os.path.join(FIXTURE, 'campagne')
+ROOT = os.path.dirname(os.path.dirname(HERE))
 ETAT_AGENCE = os.path.join('.cate', 'tmp', 'agence', 'state.json')
 INTERDITS = ('open', 'osascript', 'electron', 'npx', 'playwright', 'npm', 'claude')
 TEMOIN_SH = '#!/bin/sh\necho "$0 $*" >> "$TEMOIN"\nexit 1\n'
@@ -238,6 +240,31 @@ class Rejeu(DepotJetable):
 		self.assertEqual(r.returncode, 2)
 		self.assertIn('seuil.json absent', r.stderr)
 
+	def test_debut_refuse_tant_que_le_seuil_est_une_hypothese(self):
+		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
+		shutil.copy(os.path.join(ROOT, 'specs', '011-mesure-benchmark', 'seuil.json'), self.specs)  # le seuil livré
+		self.git(self.specs, 'commit', '-qam', 'seuil livré')
+		r = self.run_('debut', '50', 'nu')
+		self.assertEqual(r.returncode, 2, r.stderr)
+		self.assertIn("hypothèse : l'humain confirme les valeurs et change la source", r.stderr)
+		self.assertFalse(os.path.exists(os.path.join(self.racine, 'ouvert.json')))
+
+	def test_ouvert_ecrit_sous_verrou(self):
+		"""Deux `debut` en course : le second voit encore « rien d'ouvert » mais ne prend pas la place du premier."""
+		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
+		self.assertEqual(self.run_('prepare', '50', 'outil').returncode, 0)
+		self.assertEqual(self.run_('debut', '50', 'nu').returncode, 0)
+		args = ['--racine', self.racine, '--specs', self.specs, '--depot', self.depot, 'debut', '50', 'outil']
+		err = io.StringIO()
+		with unittest.mock.patch.object(benchmark, 'ouvert', return_value=None), contextlib.redirect_stderr(err), \
+				contextlib.redirect_stdout(io.StringIO()):
+			self.assertEqual(benchmark.main(args), 2)
+		self.assertIn('déjà ouvert', err.getvalue())
+		with open(os.path.join(self.racine, 'ouvert.json')) as f:
+			self.assertEqual(json.load(f), {'rejeu': '50-nu'})
+		with open(os.path.join(self.racine, '50-outil.json')) as f:
+			self.assertIsNone(json.load(f)['debut'])
+
 	def test_second_prepare_pendant_un_rejeu_ouvert_refuse(self):
 		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
 		self.assertEqual(self.run_('debut', '50', 'nu').returncode, 0)
@@ -392,6 +419,19 @@ class Comparer(DepotJetable):
 		[rapport] = self.rapports()
 		with open(rapport) as f:
 			self.assertIn('verdict impossible', f.read())
+
+	def test_clones_temporaires_retires_meme_en_echec(self):
+		for apres in ('econome', 'echec'):
+			with self.subTest(apres=apres):
+				self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs[apres])
+				self.assertEqual([n for n in os.listdir(self.racine) if n.startswith('comparer-')], [])
+
+	def test_rapport_de_meme_date_et_ref_jamais_ecrase(self):
+		for _ in range(2):
+			self.assertEqual(self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs['econome']).returncode, 0)
+		noms = sorted((os.path.basename(p) for p in self.rapports()), key=len)
+		self.assertEqual(len(noms), 2, noms)
+		self.assertEqual(noms[1], noms[0][:-3] + '-2.md')
 
 	def test_ref_inconnue_refuse_sans_appel(self):
 		r = self.run_('comparer', '--avant', 'nexistepas', '--apres', self.refs['econome'])
@@ -692,6 +732,19 @@ class Revue(Specs):
 		self.assertIn('aucune diff à revoir', r2.stdout)
 
 
+	def test_remarques_non_numeriques_refusees(self):
+		for saisie in ('deux\n', '-1\n'):
+			with self.subTest(saisie=saisie):
+				r = subprocess.run(
+					[sys.executable, '-I', SCRIPT, '--racine', self.racine, '--specs', self.specs, '--depot', self.depot, 'revue'],
+					input=saisie, capture_output=True, text=True, env=self.env, cwd=self.tmp, timeout=60)
+				self.assertEqual(r.returncode, 2, r.stderr)
+				self.assertIn('remarques : un nombre entier attendu', r.stderr)
+				self.assertNotIn('Traceback', r.stderr)
+				self.assertIsNone(self.resultat('50-nu')['remarques'])
+				self.assertIsNone(self.resultat('50-outil')['remarques'])
+
+
 class Rapport(Specs):
 	"""T023 à T025 : verdict sur la fixture de campagne (10 issues × 2 bras, résultats écrits à la main), seuil, régisseur.
 
@@ -766,7 +819,7 @@ class Rapport(Specs):
 
 	def test_rejeu_invalide_retire_l_issue(self):
 		self.modifier('14-outil', etat='invalide')
-		out = self.rapport().stdout
+		out = self.rapport(2).stdout  # verdict impossible : code 2
 		self.assertIn('Issues comptées : 9 (campagne 9 sur 10, réserve 0 sur 5). Rejeux invalidés : 1.', out)
 		self.assertIn('Couche 1 : verdict impossible (9 issues valides dans les deux bras, il en faut 10).', out)
 
@@ -774,8 +827,8 @@ class Rapport(Specs):
 		for i in range(12, 21):
 			for b in ('nu', 'outil'):
 				os.remove(os.path.join(self.resultats, '%d-%s.json' % (i, b)))
-		out = self.rapport().stdout
-		self.assertIn('Couche 1 : verdict impossible (1 issues valides dans les deux bras, il en faut 10).', out)
+		out = self.rapport(2).stdout
+		self.assertIn('Couche 1 : verdict impossible (1 issue valide dans les deux bras, il en faut 10).', out)
 		self.assertNotIn('passe', out.split('## Verdict')[1])
 
 	def test_reserve_entamee_il_faut_15_issues(self):
@@ -785,7 +838,7 @@ class Rapport(Specs):
 			r = self.resultat('15-' + b)
 			r['issue'] = 21
 			ecrire(os.path.join(self.resultats, '21-%s.json' % b), json.dumps(r))
-		self.assertIn('Couche 1 : verdict impossible (11 issues valides dans les deux bras, il en faut 15).', self.rapport().stdout)
+		self.assertIn('Couche 1 : verdict impossible (11 issues valides dans les deux bras, il en faut 15).', self.rapport(2).stdout)
 
 	def test_jetons_inconnus_rapportes(self):
 		inconnus = {'entree': None, 'cache_cree': None, 'lus': None, 'sortie': None, 'total': None, 'partiel': True}
@@ -793,6 +846,21 @@ class Rapport(Specs):
 		out = self.rapport().stdout
 		self.assertIn('| 13 | nu | 600 | 1200 | vert | 0 | 0 | - |', out)
 		self.assertIn('Jetons partiels : 2.', out)
+
+	def test_verdict_refuse_tant_que_le_seuil_est_une_hypothese(self):
+		self.commit_seuil(source='hypothèse 011, à confirmer par l\'humain avant le premier rejeu')
+		self.assertIn("hypothèse : l'humain confirme les valeurs et change la source", self.rapport(2).stderr)
+		self.assertFalse(os.path.exists(os.path.join(self.specs, 'rapport-benchmark.md')))
+
+	def test_cle_manquante_du_seuil_refus_lisible(self):
+		with open(os.path.join(CAMPAGNE, 'seuil.json')) as f:
+			s = json.load(f)
+		del s['plafond_s'], s['source']
+		ecrire(os.path.join(self.specs, 'seuil.json'), json.dumps(s))
+		self.git(self.specs, 'commit', '-qam', 'seuil incomplet')
+		err = self.rapport(2).stderr
+		self.assertIn('seuil.json : clé manquante : plafond_s, source', err)
+		self.assertNotIn('Traceback', err)
 
 	def test_seuil_commite_apres_le_premier_rejeu_refuse(self):
 		self.dater_seuil('2026-02-11T09:00:01Z')  # premier rejeu de la fixture : 2026-02-11T09:00:00Z
