@@ -711,6 +711,12 @@ def cmd_need(a):
 			n = close_need(st, a.id, 'done' if a.action == 'done' else 'dropped', a.evidence)
 			n['closeSkip'] = me
 			apply(st, [('close', p, n['id']) for p in n['panels'] if p != me] if a.close else [])
+	elif a.action == 'jeter':  # spec 013 lot 7 : une carte, rien fermé ni retiré sans le clic de l'humain
+		with tx() as st:
+			n = find(st, 'needs', a.id)
+			if n['status'] != 'open':
+				raise Refus(f"{a.id} est {n['status']} : plus rien à jeter")
+			carte_jeter(st, n)
 	elif a.action == 'log':
 		if not a.text.strip():
 			raise Refus('décision vide')
@@ -1355,6 +1361,8 @@ def click(path, form):
 		return click_lancer((form.get('ids') or [''])[0].split(','))
 	if re.match(r'^/(decision/D[1-9]\d*/(valider|rejeter)|fiche/F[1-9]\d*/(relancer|abandonner)|lentille/F[1-9]\d*/eclairer)$', path):
 		return click_registre(path)
+	if re.match(r'^/besoin/n\d+/jeter$', path):
+		return click_jeter(path)
 	return 404, 'Action inconnue.'
 
 
@@ -1391,6 +1399,77 @@ def carte_eclairer(st, fiches, motif):
 		poser_carte(st, f"Éclairer : {motif} ; une lentille (angle imposé, agent à contexte vierge qui ne reçoit que la fiche) "
 		            'propose sans trancher', [{'label': f"Éclairer {f['id']}", 'detail': f['titre']} for f in fiches]
 		            + [{'label': 'Vu', 'detail': 'fermer sans lentille'}], [f"/lentille/{f['id']}/eclairer" for f in fiches] + [''])
+
+
+def carte_ouverte(st, path):
+	"""Une carte encore ouverte propose ce clic : un POST nu ou rejoué n'agit pas."""
+	return any(q['answer'] is None and path in (q.get('clics') or []) for q in st['questions'])
+
+
+def pr_du_besoin(n):
+	"""Numéro de la PR rattachée au besoin (pr-merged:N ou ci-green:N), sinon None."""
+	import pratiques  # voir politique()
+	return next((arg for nom, arg in pratiques.conditions(n['doneWhen']) if nom in ('pr-merged', 'ci-green') and arg),
+	            None) if fin_lisible(n) else None
+
+
+def carte_jeter(st, n):
+	"""Carte « Jeter » d'un besoin (spec 013, lot 7, #174) : Jeter agit au clic, Garder la ferme."""
+	pr, fiche = pr_du_besoin(n), (n['ref'] or '').removeprefix('fiche:') if (n['ref'] or '').startswith('fiche:') else None
+	poser_carte(st, f"Jeter le travail de {n['id']} « {n['title']} » : " + (f'PR #{pr} fermée sans merge, ' if pr else '')
+	            + 'worktrees du besoin retirés (modifications non commitées perdues)'
+	            + (f', fiche {fiche} remise en discussion' if fiche else '') + ' ; la branche reste',
+	            [{'label': 'Jeter', 'detail': 'refusé si la PR est déjà mergée'}, {'label': 'Garder', 'detail': 'rien ne change'}],
+	            [f"/besoin/{n['id']}/jeter", ''])
+
+
+def click_jeter(path):
+	"""Clic « Jeter » : gh et git hors transaction, puis fiche, besoin et carte sous le verrou. PR mergée : 409, rien jeté."""
+	import backlog  # voir registres()
+	nid, st = path.split('/')[2], load()
+	if not carte_ouverte(st, path):
+		return 409, 'Aucune carte ouverte ne propose ce clic : rien jeté.'
+	n = find(st, 'needs', nid)
+	pr = pr_du_besoin(n)
+	fait = []
+	if pr:
+		repo = gh_repo(st)
+		code, out, err = RUN(['gh', 'pr', 'view', pr, '-R', repo, '--json', 'state'], timeout=GH_TIMEOUT)
+		try:
+			etat = json.loads(out)['state']
+		except (ValueError, TypeError, KeyError):
+			return 409, f'État de la PR #{pr} illisible : rien jeté.'
+		if etat == 'MERGED':
+			return 409, f'PR #{pr} déjà mergée : rien jeté.'
+		if etat == 'OPEN':
+			code, out, err = RUN(['gh', 'pr', 'close', pr, '-R', repo], timeout=GH_TIMEOUT)
+			if code:
+				return 409, f'gh refuse de fermer la PR #{pr} : {(err or out).strip()[:200]} ; rien jeté.'
+		fait.append(f'PR #{pr} fermée')
+	for wt, branche in worktrees_du_besoin(nid):
+		code, out, err = RUN(['git', '-C', root(), 'worktree', 'remove', '--force', wt])
+		fait.append(f'worktree {os.path.basename(wt)} retiré (branche {branche} gardée)' if code == 0 else
+		            f'worktree {os.path.basename(wt)} non retiré : {(err or out).strip()[:200]}')
+	with tx() as st:
+		n = find(st, 'needs', nid)
+		if (n['ref'] or '').startswith('fiche:'):
+			r, erreur = registres_sous_verrou()
+			f = None if erreur else next((f for f in r['backlog']['fiches'] if f['id'] == n['ref'][len('fiche:'):]), None)
+			if f and f['etat'] == 'lancée' and f['besoin'] == nid:
+				backlog.noter(r['backlog'], f['id'], f'travail jeté (besoin {nid}), remise en discussion', now_iso(), par='clic')
+				f.update(etat='discussion', besoin=None)
+				ecrire_backlog(st, r)
+				fait.append(f"fiche {f['id']} en discussion")
+		texte = ' ; '.join(fait) or 'rien à fermer'
+		note(n, f'Jeter cliqué : {texte}', 'clic')
+		if n['status'] == 'open':
+			close_need(st, nid, 'dropped', texte)
+			apply(st, [('close', p, nid) for p in n['panels']])
+		for q in st['questions']:
+			if q['answer'] is None and path in (q.get('clics') or []):
+				fermer_carte(st, q, f'Jeter : {texte}')
+		notify(st['panels'].get('orchestrator'), f'{nom()} a jeté le travail de {nid} : {texte}.')
+	return 303, '/'
 
 
 def click_pratiques(action, form):
@@ -1435,7 +1514,7 @@ def click_carte(qid, form):
 			note(find(st, 'needs', q['needId']), f'{label} cliqué', 'clic')
 			fermer_carte(st, q, label)
 			return 303, '/'
-	return click_registre(cible)
+	return click(cible, {})  # la route du clic proposé, comme un POST direct
 
 
 def click_registre(path):
@@ -1454,7 +1533,7 @@ def click_registre(path):
 			elif genre == 'lentille':
 				if backlog.trouver(r['backlog']['fiches'], oid)['etat'] in backlog.TERMINAUX:
 					raise backlog.Refus(f'{oid} est terminée')
-				if not any(q['answer'] is None and path in (q.get('clics') or []) for q in st['questions']):
+				if not carte_ouverte(st, path):
 					raise backlog.Refus(f'aucune carte ouverte ne propose ce clic sur {oid}')  # POST nu ou rejoué
 				fait = f'lentille demandée sur {oid}'
 			else:
@@ -2341,6 +2420,13 @@ def worktree_offers(snap, nid, live, base=None):
 	need = next((n for n in snap['needs'] if n['id'] == nid), None)
 	if not need or any(p in live for p in need['panels']):
 		return []
+	found = worktrees_du_besoin(nid, base)
+	repo = gh_repo(snap) if found else None
+	return [(nid, p, b) for p, b in found if worktree_ok(repo, p, b)]
+
+
+def worktrees_du_besoin(nid, base=None):
+	"""[(chemin, branche)] des worktrees du besoin, nommés « <besoin>-<rôle> » (voir le skill)."""
 	code, out, _ = RUN(['git', '-C', base or root(), 'worktree', 'list', '--porcelain'])
 	if code != 0:
 		return []
@@ -2350,8 +2436,7 @@ def worktree_offers(snap, nid, live, base=None):
 		path, branch = f.get('worktree'), (f.get('branch') or '').removeprefix('refs/heads/')
 		if path and branch and os.path.basename(path).startswith(f'{nid}-'):
 			found.append((path, branch))
-	repo = gh_repo(snap) if found else None
-	return [(nid, p, b) for p, b in found if worktree_ok(repo, p, b)]
+	return found
 
 
 def pr_mergee(repo, branch, tip):
@@ -3523,6 +3608,8 @@ def parser():
 		x.add_argument('id')
 		x.add_argument('--evidence')
 		x.add_argument('--close', action='store_true', help="fermer aussi ses panneaux (agent en attente de saisie : --discard ; en plein tour ou éditeur non enregistré : reste) et proposer de supprimer ses worktrees mergés")
+	ns.add_parser('jeter', help="carte « Jeter » : au clic, PR fermée sans merge, worktrees du besoin retirés, fiche remise "
+	              'en discussion ; la branche reste').add_argument('id')
 	lg = ns.add_parser('log')
 	lg.add_argument('id')
 	lg.add_argument('text', metavar='décision')
