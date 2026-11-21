@@ -22,7 +22,8 @@ const champs: PratiqueChamp[] = [
 let host: HTMLDivElement
 let root: Root
 const send = vi.fn(async (_op: AgenceOp): Promise<unknown> => ({ ok: true }))
-const render = () => act(() => root.render(<PremieresQuestions champs={champs} send={send} />))
+const render = (options: { disponible?: boolean; onRestart?: () => Promise<string | null> } = {}) =>
+  act(() => root.render(<PremieresQuestions champs={champs} disponible={options.disponible ?? true} onRestart={options.onRestart} send={send} />))
 const button = (label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label)
 const click = (label: string) => act(async () => { button(label)!.click() })
 const heading = () => host.querySelector('h2')!.textContent
@@ -51,7 +52,7 @@ it('asks the essential questions only, one per screen, in the order received', a
 
 it('asks 4 questions at most when 6 are published (SC-006)', async () => {
   const six = Array.from({ length: 6 }, (_, n) => champ({ cle: `q${n}`, question: `Question ${n + 1} ?` }))
-  act(() => root.render(<PremieresQuestions champs={six} send={send} />))
+  act(() => root.render(<PremieresQuestions champs={six} disponible send={send} />))
   expect(host.textContent).toContain('1 sur 4')
   for (let n = 0; n < 3; n++) await click('Suivant')
   expect(heading()).toBe('Question 4 ?')
@@ -108,4 +109,19 @@ it('shows no key', async () => {
   for (const cle of ['foo.bar', 'baz', 'cache', 'avance.x']) expect(host.textContent).not.toContain(cle)
   await click('Suivant')
   for (const cle of ['foo.bar', 'baz']) expect(host.textContent).not.toContain(cle)
+})
+
+it('says to restart the regisseur when it does not run, and sends nothing', async () => {
+  render({ disponible: false })
+  expect(host.textContent).toContain('relancez-le avec « Relancer le régisseur »')
+  expect(button('Passer')!.disabled).toBe(true)
+  await click('Passer')
+  expect(send).not.toHaveBeenCalled()
+})
+
+it('carries the restart button when the banner has none', async () => {
+  const onRestart = vi.fn(async () => null)
+  render({ disponible: false, onRestart })
+  await click('Relancer le régisseur')
+  expect(onRestart).toHaveBeenCalledTimes(1)
 })

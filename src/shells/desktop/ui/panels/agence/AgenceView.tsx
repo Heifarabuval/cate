@@ -127,7 +127,13 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
     return (
       <div ref={rootRef} className="flex h-full min-w-0 flex-col overflow-auto bg-surface-1">
         <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
-        <PremieresQuestions champs={snapshot.pratiques.champs} send={send} />
+        <PremieresQuestions
+          champs={snapshot.pratiques.champs}
+          disponible={snapshot.regisseur.state === 'running'}
+          // The banner carries the restart button only for a regisseur stopped with a reason.
+          onRestart={snapshot.regisseur.state === 'stopped' && !snapshot.regisseur.error ? () => run({ kind: 'orchestrator.restart' }) : undefined}
+          send={send}
+        />
       </div>
     )
   }

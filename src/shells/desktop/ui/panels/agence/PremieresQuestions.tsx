@@ -12,11 +12,21 @@ const MAX_QUESTIONS = 4
  *  essential fields that carry a question, one per screen, in the order published,
  *  the current answer preselected. « Terminer » sends every answer at once, « Passer »
  *  keeps the defaults; the session then starts the orchestrator. */
-export default function PremieresQuestions({ champs, send }: { champs: PratiqueChamp[]; send(op: AgenceOp): Promise<unknown> }) {
+export default function PremieresQuestions({ champs, disponible, onRestart, send }: {
+  champs: PratiqueChamp[]
+  /** The regisseur runs: the answers can be written. Without it nothing is written,
+   *  not even by « Passer » (spec 008, edge case « Régisseur arrêté »), so the
+   *  orchestrator waits for a restart. */
+  disponible: boolean
+  /** Restarts the regisseur, when the banner shows no button for it. */
+  onRestart?: () => Promise<string | null>
+  send(op: AgenceOp): Promise<unknown>
+}) {
   const questions = champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
   const [index, setIndex] = useState(0)
   const [reponses, setReponses] = useState<Record<string, PratiqueValeur>>(() => Object.fromEntries(questions.map((champ) => [champ.cle, champ.valeur])))
   const action = useAction()
+  const restart = useAction()
   const finish = (key: string, op: AgenceOp) => void action.run(key, async () => {
     const result = await send(op) as AgenceOpResult
     return result.ok ? null : refusal(result, 'Réponses refusées.')
@@ -26,6 +36,7 @@ export default function PremieresQuestions({ champs, send }: { champs: PratiqueC
   const last = index >= questions.length - 1
   const answer = (valeur: PratiqueValeur) => setReponses({ ...reponses, [champ.cle]: valeur })
   const busy = action.active !== null
+  const blocked = busy || !disponible
   return (
     <section aria-label="Premières questions" className="mx-auto flex h-full max-w-lg flex-col justify-center gap-3 p-4 text-[13px]">
       {champ && (
@@ -53,13 +64,21 @@ export default function PremieresQuestions({ champs, send }: { champs: PratiqueC
             : <ChampControl champ={champ} value={reponses[champ.cle] ?? null} disabled={busy} onChange={answer} />}
         </>
       )}
+      {!disponible && (
+        <InlineNotice tone="warning" className="!text-primary">
+          <div className="flex items-start gap-2">
+            <span className="min-w-0 flex-1">Réponses impossibles tant que le régisseur ne tourne pas : relancez-le avec « Relancer le régisseur ».</span>
+            {onRestart && <ActionButton className={ACTION_PLAIN} busy={restart.active === 'restart'} onClick={() => void restart.run('restart', onRestart)}>Relancer le régisseur</ActionButton>}
+          </div>
+        </InlineNotice>
+      )}
       {action.error && <InlineNotice tone="error" className="!text-primary">{action.error}</InlineNotice>}
       <div className="flex items-center gap-2">
         {index > 0 && <ActionButton className={ACTION_PLAIN} disabled={busy} onClick={() => setIndex(index - 1)}>Précédent</ActionButton>}
         <span className="flex-1" />
-        <ActionButton className={ACTION_PLAIN} disabled={busy} busy={action.active === 'passer'} onClick={() => finish('passer', { kind: 'pratique.questions', passer: true })}>Passer</ActionButton>
+        <ActionButton className={ACTION_PLAIN} disabled={blocked} busy={action.active === 'passer'} onClick={() => finish('passer', { kind: 'pratique.questions', passer: true })}>Passer</ActionButton>
         {champ && (last
-          ? <ActionButton className={ACTION} disabled={busy} busy={action.active === 'terminer'} onClick={() => finish('terminer', { kind: 'pratique.questions', reponses })}>Terminer</ActionButton>
+          ? <ActionButton className={ACTION} disabled={blocked} busy={action.active === 'terminer'} onClick={() => finish('terminer', { kind: 'pratique.questions', reponses })}>Terminer</ActionButton>
           : <ActionButton className={ACTION} disabled={busy} onClick={() => setIndex(index + 1)}>Suivant</ActionButton>)}
       </div>
     </section>

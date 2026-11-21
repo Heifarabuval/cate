@@ -557,6 +557,17 @@ describe('AgenceSession', () => {
       await vi.waitFor(() => expect(terminal.spawns).toHaveLength(1))
     })
 
+    it('writes nothing without the regisseur, and the restart op brings it back with the orchestrator still held', async () => {
+      const { session, terminal, regisseurs } = withPolicy({ projet: false })
+      await session.start()
+      regisseurs.set({ state: 'stopped', error: null })
+      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+      await expect(op(session, { kind: 'orchestrator.restart' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.restarts()).toBe(1)
+      expect(regisseurs.posts).toEqual([])
+      expect(terminal.spawns).toEqual([])
+    })
+
     it('launches as before when agence is missing', async () => {
       const { session, terminal } = setup({ regisseur: 'missing' })
       await session.start()

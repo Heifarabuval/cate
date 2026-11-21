@@ -459,3 +459,17 @@ it('asks nothing once the project has its file', () => {
   expect(button('Passer')).toBeUndefined()
   expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
 })
+
+it('says to restart a regisseur that stopped during the first questions, with one restart button', async () => {
+  const questions = reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] })
+  for (const error of ["agence watch s'est arrêté (SIGKILL)", null]) {
+    send.mockClear()
+    render(snapshot({ pratiques: questions, orchestrator: 'starting', regisseur: { state: 'stopped', error, settingsHint: null } }))
+    expect(host.textContent).toContain('relancez-le avec « Relancer le régisseur »')
+    await act(async () => { button('Passer')!.click() })
+    expect(send).not.toHaveBeenCalled()
+    expect([...host.querySelectorAll('button')].filter((b) => b.textContent === 'Relancer le régisseur')).toHaveLength(1)
+    await act(async () => { button('Relancer le régisseur')!.click() })
+    expect(send).toHaveBeenCalledWith({ kind: 'orchestrator.restart' })
+  }
+})
