@@ -38,7 +38,7 @@ class Base(unittest.TestCase):
 		self.racine = os.path.join(self.tmp, 'projet')
 		os.makedirs(self.home)
 		os.makedirs(self.racine)
-		env = unittest.mock.patch.dict(os.environ, {'HOME': self.home, 'AGENCE_ROOT': self.racine, 'AGENCE_NOM': 'Camille',
+		env = unittest.mock.patch.dict(os.environ, {'HOME': self.home, 'AGENCE_ROOT': self.racine, 'AGENCE_NOM': "L'humain",
 		                                            'CATE_SOCKET': os.path.join(self.tmp, 'x.sock')})
 		env.start()
 		self.addCleanup(env.stop)
@@ -210,7 +210,7 @@ class Champs(Base):
 	def test_invariants_avec_le_nom_de_l_humain(self):
 		inv = self.tour()['invariants']
 		self.assertEqual(len(inv), len(self.sch['invariants']))
-		self.assertIn('Camille', inv[0])
+		self.assertIn("L'humain", inv[0])  # valeur neutre : la fixture est commitée (corr-008 c)
 		self.assertFalse(any('{humain}' in i for i in inv))
 
 	def test_fichier_invalide_champs_de_neutre_et_erreur(self):

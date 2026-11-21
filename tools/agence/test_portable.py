@@ -14,6 +14,8 @@ ADRESSE_FORK = re.compile(r'Heifarabuval/cate', re.I)
 # Seules lignes autorisées : la clé opaque de la valeur stockée (q303), une fois côté CLI, une fois côté panneau.
 CLE_OPAQUE = re.compile(r'^\s*(export\s+)?(const\s+)?OWNER_HUMAIN\s*[=:]')
 EXTENSIONS = ('.py', '.ts', '.tsx', '.md', '.json', '.sh')
+# Nom de l'humain dans une fixture : la valeur neutre, celle que l'agence prend quand rien n'est posé (corr-008 c).
+NOM_NEUTRE = "L'humain"
 
 
 def fichiers_livres():
@@ -31,6 +33,12 @@ def fichiers_livres():
 	return sorted(out)
 
 
+def fixtures_livrees():
+	"""Fixtures commitées de l'agence (contrats lus par d'autres tests) : relatifs, triés."""
+	base = os.path.join(REPO, 'tools', 'agence', 'fixtures')
+	return sorted(os.path.relpath(os.path.join(r, n), REPO) for r, _, noms in os.walk(base) for n in noms)
+
+
 class Purete(unittest.TestCase):
 	def test_skill_livre_existe(self):
 		self.assertTrue(os.path.isfile(os.path.join(REPO, 'skills', 'orchestrateur', 'SKILL.md')))
@@ -46,6 +54,30 @@ class Purete(unittest.TestCase):
 					texte = ADRESSE_FORK.sub('', ligne)
 					if PERSONNEL.search(texte) and not CLE_OPAQUE.match(ligne):
 						trouves.append(f'{rel}:{i}: {ligne.strip()}')
+		self.assertEqual(trouves, [])
+
+	def test_fixtures_sans_nom_ni_chemin_personnel(self):
+		trouves = []
+		for rel in fixtures_livrees():
+			with open(os.path.join(REPO, rel), encoding='utf-8') as f:
+				trouves += [f'{rel}:{i}' for i, l in enumerate(f, 1) if PERSONNEL.search(ADRESSE_FORK.sub('', l))]
+		self.assertTrue(fixtures_livrees())
+		self.assertEqual(trouves, [])
+
+	def test_fixtures_nomment_l_humain_par_la_valeur_neutre(self):
+		"""Un invariant rendu dans une fixture porte le nom neutre, jamais un prénom (AGENCE_NOM d'un test)."""
+		import sys
+		sys.path.insert(0, HERE)
+		import pratiques
+		gabarits = [i.split('{humain}') for i in pratiques.schema()['invariants'] if '{humain}' in i]
+		trouves = []
+		for rel in fixtures_livrees():
+			with open(os.path.join(REPO, rel), encoding='utf-8') as f:
+				for i, l in enumerate(f, 1):
+					for avant, apres in gabarits:
+						m = re.search(re.escape(avant) + '(.*?)' + re.escape(apres), l)
+						if m and m.group(1) != NOM_NEUTRE:
+							trouves.append(f'{rel}:{i}')
 		self.assertEqual(trouves, [])
 
 	def test_cle_opaque_une_fois_par_cote(self):

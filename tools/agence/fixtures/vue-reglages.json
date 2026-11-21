@@ -533,7 +533,7 @@
  "projet": true,
  "nbProjet": 1,
  "invariants": [
-  "Seul le clic de Camille envoie en son nom (Slack, mail, issue, review, PR) : un agent prépare un brouillon.",
+  "Seul le clic de L'humain envoie en son nom (Slack, mail, issue, review, PR) : un agent prépare un brouillon.",
   "Aucun agent ne merge, ne pousse ni ne force-push (sauf le --force-with-lease d'un rebase demandé).",
   "Aucun secret dans un brief, un commit, un message ou la politique.",
   "Une tâche ne passe en fait que sur preuve (commande et résultat, lien de PR)."
