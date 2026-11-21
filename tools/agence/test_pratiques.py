@@ -91,6 +91,10 @@ class Base(unittest.TestCase):
 		with open(chemin) as f:
 			return json.load(f)
 
+	def texte(self, chemin):
+		with open(chemin) as f:
+			return f.read()
+
 	def charge(self):
 		return pratiques.charger(self.racine, self.home)
 
@@ -266,11 +270,11 @@ class Ecriture(Base):
 
 	def test_set_invalide_ne_modifie_pas_le_fichier(self):
 		self.ecrit(self.projet, {'tests': 'tdd'})
-		avant = open(self.projet).read()
+		avant = self.texte(self.projet)
 		for cle, v in (('tests', 'tdd-strict'), ('livraisn.mode', 'pr'), ('agents.max', '4'), ('preset', 'x')):
 			with self.subTest(cle=cle), self.assertRaises(pratiques.Invalide):
 				pratiques.regler(self.racine, self.home, cle, v)
-			self.assertEqual(open(self.projet).read(), avant)
+			self.assertEqual(self.texte(self.projet), avant)
 
 	def test_set_valide_le_resultat_entier(self):
 		"""Chaque fichier est valide seul, mais la combinaison ne l'est pas : rien n'est écrit."""
@@ -580,7 +584,7 @@ class Commande(Base):
 		code, _, err = self.agence('pratiques', 'check')
 		self.assertEqual(code, 2)
 		self.assertIn(self.dev, err)
-		self.assertEqual(open(self.dev).read(), '{')  # check n'écrit rien
+		self.assertEqual(self.texte(self.dev), '{')  # check n'écrit rien
 
 	def test_brief(self):
 		self.ecrit(self.projet, {'tests': 'tdd'})

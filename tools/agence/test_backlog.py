@@ -397,6 +397,16 @@ class Detections(unittest.TestCase):
 		self.assertTrue(backlog.revue_due(None, jours(7), T0))
 		self.assertFalse(backlog.revue_due(None, None, T0))
 
+	def test_dates_editees_avec_fuseau(self):
+		"""Une date maj éditée à la main porte Z, +02:00 ou rien (lue en UTC) : ni plantage, ni âge faux (Python 3.9 aussi)."""
+		fs = fiches(*[(['x'], 'P2', T0) for _ in range(4)])
+		for f, maj in zip(fs, ('2026-11-05T10:00:00Z', '2026-11-05T12:00:00+02:00', '2026-11-05T10:00:00', '2026-11-07T10:00:00Z')):
+			f['maj'] = maj
+		self.assertEqual([f['id'] for f in backlog.perimees(fs, T0)], ['F1', 'F2', 'F3'])
+		self.assertTrue(backlog.revue_due('2026-11-13T10:00:00Z', None, T0))
+		self.assertFalse(backlog.revue_due(None, '2026-11-14T12:00:00+02:00', T0))
+		self.assertTrue(backlog.revue_due(None, '2026-11-13T10:00:00', T0))
+
 	def test_consomme(self):
 		mesures = {'p1': {'inputTokens': 6000, 'outputTokens': 5000}, 'p2': {'inputTokens': 100, 'outputTokens': 'x'},
 		           'p3': {'inputTokens': True}}

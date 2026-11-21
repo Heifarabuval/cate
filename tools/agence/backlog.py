@@ -12,7 +12,7 @@ import posixpath
 import random
 import re
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 ETATS = ('discussion', 'prête', 'lancée', 'faite', 'abandonnée')
 PAR_LA_CLI = ('discussion', 'prête')  # lancée, faite, abandonnée : régisseur, sur clic ou à la fermeture du besoin
@@ -397,8 +397,14 @@ def plan(fiches, faites, place, maximum, occupees=()):
 	return {'vagues': vagues, 'part': part, 'attente': {f: attente[f] for f in sorted(attente, key=lambda x: int(x[1:]))}}
 
 
+def _date(s):
+	"""Date ISO éditée à la main : Z (que Python 3.9 ne lit pas) vaut +00:00, sans fuseau vaut UTC."""
+	d = datetime.fromisoformat(s.replace('Z', '+00:00'))
+	return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
 def _age(depuis, maintenant):
-	return datetime.fromisoformat(maintenant) - datetime.fromisoformat(depuis)
+	return _date(maintenant) - _date(depuis)
 
 
 def perimees(fiches, maintenant, jours=14):
