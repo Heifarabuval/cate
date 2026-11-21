@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Harnais du benchmark par rejeu d'issues fermées (spec 011, lot 2).
+"""Harnais du benchmark par rejeu d'issues fermées (spec 011, lots 2 et 3).
 
 Python stdlib, sans modèle ni réseau hors `gh` en lecture. Ne lance aucune app, aucune fenêtre, aucune
 installation de dépendances : l'humain ouvre lui-même son terminal ou son workspace dans le clone.
@@ -10,14 +10,19 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   debut ISSUE BRAS    ouvre le rejeu (un seul à la fois), horodaté en UTC
   fini ISSUE BRAS     horodate et lance l'arbitre : vert, rouge, non lançable ; le 4e rouge donne échec
   controle ISSUE BRAS contamination : appels d'outil des journaux du clone qui citent la PR d'origine
+  mesure ISSUE BRAS [--usage-json F]  résultat en nombres dans S/resultats/ISSUE-BRAS.json (F : `cate agent usage --json`)
+  revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
+  rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md
 BRAS : nu ou outil. R : ~/.cache/agence-bench ; S : specs/011-mesure-benchmark ; D : ce dépôt.
 """
 import argparse
+import hashlib
 import json
 import os
 import random
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -264,16 +269,214 @@ def contamination(chemins, depot, v):
 	return len(vus)
 
 
-def controle(a):
-	v, sel = rejeu(a)
+def dossiers_du_clone(a):
+	"""Dossiers de journaux Claude Code du clone et de ses worktrees."""
 	base = os.path.join(os.path.expanduser('~'), '.claude', 'projects')
 	prefixe = re.sub(r'[^A-Za-z0-9]', '-', os.path.join(os.path.abspath(a.racine), nom(a)))
-	dossiers = attente_mesure.dossiers_du_prefixe(base, prefixe) if os.path.isdir(base) else []
-	chemins = attente_mesure.journaux(dossiers)
+	return attente_mesure.dossiers_du_prefixe(base, prefixe) if os.path.isdir(base) else []
+
+
+def controle(a):
+	v, sel = rejeu(a)
+	chemins = attente_mesure.journaux(dossiers_du_clone(a))
 	n = contamination(chemins, sel['depot'], v)
 	print('invalide : %d appel(s) d\'outil citent la PR d\'origine' % n if n else
 		'valide : aucun appel d\'outil ne cite la PR d\'origine (%d journaux lus)' % len(chemins))
 	return 1 if n else 0
+
+
+def seuil(a):
+	"""(seuil, empreinte SHA-256) ; Refus si seuil.json est absent ou pas commité tel quel (FR-003)."""
+	p = os.path.join(a.specs, 'seuil.json')
+	if not os.path.isfile(p):
+		raise Refus('seuil.json absent : le fixer et le commiter avant le premier rejeu')
+	suivi = subprocess.run(['git', 'ls-files', '--error-unmatch', 'seuil.json'], cwd=a.specs, capture_output=True)
+	modif = subprocess.run(['git', 'status', '--porcelain', '--', 'seuil.json'], cwd=a.specs, capture_output=True, text=True)
+	if suivi.returncode or modif.returncode or modif.stdout.strip():
+		raise Refus('seuil.json non commité : le commiter tel quel avant de mesurer ou de rendre un verdict')
+	with open(p, 'rb') as f:
+		octets = f.read()
+	return json.loads(octets), hashlib.sha256(octets).hexdigest()
+
+
+def clics(clone):
+	"""Instants des notes `clic` de l'état agence du clone, tous besoins confondus (un seul rejeu ouvert à la fois)."""
+	p = os.path.join(clone, '.cate', 'tmp', 'agence', 'state.json')
+	st = lire(p) if os.path.isfile(p) else {}
+	return st, [attente_mesure.instant(j['ts']) for n in st.get('needs', []) for j in n.get('journal', []) if j.get('by') == 'clic']
+
+
+def temps_actif(evts, plafond):
+	"""Σ, sur les événements humains, du délai depuis l'événement précédent (quel qu'il soit), plafonné.
+
+	Écart assumé avec la lettre du plan (« depuis la dernière sortie du système ») : deux gestes humains de suite
+	compteraient deux fois le même intervalle. À calibrer au pilote (SC-005)."""
+	total, avant = 0, None
+	for t, k in sorted(evts):
+		if k == 'humain' and avant is not None:
+			total += min(t - avant, plafond)
+		avant = t
+	return round(total)
+
+
+def mesure(a):
+	"""Résultat en nombres du rejeu dans S/resultats/ISSUE-BRAS.json (FR-005, FR-006, FR-015)."""
+	s, empreinte = seuil(a)
+	v, sel = rejeu(a)
+	etat = lire(etat_path(a))
+	clone = os.path.join(a.racine, nom(a))
+	dossiers = dossiers_du_clone(a)
+	panneaux = None
+	if a.usage_json:
+		with open(a.usage_json, encoding='utf-8') as f:
+			panneaux = json.load(f)
+	m = attente_mesure.mesurer(dossiers, panneaux)
+	st, ts_clics = clics(clone)
+	regisseur = None
+	if panneaux is not None:
+		reg = st.get('panels', {}).get('regisseur')
+		regisseur = attente_mesure.mesurer(dossiers, [p for p in panneaux if p.get('panelId') == reg])['jetons_total']
+	finis, chemins = etat['finis'], attente_mesure.journaux(dossiers)
+	n = contamination(chemins, sel['depot'], v)
+	acheve = bool(etat['debut'] and finis and ouvert(a) != nom(a))
+	ta = mur = humains = None
+	if acheve:  # fenêtre [debut, dernier fini] : debut et chaque fini sont des gestes humains
+		bornes = [attente_mesure.instant(x) for x in [etat['debut']] + [f['instant'] for f in finis]]
+		evts = attente_mesure.interventions(chemins) + [(t, 'humain') for t in ts_clics]
+		evts = [e for e in evts if bornes[0] <= e[0] <= bornes[-1]] + [(t, 'humain') for t in bornes]
+		ta, mur, humains = temps_actif(evts, s['plafond_s']), round(bornes[-1] - bornes[0]), sum(1 for _, k in evts if k == 'humain')
+	res = {
+		'issue': a.issue, 'bras': a.bras, 'outil': outil_sha(a.depot), 'seuil': empreinte, 'debut': etat['debut'], 'finis': finis,
+		'temps_actif_s': ta, 'temps_mural_s': mur, 'interventions': humains, 'reprises': max(len(finis) - 1, 0),
+		'remarques': None, 'rouge_interface': None,
+		'jetons': {'entree': m['jetons_entree'], 'cache_cree': m['jetons_cache_cree'], 'lus': m['jetons_lus'],
+			'sortie': m['jetons_sortie'], 'total': m['jetons_total'],
+			'partiel': bool(m['sessions']['non_mesurees'] or m['sessions']['non_lues'])},
+		'jetons_regisseur': regisseur, 'sessions': m['sessions'], 'contamination': n,
+		'etat': 'invalide' if n else 'valide' if acheve else 'inachevé'
+	}
+	ecrire(os.path.join(a.specs, 'resultats', nom(a) + '.json'), res)
+	print('%s : %s ; temps actif %s s ; temps mural %s s ; jetons %d%s' % (nom(a), res['etat'], ta, mur,
+		m['jetons_total'], ' (partiel)' if res['jetons']['partiel'] else ''))
+	return 0
+
+
+def outil_sha(depot):
+	r = subprocess.run(['git', 'rev-parse', '--short=12', 'HEAD'], cwd=depot, capture_output=True, text=True)
+	return r.stdout.strip() or None
+
+
+def resultats(a):
+	d = os.path.join(a.specs, 'resultats')
+	return {n[:-5]: lire(os.path.join(d, n)) for n in sorted(os.listdir(d)) if n.endswith('.json')} if os.path.isdir(d) else {}
+
+
+def revue(a):
+	"""Revue à l'aveugle : diffs des rejeux valides pas encore revus, ordre tiré par la graine, sans bras ni clone."""
+	sel = lire(os.path.join(a.specs, 'selection.json'))
+	base = {v['issue']: v['base'] for v in sel['vivier']}
+	res = resultats(a)
+	noms = [k for k, r in res.items() if r.get('etat') == 'valide' and r.get('remarques') is None
+		and os.path.isdir(os.path.join(a.racine, k))]
+	if not noms:
+		print('aucune diff à revoir')
+		return 0
+	random.Random(sel['graine']).shuffle(noms)
+	for i, k in enumerate(noms, 1):
+		clone = os.path.join(a.racine, k)
+		git(clone, 'add', '-A', '-N')  # fichiers nouveaux visibles dans le diff
+		print('--- diff %d/%d ---\n%s' % (i, len(noms), git(clone, 'diff', base[res[k]['issue']]).decode(errors='replace')))
+		r = dict(res[k], remarques=int(input('remarques (nombre) : ')),
+			rouge_interface=input('rouge par interface (o/n) : ').strip().lower().startswith('o'))
+		ecrire(os.path.join(a.specs, 'resultats', k + '.json'), r)
+	return 0
+
+
+def nombre(x):
+	return ('%.2f' % x).replace('.', ',')
+
+
+def mediane(xs):
+	xs = [x for x in xs if x is not None]
+	return statistics.median(xs) if xs else None
+
+
+def rapport(a):
+	"""Agrège les résultats de campagne et de réserve, rend le verdict contre le seuil (FR-009, FR-010)."""
+	s, empreinte = seuil(a)
+	sel = lire(os.path.join(a.specs, 'selection.json'))
+	res = resultats(a)
+	if any(r.get('seuil') != empreinte for r in res.values()):
+		raise Refus('empreinte du seuil différente de celle des résultats : seuil.json a changé après le premier rejeu')
+	groupes = {k: [t['issue'] for t in sel[k]] for k in ('campagne', 'reserve')}
+	rejeux = [res[k] for k in ('%d-%s' % (i, b) for g in groupes.values() for i in g for b in BRAS) if k in res]
+	issues = [i for g in groupes.values() for i in g if all(res.get('%d-%s' % (i, b), {}).get('etat') == 'valide' for b in BRAS)]
+	if not issues:
+		raise Refus('aucune issue jouée et valide dans les deux bras')
+	r = {(i, b): res['%d-%s' % (i, b)] for i in issues for b in BRAS}
+	premier = lambda x: x['finis'][0]['arbitre'] if x['finis'] else '-'
+	bras = {}
+	for b in BRAS:
+		xs = [r[i, b] for i in issues]
+		rem = [x['remarques'] for x in xs]
+		bras[b] = {'ta': mediane(x['temps_actif_s'] for x in xs), 'mur': mediane(x['temps_mural_s'] for x in xs),
+			'verts': sum(1 for x in xs if premier(x) == 'vert'), 'reprises': sum(x['reprises'] for x in xs),
+			'remarques': None if None in rem else sum(rem), 'jetons': mediane(x['jetons']['total'] for x in xs)}
+	ratio = lambda k: mediane(r[i, 'outil'][k] / r[i, 'nu'][k] if r[i, 'nu'][k] else None for i in issues)
+	ta, mur = ratio('temps_actif_s'), ratio('temps_mural_s')
+	jet = mediane(r[i, 'outil']['jetons']['total'] / r[i, 'nu']['jetons']['total'] if r[i, 'nu']['jetons']['total'] else None
+		for i in issues)
+	partiels = sum(1 for x in r.values() if x['jetons']['partiel'])
+	nu, ou = bras['nu'], bras['outil']
+	qualite = ou['verts'] >= nu['verts'] and ou['reprises'] <= nu['reprises'] and (
+		nu['remarques'] is None or ou['remarques'] is None or ou['remarques'] <= nu['remarques'] * (1 + s['remarques_marge']))
+	bas, haut = s['non_conclusif']
+	manque = [nom for nom, ok in (('temps actif', ta is not None and ta <= s['temps_actif_max']), ('qualité', qualite),
+		('jetons', jet is not None and jet <= s['jetons_max'])) if not ok]
+	zone = ta is not None and bas <= ta <= haut and not any(i in issues for i in groupes['reserve'])
+	if zone and manque in ([], ['temps actif']):  # sur 10 issues seulement : la réserve tranche (spec, Clarifications)
+		verdict = 'non conclusif (temps actif %s dans la zone %s à %s) : rejouer les %d issues de réserve' % (
+			nombre(ta), nombre(bas), nombre(haut), len(groupes['reserve']))
+	else:
+		verdict = 'ne passe pas (%s)' % ', '.join(manque) if manque else 'passe'
+	reg = [x.get('jetons_regisseur') for x in r.values()]
+	reg_txt = ('non attribués sur %d rejeux (sans --usage-json)' % reg.count(None) if None in reg else
+		'%d (attendu 0, 009 SC-006)' % sum(reg) if sum(reg) else '0')
+	ent = lambda v: '-' if v is None else '%d' % v
+	lignes = [
+		'# Rapport du benchmark (spec 011)', '',
+		'Seuil : empreinte %s ; temps actif ≤ %s, jetons ≤ %s, zone non conclusive %s à %s, plafond %d s.' % (
+			empreinte[:12], nombre(s['temps_actif_max']), nombre(s['jetons_max']), nombre(bas), nombre(haut), s['plafond_s']),
+		'Issues comptées : %d (campagne %d sur %d, réserve %d sur %d). Rejeux invalidés : %d. Inachevés : %d. Jetons partiels : %d.' % (
+			len(issues), sum(1 for i in issues if i in groupes['campagne']), len(groupes['campagne']),
+			sum(1 for i in issues if i in groupes['reserve']), len(groupes['reserve']),
+			sum(1 for x in rejeux if x['etat'] == 'invalide'), sum(1 for x in rejeux if x['etat'] == 'inachevé'), partiels), '',
+		'| Issue | Bras | Temps actif (s) | Temps mural (s) | Arbitre au 1er fini | Reprises | Remarques | Jetons |',
+		'|---|---|---|---|---|---|---|---|'
+	] + ['| %d | %s | %s | %s | %s | %d | %s | %d |' % (i, b, ent(x['temps_actif_s']), ent(x['temps_mural_s']), premier(x),
+		x['reprises'], ent(x['remarques']), x['jetons']['total']) for (i, b), x in r.items()] + [
+		'', '| Bras | Temps actif médian (s) | Temps mural médian (s) | Verts au 1er fini | Reprises | Remarques | Jetons médians |',
+		'|---|---|---|---|---|---|---|'
+	] + ['| %s | %s | %s | %d | %d | %s | %s |' % (b, ent(x['ta']), ent(x['mur']), x['verts'], x['reprises'], ent(x['remarques']),
+		ent(x['jetons'])) for b, x in bras.items()] + [
+		'', 'Rapports médians outil / nu : temps actif %s ; jetons %s%s ; temps mural %s (rapporté, non bloquant).' % (
+			nombre(ta) if ta is not None else '-', nombre(jet) if jet is not None else '-', ' (partiel)' if partiels else '',
+			nombre(mur) if mur is not None else '-'),
+		'Qualité : arbitres verts au 1er fini, tours de reprise, remarques de revue%s.' % (
+			'' if None not in (nu['remarques'], ou['remarques']) else ' (revue à l\'aveugle incomplète : jugée sur les deux premiers)'),
+		'Rouge par interface : %d.' % sum(1 for x in r.values() if x.get('rouge_interface')),
+		'Jetons du régisseur et des détections déterministes : %s.' % reg_txt, '',
+		'## Verdict', '', 'Couche 1 : %s.' % verdict, '',
+		'## Limites', '',
+		'- L\'humain joue les deux bras et connaît une partie des solutions d\'origine : biais commun aux deux bras.',
+		'- Bugs après merge non mesurés : rien n\'est mergé dans un rejeu.',
+		'- Version de l\'outil : %s.' % ', '.join(sorted({str(x.get('outil')) for x in r.values()}))
+	]
+	texte = '\n'.join(lignes) + '\n'
+	with open(os.path.join(a.specs, 'rapport-benchmark.md'), 'w', encoding='utf-8') as f:
+		f.write(texte)
+	sys.stdout.write(texte)
+	return 0
 
 
 def main(argv=None):
@@ -283,13 +486,17 @@ def main(argv=None):
 	ap.add_argument('--depot', default=ROOT)
 	sub = ap.add_subparsers(dest='cmd', required=True)
 	sub.add_parser('select').add_argument('--graine', type=int, required=True)
-	for c in ('prepare', 'debut', 'fini', 'controle'):
+	for c in ('prepare', 'debut', 'fini', 'controle', 'mesure'):
 		p = sub.add_parser(c)
 		p.add_argument('issue', type=int)
 		p.add_argument('bras', choices=BRAS)
+	p.add_argument('--usage-json', metavar='FICHIER')
+	sub.add_parser('revue')
+	sub.add_parser('rapport')
 	a = ap.parse_args(argv)
 	try:
-		return {'select': select, 'prepare': prepare, 'debut': debut, 'fini': fini, 'controle': controle}[a.cmd](a)
+		return {'select': select, 'prepare': prepare, 'debut': debut, 'fini': fini, 'controle': controle, 'mesure': mesure,
+			'revue': revue, 'rapport': rapport}[a.cmd](a)
 	except Refus as e:
 		print(e, file=sys.stderr)
 		return 2

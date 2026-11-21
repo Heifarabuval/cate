@@ -1,10 +1,11 @@
-"""Tests de benchmark.py : harnais du benchmark par rejeu d'issues fermées (spec 011, lot 2).
+"""Tests de benchmark.py : harnais du benchmark par rejeu d'issues fermées (spec 011, lots 2 et 3).
 
 Lancer : python3 -m unittest tools/agence/test_benchmark.py
 Tout tourne en faux HOME et en dossier temporaire : faux `gh` (fixtures/bench/bin), faux `open`,
 `osascript`, `electron`, `npx`, `playwright`, `npm`, `claude` qui laissent un témoin s'ils sont
 appelés ; `git` est le vrai, sur un dépôt créé dans le dossier temporaire. Rien ne touche le réseau.
 """
+import hashlib
 import json
 import os
 import re
@@ -17,6 +18,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, 'benchmark.py')
 FIXTURE = os.path.join(HERE, 'fixtures', 'bench')
+CAMPAGNE = os.path.join(FIXTURE, 'campagne')
+ETAT_AGENCE = os.path.join('.cate', 'tmp', 'agence', 'state.json')
 INTERDITS = ('open', 'osascript', 'electron', 'npx', 'playwright', 'npm', 'claude')
 TEMOIN_SH = '#!/bin/sh\necho "$0 $*" >> "$TEMOIN"\nexit 1\n'
 VITEST_SH = '#!/bin/sh\necho "$@" >> "$VITEST_ARGS"\nexit 0\n'
@@ -311,6 +314,277 @@ class Contamination(Banc):
 	def test_dossier_voisin_ignore(self):
 		self.journal('gh pr view 102', 'x')  # `2-outilx` : un autre clone, pas un worktree
 		self.assertEqual(self.controle().returncode, 0)
+
+
+class Specs(Banc):
+	"""Dossier de specs dans un dépôt git jetable : seuil.json commité, selection.json de la fixture de campagne."""
+
+	def setUp(self):
+		super().setUp()
+		os.makedirs(self.specs)
+		self.git(self.specs, 'init', '-q')
+		shutil.copy(os.path.join(CAMPAGNE, 'seuil.json'), self.specs)
+		shutil.copy(os.path.join(CAMPAGNE, 'selection.json'), self.specs)
+		self.git(self.specs, 'add', '.')
+		self.git(self.specs, 'commit', '-qm', 'seuil')
+		self.resultats = os.path.join(self.specs, 'resultats')
+
+	def seuil(self, **kw):
+		with open(os.path.join(CAMPAGNE, 'seuil.json')) as f:
+			s = json.load(f)
+		s.update(kw)
+		ecrire(os.path.join(self.specs, 'seuil.json'), json.dumps(s, indent=1))
+
+	def commit_seuil(self, **kw):
+		self.seuil(**kw)
+		self.git(self.specs, 'commit', '-qam', 'seuil retouché')
+
+	def resultat(self, nom):
+		with open(os.path.join(self.resultats, nom + '.json')) as f:
+			return json.load(f)
+
+
+class Mesure(Specs):
+	"""T020, T021, T025 : mesure d'un rejeu sur les journaux de fixtures/bench/outil et un état agence avec clics."""
+
+	def setUp(self):
+		super().setUp()
+		self.clone = os.path.join(self.racine, '14-outil')
+		ecrire(os.path.join(self.racine, '14-outil.json'), json.dumps({
+			'issue': 14, 'bras': 'outil', 'dependances': 'aucune', 'debut': '2026-01-01T10:59:00Z',
+			'finis': [{'instant': '2026-01-01T11:15:00Z', 'arbitre': 'rouge'}, {'instant': '2026-01-01T12:05:00Z', 'arbitre': 'vert'}]
+		}))
+		self.etat = os.path.join(self.clone, ETAT_AGENCE)
+		os.makedirs(os.path.dirname(self.etat))
+		shutil.copy(os.path.join(CAMPAGNE, 'agence.json'), self.etat)
+		projets = os.path.join(self.home, '.claude', 'projects')
+		outil = os.path.join(FIXTURE, 'outil')
+		shutil.copytree(os.path.join(outil, '-Users-x-proj'), os.path.join(projets, encoder(self.clone)))
+		shutil.copytree(os.path.join(outil, '-Users-x-proj--cate-worktrees-w1'),
+			os.path.join(projets, encoder(self.clone) + '--cate-worktrees-w1'))
+
+	def mesure(self, *args):
+		r = self.run_('mesure', '14', 'outil', *args)
+		self.assertEqual(r.returncode, 0, r.stderr)
+		return r, self.resultat('14-outil')
+
+	def usage(self, panneaux):
+		p = os.path.join(self.tmp, 'usage.json')
+		ecrire(p, json.dumps(panneaux))
+		return p
+
+	def test_temps_actif_plafonne(self):
+		# Événements humains de la fenêtre [debut 10:59:00, dernier fini 12:05:00], délai depuis l'événement précédent :
+		# debut 0 ; 11:00:00 « lance » 60 ; 11:00:20 brief 10 ; 11:11:00 clic n1 30 (après la notification de 11:10:30) ;
+		# 11:12:00 « merci » 60 ; 11:15:00 fini 175 ; 12:00:00 « autre » 2700 → 180 ; 12:02:00 clic n2 115 ; 12:05:00 fini 180.
+		# Hors compte : la note « cli » de 11:11:30, le clic de 12:30:00 (après le dernier fini).
+		_, r = self.mesure()
+		self.assertEqual(r['temps_actif_s'], 0 + 60 + 10 + 30 + 60 + 175 + 180 + 115 + 180)
+		self.assertEqual(r['interventions'], 9)
+		self.assertEqual(r['temps_mural_s'], 66 * 60)
+		self.assertEqual(r['reprises'], 1)
+
+	def test_clic_d_un_autre_besoin_compte(self):
+		with open(self.etat) as f:
+			st = json.load(f)
+		st['needs'][1]['journal'] = []  # sans le clic de n2 à 12:02:00, le fini de 12:05:00 part de 12:00:05
+		ecrire(self.etat, json.dumps(st))
+		_, r = self.mesure()
+		self.assertEqual(r['temps_actif_s'], 0 + 60 + 10 + 30 + 60 + 175 + 180 + 180)
+
+	def test_plafond_lu_dans_le_seuil(self):
+		self.commit_seuil(plafond_s=60)
+		_, r = self.mesure()
+		self.assertEqual(r['temps_actif_s'], 0 + 60 + 10 + 30 + 60 + 60 + 60 + 60 + 60)
+
+	def test_resultat_cles_et_nombres_seulement(self):
+		out, r = self.mesure()
+		self.assertEqual(set(r), {
+			'issue', 'bras', 'outil', 'seuil', 'debut', 'finis', 'temps_actif_s', 'temps_mural_s', 'interventions',
+			'reprises', 'remarques', 'rouge_interface', 'jetons', 'jetons_regisseur', 'sessions', 'contamination', 'etat'
+		})
+		self.assertEqual(r['jetons'], {'entree': 23, 'cache_cree': 195, 'lus': 4850, 'sortie': 37, 'total': 5105, 'partiel': False})
+		self.assertEqual(r['sessions'], {'lues': 3, 'non_lues': 0, 'non_mesurees': 0})
+		with open(os.path.join(self.specs, 'seuil.json'), 'rb') as f:
+			self.assertEqual(r['seuil'], hashlib.sha256(f.read()).hexdigest())
+		self.assertEqual((r['etat'], r['contamination'], r['remarques'], r['rouge_interface']), ('valide', 0, None, None))
+		with open(os.path.join(self.resultats, '14-outil.json')) as f:
+			texte = f.read() + out.stdout + out.stderr
+		for mot in ('MARQUEUR', self.tmp, 'orch', 'agent.jsonl', 'Rapport de', 'x-proj'):
+			self.assertNotIn(mot, texte)
+
+	def test_panneau_non_claude_code_partiel(self):
+		_, r = self.mesure('--usage-json', self.usage([
+			{'panelId': 'p1', 'agentId': 'claude-code', 'sessionIds': ['orch', 'orch2', 'agent']},
+			{'panelId': 'p2', 'agentId': 'codex', 'sessionIds': ['x']}
+		]))
+		self.assertGreater(r['sessions']['non_mesurees'], 0)
+		self.assertTrue(r['jetons']['partiel'])
+		self.assertEqual(r['jetons_regisseur'], 0)
+
+	def test_session_claude_code_du_regisseur_comptee(self):
+		"""T025 : une session claude-code tenue par le panneau régisseur (fixture inventée) rend sa part non nulle."""
+		_, r = self.mesure('--usage-json', self.usage([
+			{'panelId': 'p1', 'agentId': 'claude-code', 'sessionIds': ['orch', 'agent']},
+			{'panelId': 'p9', 'agentId': 'claude-code', 'sessionIds': ['orch2']}
+		]))
+		self.assertEqual(r['jetons_regisseur'], 4 + 40 + 400 + 5)
+		self.assertEqual(r['jetons']['total'], 5105)
+
+	def test_regisseur_non_attribue_sans_usage(self):
+		_, r = self.mesure()
+		self.assertIsNone(r['jetons_regisseur'])
+
+	def test_rejeu_ouvert_inacheve(self):
+		ecrire(os.path.join(self.racine, 'ouvert.json'), json.dumps({'rejeu': '14-outil'}))
+		_, r = self.mesure()
+		self.assertEqual(r['etat'], 'inachevé')
+		self.assertIsNone(r['temps_actif_s'])
+
+	def test_contamination_invalide(self):
+		d = os.path.join(self.home, '.claude', 'projects', encoder(self.clone))
+		with open(os.path.join(d, 'orch2.jsonl'), 'a') as f:
+			f.write(json.dumps({'type': 'assistant', 'timestamp': '2026-01-01T12:00:06Z', 'message': {'id': 'p2', 'content': [
+				{'type': 'tool_use', 'id': 'tz', 'name': 'Bash', 'input': {'command': 'gh pr view 114'}}]}}) + '\n')
+		_, r = self.mesure()
+		self.assertEqual((r['etat'], r['contamination']), ('invalide', 1))
+
+	def test_seuil_absent_refuse(self):
+		os.remove(os.path.join(self.specs, 'seuil.json'))
+		r = self.run_('mesure', '14', 'outil')
+		self.assertEqual(r.returncode, 2)
+		self.assertIn('seuil.json absent', r.stderr)
+
+
+class Revue(Specs):
+	"""T022 : diffs présentés dans un ordre tiré par la graine, sans le bras ; saisie écrite dans le bon résultat."""
+
+	def setUp(self):
+		super().setUp()
+		a = os.path.join(self.racine, '50-nu')
+		os.makedirs(a)
+		self.git(a, 'init', '-q')
+		ecrire(os.path.join(a, 'a.txt'), 'base\n')
+		self.git(a, 'add', '.')
+		self.git(a, 'commit', '-qm', 'base')
+		base = self.git(a, 'rev-parse', 'HEAD')
+		shutil.copytree(a, os.path.join(self.racine, '50-outil'))
+		for bras, mot in (('nu', 'PREMIERDIFF'), ('outil', 'SECONDDIFF')):
+			ecrire(os.path.join(self.racine, '50-' + bras, 'neuf.txt'), mot + '\n')
+		with open(os.path.join(self.specs, 'selection.json')) as f:
+			sel = json.load(f)
+		sel['vivier'][1]['base'] = base
+		ecrire(os.path.join(self.specs, 'selection.json'), json.dumps(sel))
+		for bras in ('nu', 'outil'):
+			ecrire(os.path.join(self.resultats, '50-%s.json' % bras), json.dumps(
+				{'issue': 50, 'bras': bras, 'etat': 'valide', 'remarques': None, 'rouge_interface': None}))
+
+	def test_revue_a_l_aveugle(self):
+		r = subprocess.run(
+			[sys.executable, '-I', SCRIPT, '--racine', self.racine, '--specs', self.specs, '--depot', self.depot, 'revue'],
+			input='2\nn\n5\no\n', capture_output=True, text=True, env=self.env, cwd=self.tmp, timeout=60)
+		self.assertEqual(r.returncode, 0, r.stderr)
+		vus = sorted(('PREMIERDIFF', 'SECONDDIFF'), key=r.stdout.index)
+		attendu = {vus[0]: (2, False), vus[1]: (5, True)}
+		nu, outil = self.resultat('50-nu'), self.resultat('50-outil')
+		self.assertEqual((nu['remarques'], nu['rouge_interface']), attendu['PREMIERDIFF'])
+		self.assertEqual((outil['remarques'], outil['rouge_interface']), attendu['SECONDDIFF'])
+		self.assertNotRegex(r.stdout, r'\b(nu|outil)\b')
+		self.assertNotIn(self.racine, r.stdout)
+		r2 = self.run_('revue')
+		self.assertEqual(r2.returncode, 0, r2.stderr)
+		self.assertIn('aucune diff à revoir', r2.stdout)
+
+
+class Rapport(Specs):
+	"""T023 à T025 : verdict sur la fixture de campagne (4 issues × 2 bras, résultats écrits à la main), seuil, régisseur."""
+
+	def setUp(self):
+		super().setUp()
+		shutil.copytree(os.path.join(CAMPAGNE, 'resultats'), self.resultats)
+
+	def modifier(self, nom, **kw):
+		r = self.resultat(nom)
+		r.update(kw)
+		ecrire(os.path.join(self.resultats, nom + '.json'), json.dumps(r))
+
+	def rapport(self, code=0):
+		r = self.run_('rapport')
+		self.assertEqual(r.returncode, code, r.stdout + r.stderr)
+		return r
+
+	def test_passe_avec_les_nombres_attendus(self):
+		out = self.rapport().stdout
+		with open(os.path.join(self.specs, 'rapport-benchmark.md')) as f:
+			self.assertEqual(f.read(), out)
+		for ligne in (
+			'| nu | 850 | 2100 | 3 | 1 | 6 | 90000 |',
+			'| outil | 490 | 1800 | 4 | 0 | 5 | 125000 |',
+			'| 12 | nu | 800 | 2400 | rouge | 1 | 1 | 200000 |',
+			'Rapports médians outil / nu : temps actif 0,55 ; jetons 1,35 (partiel) ; temps mural 1,00 (rapporté, non bloquant).',
+			'Issues comptées : 4 (campagne 4 sur 10, réserve 0 sur 5). Rejeux invalidés : 0. Inachevés : 0. Jetons partiels : 1.',
+			'Rouge par interface : 1.',
+			'Jetons du régisseur et des détections déterministes : 0.',
+			'Couche 1 : passe.'
+		):
+			self.assertIn(ligne, out)
+
+	def test_deux_lancements_identiques(self):
+		premier = self.rapport().stdout
+		with open(os.path.join(self.specs, 'rapport-benchmark.md'), 'rb') as f:
+			octets = f.read()
+		self.assertEqual(self.rapport().stdout, premier)
+		with open(os.path.join(self.specs, 'rapport-benchmark.md'), 'rb') as f:
+			self.assertEqual(f.read(), octets)
+
+	def test_ne_passe_pas_sur_le_temps_actif(self):
+		for i, ta in ((11, 800), (12, 720), (13, 510), (14, 855)):  # 0,8 0,9 0,85 0,95 : médiane 0,875
+			self.modifier('%d-outil' % i, temps_actif_s=ta)
+		out = self.rapport().stdout
+		self.assertIn('temps actif 0,88', out)
+		self.assertIn('Couche 1 : ne passe pas (temps actif).', out)
+
+	def test_ne_passe_pas_sur_la_qualite(self):
+		for i in (11, 13):
+			self.modifier('%d-outil' % i, finis=[{'instant': 'x', 'arbitre': 'rouge'}, {'instant': 'y', 'arbitre': 'vert'}], reprises=1)
+		self.assertIn('Couche 1 : ne passe pas (qualité).', self.rapport().stdout)
+
+	def test_non_conclusif(self):
+		for i, ta in ((11, 700), (12, 568), (13, 438), (14, 666)):  # 0,70 0,71 0,73 0,74 : médiane 0,72
+			self.modifier('%d-outil' % i, temps_actif_s=ta)
+		out = self.rapport().stdout
+		self.assertIn('Couche 1 : non conclusif (temps actif 0,72 dans la zone 0,65 à 0,75) : rejouer les 5 issues de réserve.', out)
+
+	def test_temps_mural_jamais_bloquant(self):
+		for i in (11, 12, 13, 14):
+			self.modifier('%d-outil' % i, temps_mural_s=99999)
+		self.assertIn('Couche 1 : passe.', self.rapport().stdout)
+
+	def test_jetons_au_dela_du_plafond(self):
+		self.modifier('13-outil', jetons=dict(self.resultat('13-outil')['jetons'], total=500000))
+		self.modifier('11-outil', jetons=dict(self.resultat('11-outil')['jetons'], total=900000))
+		self.assertIn('Couche 1 : ne passe pas (jetons).', self.rapport().stdout)
+
+	def test_rejeu_invalide_retire_l_issue(self):
+		self.modifier('14-outil', etat='invalide')
+		self.assertIn('Issues comptées : 3 (campagne 3 sur 10, réserve 0 sur 5). Rejeux invalidés : 1.', self.rapport().stdout)
+
+	def test_part_du_regisseur_signalee(self):
+		self.modifier('12-outil', jetons_regisseur=1500)
+		self.assertIn('Jetons du régisseur et des détections déterministes : 1500 (attendu 0, 009 SC-006).', self.rapport().stdout)
+
+	def test_seuil_absent_refuse(self):
+		self.git(self.specs, 'rm', '-q', 'seuil.json')
+		self.assertIn('seuil.json absent', self.rapport(2).stderr)
+
+	def test_seuil_non_commite_refuse(self):
+		self.seuil(temps_actif_max=0.9)
+		self.assertIn('seuil.json non commité', self.rapport(2).stderr)
+		self.assertFalse(os.path.exists(os.path.join(self.specs, 'rapport-benchmark.md')))
+
+	def test_empreinte_differente_refuse(self):
+		self.commit_seuil(temps_actif_max=0.9)
+		self.assertIn('empreinte du seuil', self.rapport(2).stderr)
 
 
 class Source(unittest.TestCase):

@@ -1,0 +1,35 @@
+{
+ "bras": "nu",
+ "contamination": 0,
+ "debut": "2026-02-14T09:00:00Z",
+ "etat": "valide",
+ "finis": [
+  {
+   "arbitre": "vert",
+   "instant": "2026-02-14T10:00:00Z"
+  }
+ ],
+ "interventions": 9,
+ "issue": 14,
+ "jetons": {
+  "cache_cree": 400,
+  "entree": 100,
+  "lus": 79000,
+  "partiel": false,
+  "sortie": 500,
+  "total": 80000
+ },
+ "jetons_regisseur": 0,
+ "outil": "cafe0000",
+ "remarques": 3,
+ "reprises": 0,
+ "rouge_interface": true,
+ "sessions": {
+  "lues": 2,
+  "non_lues": 0,
+  "non_mesurees": 0
+ },
+ "seuil": "7e34f478f379760946739491aeaca3604a4641159d8bc6b649fb84dd405164fd",
+ "temps_actif_s": 900,
+ "temps_mural_s": 3000
+}
