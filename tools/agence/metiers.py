@@ -22,6 +22,7 @@ DEV = 'dev'
 # Motifs de secret (007 FR-012) : jetons GitHub, OpenAI ou Anthropic, Slack, AWS, clé privée.
 SECRET_RE = re.compile(r'gh[pousr]_|github_pat_|sk-|xox[abpres]-|AKIA|-----BEGIN')
 VARIABLE_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*\Z')
+SERVEUR_RE = re.compile(r'^[A-Za-z0-9_-]+\Z')  # nom tel que Claude Code l'écrit dans mcp__<serveur>__<outil>
 
 
 class Invalide(Exception):
@@ -82,8 +83,8 @@ def valider(connecteurs, metiers):
 			_refus(f, i, 'acces', 'une de : ' + ', '.join(ACCES))
 		for champ in ('lecture', 'ecriture'):
 			_textes(f, i, champ, c[champ])
-		if c['acces'] == 'mcp' and not (isinstance(c.get('serveur'), str) and c['serveur']):
-			_refus(f, i, 'serveur', 'nom du serveur MCP exigé pour un accès mcp')
+		if c['acces'] == 'mcp' and not (isinstance(c.get('serveur'), str) and SERVEUR_RE.match(c['serveur'])):
+			_refus(f, i, 'serveur', 'nom du serveur MCP exigé pour un accès mcp (lettres, chiffres, _ et -)')
 		if c['acces'] != 'mcp' and c['ecriture']:
 			_refus(f, i, 'ecriture', 'seul un connecteur mcp écrit, par une carte (api et navigateur : lecture seule en v1)')
 		if c['acces'] == 'api':
@@ -143,3 +144,24 @@ def metier(cat, ident):
 
 def connecteur(cat, ident):
 	return next((c for c in cat['connecteurs'] if c['id'] == ident), None)
+
+
+def classer(outil, cat):
+	"""(connecteur, nom de l'outil, 'lecture' | 'ecriture') d'un outil mcp__<serveur>__<outil> d'un serveur déclaré ;
+	None hors périmètre. Un outil de ce serveur absent de `lecture` est une écriture (échec fermé, FR-003)."""
+	for c in sorted(cat['connecteurs'], key=lambda c: -len(c.get('serveur') or '')):  # le préfixe le plus long gagne
+		prefixe = f"mcp__{c.get('serveur')}__"
+		if c['acces'] == 'mcp' and outil.startswith(prefixe) and len(outil) > len(prefixe):
+			nom = outil[len(prefixe):]
+			return c, nom, 'lecture' if nom in c['lecture'] else 'ecriture'
+	return None
+
+
+def serveurs(cat):
+	"""Serveurs MCP déclarés, triés, sans doublon : le matcher des hooks (FR-005)."""
+	return sorted({c['serveur'] for c in cat['connecteurs'] if c['acces'] == 'mcp'})
+
+
+def canonique(args):
+	"""Arguments d'un appel, sérialisés une seule façon (clés triées) : la carte et l'appel se comparent ainsi."""
+	return json.dumps(args, sort_keys=True, ensure_ascii=False, separators=(',', ':'))

@@ -60,7 +60,7 @@ AVERTISSEMENT_REFS = ('agence : attention, un terminal Cate enregistre la sortie
                       "les adresses et les identifiants affichés y restent, hors de la rétention de 14 jours et de « Tout effacer ».")
 KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
-                      r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
+                      r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+|outil:[\w-]+:[\w.-]+)$')
 ORCH_PROMPT = '/orchestrateur'
 INTERLOCUTEUR, INTER_PROMPT = 'Interlocuteur', '/interlocuteur'  # spec 010 : un par projet, il écrit des fiches
 INTER_DENY = "l'interlocuteur ne lance rien : il écrit des fiches (agence fiche add), l'humain lance au clic."
@@ -898,8 +898,10 @@ def cmd_draft(a):
 		refuse_interlocuteur()
 		if not CIBLE_RE.match(a.cible or ''):
 			raise Refus('cible invalide : slack:<canal>, mail:<adresse>, issue:<owner/repo>, '
-			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>')
+			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>, outil:<connecteur>:<outil>')
 		texte = sys.stdin.read() if a.texte == '-' else a.texte
+		if a.cible.startswith('outil:'):
+			texte = carte_outil(a.cible, texte)
 		with tx() as st:
 			if not st['port']:
 				raise Refus("régisseur non démarré : l'orchestrateur lance d'abord « agence boot »")
@@ -947,6 +949,38 @@ def cmd_draft(a):
 		with tx() as st:
 			drop_draft(st, a.id)
 	return 0
+
+
+def carte_outil(cible, texte):
+	"""Carte d'écriture (spec 012, FR-004) : connecteur connu, outil d'écriture déclaré, écriture ouverte par la politique,
+	arguments en objet JSON ; rend le texte canonique (celui que la garde compare à l'appel)."""
+	import metiers
+	_, ident, outil = cible.split(':', 2)
+	try:
+		cat = metiers.charger()
+	except metiers.Invalide as err:
+		raise Refus(f'catalogue des connecteurs refusé : {err}')
+	c = metiers.connecteur(cat, ident)
+	if c is None:
+		raise Refus(f'connecteur inconnu : {ident} (agence pratiques show : connecteurs.lecture et connecteurs.ecriture)')
+	if outil not in c['ecriture']:
+		raise Refus(f"« {outil} » n'est pas un outil d'écriture déclaré de « {c['nom']} » : aucune carte possible")
+	pol = politique(agir=True)
+	if ident not in pol['valeurs']['connecteurs.ecriture']:
+		nom_cle = pol_schema_nom('connecteurs.ecriture')
+		raise Refus(f"écriture fermée pour « {c['nom']} » : seul {nom()} l'ouvre (réglage « {nom_cle} » du panneau agence)")
+	try:
+		args = json.loads(texte)
+	except ValueError:
+		args = None
+	if not isinstance(args, dict):
+		raise Refus("texte d'une carte d'écriture : les arguments de l'outil en objet JSON")
+	return metiers.canonique(args)
+
+
+def pol_schema_nom(cle):
+	import pratiques  # voir politique()
+	return pratiques.schema()['cles'][cle]['nom']
 
 
 def drop_draft(st, did):
@@ -1224,6 +1258,12 @@ def click(path, form):
 				notify(st['panels'].get('orchestrator'),
 				       f"{nom()} a cliqué Envoyer sur le brouillon {did} ({d['cible']}). Envoie-le maintenant par l'outil MCP "
 				       f"avec exactement le texte de « agence draft show {did} », puis « agence draft sent {did} --evidence <lien> ».")
+				return 303, '/'
+			if kind == 'outil':  # spec 012 : un appel identique passe, une fois ; l'agent appelle, le régisseur n'appelle aucun MCP
+				note(find(st, 'needs', d['needId']), f"Envoyer cliqué sur {did} ({d['cible']})", 'clic')
+				notify(d['agent'] or st['panels'].get('orchestrator'),
+				       f"{nom()} a validé la carte {did} ({nom_connecteur(d['cible'])}). Appelle l'outil une fois, avec exactement "
+				       f"les arguments de « agence draft show {did} », puis « agence draft sent {did} --evidence <résultat> ».")
 				return 303, '/'
 			try:
 				link_url = send_slack(d) if kind == 'slack' else send_gh(d)
@@ -1930,7 +1970,13 @@ def page_draft(st, did):
 	with open(draft_path(did)) as f:
 		texte = f.read()
 	kind = d['cible'].split(':', 1)[0]
-	label = {'issue': 'Issue', 'pr': 'Pull request', 'comment': 'Commentaire', 'slack': 'Message Slack', 'mail': 'Mail'}[kind]
+	label = {'issue': 'Issue', 'pr': 'Pull request', 'comment': 'Commentaire', 'slack': 'Message Slack', 'mail': 'Mail',
+	         'outil': 'Écriture'}[kind]
+	montre = render_md(texte)  # le bouton Envoyer porte l'empreinte du texte du fichier, jamais celle de l'affichage
+	if kind == 'outil':  # spec 012 (FR-004) : l'outil par le nom du connecteur, les arguments lisibles
+		label = 'Écriture dans ' + nom_connecteur(d['cible'])
+		with contextlib.suppress(ValueError):
+			montre = f'<pre>{e(json.dumps(json.loads(texte), ensure_ascii=False, indent=1))}</pre>'
 	actions = ''
 	if d['statut'] == 'à valider':
 		actions = (btn(f'/draft/{did}/edit', 'Modifier') + btn(f'/draft/{did}/drop', 'Abandonner', 'no')
@@ -1940,11 +1986,22 @@ def page_draft(st, did):
 			actions = '<p class="meta"><b>Envoi incertain : vérifie le canal avant de renvoyer.</b></p>' + actions
 	link_html = f' · <a href="{e(d["url"])}">{e(d["url"])}</a>' if d['url'] else ''
 	body = (f'<div class="sub"><a href="/">Suivi</a> · {label} · {e(d["cible"])} · {e(d["statut"])}{link_html}</div>'
-	        f'<h1>{e(d["titre"] or "")}</h1><div class="box markdown-body">{render_md(texte)}</div>'
+	        f'<h1>{e(d["titre"] or "")}</h1><div class="box markdown-body">{montre}</div>'
 	        f'<div style="text-align:right">{actions}</div>'
 	        '<p class="meta">Modifier ouvre le texte dans un éditeur ; enregistrer puis recharger cette page. '
 	        'Seul le bouton Envoyer fait partir ce texte.</p>')
 	return layout(f'Brouillon {did}', body)
+
+
+def nom_connecteur(cible):
+	"""« Outil factice (ecrire) » pour outil:factice:ecrire ; l'id brut si le catalogue est illisible."""
+	import metiers
+	_, ident, outil = cible.split(':', 2)
+	with contextlib.suppress(metiers.Invalide):
+		c = metiers.connecteur(metiers.charger(), ident)
+		if c:
+			return f"{c['nom']} ({outil})"
+	return f'{ident} ({outil})'
 
 
 def page_ask(st, qid):
@@ -3173,15 +3230,21 @@ def garde_plafond(st):
 	                        f"Ferme un agent fini ou mets la tâche en file ; seul {nom()} relève le plafond (réglage « Agents en même temps » du panneau agence).")
 
 
-def send_match(st, tool, ti):
-	"""Brouillon cliqué, pas encore utilisé, besoin ouvert, dont la cible et le texte sont exactement ceux de l'envoi."""
+def send_match(st, tool, ti, cible=None):
+	"""Brouillon cliqué, pas encore utilisé, besoin ouvert, dont la cible et le texte sont exactement ceux de l'envoi.
+	cible : carte d'écriture outil:<connecteur>:<outil> (spec 012), arguments comparés sous forme canonique."""
 	for d in st['drafts']:
 		if d['statut'] != 'envoyer' or d.get('allowed') or d['texte'] is None:
 			continue
 		with contextlib.suppress(Refus):
 			if find(st, 'needs', d['needId'])['status'] != 'open':
 				continue
-		if d['cible'].startswith('mail:'):
+		if cible:
+			import metiers  # seulement pour une carte : l'envoi Slack ou mail n'en dépend pas
+			with contextlib.suppress(ValueError):
+				if d['cible'] == cible and metiers.canonique(json.loads(d['texte'])) == metiers.canonique(ti):
+					return d
+		elif d['cible'].startswith('mail:'):
 			if (ti.get('to') == [d['cible'][5:]] and not ti.get('cc') and not ti.get('bcc') and not ti.get('htmlBody')
 					and not ti.get('draftId') and not ti.get('attachments')
 					and d['texte'] == (ti.get('body') or '').strip() and (not d['titre'] or d['titre'] == ti.get('subject'))):
@@ -3189,8 +3252,7 @@ def send_match(st, tool, ti):
 	return None
 
 
-def est_envoi(tool):
-	return tool.endswith('slack_send_message') or tool.endswith('Gmail__send_message')
+AUCUNE = {'hookSpecificOutput': {'hookEventName': 'PreToolUse'}}  # mode send, aucune décision : le flux normal de Claude Code
 
 
 def envoi_ask(tool):
@@ -3198,27 +3260,27 @@ def envoi_ask(tool):
 	                       "(seul un brouillon agence cliqué, cible et texte identiques, passe sans question).")
 
 
-def guard(payload, mode):
-	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
-	de canal) ; 'pages' : pages du régisseur, fichiers écrits par la CLI, et refus à l'interlocuteur de ce qui lance
-	(lance() : la sonde de l'appelant ne tourne que sur ces commandes, bornée à SONDE secondes ; en échec, elle laisse passer)."""
-	tool = payload.get('tool_name') or ''
-	ti = payload.get('tool_input') or {}
-	refus = envoi_ask(tool) if mode == 'send' else None
-	if (mode == 'send') != est_envoi(tool):
-		return refus
+def _base(payload):
+	"""Racine du projet orchestré de l'appel (dépôt principal pour un worktree) ; None hors projet orchestré."""
 	base = os.environ.get('CLAUDE_PROJECT_DIR') or payload.get('cwd') or os.getcwd()
 	if not os.path.isfile(state_file(base)):
 		base = main_repo(base) or base
-	if not os.path.isfile(state_file(base)):
-		return refus
-	try:
-		st = load(state_file(base))
-	except ValueError:  # état illisible : l'envoi demande, un lancement est averti, le reste passe
-		return refus or (PLAFOND_AVERTI if tool == 'Bash' and demarre(ti.get('command') or '') else None)
-	if est_envoi(tool):
-		d = send_match(st, tool, ti)
-		if not d:
+	return base if os.path.isfile(state_file(base)) else None
+
+
+def garde_envoi(payload, tool, ti):
+	"""Mode send. Envoi Slack ou mail (ENVOI_MATCHER) : allow sur brouillon cliqué identique, sinon ask. Outil d'un
+	serveur déclaré par un connecteur (spec 012, FR-003) : lecture ouverte, aucune décision (None) ; lecture fermée,
+	deny ; écriture, deny sauf carte cliquée, non utilisée, besoin ouvert, outil et arguments identiques (un appel).
+	Hors projet orchestré : lecture libre, écriture refusée (aucune carte possible). Autre outil : None."""
+	if re.fullmatch(ENVOI_MATCHER, tool):
+		refus = envoi_ask(tool)
+		base = _base(payload)
+		if not base or not tool.endswith(('slack_send_message', 'Gmail__send_message')):
+			return refus
+		try:
+			load(state_file(base))
+		except ValueError:  # état illisible : l'envoi demande
 			return refus
 		with tx(base) as cur:  # une autorisation par clic : la suivante redemande
 			d = send_match(cur, tool, ti)
@@ -3226,6 +3288,59 @@ def guard(payload, mode):
 				return refus
 			d['allowed'] = True
 		return decision('allow', f"Brouillon {d['id']} validé par le clic de {nom()} (cible et texte identiques).")
+	try:
+		import metiers
+		import pratiques
+		cl = metiers.classer(tool, metiers.charger())
+	except Exception as err:  # noqa: BLE001 : catalogue ou module introuvable, échec fermé
+		return decision('deny', f'catalogue des connecteurs illisible ({type(err).__name__}) : {tool} refusé')
+	if cl is None:
+		return None
+	c, outil, sens = cl
+	cible = f"outil:{c['id']}:{outil}"
+	base = _base(payload)
+	if base is None:
+		return None if sens == 'lecture' else decision('deny', f"Écriture par « {c['nom']} » hors d'un projet orchestré par l'agence : aucune carte possible.")
+	try:
+		st = load(state_file(base))
+	except ValueError:
+		return decision('deny', 'état de l’agence illisible : outil de connecteur refusé')
+	pol = pratiques.charger(base, os.environ.get('HOME'), st.get('ponctuel'))
+	if pol['erreur']:
+		return decision('deny', f"politique refusée, outil de « {c['nom']} » refusé : {pol['erreur']}")
+	v = pol['valeurs']
+	if sens == 'lecture':
+		return None if c['id'] in v['connecteurs.lecture'] else decision(
+			'deny', f"Lecture fermée pour « {c['nom']} » : seul {nom()} l'ouvre (réglage « {pol_schema_nom('connecteurs.lecture')} »).")
+	if outil not in c['ecriture']:
+		return decision('deny', f"« {outil} » n'est pas une écriture déclarée de « {c['nom']} » : refusé, aucune carte possible.")
+	if c['id'] not in v['connecteurs.ecriture']:
+		return decision('deny', f"Écriture fermée pour « {c['nom']} » : seul {nom()} l'ouvre (réglage « {pol_schema_nom('connecteurs.ecriture')} »).")
+	with tx(base) as cur:  # une carte, un appel : marquée utilisée dans la même transaction
+		d = send_match(cur, tool, ti, cible)
+		if d:
+			d['allowed'] = True
+	if not d:
+		return decision('deny', f"Écriture par « {c['nom']} » sans carte validée : prépare la carte « agence draft new --cible {cible} "
+		                        f"'<arguments JSON>' », {nom()} la valide d'un clic, puis refais exactement cet appel.")
+	return decision('allow', f"Carte {d['id']} validée par le clic de {nom()} (outil et arguments identiques).")
+
+
+def guard(payload, mode):
+	"""Décision PreToolUse ou None. mode 'send' : garde_envoi ; 'pages' : pages du régisseur, fichiers écrits par la CLI,
+	et refus à l'interlocuteur de ce qui lance (lance() : la sonde de l'appelant ne tourne que sur ces commandes, bornée
+	à SONDE secondes ; en échec, elle laisse passer)."""
+	tool = payload.get('tool_name') or ''
+	ti = payload.get('tool_input') or {}
+	if mode == 'send':
+		return garde_envoi(payload, tool, ti)
+	base = _base(payload)
+	if base is None:
+		return None
+	try:
+		st = load(state_file(base))
+	except ValueError:  # état illisible : un lancement est averti, le reste passe
+		return PLAFOND_AVERTI if tool == 'Bash' and demarre(ti.get('command') or '') else None
 	port = st.get('port')
 	local = re.compile(rf'(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]):{port}\b') if port else None
 	if tool == 'Bash':
@@ -3297,7 +3412,7 @@ def cmd_guard(a):
 	if a.mode == 'send':  # échec fermé : toute erreur rend ask (agence-hook rend aussi ask si ce processus échoue)
 		try:
 			payload = json.loads(sys.stdin.read())
-			res = guard(payload, 'send') if isinstance(payload, dict) else envoi_ask('?')
+			res = (guard(payload, 'send') or AUCUNE) if isinstance(payload, dict) else envoi_ask('?')
 		except Exception as err:  # noqa: BLE001 : aucune exception ne doit laisser passer un envoi
 			res = decision('ask', f'garde agence en échec ({type(err).__name__}) : envoi à confirmer')
 		print(json.dumps(res, ensure_ascii=False))
@@ -3319,13 +3434,26 @@ def cmd_guard(a):
 HOOK_MARQUE = 'agence-hook'  # une entrée agence se reconnaît à sa commande, rien d'autre n'est lu ni modifié
 _HOOK_SH = 'sh -c \'f="$HOME/.cate/runtime/$(cat "$HOME/.cate/runtime/current" 2>/dev/null)/agence/agence-hook"; [ -x "$f" ] && exec "$f" %s\''
 ASK_INTROUVABLE = "garde agence introuvable : envoi à confirmer"
-HOOK_ENTREES = [
-	{'matcher': 'mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$',
+ENVOI_MATCHER = 'mcp__.*(slack_send_message|slack_schedule_message|Gmail__(send_message|reply|forward))$'
+HOOK_ENTREES = [  # contrat figé ; hook_entrees() y ajoute les serveurs des connecteurs déclarés (spec 012)
+	{'matcher': ENVOI_MATCHER,
 	 'hooks': [{'type': 'command', 'command': _HOOK_SH % ('send; printf %s "{\\"hookSpecificOutput\\":{\\"hookEventName\\":\\"PreToolUse\\",'
 	                                                       '\\"permissionDecision\\":\\"ask\\",\\"permissionDecisionReason\\":\\"' + ASK_INTROUVABLE + '\\"}}"')}]},
 	{'matcher': 'Bash|WebFetch|Write|Edit|MultiEdit',
 	 'hooks': [{'type': 'command', 'command': _HOOK_SH % 'pages; exit 0'}]},
 ]
+
+
+def hook_entrees():
+	"""Entrées attendues : le contrat, plus une entrée send (échec fermé, comme l'envoi) dont le matcher couvre les serveurs
+	MCP des connecteurs déclarés (FR-005) ; aucune de plus sans connecteur mcp ou si le catalogue est illisible."""
+	import metiers
+	try:
+		srv = metiers.serveurs(metiers.charger())
+	except metiers.Invalide:
+		srv = []
+	extra = [{'matcher': f"mcp__({'|'.join(srv)})__.*", 'hooks': json.loads(json.dumps(HOOK_ENTREES[0]['hooks']))}] if srv else []
+	return json.loads(json.dumps(HOOK_ENTREES)) + extra
 
 
 def settings_defaut():
@@ -3362,12 +3490,14 @@ def _est_agence(h):
 
 
 def garde_statut(data):
-	"""actif : les deux entrées du contrat telles quelles et aucune autre commande agence-hook ; inactif : aucune ; partiel sinon."""
+	"""actif : les entrées attendues (hook_entrees) telles quelles et aucune autre commande agence-hook ; inactif : aucune ;
+	partiel sinon (dont un serveur déclaré après l'installation)."""
 	pre = ((data or {}).get('hooks') or {}).get('PreToolUse') or []
 	agence_ = [h for e in pre for h in e.get('hooks', []) if _est_agence(h)]
 	if not agence_:
 		return 'inactif'
-	return 'actif' if all(e in pre for e in HOOK_ENTREES) and len(agence_) == len(HOOK_ENTREES) else 'partiel'
+	attendues = hook_entrees()
+	return 'actif' if all(e in pre for e in attendues) and len(agence_) == len(attendues) else 'partiel'
 
 
 def sans_gardes(data):
@@ -3465,7 +3595,7 @@ def cmd_hooks(a):
 	if a.action == 'install':
 		apres = avant if garde_statut(avant) == 'actif' else sans_gardes(avant or {})
 		if apres is not avant:
-			apres.setdefault('hooks', {}).setdefault('PreToolUse', []).extend(json.loads(json.dumps(HOOK_ENTREES)))
+			apres.setdefault('hooks', {}).setdefault('PreToolUse', []).extend(hook_entrees())
 	else:
 		apres = None if avant is None else sans_gardes(avant)
 	ecrit = apres != avant

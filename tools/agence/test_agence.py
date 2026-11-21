@@ -1766,10 +1766,10 @@ class TourGarde(Base):
 		self.booted()
 		agence.un_tour()
 		self.assertEqual(self.state()['garde'], 'inactif')
-		self.settings(agence.HOOK_ENTREES)
+		self.settings(agence.hook_entrees())
 		agence.un_tour()
 		self.assertEqual(self.state()['garde'], 'actif')
-		self.settings(agence.HOOK_ENTREES[1:])
+		self.settings(agence.hook_entrees()[1:])
 		agence.un_tour()
 		self.assertEqual(self.state()['garde'], 'partiel')
 

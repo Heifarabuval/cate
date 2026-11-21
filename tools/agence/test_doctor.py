@@ -65,7 +65,7 @@ class Prerequis(Base):
 			f.write('---\nname: orchestrateur\n---\n')
 		os.makedirs(os.path.join(self.home, '.claude'))
 		with open(os.path.join(self.home, '.claude', 'settings.json'), 'w') as f:
-			json.dump({'hooks': {'PreToolUse': agence.HOOK_ENTREES}}, f)
+			json.dump({'hooks': {'PreToolUse': agence.hook_entrees()}}, f)
 
 	def reglages(self, valeurs):
 		with open(os.path.join(self.ws, 'settings.json'), 'w') as f:
@@ -186,7 +186,7 @@ class Prerequis(Base):
 		os.remove(settings)
 		self.assertIn('agence hooks install', self.manque('gardes')['commande'])
 		with open(settings, 'w') as f:
-			json.dump({'hooks': {'PreToolUse': agence.HOOK_ENTREES[:1]}}, f)
+			json.dump({'hooks': {'PreToolUse': agence.hook_entrees()[:1]}}, f)
 		self.assertIn('partiel', self.manque('gardes')['detail'])
 
 	def test_skill_absent_non_bloquant(self):

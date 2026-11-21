@@ -1,0 +1,4 @@
+[
+ {"id": "dev", "nom": "Développement", "explique": "Écrire et livrer du code : une tâche finit selon « Quand une tâche est finie ».",
+  "connecteurs": [], "panneaux": [], "validateur": [], "recettes": []}
+]

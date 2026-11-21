@@ -14,15 +14,20 @@ import shutil
 import subprocess
 import sys
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
+import pratiques  # noqa: E402
 from test_agence import FakeRun  # noqa: E402
 from test_hooks import AGENCE_PY, HERE, FauxHome  # noqa: E402
 
 HOOK = os.path.join(HERE, 'agence-hook')
 SLACK = 'mcp__claude_ai_Slack__slack_send_message'
 GMAIL = 'mcp__claude_ai_Gmail__send_message'
+CATALOGUES = os.path.join(HERE, 'fixtures', 'metiers')
+# Fichiers du runtime que la garde lit à côté de agence.py (spec 012 : politique et catalogues).
+A_COTE = ('metiers.py', 'pratiques.py', 'metiers.json', 'connecteurs.json', 'declencheurs.json', 'pratiques' + '.json')
 
 
 class Garde(FauxHome):
@@ -40,10 +45,13 @@ class Garde(FauxHome):
 
 	# ---- monde ----
 
-	def installe(self, build='b1', hook=True, executable=True, cli=None):
-		"""Install du runtime <build> avec agence/agence-hook (copie du lanceur) et agence.py (copie, ou texte donné)."""
+	def installe(self, build='b1', hook=True, executable=True, cli=None, complet=False):
+		"""Install du runtime <build> avec agence/agence-hook (copie du lanceur) et agence.py (copie, ou texte donné) ;
+		complet : aussi la politique et les catalogues (A_COTE)."""
 		d = os.path.join(self.runtime, build, 'agence')
 		os.makedirs(d, exist_ok=True)
+		for nom in A_COTE if complet else ():
+			shutil.copy(os.path.join(HERE, nom), os.path.join(d, nom))
 		if hook:
 			shutil.copy(HOOK, os.path.join(d, 'agence-hook'))
 			os.chmod(os.path.join(d, 'agence-hook'), 0o755 if executable else 0o644)
@@ -450,6 +458,123 @@ class Interlocuteur(Garde):
 			del st['panels']['interlocuteur']
 		self.assertEqual(self.bash('cate agent start x').stdout, '')
 		self.assertEqual(self.sondes(), 0)
+
+
+class Connecteurs(Garde):
+	"""Spec 012, lot 2 (FR-003, SC-001 = SC-005 de 009) : connecteur factice des fixtures, garde lancée par la vraie
+	commande `send` de hooks install. Écriture : deny sauf carte cliquée, non utilisée, besoin ouvert, arguments
+	identiques après sérialisation canonique ; une carte vaut un appel. Lecture ouverte : aucune décision."""
+
+	ECRIRE, LIRE = 'mcp__factice__ecrire', 'mcp__factice__lire'
+	ARGS = {'conteneur': 12, 'version': 'v3'}
+
+	def setUp(self):
+		super().setUp()
+		self.installe(complet=True)
+		env = unittest.mock.patch.dict(os.environ, {
+			'AGENCE_ROOT': self.projet, 'CATE_SOCKET': '/tmp/x.sock', 'AGENCE_NOM': 'Max', 'HOME': self.home,
+			'AGENCE_CATALOGUES': CATALOGUES})
+		env.start()
+		self.addCleanup(env.stop)
+		self.env['AGENCE_CATALOGUES'] = CATALOGUES
+		self.assertEqual(self.agence('hooks', 'install').returncode, 0)  # catalogues de fixture : entrée des serveurs déclarés
+		self.entrees = self.lit()['hooks']['PreToolUse']
+		self.send_cmd = next(e['hooks'][0]['command'] for e in self.entrees if e['matcher'].startswith('mcp__.*('))
+		pratiques.regler_plusieurs(self.projet, self.home, [('metier', 'data-manager'), ('connecteurs.ecriture', ['factice'])])
+
+	def carte(self, clic=True, args=None):
+		self.orchestre(clic=clic, cible='outil:factice:ecrire', texte=json.dumps(args or self.ARGS))
+		return agence.load()['drafts'][-1]
+
+	def appel(self, tool=None, args=None):
+		return self.hook(self.send_cmd, tool or self.ECRIRE, self.ARGS if args is None else args)
+
+	def raison(self, r):
+		return json.loads(r.stdout)['hookSpecificOutput']['permissionDecisionReason']
+
+	def sans_decision(self, r):
+		self.assertEqual(r.returncode, 0, r.stderr)
+		self.assertEqual(json.loads(r.stdout), {'hookSpecificOutput': {'hookEventName': 'PreToolUse'}})
+
+	def test_sans_carte_deny_qui_cite_la_commande(self):
+		self.orchestre()  # un brouillon mail ne vaut pas carte
+		r = self.appel()
+		self.assertEqual(self.decision(r), 'deny')
+		self.assertIn('agence draft new --cible outil:factice:ecrire', self.raison(r))
+
+	def test_carte_non_cliquee_deny(self):
+		self.carte(clic=False)
+		self.assertEqual(self.decision(self.appel()), 'deny')
+
+	def test_carte_cliquee_identique_un_seul_appel(self):
+		self.carte()
+		self.assertEqual(self.decision(self.appel()), 'allow')
+		self.assertTrue(agence.load()['drafts'][-1]['allowed'])
+		self.assertEqual(self.decision(self.appel()), 'deny')
+
+	def test_deux_cartes_identiques_deux_appels(self):
+		self.carte()
+		self.carte()
+		self.assertEqual([self.decision(self.appel()) for _ in range(3)], ['allow', 'allow', 'deny'])
+
+	def test_un_caractere_de_difference_deny(self):
+		self.carte()
+		self.assertEqual(self.decision(self.appel(args={'conteneur': 12, 'version': 'v4'})), 'deny')
+		self.assertEqual(self.decision(self.appel(args={'conteneur': '12', 'version': 'v3'})), 'deny')
+
+	def test_ordre_des_cles_different_allow(self):
+		self.carte()
+		self.assertEqual(self.decision(self.appel(args={'version': 'v3', 'conteneur': 12})), 'allow')
+
+	def test_besoin_ferme_deny(self):
+		d = self.carte()
+		with agence.tx() as st:
+			agence.close_need(st, d['needId'], 'dropped', 'fermé')
+		self.assertEqual(self.decision(self.appel()), 'deny')
+
+	def test_ecriture_fermee_entre_le_clic_et_l_appel_deny(self):
+		self.carte()
+		pratiques.regler(self.projet, self.home, 'connecteurs.ecriture', [])
+		self.assertEqual(self.decision(self.appel()), 'deny')
+
+	def test_outil_non_declare_deny_meme_avec_une_carte(self):
+		self.carte()
+		self.assertEqual(self.decision(self.appel(tool='mcp__factice__autre')), 'deny')
+
+	def test_lecture_ouverte_aucune_decision(self):
+		self.orchestre()
+		self.sans_decision(self.appel(tool=self.LIRE, args={}))
+
+	def test_lecture_fermee_deny(self):
+		self.orchestre()
+		pratiques.regler(self.projet, self.home, 'connecteurs.lecture', ['balises-factice'])
+		self.assertEqual(self.decision(self.appel(tool=self.LIRE, args={})), 'deny')
+
+	def test_serveur_non_declare_aucune_decision(self):
+		self.orchestre()
+		self.sans_decision(self.appel(tool='mcp__inconnu__ecrire', args={}))
+
+	def test_hors_projet_orchestre_lecture_libre_ecriture_refusee(self):
+		self.sans_decision(self.appel(tool=self.LIRE, args={}))
+		self.assertEqual(self.decision(self.appel()), 'deny')
+
+	def test_matcher_des_serveurs_declares(self):
+		for tool in (self.ECRIRE, self.LIRE, 'mcp__tableur-factice__ecrire_valeurs'):
+			self.assertTrue(re.fullmatch(next(e['matcher'] for e in self.entrees if e['matcher'].startswith('mcp__(')), tool))
+
+	# ---- T024 : scénarios de 009 sur fixtures ----
+
+	def test_publication_du_data_manager_refusee_sans_carte(self):
+		self.orchestre()
+		r = self.appel(args={'conteneur': 12, 'action': 'publier'})
+		self.assertEqual(self.decision(r), 'deny')
+		self.assertTrue(os.path.isfile(os.path.join(self.projet, '.cate', 'tmp', 'agence', 'state.json')))
+
+	def test_mail_du_chef_de_projet_inchange(self):
+		pratiques.regler_plusieurs(self.projet, self.home, [('metier', 'chef-de-projet'), ('connecteurs.ecriture', [])])
+		self.orchestre()
+		envoi = next(e['hooks'][0]['command'] for e in self.entrees if 'Gmail' in e['matcher'])
+		self.assertEqual(self.decision(self.hook(envoi, GMAIL, {'to': ['dg@exemple.fr'], 'body': 'Autre'})), 'ask')
 
 
 class ModeObligatoire(Garde):
