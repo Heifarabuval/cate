@@ -142,8 +142,8 @@ class Tirage(Banc):
 			self.assertNotIn(self.tmp, f.read())
 
 
-class Rejeu(Banc):
-	"""T011 à T013 et T015 : clone, dépendances, arbitre, gardes, sur un vrai dépôt git jetable."""
+class DepotJetable(Banc):
+	"""Un vrai dépôt git jetable : PR 150 qui ferme l'issue 50, son test unitaire et un test Vitest."""
 
 	def setUp(self):
 		super().setUp()
@@ -194,6 +194,10 @@ class Rejeu(Banc):
 
 	def appliquer_correctif(self):
 		ecrire(os.path.join(self.clone, 'lib.py'), self.git(self.depot, 'show', self.head + ':lib.py') + '\n')
+
+
+class Rejeu(DepotJetable):
+	"""T011 à T013 et T015 : clone, dépendances, arbitre, gardes, sur un vrai dépôt git jetable."""
 
 	def test_clone_sans_remote_ni_solution(self):
 		r = self.run_('prepare', '50', 'nu')
@@ -300,6 +304,84 @@ class Rejeu(Banc):
 		for args in (('prepare', '50', 'nu'), ('debut', '50', 'nu'), ('fini', '50', 'nu'), ('controle', '50', 'nu')):
 			r = self.run_(*args)
 			self.assertIn(r.returncode, (0, 1), r.stderr)
+
+
+class Comparer(DepotJetable):
+	"""Lot 6 (T060, T061) : `comparer --avant --apres` rejoue en `claude -p` le sous-ensemble figé (pilotes et issue de
+	comparaison), avant et après une économie de jetons, avec l'arbitre et la mesure des rejeux."""
+
+	def setUp(self):
+		super().setUp()
+		os.chmod(os.path.join(FIXTURE, 'claude', 'claude'), 0o755)
+		self.env['PATH'] = os.path.join(FIXTURE, 'claude') + os.pathsep + self.env['PATH']
+		self.env['CLAUDE_ARGS'] = os.path.join(self.tmp, 'claude-args')
+		self.refs = {}
+		for nom, skill in (('bon', 'MODE=bon JETONS=900'), ('econome', 'MODE=bon JETONS=600'), ('casse', 'MODE=casse JETONS=300')):
+			ecrire(os.path.join(self.depot, 'skills', 'orchestrateur', 'SKILL.md'), skill + '\n')
+			self.git(self.depot, 'add', '.')
+			self.git(self.depot, 'commit', '-qm', nom)
+			self.refs[nom] = self.git(self.depot, 'rev-parse', 'HEAD')
+		s = self.selection()
+		v = next(x for x in s['vivier'] if x['issue'] == 50)
+		s['vivier'] = [dict(v, issue=i) for i in (50, 51, 52, 53)]
+		s.update(pilotes=[{'issue': 50, 'premier': 'nu'}, {'issue': 51, 'premier': 'outil'}],
+			campagne=[{'issue': 53, 'premier': 'nu'}], reserve=[], comparaison={'issue': 52})
+		ecrire(os.path.join(self.specs, 'selection.json'), json.dumps(s))
+		for i in (51, 52, 53):
+			ecrire(os.path.join(self.gh, 'issue-%d.json' % i), json.dumps({'title': 'Issue %d' % i, 'body': 'f doit rendre 1.'}))
+
+	def appels(self):
+		with open(self.env['CLAUDE_ARGS']) as f:
+			return [json.loads(l) for l in f]
+
+	def rapports(self):
+		d = os.path.join(self.specs, 'comparaisons')
+		return [os.path.join(d, n) for n in os.listdir(d)] if os.path.isdir(d) else []
+
+	def test_arbitre_rouge_apres_annuler_code_1(self):
+		r = self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs['casse'])
+		self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+		self.assertIn('annuler', r.stdout)
+		for i in ('50', '51', '52'):
+			self.assertIn(i, r.stdout)
+		[rapport] = self.rapports()
+		with open(rapport) as f:
+			self.assertIn('annuler', f.read())
+
+	def test_tous_verts_jetons_avant_apres_rapport_code_0(self):
+		r = self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs['econome'])
+		self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+		self.assertNotIn('annuler', r.stdout)
+		self.assertIn('2700', r.stdout)  # 3 issues × 900 jetons avant
+		self.assertIn('1800', r.stdout)  # 3 issues × 600 jetons après
+		[rapport] = self.rapports()
+		self.assertIn(rapport, r.stdout)
+		self.assertRegex(os.path.basename(rapport), r'^\d{4}-\d\d-\d\d-%s\.md$' % self.refs['econome'][:12])
+		with open(rapport) as f:
+			texte = f.read()
+		self.assertNotIn(self.tmp, texte)  # nombres seulement, aucun chemin (006 FR-005)
+
+	def test_sous_ensemble_pilotes_et_comparaison_jamais_la_campagne(self):
+		self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs['econome'])
+		enonces = [a[1] for a in self.appels()]
+		self.assertEqual(len(enonces), 6)
+		self.assertFalse(any('Issue 53' in e for e in enonces))
+		self.assertEqual(sum('Issue 52' in e for e in enonces), 2)
+
+	def test_claude_en_p_json_sans_interface(self):
+		"""T061 : `-p` et `--output-format json`, aucune option qui ouvre une interface ; tearDown garde T015."""
+		self.run_('comparer', '--avant', self.refs['bon'], '--apres', self.refs['econome'])
+		for a in self.appels():
+			self.assertEqual(a[0], '-p')
+			self.assertEqual(a[2:4], ['--output-format', 'json'])
+			self.assertEqual([x for x in a[4:] if x.startswith('-')], ['--permission-mode'])
+			self.assertNotIn('--ide', a)
+
+	def test_ref_inconnue_refuse_sans_appel(self):
+		r = self.run_('comparer', '--avant', 'nexistepas', '--apres', self.refs['econome'])
+		self.assertEqual(r.returncode, 2)
+		self.assertIn('nexistepas', r.stderr)
+		self.assertFalse(os.path.exists(self.env['CLAUDE_ARGS']))
 
 
 class Contamination(Banc):

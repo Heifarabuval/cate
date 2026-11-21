@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Faux `claude -p` des tests de `benchmark.py comparer` : note ses arguments dans $CLAUDE_ARGS, lit le skill de
+l'outil à la ref (skills/orchestrateur/SKILL.md du clone) : MODE=casse n'écrit pas le correctif ; JETONS=N écrit un
+journal de N jetons de sortie là où Claude Code range ceux du dossier courant. N'appelle aucun modèle."""
+import json
+import os
+import re
+import sys
+
+with open(os.environ['CLAUDE_ARGS'], 'a') as f:
+	f.write(json.dumps(sys.argv[1:]) + '\n')
+with open(os.path.join('skills', 'orchestrateur', 'SKILL.md')) as f:
+	skill = f.read()
+if 'MODE=casse' not in skill:
+	with open('lib.py', 'w') as f:
+		f.write('def f():\n\treturn 1\n')
+jetons = int(re.search(r'JETONS=(\d+)', skill).group(1))
+d = os.path.join(os.environ['HOME'], '.claude', 'projects', re.sub(r'[^A-Za-z0-9]', '-', os.getcwd()))
+os.makedirs(d, exist_ok=True)
+with open(os.path.join(d, 'session.jsonl'), 'w') as f:
+	f.write(json.dumps({'type': 'assistant', 'timestamp': '2026-01-01T10:00:00Z', 'message': {'id': 'a1', 'content': [],
+		'usage': {'input_tokens': 0, 'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0, 'output_tokens': jetons}}}) + '\n')
+print(json.dumps({'type': 'result', 'result': 'fait'}))

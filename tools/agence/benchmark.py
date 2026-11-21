@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Harnais du benchmark par rejeu d'issues fermées (spec 011, lots 2 et 3).
+"""Harnais du benchmark par rejeu d'issues fermées (spec 011, lots 2, 3 et 6).
 
-Python stdlib, sans modèle ni réseau hors `gh` en lecture. Ne lance aucune app, aucune fenêtre, aucune
+Python stdlib, sans modèle ni réseau hors `gh` en lecture et `claude -p` (comparer seulement). Ne lance aucune app, aucune fenêtre, aucune
 installation de dépendances : l'humain ouvre lui-même son terminal ou son workspace dans le clone.
 
 Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
@@ -13,6 +13,8 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   mesure ISSUE BRAS [--usage-json F]  résultat en nombres dans S/resultats/ISSUE-BRAS.json (F : `cate agent usage --json`)
   revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
   rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md
+  comparer --avant REF --apres REF  économie de jetons : pilotes et issue de comparaison rejoués en `claude -p`
+                      avec l'outil à chaque ref ; « annuler » (code 1) si un arbitre vert avant ne l'est plus après
 BRAS : nu ou outil. R : ~/.cache/agence-bench ; S : specs/011-mesure-benchmark ; D : ce dépôt.
 """
 import argparse
@@ -25,6 +27,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +39,7 @@ BRAS = ('nu', 'outil')
 TAILLES = (('pilotes', 2), ('campagne', 10), ('reserve', 5))
 REPRISES = 3
 LOCK = 'package-lock.json'
+OUTIL = ('skills', 'tools/agence', 'CLAUDE.md')  # l'outil que `comparer` pose à chaque ref
 TEST = re.compile(r'(\.test\.tsx?|(^|/)test_[^/]*\.py)$')
 
 
@@ -138,6 +142,35 @@ def contenu(path):
 		return f.read()
 
 
+def cloner(depot, clone, base):
+	"""Clone neuf sans remote au commit base ; node_modules du dépôt copiés si le lockfile est le même. Rend l'état des
+	dépendances : aucune, clonées, à installer."""
+	os.makedirs(clone)
+	try:
+		git(clone, 'init', '-q')
+		git(clone, '-c', 'uploadpack.allowAnySHA1InWant=true', 'fetch', '-q', '--no-tags', '--depth', '1',
+			'file://' + os.path.abspath(depot), base)
+		git(clone, 'checkout', '-q', '-b', 'rejeu', base)
+		os.remove(os.path.join(clone, '.git', 'FETCH_HEAD'))  # il nomme le chemin du dépôt d'origine
+	except subprocess.CalledProcessError as e:
+		shutil.rmtree(clone)
+		raise Refus('clone impossible au commit parent : ' + e.stderr.decode(errors='replace').strip()[:200])
+	lock = contenu(os.path.join(clone, LOCK))
+	modules = os.path.join(depot, 'node_modules')
+	if lock is None:
+		return 'aucune'
+	if lock == contenu(os.path.join(depot, LOCK)) and os.path.isdir(modules):
+		copier_node_modules(modules, os.path.join(clone, 'node_modules'))
+		return 'clonées'
+	return 'à installer'
+
+
+def enonce_issue(depot, nom_depot, issue):
+	"""Titre et corps de l'issue, sans commentaires (FR-004)."""
+	x = gh(depot, 'issue', 'view', str(issue), '-R', nom_depot, '--json', 'title,body')
+	return '# %s\n\n%s\n' % (x['title'], x.get('body') or '')
+
+
 def prepare(a):
 	v, sel = rejeu(a)
 	if ouvert(a):
@@ -145,29 +178,10 @@ def prepare(a):
 	clone = os.path.join(a.racine, nom(a))
 	if os.path.exists(clone):
 		raise Refus('%s existe déjà : un rejeu part d\'un clone neuf' % clone)
-	os.makedirs(clone)
-	try:
-		git(clone, 'init', '-q')
-		git(clone, '-c', 'uploadpack.allowAnySHA1InWant=true', 'fetch', '-q', '--no-tags', '--depth', '1',
-			'file://' + os.path.abspath(a.depot), v['base'])
-		git(clone, 'checkout', '-q', '-b', 'rejeu', v['base'])
-		os.remove(os.path.join(clone, '.git', 'FETCH_HEAD'))  # il nomme le chemin du dépôt d'origine
-	except subprocess.CalledProcessError as e:
-		shutil.rmtree(clone)
-		raise Refus('clone impossible au commit parent : ' + e.stderr.decode(errors='replace').strip()[:200])
-	lock = contenu(os.path.join(clone, LOCK))
-	modules = os.path.join(a.depot, 'node_modules')
-	if lock is None:
-		deps = 'aucune'
-	elif lock == contenu(os.path.join(a.depot, LOCK)) and os.path.isdir(modules):
-		copier_node_modules(modules, os.path.join(clone, 'node_modules'))
-		deps = 'clonées'
-	else:
-		deps = 'à installer'
-	issue = gh(a.depot, 'issue', 'view', str(a.issue), '-R', sel['depot'], '--json', 'title,body')
+	deps = cloner(a.depot, clone, v['base'])
 	enonce = os.path.join(a.racine, nom(a) + '.md')
 	with open(enonce, 'w', encoding='utf-8') as f:
-		f.write('# %s\n\n%s\n' % (issue['title'], issue.get('body') or ''))
+		f.write(enonce_issue(a.depot, sel['depot'], a.issue))
 	ecrire(etat_path(a), {'issue': a.issue, 'bras': a.bras, 'dependances': deps, 'debut': None, 'finis': []})
 	print('clone : %s\nénoncé : %s\ndépendances : %s' % (clone, enonce, deps))
 	if deps == 'à installer':
@@ -277,9 +291,13 @@ def contamination(chemins, depot, checkout, v):
 
 
 def dossiers_du_clone(a):
+	return dossiers_de(os.path.join(a.racine, nom(a)))
+
+
+def dossiers_de(clone):
 	"""Dossiers de journaux Claude Code du clone et de ses worktrees."""
 	base = os.path.join(os.path.expanduser('~'), '.claude', 'projects')
-	prefixe = re.sub(r'[^A-Za-z0-9]', '-', os.path.join(os.path.abspath(a.racine), nom(a)))
+	prefixe = re.sub(r'[^A-Za-z0-9]', '-', os.path.abspath(clone))
 	return attente_mesure.dossiers_du_prefixe(base, prefixe) if os.path.isdir(base) else []
 
 
@@ -514,6 +532,65 @@ def rapport(a):
 	return 0
 
 
+def poser_outil(depot, ref, clone):
+	"""Skills et briefs du dépôt à `ref` posés sur le clone, par-dessus le commit de l'issue.
+	ponytail: recouvre aussi ce que l'issue touche sous ces chemins ; pareil des deux côtés, la comparaison reste juste."""
+	chemins = [c for c in OUTIL if subprocess.run(['git', 'cat-file', '-e', '%s:%s' % (ref, c)], cwd=depot,
+		capture_output=True).returncode == 0]
+	if chemins:
+		tar = git(depot, 'archive', ref, '--', *chemins)
+		subprocess.run(['tar', '-x', '-C', clone], input=tar, check=True, capture_output=True)
+
+
+def comparer(a):
+	"""Économie de jetons (FR-011) : le sous-ensemble figé (pilotes et issue de comparaison, jamais la campagne) rejoué
+	en `claude -p` avec l'outil à --avant puis à --apres, même arbitre, même mesure ; « annuler » (code 1) dès qu'un
+	arbitre vert avant ne l'est plus après. Rapport en nombres dans S/comparaisons/<date>-<apres>.md."""
+	sel = lire(os.path.join(a.specs, 'selection.json'))
+	refs = {}
+	for cote in ('avant', 'apres'):
+		r = subprocess.run(['git', 'rev-parse', '--verify', '-q', getattr(a, cote) + '^{commit}'], cwd=a.depot,
+			capture_output=True, text=True)
+		if r.returncode:
+			raise Refus('ref inconnue : %s' % getattr(a, cote))
+		refs[cote] = r.stdout.strip()
+	vivier = {v['issue']: v for v in sel['vivier']}
+	issues = [t['issue'] for t in sel['pilotes']] + [sel['comparaison']['issue']]
+	os.makedirs(a.racine, exist_ok=True)
+	base, res = tempfile.mkdtemp(dir=a.racine, prefix='comparer-'), {}
+	for i in issues:
+		enonce = enonce_issue(a.depot, sel['depot'], i)
+		for cote, ref in refs.items():
+			clone = os.path.join(base, '%d-%s' % (i, cote))
+			cloner(a.depot, clone, vivier[i]['base'])
+			poser_outil(a.depot, ref, clone)
+			try:  # aucune interface : -p, sortie JSON, rien sur le terminal
+				subprocess.run(['claude', '-p', enonce, '--output-format', 'json', '--permission-mode', 'acceptEdits'],
+					cwd=clone, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+			except FileNotFoundError:
+				raise Refus('claude introuvable sur le PATH')
+			res[i, cote] = (arbitre(a.depot, clone, vivier[i]), jetons(attente_mesure.mesurer(dossiers_de(clone)))['total'])
+	casse = [i for i in issues if res[i, 'avant'][0] == 'vert' and res[i, 'apres'][0] != 'vert']
+	somme = lambda cote: None if any(res[i, cote][1] is None for i in issues) else sum(res[i, cote][1] for i in issues)
+	ent = lambda v: 'inconnus' if v is None else '%d' % v
+	verdict = ('annuler : arbitre vert avant, pas après, sur %s' % ', '.join(map(str, casse)) if casse else
+		'garder : aucun arbitre vert avant ne casse après')
+	texte = '\n'.join([
+		'# Comparaison avant / après (spec 011, FR-011)', '',
+		'Avant : %s. Après : %s.' % (refs['avant'][:12], refs['apres'][:12]), '',
+		'| Issue | Arbitre avant | Arbitre après | Jetons avant | Jetons après |', '|---|---|---|---|---|'
+	] + ['| %d | %s | %s | %s | %s |' % (i, res[i, 'avant'][0], res[i, 'apres'][0], ent(res[i, 'avant'][1]),
+		ent(res[i, 'apres'][1])) for i in issues] + [
+		'', 'Jetons : avant %s, après %s.' % (ent(somme('avant')), ent(somme('apres'))), '', 'Verdict : %s.' % verdict
+	]) + '\n'
+	rapport = os.path.join(a.specs, 'comparaisons', '%s-%s.md' % (maintenant()[:10], refs['apres'][:12]))
+	os.makedirs(os.path.dirname(rapport), exist_ok=True)
+	with open(rapport, 'w', encoding='utf-8') as f:
+		f.write(texte)
+	sys.stdout.write(texte + 'rapport : %s\n' % rapport)
+	return 1 if casse else 0
+
+
 def main(argv=None):
 	ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
 	ap.add_argument('--racine', default=os.path.join(os.path.expanduser('~'), '.cache', 'agence-bench'))
@@ -528,12 +605,15 @@ def main(argv=None):
 		p.add_argument('issue', type=int)
 		p.add_argument('bras', choices=BRAS)
 	p.add_argument('--usage-json', metavar='FICHIER')
+	p = sub.add_parser('comparer')
+	p.add_argument('--avant', required=True, metavar='REF')
+	p.add_argument('--apres', required=True, metavar='REF')
 	sub.add_parser('revue')
 	sub.add_parser('rapport')
 	a = ap.parse_args(argv)
 	try:
 		return {'select': select, 'prepare': prepare, 'debut': debut, 'fini': fini, 'controle': controle, 'mesure': mesure,
-			'revue': revue, 'rapport': rapport}[a.cmd](a)
+			'revue': revue, 'rapport': rapport, 'comparer': comparer}[a.cmd](a)
 	except Refus as e:
 		print(e, file=sys.stderr)
 		return 2

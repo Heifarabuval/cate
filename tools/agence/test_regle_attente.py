@@ -10,8 +10,9 @@ SKILL = os.path.join(REPO, 'skills', 'orchestrateur', 'SKILL.md')
 # 006 FR-009 : 105 % de 13 936 octets = 14 632. Relevé de l'ajout des lots passés avant sur ce fichier
 # (spec 009 T011) : 010-L4 et 4c5b8954, 13 936 -> 15 598, soit + 1 662 ; 005-L4, 16 291 -> 16 742, soit + 451 ;
 # 013-L1 (jauge de contexte), 16 742 -> 16 874, soit + 132 ; 010-L8 (lentille sur clic), 16 874 -> 17 348, soit + 474 ;
-# 008-L2 (options ponctuelles, réglages du workspace), 17 348 -> 17 420, soit + 72.
-PLAFOND = 14632 + 1662 + 451 + 132 + 474 + 72
+# 008-L2 (options ponctuelles, réglages du workspace), 17 348 -> 17 420, soit + 72 ; 011-L6 (règle d'économie),
+# 17 420 -> 17 594, soit + 174.
+PLAFOND = 14632 + 1662 + 451 + 132 + 474 + 72 + 174
 
 
 class RegleAttente(unittest.TestCase):
