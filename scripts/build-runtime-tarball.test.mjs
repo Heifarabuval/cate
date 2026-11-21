@@ -23,6 +23,7 @@ function checkout() {
   write('tools/agence/agence', '#!/bin/sh\n', 0o755)
   write('tools/agence/agence-hook', '#!/bin/sh\n', 0o755)
   write('tools/agence/agence.py', 'print(1)\n')
+  write('tools/agence/backlog.py', 'print(1)\n')
   write('tools/agence/pratiques.py', 'print(1)\n')
   write('tools/agence/pratiques.json', '{}')
   write('tools/agence/test_agence.py', 'assert 1\n')
@@ -32,14 +33,14 @@ function checkout() {
   return path.join(dir, 'tools', 'agence')
 }
 
-it('lists the launchers, the CLI and its practices schema as required', () => {
+it('lists the launchers, the CLI, its backlog module and its practices schema as required', () => {
   expect(AGENCE_REQUIRED).toEqual(
-    ['agence', 'agence-hook', 'agence.py', 'pratiques.py', 'pratiques.json'].map((f) => path.join('agence', f))
+    ['agence', 'agence-hook', 'agence.py', 'backlog.py', 'pratiques.py', 'pratiques.json'].map((f) => path.join('agence', f))
   )
 })
 
 it('ships the launchers and the CLI, not tests, fixtures or bytecode', () => {
-  expect(agenceFiles(checkout())).toEqual(['agence', 'agence-hook', 'agence.py', 'pratiques.json', 'pratiques.py'])
+  expect(agenceFiles(checkout())).toEqual(['agence', 'agence-hook', 'agence.py', 'backlog.py', 'pratiques.json', 'pratiques.py'])
 })
 
 itPosix('stages agence/ into the install with the launcher executable', () => {

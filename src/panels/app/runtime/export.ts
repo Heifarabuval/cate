@@ -40,8 +40,8 @@ export async function listFolder(folder: string): Promise<{ items: FolderItem[];
   return { items, omitted: omitted.sort() }
 }
 
-/** Checks a folder on disk as a panel named after it, reading bytes only once the listing passed. */
-export async function readPanel(folder: string): Promise<{ ok: true; panel: Panel; omitted: string[]; texts: Array<{ path: string; text: string }> } | { ok: false; error: string }> {
+/** Checks a folder on disk as the panel `id` (named after the folder by default), reading bytes only once the listing passed. */
+export async function readPanel(folder: string, id = path.basename(folder)): Promise<{ ok: true; panel: Panel; omitted: string[]; texts: Array<{ path: string; text: string }> } | { ok: false; error: string }> {
   const listing = await listFolder(folder).catch(() => undefined)
   if (!listing) return { ok: false, error: `le dossier « ${path.basename(folder)} » est absent ou illisible` }
   const error = validateFolder(listing.items)
@@ -49,7 +49,7 @@ export async function readPanel(folder: string): Promise<{ ok: true; panel: Pane
   // O_NOFOLLOW: a file swapped for a link after the listing is refused, not followed.
   const flag = fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
   const files = await Promise.all(listing.items.map(async (item) => ({ path: item.path, bytes: new Uint8Array(await fs.promises.readFile(path.join(folder, item.path), { flag })) })))
-  const result = checkPanel(path.basename(folder), files, nodeBundleCodec)
+  const result = checkPanel(id, files, nodeBundleCodec)
   if (!result.ok) return result
   const decoder = new TextDecoder()
   return { ...result, omitted: listing.omitted, texts: files.map((file) => ({ path: file.path, text: decoder.decode(file.bytes) })) }

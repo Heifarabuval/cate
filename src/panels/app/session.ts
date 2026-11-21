@@ -8,13 +8,13 @@
 import { RpcError, type ClientFeature } from '@kernel/rpc/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import { PanelSession, type DisposeReason, type OpContext, type SessionKit } from '@panels/framework/runtime'
-import { grantSentence, grantStatus, manifestFingerprint, type AppManifest, type AppOp, type AppSnapshot, type Hash } from './contract'
+import { folderChanges, folderFingerprint, grantSentence, grantStatus, manifestFingerprint, type AppGrant, type AppManifest, type AppOp, type AppSnapshot, type Hash } from './contract'
 import type { AppGrants } from './runtime/grants'
 import type { AppScanner } from './runtime/scan'
 import type { AppServer } from './runtime/server'
 
 export interface AppSessionDeps {
-  scanner: Pick<AppScanner, 'manifest' | 'list' | 'subscribe' | 'onPage' | 'ready'>
+  scanner: Pick<AppScanner, 'manifest' | 'folderFiles' | 'list' | 'subscribe' | 'onPage' | 'ready'>
   grants: Pick<AppGrants, 'get' | 'grant' | 'revoke'>
   server: Pick<AppServer, 'urlFor'>
   trust: { isTrusted(): boolean; onChange(listener: (state: { trusted: boolean }) => void): () => void }
@@ -23,7 +23,7 @@ export interface AppSessionDeps {
   hash: Hash
 }
 
-const idle = (appId: string): AppSnapshot => ({ appId, name: null, state: 'missing', url: null, sentence: null, message: null, reload: 0, fingerprint: null })
+const idle = (appId: string): AppSnapshot => ({ appId, name: null, state: 'missing', url: null, sentence: null, message: null, reload: 0, fingerprint: null, changes: null })
 
 export class AppSession extends PanelSession<AppSnapshot, AppOp> {
   private readonly offs: Array<() => void> = []
@@ -64,13 +64,24 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
     return (this.work = this.work.then(() => this.decide(options)).catch((error) => this.kit.log.warn('app panel %s: %O', this.appId, error)))
   }
 
-  /** A snapshot patch; the fingerprint is the card's, so it clears unless given. */
+  /** A snapshot patch; the fingerprint and the changes are the card's, so they clear unless given. */
   private show(patch: Partial<AppSnapshot>): void {
-    this.publish({ fingerprint: null, ...patch })
+    this.publish({ fingerprint: null, changes: null, ...patch })
   }
 
-  private statusOf(manifest: AppManifest) {
-    return grantStatus(this.deps.grants.get(this.appId), { manifestFingerprint: manifestFingerprint(manifest, this.deps.hash) })
+  /** What the card is about: the manifest of a local panel, every byte of an installed one (FR-020). */
+  private current(manifest: AppManifest) {
+    const grant = this.deps.grants.get(this.appId)
+    const files = grant?.source === 'installed' ? this.deps.scanner.folderFiles(this.appId) : undefined
+    const manifestPrint = manifestFingerprint(manifest, this.deps.hash)
+    const folderPrint = files && folderFingerprint(files, this.deps.hash)
+    return {
+      grant,
+      files,
+      status: grantStatus(grant, { manifestFingerprint: manifestPrint, folderFingerprint: folderPrint }),
+      card: grant?.source === 'installed' ? (folderPrint ?? null) : manifestPrint,
+      changes: grant?.source === 'installed' && grant.files ? folderChanges(grant.files, files ?? []) : null
+    }
   }
 
   private async decide({ pageChanged = false }: { pageChanged?: boolean }): Promise<void> {
@@ -89,8 +100,9 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
     }
     // A broken edit keeps the last valid manifest: the page runs on, the error shows.
     const message = entry.status === 'error' ? entry.error : null
-    if (this.statusOf(manifest) !== 'ok') {
-      return this.show({ name: manifest.name, state: 'needs-grant', url: null, sentence: grantSentence(manifest), message, fingerprint: manifestFingerprint(manifest, this.deps.hash) })
+    const current = this.current(manifest)
+    if (current.status !== 'ok') {
+      return this.show({ name: manifest.name, state: 'needs-grant', url: null, sentence: grantSentence(manifest), message, fingerprint: current.card, changes: current.changes })
     }
     let url: string
     try {
@@ -112,14 +124,12 @@ export class AppSession extends PanelSession<AppSnapshot, AppOp> {
     const manifest = this.deps.scanner.manifest(this.appId)
     if (!manifest) throw new RpcError('rejected', `panneau perso « ${this.appId} » indisponible`)
     // The grant is for the card the user read, not for what the folder holds now.
-    if (fingerprint !== manifestFingerprint(manifest, this.deps.hash)) throw new RpcError('rejected', 'le panneau a changé depuis l’affichage de la carte : relire la carte')
-    this.deps.grants.grant({
-      appId: this.appId,
-      source: 'local',
-      manifestFingerprint: manifestFingerprint(manifest, this.deps.hash),
-      accepted: manifest.permissions,
-      at: new Date().toISOString()
-    })
+    const { grant, files, card } = this.current(manifest)
+    if (card === null || fingerprint !== card) throw new RpcError('rejected', 'le panneau a changé depuis l’affichage de la carte : relire la carte')
+    const base = { appId: this.appId, manifestFingerprint: manifestFingerprint(manifest, this.deps.hash), accepted: manifest.permissions, at: new Date().toISOString() }
+    // An installed panel stays installed: the user accepts its folder as it is now.
+    const next: AppGrant = grant?.source === 'installed' ? { ...base, source: 'installed', origin: grant.origin, folderFingerprint: card, files } : { ...base, source: 'local' }
+    this.deps.grants.grant(next)
     await this.refresh()
   }
 

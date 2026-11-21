@@ -374,3 +374,25 @@ it('shows nothing about the policy when the state has none (old CLI)', () => {
   expect(host.textContent).not.toContain('Pratiques')
   expect(button('Ouvrir le fichier')).toBeUndefined()
 })
+
+const backlog: NonNullable<AgenceSnapshot['backlog']> = {
+  fiches: [{ id: 'F2', titre: 'Renommer la section', etat: 'prête', priorite: 'P1', budgetJetons: 5000, consomme: null }],
+  vagues: [['F2']],
+  attentes: {},
+  erreur: null,
+}
+
+it('shows the backlog in the follow-up column and launches through the session', async () => {
+  render(snapshot({ backlog }))
+  const column = host.querySelector('[data-testid="suivi-column"]')!
+  expect(column.textContent).toContain('Backlog')
+  expect(column.textContent).toContain('À faire par Max')
+  act(() => host.querySelector<HTMLInputElement>('input[data-fiche="F2"]')!.click())
+  await act(async () => { button('Lancer (1)')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'fiches.lancer', ids: ['F2'] })
+})
+
+it('shows no backlog when the state has none (old CLI)', () => {
+  render(snapshot({ backlog: null }))
+  expect(host.textContent).not.toContain('Backlog')
+})

@@ -278,6 +278,26 @@ class Pages(Garde):
 		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'pratiques.json'), 'content': '{}'}))
 
 
+	def test_backlog_et_registre_refuses_aux_agents(self):
+		"""Spec 010, FR-004 : backlog.json et decisions.json s'écrivent seulement par agence fiche et agence decision."""
+		self.installe()
+		self.orchestre()
+		for nom in ('backlog.json', 'decisions.json'):
+			f = os.path.join(self.projet, '.cate', 'tmp', 'agence', nom)
+			for tool in ('Write', 'Edit', 'MultiEdit'):
+				with self.subTest(tool=tool, f=f):
+					r = self.hook(self.pages_cmd, tool, {'file_path': f, 'content': '{}'})
+					self.assertEqual(self.decision(r), 'deny')
+					self.assertIn('agence fiche', r.stdout)
+			for cmd in (f'echo {{}} > {f}', f'echo {{}} | tee {f}', f"sed -i '' s/prête/lancée/ {f}"):
+				with self.subTest(cmd=cmd):
+					self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+			self.vide(self.hook(self.pages_cmd, 'Bash', {'command': f'cat {f}'}))
+		for cmd in ('agence fiche list', 'agence fiche add "x" --type idee', 'agence decision list --active'):
+			with self.subTest(cmd=cmd):
+				self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+		self.vide(self.hook(self.pages_cmd, 'Write', {'file_path': os.path.join(self.projet, 'backlog.json'), 'content': '{}'}))
+
 	def test_plafond_agents_refuse_aux_agents(self):
 		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
 		self.installe()
@@ -289,6 +309,83 @@ class Pages(Garde):
 			for args in ('start', 'start --notify'):
 				with self.subTest(cmd=f'{pre} {args}'):
 					self.vide(self.hook(self.pages_cmd, 'Bash', {'command': f'{pre} {args}'}))
+
+
+class Interlocuteur(Garde):
+	"""Spec 010, FR-002 (T042) : la garde refuse à l'interlocuteur de lancer du travail. Le panneau appelant est trouvé
+	par la sonde (faux `cate` qui rend l'id de MOI au `panel title`), seulement sur une commande de la liste."""
+
+	LANCE = ('cate agent start --title x "Lis le brief"', 'cate panel create terminal', 'cate panel link i1 o1',
+	         'cate panel close o1', 'cate terminal send o1 "ls"', 'cate terminal type --panel o1 ls',
+	         'cate terminal press enter', 'agence need add --kind task "x"', 'agence ask "Merger ?" --merge o/r#1',
+	         'agence draft new --cible mail:a@b.fr "x"', 'python3 tools/agence/agence.py need add "x"',
+	         'cate --json agent start x', 'cate agent --json start x', 'cate -h panel create terminal',
+	         'agence ask "Merger ?" \\\n  --merge o/r#1', 'agence ask "Merger\nla PR ?" --merge o/r#1',
+	         'cate panel unlink i1 o1', 'cate agent interrupt --panel o1', 'cate panel group create x',
+	         'cate panel group add g1 o1', 'cate --json panel group list', 'cate agent send --panel o1 "fait"')
+
+	def setUp(self):
+		super().setUp()
+		self.installe()
+		self.orchestre()
+		with agence.tx(self.projet) as st:
+			st['panels']['interlocuteur'] = 'i1'
+		b = os.path.join(self.home, 'fauxbin')
+		os.makedirs(b)
+		self.journal = os.path.join(self.home, 'cate.log')
+		with open(os.path.join(b, 'cate'), 'w') as f:
+			f.write('#!/bin/sh\necho "$*" >> "$CATE_JOURNAL"\n[ -n "$CATE_PANNE" ] && exit 1\ncase "$1 $2" in\n'
+			        '"panel list") echo \'[{"panelId":"i1","title":"Interlocuteur"},{"panelId":"o1","title":"Orchestrateur"}]\' ;;\n'
+			        '"panel title") [ "$3" = --panel ] && echo \'{}\' || echo "{\\"panelId\\":\\"$MOI\\"}" ;;\n'
+			        '*) echo \'{}\' ;;\nesac\n')
+		os.chmod(os.path.join(b, 'cate'), 0o755)
+		self.env.update(PATH=f"{b}:{self.env['PATH']}", CATE_JOURNAL=self.journal, MOI='i1')
+
+	def sondes(self):
+		if not os.path.exists(self.journal):
+			return 0
+		with open(self.journal) as f:
+			return sum(1 for l in f if l.startswith('panel title agence-'))
+
+	def bash(self, cmd):
+		return self.hook(self.pages_cmd, 'Bash', {'command': cmd})
+
+	def test_interlocuteur_refuse_ce_qui_lance(self):
+		for cmd in self.LANCE:
+			with self.subTest(cmd=cmd):
+				r = self.bash(cmd)
+				self.assertEqual(self.decision(r), 'deny')
+				self.assertIn("l'interlocuteur ne lance rien", r.stdout)
+
+	def test_orchestrateur_permis(self):
+		self.env['MOI'] = 'o1'
+		for cmd in self.LANCE:
+			with self.subTest(cmd=cmd):
+				r = self.bash(cmd)
+				self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
+
+	def test_aucune_sonde_hors_de_la_liste(self):
+		for cmd in ('agence fiche add "x" --type idee', 'git status', 'agence decision list --active',
+		            'agence ask "Choix ?" --option "a|b" --option "c|d"', 'cate agent list --json'):
+			with self.subTest(cmd=cmd):
+				r = self.bash(cmd)
+				self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
+		self.assertEqual(self.sondes(), 0)
+
+	def test_une_sonde_par_commande_de_la_liste(self):
+		self.bash('cate agent start x')
+		self.assertEqual(self.sondes(), 1)
+
+	def test_sonde_en_echec_laisse_passer(self):
+		self.env['CATE_PANNE'] = '1'
+		r = self.bash('cate agent start x')
+		self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
+
+	def test_sans_interlocuteur_enregistre_aucune_sonde(self):
+		with agence.tx(self.projet) as st:
+			del st['panels']['interlocuteur']
+		self.assertEqual(self.bash('cate agent start x').stdout, '')
+		self.assertEqual(self.sondes(), 0)
 
 
 class ModeObligatoire(Garde):

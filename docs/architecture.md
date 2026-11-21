@@ -581,7 +581,10 @@ persisted session and document file. It is created with mode `0700`.
                         delivery target (opaque), the key pushes are sealed with
   trust.json            { trusted, decidedAt }
   grants.json           granted paths outside the root
-  app-grants.json       what the user accepted for each custom panel (fingerprint, permissions)
+  app-grants.json       what the user accepted for each custom panel (fingerprint, permissions;
+                        an installed panel also its origin and accepted files)
+  app-imports/          <importId>/: the quarantine of a shared panel waiting for the
+                        user's click; never served, emptied when the daemon starts
   skills/sources.json   the workspace's skill sources
   browser/              history.json, bookmarks.json, downloads/
   agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps),
@@ -2190,7 +2193,7 @@ Every panel type meets the same contract.
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay; a panel opened on a pull request (`pr` field) reads it through `gh` instead (description, commits, checks, mergeability, files with bounded diff pages), read only: no comment, approval or merge; a visible view sends `prTick` and the session decides whether to re-read the checks |
 | agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("New Orchestrator") or by `cate panel create agence`; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
 | boite | none: a definition alone, no session of its own (the daemon serves it a stateless one) and no `cate` API | none; the client core's store (`client/boite`) reads the agence panels of every workspace the client has open | the inbox (`shells/desktop/ui/panels/boite`) | the human's validation inbox, `unique`: one per workspace (any workspace of the client shows every project); cannot be driven by an agent |
-| app | workspace/files (its page server), workspace lifecycle (trust) | `needs-grant`, `running` (page URL), `missing`, `error` or `blocked`, the card's sentence and fingerprint, a reload counter | webview | one type for every custom panel (a folder of `~/.cate/panneaux/`), no `creation` |
+| app | workspace/files (its page server), workspace lifecycle (trust) | `needs-grant`, `running` (page URL), `missing`, `error` or `blocked`, the card's sentence and fingerprint, the files changed of an installed panel, a reload counter | webview | one type for every custom panel (a folder of `~/.cate/panneaux/`), no `creation` |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
@@ -2210,6 +2213,26 @@ Nothing of the page runs before the user's grant: the session publishes
 `<data>/app-grants.json` (never under `~/.cate/panneaux/`); a local panel
 keeps it while only its pages change, a changed manifest asks again. An
 untrusted workspace (9.2) blocks every panel.
+
+A shared panel (a folder or a `.cate-panneau`, spec 007) is first staged:
+checked by the pure rules of `contract/bundle.ts`, then copied into the
+quarantine `<data>/app-imports/<importId>/`. The quarantine is never served.
+Pending imports are listed by `apps.imports` and `apps.watchImports`, 10 at
+most, 24 h each. `apps.acceptImport {importId, fingerprint, replace?}` is the
+only code that writes into `~/.cate/panneaux/`, and no `cate` API method calls
+it (a registry test guards this). It refuses the runtime itself, a client
+without `webview`, an untrusted workspace, a fingerprint other than the
+card's, and quarantined bytes whose fingerprint no longer matches. It copies
+into a hidden `.import-<importId>/` sibling, then renames it into place. A
+replaced folder steps aside as `.old-<importId>/` until the rename succeeds,
+then is removed. The scanner skips names that start with a dot. It writes an
+`installed` grant: origin, folder fingerprint and the accepted files with
+their SHA-256. The scanner then publishes `source: 'installed'` and hashes the
+folder of that panel only. One changed byte sends it back to `needs-grant`
+before any reload, with `changes` (files added, changed, removed) in the
+snapshot. Its card fingerprint is the folder's. Granting that card accepts
+the folder as it is now and keeps the panel installed. Refusing removes the
+grant and never deletes the folder.
 
 **The agence panel.** Its follow-up is not stored by Cate. The `agence` CLI
 writes `<root>/.cate/tmp/agence/state.json` and `drafts/*.md` (atomic replace,
@@ -2234,6 +2257,43 @@ The schema, the allowed values and the presets are declared once in
 `agence watch` publishes the result as `pratiques` in `state.json` (values,
 sources, error) on every round; the `pages` guard refuses agents both files
 and the three writing commands.
+The backlog of cards and the decision register (spec 010) live next to it,
+in `<root>/.cate/tmp/agence/backlog.json` and `decisions.json`: hand-editable
+JSON, never committed, validated on every read (an invalid file refuses every
+write), written only by `agence fiche` and `agence decision` under the state
+lock (schema in `tools/agence/backlog.py`, shipped next to the CLI); the
+`pages` guard refuses agents any direct write of both files. A card moves
+`discussion` <-> `prête` through the CLI; `lancée`, `faite` and `abandonnée`,
+like a decision becoming `active`, come from a click only.
+The regisseur publishes the backlog as `backlog` in `state.json` (cards, waves, waits, file error; shape in `src/panels/agence/contract/fixtures/vue-backlog.json`), the panel's snapshot carries it (null for a CLI that publishes none), and « Lancer (n) » is the `fiches.lancer` op, a POST of the checked ids to `/fiches/lancer`.
+Each project has one **interlocutor**: `agence start` starts a Claude Code
+terminal titled `Interlocuteur` with `/interlocuteur` (the bundled skill
+`skills/interlocuteur/SKILL.md`), records it as `panels.interlocuteur`, links
+it to the agence panel (`context`) and adopts the live one when run again. It
+talks to the human and writes cards and proposed decisions, nothing else. The
+`pages` guard refuses it every command that starts, steers, links or closes
+work (`cate agent start|send|interrupt`, `cate panel create|link|unlink|close|group`,
+`cate terminal type|press|send|create`, `agence need add`, `agence ask --merge`,
+`agence draft new`), with global flags and line continuations ignored; the CLI
+itself also refuses it the three `agence` commands. The guard finds the caller
+by a probe (5 s per `cate` call), and lets the command through when the probe
+fails or times out.
+It holds an `agents.max` seat like any live agent; only the orchestrator and
+the regisseur do not.
+The regisseur's `/fiches/lancer` route (the panel's « Lancer ») plans the
+checked `prête` cards against the `lancée` ones and the free seats. For each
+card of wave 1 it creates a task need (`ref fiche:F<n>`, the card's proof as
+done condition, its token budget and model), marks the card `lancée` and sends
+the orchestrator one message with the wave, the waiting cards and their briefs.
+The other cards stay in the clicked batch and leave at the turn a seat frees,
+without a new click. A card that is no longer `prête`, or already waits, refuses
+the whole click (409). A need `done` makes its card `faite`; `dropped` puts it
+back to `prête`.
+A need's **token budget** (`budgetJetons`, `agence need add --budget-jetons`)
+is compared, at each regisseur turn, with the sum of the last `cate agent usage`
+reading of each of its panels. Past the budget, the need turns `overBudget`, the
+orchestrator is told once, and the need's card shows « consommé / budget jetons »
+(« consommé inconnu » without a reading).
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger
@@ -3067,7 +3127,7 @@ scripts/                    builds (runtime, tarball, mobile core, build id,
                             skills index), packaging and signing, the
                             install script, agent CLI installs, e2e and perf
                             runners
-skills/                     bundled skills (cate-cli, cate-theme, orchestrateur)
+skills/                     bundled skills (cate-cli, cate-theme, interlocuteur, orchestrateur, panneau-perso)
 registry/                   the curated skills index and its sources
 native/passkeys/            the passkeys native addon
 ios/                        the iOS app: Cate/ (App, Core), Notifications/

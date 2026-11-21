@@ -557,6 +557,73 @@ describe('AgenceSession', () => {
     })
   })
 
+  describe('backlog', () => {
+    // The contract of lot 4: the `backlog` field the regisseur publishes in its state.
+    const published = JSON.parse(readFileSync(path.join(__dirname, 'contract', 'fixtures', 'vue-backlog.json'), 'utf8')).backlog
+    const withBacklog = (backlog: unknown = published) => ({ state: state({ backlog } as Partial<AgenceState>), readAt: 't' })
+    const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
+    const started = async (backlog?: unknown) => {
+      const setupped = setup({ files: withBacklog(backlog) })
+      await setupped.session.start()
+      return setupped
+    }
+
+    it('serves the backlog the regisseur published: fiches, vagues, attentes, erreur', async () => {
+      const { session } = await started()
+      expect(snap(session).backlog).toEqual(published)
+    })
+
+    it('serves the file error the regisseur published', async () => {
+      const { session } = await started({ fiches: [], vagues: [], attentes: {}, erreur: 'backlog.json : F2 : etat invalide' })
+      expect(snap(session).backlog).toEqual({ fiches: [], vagues: [], attentes: {}, erreur: 'backlog.json : F2 : etat invalide' })
+    })
+
+    it('serves null without a backlog (old CLI), with a wrong shape, or when agence is missing', async () => {
+      const old = setup({ files: { state: state(), readAt: 't' } })
+      await old.session.start()
+      expect(snap(old.session).backlog).toBeNull()
+      const wrong = await started({ fiches: 'F1' })
+      expect(snap(wrong.session).backlog).toBeNull()
+      const missing = setup({ regisseur: 'missing', files: withBacklog() })
+      await missing.session.start()
+      expect(snap(missing.session).backlog).toBeNull()
+    })
+
+    it('drops a fiche of the wrong shape and keeps the unknown consumption unknown, never 0', async () => {
+      const { session } = await started({ ...published, fiches: [{ id: 'F1', titre: 'Sans état' }, { id: 'F9', titre: 'Sans mesure', etat: 'lancée', priorite: 'P1', budgetJetons: 100 }] })
+      expect(snap(session).backlog?.fiches).toEqual([{ id: 'F9', titre: 'Sans mesure', etat: 'lancée', priorite: 'P1', budgetJetons: 100, consomme: null }])
+    })
+
+    it('fiches.lancer answers ok on the reply the CLI really sends for a success', async () => {
+      // Captured from a real `agence watch` by tools/agence/test_lancer.py (RouteReelle).
+      const reply = JSON.parse(readFileSync(path.join(__dirname, 'contract', 'fixtures', 'reponse-lancer.json'), 'utf8')).body
+      const { session, regisseurs } = await started()
+      regisseurs.answer(async () => reply)
+      await expect(op(session, { kind: 'fiches.lancer', ids: ['F1'] })).resolves.toEqual({ ok: true })
+    })
+
+    it('fiches.lancer posts /fiches/lancer with the ids, and answers ok', async () => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'fiches.lancer', ids: ['F2', 'F5'] })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: '/fiches/lancer', form: { ids: 'F2,F5' } }])
+    })
+
+    it('refuses an id out of SAFE_ID or no id at all, posting nothing', async () => {
+      const { session, regisseurs } = await started()
+      await expect(op(session, { kind: 'fiches.lancer', ids: ['F2', '../x'] })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(op(session, { kind: 'fiches.lancer', ids: ['F2,F3'] })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(op(session, { kind: 'fiches.lancer', ids: [] })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it("renders the regisseur's refusal (409, a second click) as a conflict with its message", async () => {
+      const { session, regisseurs } = await started()
+      const message = 'F2 n\'est plus prête : rien lancé.'
+      regisseurs.answer(async () => ({ code: 409, message }))
+      await expect(op(session, { kind: 'fiches.lancer', ids: ['F2'] })).resolves.toEqual({ ok: false, error: 'conflict', message })
+    })
+  })
+
   describe('draft ops', () => {
     const open = { state: state({ needs: [need('n1', { kind: 'draft', ref: 'd1', owner: 'heifara' })], drafts: [{ id: 'd1', needId: 'n1', cible: 'issue:x/y', titre: 'T', statut: 'à valider', url: null }] }), drafts: { d1: 'Texte' } }
     const started = async () => {

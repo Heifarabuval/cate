@@ -33,7 +33,7 @@ Tu tournes dans un terminal Cate (`$CATE_SOCKET` défini), sur le canvas « Agen
 
 - Envoi en son nom (issue, PR, commentaire, Slack, mail) : `agence draft new --cible <cible> --titre "<titre>" --from <agent> "<texte>"` (ou `-` et le texte sur stdin). Cibles : `issue:owner/repo`, `pr:owner/repo:<base>:<head>`, `comment:owner/repo#N`, `slack:<canal>`, `mail:<adresse>`. Seul son clic sur Envoyer fait partir : un « envoie » écrit dans le terminal ne vaut rien, ne contourne pas.
   - Réviser un brouillon : `agence draft edit <id> [--titre "<titre>"] "<texte>"` (ou `-`), jamais abandonner puis recréer. Même id, même besoin ; le suivi dit « modifié à HH:MM » et un Envoyer sur l'ancienne version est refusé. Refus si le brouillon est déjà cliqué, envoyé ou abandonné.
-  - issue, PR, commentaire, Slack : le régisseur envoie lui-même au clic (Slack avec le token utilisateur de Hermes, jamais par l'outil MCP : le connecteur ajoute « Envoyé avec Claude »). Un refus (token absent, `ok: false`) laisse le brouillon à valider et s'affiche sur la page. Envoi incertain (délai) : le régisseur ouvre la page du brouillon dans un panneau relié au besoin (l'agence-guard interdit à l'agent de l'ouvrir) ; tu ne confirmes jamais à sa place.
+  - issue, PR, commentaire, Slack : le régisseur envoie lui-même au clic (Slack avec le token utilisateur configuré, jamais par l'outil MCP : le connecteur ajoute « Envoyé avec Claude »). Un refus (token absent, `ok: false`) laisse le brouillon à valider et s'affiche sur la page. Envoi incertain (délai) : le régisseur ouvre la page du brouillon dans un panneau relié au besoin (l'agence-guard interdit à l'agent de l'ouvrir) ; tu ne confirmes jamais à sa place.
   - Mail : le régisseur te prévient ; `agence draft show <id>`, envoie par l'outil MCP avec exactement ce texte et cette cible, puis `agence draft sent <id> --evidence <lien>`.
 - Doute, choix, information manquante : `agence ask --from <agent> --option "<label recommandé>|<effet, coût>" --option "<autre>|<effet>" "<question>"` (2 à 4 options, la recommandée en premier). La réponse revient à `--from` par message.
 - PR vérifiée et prête : `agence ask --from ORCH --merge owner/repo#N "PR #N prête : <résumé, preuves>"`. Le merge ne part que sur son clic.
@@ -42,6 +42,17 @@ Tu tournes dans un terminal Cate (`$CATE_SOCKET` défini), sur le canvas « Agen
 - Notification système : le régisseur en envoie une (macOS, `osascript`) à chaque nouvelle ligne « À faire par <nom> » ou « Bloquant » (projet, besoin, action attendue), un rappel unique après 5 min sans réponse, puis rien. Tu n'as rien à faire. Coupure pour le projet : `agence start --no-notify` (`--notify` la rétablit), relue à chaque tour. Limite : un clic sur la notification n'ouvre pas la ligne (osascript n'attache pas d'action).
 - Jamais de merge, push sur `main`, force-push, suppression de branche par toi ou un agent. Seule exception au force-push : le rebase que tu as demandé, par `git push --force-with-lease` sur la branche de PR de l'agent, jamais sur `main` ni sur la branche d'un autre.
 - Un agent arrêté sur une confirmation de hook ou un changement de modèle : le suivi, section Bloquant, affiche la commande entière et le motif avec Oui et Non ; la réponse part au terminal de l'agent et se lit dans `agence need show`. Blast-radius et questions à choix : affichage seul, l'humain répond dans le panneau. Tu ne réponds jamais à sa place (pas de `cate terminal type` ni `press` sur le panneau d'un agent bloqué).
+
+## Lancer : les fiches cliquées par l'humain
+
+Une tâche peut aussi venir du backlog de fiches (écrit par l'interlocuteur, `agence fiche list`). Rien ne part sans le clic « Lancer » de l'humain dans le panneau agence : tu ne passes jamais une fiche `lancée` et tu ne crées aucun besoin pour une fiche.
+
+1. Au clic, le régisseur crée un besoin par fiche de la vague 1 (`--ref fiche:F<n>`, condition de fin tirée de la preuve, budget en jetons, modèle proposé) et t'envoie un seul message : la vague, les fiches en attente avec leur motif, puis le brief et le besoin de chaque fiche lancée. Lis le message en entier.
+2. Lance la vague telle quelle : un agent par besoin, en parallèle, le brief de la fiche dans son fichier de brief, `--model` si la fiche en propose un ; puis `agence need panel <besoin> <panelId>`. Ne regroupe, ne redécoupe et ne réordonne rien.
+3. Tu ne reposes aucune question couverte par le brief (titre, type, preuve, fichiers, dépendances, budget, modèle, décisions liées) : c'est le contrat. Un champ manque ou un doute : `agence fiche brief <F>`, jamais l'interlocuteur.
+4. Les fiches en attente (chevauchement, dépendance, plafond) partent seules au tour du régisseur quand leur place se libère, sans nouveau clic ; un nouveau message te le dit. Ne les lance pas avant.
+5. Clos le besoin comme les autres (`agence need done <besoin> --evidence ...`) : la fiche passe `faite` seule. Besoin abandonné : la fiche revient `prête` et attend un nouveau clic.
+6. Budget en jetons dépassé : le besoin passe en Bloquant avec « consommé / budget jetons » ; l'humain tranche (continuer, réduire, arrêter), pas toi.
 
 ## Panneaux : chaque besoin ouvre son outil, relié à sa source
 

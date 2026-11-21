@@ -106,6 +106,43 @@ export type PratiquesView = {
   erreur: string | null
 }
 
+/** The states of a fiche (`ETATS` of tools/agence/backlog.py). */
+export const FICHE_ETATS = ['discussion', 'prête', 'lancée', 'faite', 'abandonnée'] as const
+export type FicheEtat = typeof FICHE_ETATS[number]
+
+/** A fiche as the regisseur publishes it (spec 010, lot 4); field names of backlog.py.
+ *  `consomme`: input + output tokens of the need's panels, null when no measure was readable. */
+export type FicheView = {
+  id: string
+  titre: string
+  etat: FicheEtat
+  priorite: string | null
+  budgetJetons: number | null
+  consomme: number | null
+}
+
+/** The `backlog` field of the CLI's state, served as is (`contract/fixtures/vue-backlog.json`):
+ *  the last plan of the prêtes (`vagues`, `attentes`: id to motif) and the file error,
+ *  under which nothing is launched. */
+export type BacklogView = {
+  fiches: FicheView[]
+  vagues: string[][]
+  attentes: Record<string, string>
+  erreur: string | null
+}
+
+/** Consumed against budget over the lancées: consumed is null as soon as one is
+ *  unknown (a partial sum would read as less than spent); null without a lancée. */
+export function totalLot(fiches: FicheView[]): { consomme: number | null; budget: number } | null {
+  const lancees = fiches.filter((fiche) => fiche.etat === 'lancée')
+  if (lancees.length === 0) return null
+  const unknown = lancees.some((fiche) => fiche.consomme === null)
+  return {
+    consomme: unknown ? null : lancees.reduce((sum, fiche) => sum + (fiche.consomme ?? 0), 0),
+    budget: lancees.reduce((sum, fiche) => sum + (fiche.budgetJetons ?? 0), 0),
+  }
+}
+
 export type AgenceSnapshot = {
   /** The orchestrator's PTY, for `process.attach`. */
   ptyId: string | null
@@ -123,6 +160,8 @@ export type AgenceSnapshot = {
   /** Null: the CLI publishes no policy (old CLI) or is missing. Optional so the
    *  other clients' fixtures (the boite's) need no change. */
   pratiques?: PratiquesView | null
+  /** Null: the CLI publishes no backlog (old CLI) or is missing. Optional like `pratiques`. */
+  backlog?: BacklogView | null
 }
 
 export type GardeState = 'actif' | 'inactif' | 'partiel' | 'inconnu'
@@ -140,6 +179,8 @@ export type AgenceOp =
   | { kind: 'perm'; needId: string; reponse: 'oui' | 'non' }
   /** Opens the project's `pratiques.json` in an editor panel, created with `{}` when it is missing. */
   | { kind: 'openPratiques' }
+  /** « Lancer » on the checked prêtes: the regisseur plans the waves and creates the needs. */
+  | { kind: 'fiches.lancer'; ids: string[] }
 
 /** Why an op was refused. */
 export type AgenceOpError = 'busy' | 'conflict' | 'unavailable' | 'invalid'
@@ -237,6 +278,8 @@ export interface AgenceState {
   garde?: string | null
   /** Written by `agence watch` each round (spec 005); absent in an old state. */
   pratiques?: PratiquesView | null
+  /** Written by the regisseur each turn (spec 010, lot 4); absent in an old state. */
+  backlog?: unknown
 }
 
 /** What the document says of a linked panel: its last known title, and

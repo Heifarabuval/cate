@@ -371,7 +371,7 @@ class Demarrage(Base):
 		start = self.run.ran('cate', 'agent', 'start')[0]
 		self.assertIn('--canvas', start)
 		self.assertEqual(start[start.index('--canvas') + 1], 'p1')
-		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1'}, {'panelId': 'p2'}])
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1'}, {'panelId': 'p2'}, {'panelId': 'p3'}])  # p3 : interlocuteur
 		before = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
 		self.assertEqual(self.cli('start')[0], 0)
 		after = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
@@ -399,10 +399,10 @@ class Demarrage(Base):
 	def test_start_type_agence_un_seul_panneau_sans_canvas(self):
 		self.assertEqual(self.cli('start')[0], 0)
 		st = self.state()
-		self.assertEqual(st['panels'], {'orchestrator': 'p1'})
+		self.assertEqual(st['panels'], {'orchestrator': 'p1', 'interlocuteur': 'p2'})
 		self.assertEqual(self.run.ran('cate', 'panel', 'create'), [['cate', 'panel', 'create', 'agence', '--json']])
 		self.assertEqual(self.run.ran('cate', 'panel', 'title')[0][3:6], ['--panel', 'p1', f"Agence : {st['repo']}"])
-		self.assertFalse(self.run.ran('cate', 'agent', 'start'))
+		self.assertEqual([c[-2] for c in self.run.ran('cate', 'agent', 'start')], [agence.INTER_PROMPT])  # l'interlocuteur seul
 
 	def test_start_type_refuse_chemin_actuel(self):
 		self.run.reply(['cate', 'panel', 'create', 'agence'], '', code=1, err="cate: unknown panel type 'agence'")
@@ -434,11 +434,10 @@ class Demarrage(Base):
 
 	def test_start_idempotent_avec_panneau_agence_vivant(self):
 		self.cli('start')
-		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'}])
-		before = len(self.run.ran('cate', 'panel', 'create'))
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'}, {'panelId': 'p2', 'type': 'terminal'}])
+		before = len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start'))
 		self.assertEqual(self.cli('start')[0], 0)
-		self.assertEqual(len(self.run.ran('cate', 'panel', 'create')), before)
-		self.assertFalse(self.run.ran('cate', 'agent', 'start'))
+		self.assertEqual(len(self.run.ran('cate', 'panel', 'create')) + len(self.run.ran('cate', 'agent', 'start')), before)
 
 	def test_boot_cree_regisseur_et_suivi_relies(self):
 		with agence.tx() as st:
@@ -1486,6 +1485,14 @@ class Tour(Base):
 		self.assertEqual(self.state()['agentsActive'], 4)
 		self.assertTrue(self.places(self.tick({'o1', 'r1'}, self.rows(3, extra=('o1', 'r1')))))
 
+	def test_interlocuteur_compte_dans_le_plafond(self):
+		# Spec 010, plan.md:64 : place = agents.max - agents vivants ; seuls l'orchestrateur et le régisseur en sortent.
+		self.booted()
+		with agence.tx() as st:
+			st['panels']['interlocuteur'] = 'i1'
+		self.tick({'o1', 'i1'}, self.rows(3, extra=('o1', 'i1')))
+		self.assertEqual(self.state()['agentsActive'], 4)
+
 	def test_une_place_libre_une_fois_par_liberation(self):
 		self.booted()
 		self.tick({'o1'}, self.rows(4))
@@ -2110,6 +2117,19 @@ class TransportSlack(Base):
 			with self.assertRaises(agence.Refus, msg=repr(outcome)) as cm:
 				self.call(outcome)
 			self.assertNotIsInstance(cm.exception, agence.Incertain, repr(outcome))
+
+	def test_http_error_fermee(self):
+		for code in (429, 502):  # une réponse d'erreur garde sa connexion ouverte tant qu'on ne la ferme pas
+			with self.subTest(code=code):
+				err = urllib.error.HTTPError('u', code, 'x', {}, io.BytesIO(b''))
+				with self.assertRaises(agence.Refus):
+					self.call(err)
+				self.assertTrue(err.fp.closed)
+
+	def test_http_error_sans_corps(self):
+		err = urllib.error.HTTPError('u', 429, 'x', {}, None)  # sous Python 3.9, close() y lève KeyError
+		with self.assertRaises(agence.Refus):
+			self.call(err)
 
 	def test_slack_token_lit_la_cle_et_les_guillemets(self):
 		self.write_env('SLACK_BOT_TOKEN=xoxb-bot\nSLACK_USER_TOKEN="xoxp-user"\n')

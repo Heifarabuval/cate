@@ -67,3 +67,18 @@ it('drops entries of a hand edit that are not grants', () => {
   expect(grants.get('worse')).toBeUndefined()
   grants.dispose()
 })
+
+it('keeps the accepted files of an installed grant across a restart, and drops a grant whose files are not a list of files', async () => {
+  const installed: AppGrant = { ...grant, source: 'installed', origin: 'fusion.cate-panneau', folderFingerprint: 'f', files: [{ path: 'index.html', sha256: 'a' }] }
+  const first = createAppGrants({ file, panneauxDir: panneaux })
+  first.grant(installed)
+  await first.flush()
+  first.dispose()
+  const raw = JSON.parse(fs.readFileSync(file, 'utf-8'))
+  raw.grants.bad = { ...installed, appId: 'bad', files: [{ path: 3 }] }
+  fs.writeFileSync(file, JSON.stringify(raw))
+  const second = createAppGrants({ file, panneauxDir: panneaux })
+  expect(second.get('fusion-excel')).toEqual(installed)
+  expect(second.get('bad')).toBeUndefined()
+  second.dispose()
+})

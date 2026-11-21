@@ -4,9 +4,11 @@
 // breaks the manifest keeps the last valid one, so an open panel keeps
 // running. The folder path and the watcher are injected: tests never touch `~`.
 
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { parseManifest, type AppEntry, type AppManifest } from '../contract'
+import { parseManifest, type AppEntry, type AppGrant, type AppManifest, type FolderFile } from '../contract'
+import { listFolder } from './export'
 
 export interface FsEvent {
   path: string
@@ -20,8 +22,10 @@ export interface AppScannerDeps {
     isTrusted(): boolean
     onChange(listener: (state: { trusted: boolean }) => void): () => void
   }
-  /** Watches `dir`, returns the unwatch function. */
-  watch(dir: string, onEvents: (events: FsEvent[]) => Promise<void> | void): Promise<() => void>
+  /** Watches `dir`, returns the unwatch function (resolves once the watch is released). */
+  watch(dir: string, onEvents: (events: FsEvent[]) => Promise<void> | void): Promise<() => Promise<void> | void>
+  /** Tells a panel that came from outside (`installed`) from one of the user's own. */
+  grants: { get(appId: string): AppGrant | undefined }
 }
 
 export interface AppScanner {
@@ -32,6 +36,11 @@ export interface AppScanner {
   list(): AppEntry[]
   /** The last valid manifest of a panel, kept across a broken edit. */
   manifest(id: string): AppManifest | undefined
+  /** The files of an installed panel's folder with their SHA-256, from the last scan;
+   *  undefined for a local panel, whose pages are never hashed. */
+  folderFiles(id: string): FolderFile[] | undefined
+  /** Scans one panel again (its grant changed), then tells its listeners. */
+  refresh(id: string): Promise<void>
   /** The list changed (a panel added, removed, fixed or broken). */
   subscribe(listener: (entries: AppEntry[]) => void): () => void
   /** A file of the panel's folder changed, its manifest included. */
@@ -43,14 +52,28 @@ export interface AppScanner {
 
 export const MANIFEST_FILE = 'cate-panel.json'
 
-type Scanned = { entry: AppEntry; manifest?: AppManifest }
+type Scanned = { entry: AppEntry; manifest?: AppManifest; files?: FolderFile[] }
+
+/** Every file of the folder by `lstat` (`.git/` and `node_modules/` left out, as at export);
+ *  a link never matches an accepted file. */
+async function hashFolder(folder: string): Promise<FolderFile[]> {
+  const { items } = await listFolder(folder)
+  const flag = fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
+  const files = await Promise.all(
+    items.map(async (item) => ({
+      path: item.path,
+      sha256: item.link ? 'lien symbolique' : createHash('sha256').update(await fs.promises.readFile(path.join(folder, item.path), { flag })).digest('hex')
+    }))
+  )
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+}
 
 export function createAppScanner(deps: AppScannerDeps): AppScanner {
   const found = new Map<string, Scanned>()
   const valid = new Map<string, AppManifest>()
   const listListeners = new Set<(entries: AppEntry[]) => void>()
   const pageListeners = new Set<(id: string) => void>()
-  let unwatch: (() => void) | undefined
+  let unwatch: (() => Promise<void> | void) | undefined
   let offTrust: (() => void) | undefined
   let queue: Promise<void> = Promise.resolve()
   let published = '[]'
@@ -78,7 +101,10 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
     const parsed = parseManifest(raw, id)
     if (!parsed.ok) return { entry: { id, status: 'error', error: parsed.error, warnings: [] } }
     const { manifest, warnings } = parsed
-    return { manifest, entry: { id, status: 'ready', name: manifest.name, description: manifest.description, icon: manifest.icon, size: manifest.size, warnings, source: 'local' } }
+    const source = deps.grants.get(id)?.source === 'installed' ? 'installed' : 'local'
+    // A folder that cannot be read whole has no files: the grant does not hold.
+    const files = source === 'installed' ? await hashFolder(folder(id)).catch(() => []) : undefined
+    return { manifest, files, entry: { id, status: 'ready', name: manifest.name, description: manifest.description, icon: manifest.icon, size: manifest.size, warnings, source } }
   }
 
   async function apply(id: string): Promise<boolean> {
@@ -140,6 +166,12 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
     ready: () => started.catch(() => {}),
     list: sorted,
     manifest: (id) => valid.get(id),
+    folderFiles: (id) => found.get(id)?.files,
+    refresh: (id) =>
+      enqueue(async () => {
+        if (await apply(id)) for (const listener of [...pageListeners]) listener(id)
+        publish()
+      }),
     subscribe(listener) {
       listListeners.add(listener)
       return () => { listListeners.delete(listener) }
@@ -150,9 +182,11 @@ export function createAppScanner(deps: AppScannerDeps): AppScanner {
     },
     idle: () => queue,
     async dispose() {
+      // A start in flight would open its watch after this: wait for it, then release it.
+      await started.catch(() => {})
       offTrust?.()
       offTrust = undefined
-      unwatch?.()
+      await unwatch?.()
       unwatch = undefined
       listListeners.clear()
       pageListeners.clear()

@@ -16,14 +16,17 @@ import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalActivity, type
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
 import { classify, HUMAIN_DEFAUT, mergeState } from './contract/suivi'
+import { FICHE_ETATS } from './contract/types'
 import type {
   AgenceOp,
   AgenceOpResult,
   AgencePersisted,
   AgenceSnapshot,
   AgenceState,
+  BacklogView,
   DraftKind,
   DraftView,
+  FicheView,
   GardeState,
   PanelTitles,
   PratiquesView,
@@ -66,6 +69,7 @@ const initialSnapshot = (): AgenceSnapshot => ({
   questions: {},
   garde: 'inconnu',
   pratiques: null,
+  backlog: null,
 })
 
 export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
@@ -113,6 +117,10 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'orchestrator.restart': () => this.restart(),
       openPratiques: () => this.openPratiques(),
       perm: ({ needId, reponse }) => this.perm(needId, reponse),
+      // The regisseur decides which ids are still prêtes, under its lock: a second click gets its 409.
+      'fiches.lancer': ({ ids }) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === 'string' && SAFE_ID.test(id))
+        ? this.click('/fiches/lancer', { ids: ids.join(',') })
+        : Promise.resolve({ ok: false, error: 'invalid' }),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
         ? { libre }
@@ -170,7 +178,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     }
     try {
       const reply = await regisseur.post(path, form)
-      if (reply.code === 200) return { ok: true }
+      // The CLI's success is its `click()` code 303 (the page's redirect), carried in the JSON body.
+      if (reply.code === 200 || reply.code === 303) return { ok: true }
       const error = reply.code === 403 ? 'unavailable' : reply.code === 400 ? 'invalid' : 'conflict'
       return { ok: false, error, message: reply.message }
     } catch (err) {
@@ -254,7 +263,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const read = this.files.read()
     // No agence CLI: nothing to act through, so nothing is shown as actionable.
     if (regisseur.state === 'missing' || !read.state) {
-      this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu', pratiques: null })
+      this.publish({ regisseur, suivi: null, drafts: {}, questions: {}, garde: 'inconnu', pratiques: null, backlog: null })
       return
     }
     const state = read.state
@@ -274,6 +283,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       questions: questions(state, now, pratiques),
       garde: GARDES.has(state.garde ?? '') ? state.garde as GardeState : 'inconnu',
       pratiques,
+      backlog: backlogView(state.backlog),
     })
   }
 
@@ -320,6 +330,31 @@ function pratiquesView(raw: unknown): PratiquesView | null {
   const isRecord = (x: unknown): x is Record<string, never> => typeof x === 'object' && x !== null && !Array.isArray(x)
   if (!value || typeof value.preset !== 'string' || !isRecord(value.valeurs) || !isRecord(value.sources)) return null
   return { preset: value.preset, valeurs: value.valeurs, sources: value.sources, erreur: typeof value.erreur === 'string' && value.erreur ? value.erreur : null }
+}
+
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
+const numberOrNull = (x: unknown): number | null => typeof x === 'number' && Number.isFinite(x) ? x : null
+
+/** The backlog the regisseur published (contract: `contract/fixtures/vue-backlog.json`), or
+ *  null when absent or not shaped like one. A fiche of the wrong shape is dropped; an
+ *  unreadable consumption stays null, never 0. */
+function backlogView(raw: unknown): BacklogView | null {
+  if (!isRecord(raw) || !Array.isArray(raw.fiches)) return null
+  const fiches: FicheView[] = []
+  for (const fiche of raw.fiches) {
+    if (!isRecord(fiche) || typeof fiche.id !== 'string' || typeof fiche.titre !== 'string' || !(FICHE_ETATS as readonly unknown[]).includes(fiche.etat)) continue
+    fiches.push({
+      id: fiche.id,
+      titre: fiche.titre,
+      etat: fiche.etat as FicheView['etat'],
+      priorite: typeof fiche.priorite === 'string' ? fiche.priorite : null,
+      budgetJetons: numberOrNull(fiche.budgetJetons),
+      consomme: numberOrNull(fiche.consomme),
+    })
+  }
+  const vagues = Array.isArray(raw.vagues) ? raw.vagues.filter((vague): vague is string[] => Array.isArray(vague) && vague.every((id) => typeof id === 'string')) : []
+  const attentes = isRecord(raw.attentes) ? Object.fromEntries(Object.entries(raw.attentes).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
+  return { fiches, vagues, attentes, erreur: typeof raw.erreur === 'string' && raw.erreur ? raw.erreur : null }
 }
 
 function questions(state: AgenceState, now: number, pratiques: PratiquesView | null): Record<string, QuestionView> {

@@ -5,9 +5,9 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur (idempotent) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant) ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
-  agence need add|panel|done|drop|list   add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
+  agence need add|panel|pr|done|drop|list   add --done-when : conditions de fin séparées par une virgule (pr-merged:N, issue-closed:N, ci-green:N, tests-local, report), dérivées de la politique sans elle ; need pr ID N rattache la PR ; add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
   agence draft new|edit|show|sent|drop  brouillons ; seul le bouton Envoyer de la page valide
   agence ask "question" --option "label|effet"... [--merge owner/repo#N]
@@ -18,6 +18,8 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
+  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
+  agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) ; active, rejetée, révoquée au clic
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -59,6 +61,9 @@ KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
                       r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+)$')
 ORCH_PROMPT = '/orchestrateur'
+INTERLOCUTEUR, INTER_PROMPT = 'Interlocuteur', '/interlocuteur'  # spec 010 : un par projet, il écrit des fiches
+INTER_DENY = "l'interlocuteur ne lance rien : il écrit des fiches (agence fiche add), l'humain lance au clic."
+SONDE = 5  # secondes par appel cate de la sonde dans la garde : un hook ne bloque pas l'agent
 CSS = 'https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css'
 PAGES = True  # faux sous --token-stdin : le panneau agence de Cate tient l'interface, plus aucune page ni jeton dans un corps
 TOKEN = secrets.token_urlsafe(18)  # jeton des formulaires, en mémoire du régisseur seulement
@@ -161,7 +166,8 @@ def draft_path(did):
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
 	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
-	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None}
+	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None,
+	        'backlog': None, 'lot': []}  # backlog : vue publiée pour le panneau agence ; lot : fiches cliquées qui attendent leur place
 
 
 def politique(agir=False):
@@ -197,15 +203,21 @@ def load(path=None):
 def tx(base=None):
 	"""Lit l'état sous verrou ; l'écrit seulement si le bloc finit sans exception.
 	Les effets de apply() (cate, git) sont joués après, verrou libre : un cate lent ne bloque ni clics ni régisseur."""
-	d = adir(base)
-	with open(os.path.join(d, '.lock'), 'w') as lock:
-		fcntl.flock(lock, fcntl.LOCK_EX)
+	with verrou(base):
 		st = load(state_file(base))
 		yield st
 		after = st.pop('_after', [])
 		dump(st, base)
 	if after:
 		run_after(after, base)
+
+
+@contextlib.contextmanager
+def verrou(base=None):
+	"""Verrou de l'état : tx() et les écrivains de backlog.json et decisions.json le partagent."""
+	with open(os.path.join(adir(base), '.lock'), 'w') as lock:
+		fcntl.flock(lock, fcntl.LOCK_EX)
+		yield
 
 
 def dump(st, base=None):
@@ -229,7 +241,7 @@ def find(st, coll, oid):
 
 
 def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=None, source=None,
-             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None):
+             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None, issue=None, budget_jetons=None):
 	"""Ajoute un besoin ; un besoin ouvert de même (kind, ref) est rendu tel quel (FR-006)."""
 	if kind not in KINDS:
 		raise Refus(f'kind inconnu : {kind} ({", ".join(KINDS)})')
@@ -241,7 +253,7 @@ def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=
 				return n, False
 	n = {'id': new_id(st, 'n'), 'kind': kind, 'title': title, 'ref': ref, 'owner': owner, 'blocking': blocking,
 	     'unblocks': unblocks, 'source': source, 'panels': list(panels), 'doneWhen': done_when,
-	     'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
+	     'issue': issue, 'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'budgetJetons': budget_jetons, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
 	     'closeFailed': False, 'agentBlocked': False, 'overBudget': False,
 	     'created': now_iso(), 'createdTs': time.time(), 'updated': now_iso()}
 	st['needs'].append(n)
@@ -301,6 +313,35 @@ def close_need(st, nid, status, evidence=None):
 	return n
 
 
+def fin_lisible(n):
+	"""doneWhen dans la grammaire (FR-009) ; un texte libre écrit avant elle se lit « aucune condition », sans migration."""
+	import pratiques  # voir politique()
+	try:
+		return bool(n['doneWhen']) and bool(pratiques.conditions(n['doneWhen']))
+	except pratiques.Invalide:
+		return False
+
+
+def nums_fin(n):
+	"""Numéros GitHub que la condition de fin du besoin lit."""
+	import pratiques  # voir politique()
+	return {arg for _, arg in pratiques.conditions(n['doneWhen']) if (arg or '').isdigit()} if fin_lisible(n) else set()
+
+
+def fin(n, gh, evidence=None):
+	"""(fait, manques) de la condition de fin ; (False, []) sans condition lisible."""
+	import pratiques  # voir politique()
+	return pratiques.evaluer(n['doneWhen'], gh, evidence) if fin_lisible(n) else (False, [])
+
+
+def manques_machine(st, nid, evidence):
+	"""need done : ce qui manque encore, lu sur GitHub maintenant ; les conditions humaines valent par --evidence."""
+	n = find(st, 'needs', nid)
+	if n['status'] != 'open' or not fin_lisible(n):
+		return []
+	return fin(n, gh_states(st, sorted(nums_fin(n), key=int)), evidence)[1]
+
+
 # ---------- cate et gh ----------
 
 def require_cate():
@@ -319,9 +360,9 @@ def cate(*args, timeout=120):
 		raise Refus(f"cate {' '.join(map(str, args[:2]))} : sortie illisible")
 
 
-def live_rows():
+def live_rows(timeout=120):
 	"""Panneaux vivants par id ; None si la réponse est illisible (le régisseur saute alors son tour)."""
-	rows = cate('panel', 'list')
+	rows = cate('panel', 'list', timeout=timeout)
 	if not isinstance(rows, list) or not all(isinstance(r, dict) and 'panelId' in r for r in rows):
 		return None
 	return {r['panelId']: r for r in rows}
@@ -333,14 +374,22 @@ def sous_panneau_agence(st):
 	return bool(rows) and (rows.get(st['panels'].get('orchestrator')) or {}).get('type') == 'agence'
 
 
-def caller_panel():
+def caller_panel(timeout=120):
 	"""Panneau du terminal qui appelle la CLI : cate ne le donne pas, on le trouve en le renommant une seconde, puis on rétablit."""
 	with contextlib.suppress(Refus):
-		rows = live_rows() or {}
-		pid = (cate('panel', 'title', f'agence-{secrets.token_hex(4)}') or {}).get('panelId')
+		rows = live_rows(timeout) or {}
+		pid = (cate('panel', 'title', f'agence-{secrets.token_hex(4)}', timeout=timeout) or {}).get('panelId')
 		if pid in rows:
 			title(pid, rows[pid].get('title') or '')
 		return pid if pid in rows else None
+
+
+def refuse_interlocuteur():
+	"""Seconde barrière de FR-002 (spec 010), sans hook : refus si l'appelant est l'interlocuteur enregistré.
+	Sonde seulement s'il en existe un ; sonde en échec : rien ne prouve que c'est lui, on laisse passer."""
+	inter = load()['panels'].get('interlocuteur')
+	if inter and caller_panel() == inter:
+		raise Refus(INTER_DENY)
 
 
 def caller_is_orchestrator():
@@ -483,10 +532,10 @@ def cmd_start(a):
 					raise
 			else:
 				title(p['orchestrator'], f"Agence : {st['repo']}")
-				print(f"panneau agence {p['orchestrator']}")
+				print(f"panneau agence {p['orchestrator']}, interlocuteur {interlocuteur(live, p)}")
 				return 0
 		elif live[orch].get('type') == 'agence':
-			print(f'panneau agence {orch}')
+			print(f'panneau agence {orch}, interlocuteur {interlocuteur(live, p)}')
 			return 0
 		if p.get('canvas') not in live:
 			titre = f"Agence : {st['repo']}"
@@ -498,8 +547,20 @@ def cmd_start(a):
 			r = cate('agent', 'start', '--canvas', p['canvas'], '--agent', 'claude-code', '--title', 'Orchestrateur',
 			         ORCH_PROMPT)
 			p['orchestrator'] = r['panelId']
-		print(f"canvas {p['canvas']}, orchestrateur {p['orchestrator']}")
+		print(f"canvas {p['canvas']}, orchestrateur {p['orchestrator']}, interlocuteur {interlocuteur(live, p, p['canvas'])}")
 	return 0
+
+
+def interlocuteur(live, p, canvas=None):
+	"""Un seul interlocuteur par projet (spec 010, FR-001) : l'enregistré vivant, sinon le vivant de son titre, sinon un neuf ;
+	enregistré dès sa création, relié au panneau agence (ou à l'orchestrateur sur un canvas)."""
+	if p.get('interlocuteur') in live:
+		return p['interlocuteur']
+	p['interlocuteur'] = adopt(live, INTERLOCUTEUR, 'terminal') or cate(
+		'agent', 'start', *(['--canvas', canvas] if canvas else []), '--agent', 'claude-code', '--title', INTERLOCUTEUR,
+		INTER_PROMPT)['panelId']
+	link(p['interlocuteur'], p['orchestrator'], 'context', 'Fiches')
+	return p['interlocuteur']
 
 
 SETTINGS_HINT = ("réglages CLI du workspace à activer dans Cate : panneaux (cliPanelReadEnabled, cliPanelControlEnabled), "
@@ -576,12 +637,31 @@ def shq(s):
 
 def cmd_need(a):
 	if a.action == 'add':
-		by_orch = bool(a.panel) and caller_is_orchestrator()
+		if (a.ref or '').startswith('fiche:'):  # seul le clic « Lancer » crée le besoin d'une fiche (lancer_fiches)
+			raise Refus('la référence fiche: est réservée au clic « Lancer » : agence fiche, puis le clic de l\'humain.')
+		panels = load()['panels']
+		me = caller_panel() if a.panel or panels.get('interlocuteur') else None  # une seule sonde pour les deux usages
+		if me is not None and me == panels.get('interlocuteur'):
+			raise Refus(INTER_DENY)
+		import pratiques  # voir politique()
+		done_when = a.done_when
+		if done_when is not None:
+			try:
+				pratiques.conditions(done_when, saisie=True)
+			except pratiques.Invalide as err:
+				raise Env(str(err))
+		if a.kind == 'task':
+			v = politique(agir=True)['valeurs']
+			if v['issue'] == 'obligatoire' and not a.issue:
+				raise Refus('issue obligatoire (pratiques) : une tâche porte --issue N')
+			done_when = done_when or pratiques.done_when_defaut(v)
+		by_orch = bool(a.panel) and me is not None and me == panels.get('orchestrator')
 		with tx() as st:
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
 			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
-			                source=a.frm, panels=a.panel or (), done_when=a.done_when, acceptance=a.acceptance,
-			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd)
+			                source=a.frm, panels=a.panel or (), done_when=done_when, acceptance=a.acceptance,
+			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue,
+			                budget_jetons=a.budget_jetons)
 			if by_orch:
 				launch(n, a.panel)
 		print(n['id'])
@@ -593,7 +673,19 @@ def cmd_need(a):
 				n['panels'].append(a.panel_id)
 			if by_orch:
 				launch(n, [a.panel_id])
+	elif a.action == 'pr':
+		import pratiques  # voir politique()
+		with tx() as st:
+			n = find(st, 'needs', a.id)
+			dw = fin_lisible(n) and pratiques.rattacher(n['doneWhen'], a.num)
+			if not dw:
+				raise Refus(f"{a.id} n'a pas de condition de PR à rattacher (doneWhen : {n['doneWhen']})")
+			n['doneWhen'] = dw
 	elif a.action in ('done', 'drop'):
+		if a.action == 'done':
+			manques = manques_machine(load(), a.id, a.evidence)
+			if manques:
+				raise Refus(f"{a.id} pas encore fait : {', '.join(manques)}")
 		me = caller_panel() if a.close else None  # jamais fermé par son propre appel, ni plus tard par le régisseur
 		with tx() as st:
 			n = close_need(st, a.id, 'done' if a.action == 'done' else 'dropped', a.evidence)
@@ -615,11 +707,109 @@ def cmd_need(a):
 	return 0
 
 
+# ---------- fiches et décisions (spec 010) ----------
+
+@contextlib.contextmanager
+def registres():
+	"""Backlog et registre validés, sous le verrou de l'état ; chacun réécrit à la sortie s'il a changé.
+	Un fichier invalide (édité à la main) : Env, rien écrit."""
+	import backlog  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
+	racine = root()
+	with verrou():
+		try:
+			r = backlog.charger(racine)
+		except backlog.Invalide as err:
+			raise Env(f'{err} ; rien écrit, corriger le fichier à la main')
+		avant = {k: json.dumps(v) for k, v in r.items()}
+		try:
+			yield r
+		except backlog.Refus as err:
+			raise Refus(str(err))
+		for k, v in r.items():
+			if json.dumps(v) != avant[k]:
+				backlog.ecrire(racine, f'{k}.json', v)
+
+
+def fiche_texte(f, long=False):
+	ligne = f"{f['id']}  {f['etat']:<10} {f['priorite'] or '-':<3} {f['type'] or '-':<7} {f['titre']}"
+	if not long:
+		return ligne
+	champs = [(c, ', '.join(f[c]) if isinstance(f[c], list) else f[c]) for c in
+	          ('preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin', 'creee', 'maj')]
+	return '\n'.join([ligne] + [f'  {c} : {v}' for c, v in champs if v not in (None, '')] +
+	                 [f"  {j['ts']} {j['by']} : {j['text']}" for j in f['journal']])
+
+
+def decision_texte(x, long=False):
+	ligne = f"{x['id']}  {x['statut']:<9} {'structurante ' if x['structurante'] else ''}{x['objet']}"
+	if not long:
+		return ligne
+	return '\n'.join([ligne, f"  pourquoi : {x['pourquoi']}", f"  date : {x['date']}"] +
+	                 [f'  {c} : {", ".join(x[c])}' for c in ('alternatives', 'invalide') if x[c]] +
+	                 ([f"  révoquée par : {x['revoqueePar']}"] if x['revoqueePar'] else []))
+
+
+def sortie(objet, json_, texte):
+	print(json.dumps(objet, ensure_ascii=False, indent=1) if json_ else texte)
+
+
+def cmd_fiche(a):
+	"""Fiches du backlog : add, edit, etat et note écrivent ; list et show lisent. Lancée, faite, abandonnée : au clic."""
+	import backlog  # voir registres()
+	champs = {'titre': getattr(a, 'titre_opt', None), 'type': a.type, 'preuve': a.preuve, 'priorite': a.priorite,
+	          'fichiers': a.fichier, 'dependances': a.dependance, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
+	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
+	champs = {k: v for k, v in champs.items() if v is not None}
+	with registres() as r:
+		b = r['backlog']
+		if a.action == 'add':
+			f = backlog.ajouter(b, a.titre, now_iso(), **champs)
+		elif a.action == 'edit':
+			f = backlog.modifier(b, a.id, now_iso(), **champs)
+		elif a.action == 'etat':
+			f = backlog.transition(b, a.id, a.etat, now_iso())
+		elif a.action == 'note':
+			f = backlog.noter(b, a.id, a.texte, now_iso())
+		elif a.action == 'show':
+			f = backlog.trouver(b['fiches'], a.id)
+			return sortie(f, a.json, fiche_texte(f, long=True))
+		elif a.action == 'brief':
+			texte = backlog.brief(backlog.trouver(b['fiches'], a.id), r['decisions']['decisions'])
+			return sortie(texte, a.json, texte)
+		elif a.action == 'plan':
+			st = load()  # place = agents.max moins les agents vivants publiés par le dernier tour du régisseur
+			p = backlog.plan([backlog.trouver(b['fiches'], i) for i in a.ids], {f['id'] for f in b['fiches'] if f['etat'] == 'faite'},
+			                 plafond(st) - st['agentsActive'] - st['agentsWaiting'], plafond(st))
+			return sortie(p, a.json, '\n'.join([f"vague {i + 1} : {', '.join(v)}" for i, v in enumerate(p['vagues'])] +
+			                                   [f'part : {", ".join(p["part"]) or "aucune"}'] +
+			                                   [f'{i} attend : {m}' for i, m in p['attente'].items()]))
+		else:
+			fiches = [f for f in b['fiches'] if not a.etat or f['etat'] == a.etat]
+			return sortie(fiches, a.json, '\n'.join(fiche_texte(f) for f in fiches)) if fiches or a.json else 0
+	sortie(f, a.json, f['id'])
+
+
+def cmd_decision(a):
+	"""Registre : add écrit une décision proposée ; list et show lisent. Active, rejetée, révoquée : au clic (lot 6)."""
+	import backlog  # voir registres()
+	with registres() as r:
+		d = r['decisions']
+		if a.action == 'add':
+			x = backlog.decision_ajouter(d, a.objet, a.pourquoi, now_iso(), a.alternative or (), a.invalide or (), a.structurante)
+			return sortie(x, a.json, x['id'])
+		if a.action == 'show':
+			x = backlog.trouver(d['decisions'], a.id)
+			return sortie(x, a.json, decision_texte(x, long=True))
+		xs = backlog.decisions_actives(d) if a.active else d['decisions']
+		return sortie(xs, a.json, '\n'.join(decision_texte(x) for x in xs)) if xs or a.json else 0
+
+
 # ---------- brouillons ----------
 
 def cmd_draft(a):
 	if a.action == 'new':
 		require_cate()
+		refuse_interlocuteur()
 		if not CIBLE_RE.match(a.cible or ''):
 			raise Refus('cible invalide : slack:<canal>, mail:<adresse>, issue:<owner/repo>, '
 			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>')
@@ -703,6 +893,8 @@ def _slack(method, payload, token):
 		with urllib.request.urlopen(req, timeout=30) as r:
 			return json.load(r)
 	except urllib.error.HTTPError as e:
+		if e.fp is not None:  # sans corps, close() lève KeyError sous Python 3.9
+			e.close()  # la réponse d'erreur tient la connexion : fermée ici, pas au ramasse-miettes
 		raise (Refus if e.code < 500 else Incertain)(f'Slack : HTTP {e.code}')  # 4xx : refusé, rien posté
 	except urllib.error.URLError as e:
 		if isinstance(e.reason, (socket.gaierror, ConnectionRefusedError)):  # rien n'a été émis
@@ -865,6 +1057,7 @@ def lire_github(st):
 def cmd_ask(a):
 	require_cate()
 	if a.merge:
+		refuse_interlocuteur()
 		if not re.match(r'^[\w.-]+/[\w.-]+#\d+$', a.merge):
 			raise Refus('--merge attend owner/repo#N')
 		v = politique(agir=True)['valeurs']
@@ -1073,7 +1266,130 @@ def click(path, form):
 	m = re.match(r'^/perm/(n\d+)/(oui|non)$', path)
 	if m:
 		return click_perm(*m.groups())
+	if path == '/fiches/lancer':
+		return click_lancer((form.get('ids') or [''])[0].split(','))
 	return 404, 'Action inconnue.'
+
+
+# ---------- clic « Lancer » et fiches au tour (spec 010, lot 4) ----------
+
+def jetons_besoin(n):
+	"""Jetons cumulés des panneaux du besoin (dernier relevé par panneau), None tant qu'aucun n'a été lu."""
+	lus = [j for j in (n.get('jetonsParPanneau') or {}).values() if j is not None]
+	return sum(lus) if lus else None
+
+
+def jetons(v):
+	return f'{round(v):,}'.replace(',', ' ')
+
+
+def place_libre(st):
+	"""agents.max moins les vivants du dernier tour et les besoins de fiche qu'aucun panneau n'a encore pris."""
+	# ponytail: un agent rattaché depuis le dernier tour n'est compté qu'au tour suivant ; compter par cate agent list si ça déborde
+	attendus = [n for n in st['needs'] if n['status'] == 'open' and (n['ref'] or '').startswith('fiche:') and not n['panels']]
+	return plafond(st) - st['agentsActive'] - st['agentsWaiting'] - len(attendus)
+
+
+def lancer_fiches(st, r, ids, entete):
+	"""Sous le verrou : plan des prêtes ids contre les lancées ; un besoin par fiche qui part (fiche lancée, journal),
+	les autres restent dans le lot avec leur motif ; un seul message à l'orchestrateur, seulement si une fiche part."""
+	import backlog  # voir registres()
+	b, maintenant = r['backlog'], now_iso()
+	par_id = {f['id']: f for f in b['fiches']}
+	p = backlog.plan([par_id[i] for i in ids], {f['id'] for f in b['fiches'] if f['etat'] == 'faite'}, place_libre(st),
+	                 plafond(st), occupees=[f for f in b['fiches'] if f['etat'] == 'lancée'])
+	briefs = []
+	for fid in p['part']:
+		f = par_id[fid]
+		n, _ = add_need(st, 'task', f['titre'], ref=f'fiche:{fid}', done_when=f['preuve'],
+		                budget_jetons=f['budgetJetons'], model=f['modele'])
+		note(n, f'fiche {fid} lancée au clic', 'clic')
+		backlog.noter(b, fid, f"lancée (besoin {n['id']})", maintenant, par='clic')
+		f.update(etat='lancée', besoin=n['id'])
+		briefs.append(f"{backlog.brief(f, r['decisions']['decisions'])}\nbesoin {n['id']}")
+	st['lot'] = [i for i in dict.fromkeys(st['lot'] + list(ids)) if i not in p['part']]
+	if briefs:
+		attentes = ', '.join(f'{i} ({m})' for i, m in p['attente'].items()) or 'aucune'
+		apply(st, [('notify', st['panels'].get('orchestrator'),
+		            f"{entete} : vague 1 : {', '.join(p['part'])} ; en attente : {attentes}. Lance la vague telle quelle "
+		            "(skill orchestrateur, section Lancer) : un agent par besoin, puis agence need panel <besoin> <panneau>.\n\n"
+		            + '\n\n'.join(briefs))])
+
+
+def vue_backlog(st, r, erreur=None):
+	"""Champ `backlog` de l'état, lu tel quel par le panneau agence (fixtures/vue-backlog.json) : fiches, plan des
+	prêtes contre les lancées, erreur de fichier. consomme : jetons du besoin de la fiche, None sans mesure."""
+	import backlog  # voir registres()
+	if erreur:
+		return {'fiches': [], 'vagues': [], 'attentes': {}, 'erreur': erreur}
+	fs, needs = r['backlog']['fiches'], {n['id']: n for n in st['needs']}
+	p = backlog.plan([f for f in fs if f['etat'] == 'prête'], {f['id'] for f in fs if f['etat'] == 'faite'}, place_libre(st),
+	                 plafond(st), occupees=[f for f in fs if f['etat'] == 'lancée'])
+	return {'fiches': [{**{k: f[k] for k in ('id', 'titre', 'etat', 'priorite', 'budgetJetons')},
+	                    'consomme': jetons_besoin(needs[f['besoin']]) if f['besoin'] in needs else None} for f in fs],
+	        'vagues': p['vagues'], 'attentes': p['attente'], 'erreur': None}
+
+
+def registres_sous_verrou():
+	"""(registres, None) ou (None, motif) : backlog et registre lus sous le verrou que tx() tient déjà."""
+	import backlog  # voir registres()
+	try:
+		return backlog.charger(root()), None
+	except backlog.Invalide as err:
+		return None, str(err)
+
+
+def ecrire_backlog(st, r):
+	"""L'état d'abord : un arrêt entre les deux laisse des besoins sans fiche lancée, qu'add_need rend au clic suivant."""
+	import backlog  # voir registres()
+	dump(st)
+	backlog.ecrire(root(), 'backlog.json', r['backlog'])
+
+
+def click_lancer(ids):
+	"""« Lancer » sur des fiches prêtes (FR-003) : refus sans rien créer si une n'est plus prête ou attend déjà (double clic)."""
+	if not all(re.fullmatch(r'F[1-9]\d*', i) for i in ids):
+		return 400, 'Fiches attendues : ids=F1,F2.'
+	with tx() as st:
+		r, erreur = registres_sous_verrou()
+		if erreur:
+			st['backlog'] = vue_backlog(st, None, erreur)
+			return 409, f'{erreur} : rien lancé.'
+		etats = {f['id']: f['etat'] for f in r['backlog']['fiches']}
+		for i in ids:
+			if etats.get(i) != 'prête' or i in st['lot']:
+				motif = 'introuvable' if i not in etats else 'attend déjà sa place' if etats[i] == 'prête' else f'est {etats[i]}'
+				return 409, f'{i} {motif} : rien lancé.'
+		lancer_fiches(st, r, ids, f'Lancer, clic de {nom()}')
+		st['backlog'] = vue_backlog(st, r)
+		ecrire_backlog(st, r)
+	return 303, '/'
+
+
+def fiches_tour(st):
+	"""Tour du régisseur, sous le verrou : besoin done, fiche faite ; dropped, fiche prête (nouveau clic) ; le lot cliqué
+	part quand une place se libère ; vue publiée. Fichier invalide : erreur publiée, rien lancé."""
+	import backlog  # voir registres()
+	r, erreur = registres_sous_verrou()
+	if erreur:
+		st['backlog'] = vue_backlog(st, None, erreur)
+		return
+	b, maintenant, avant = r['backlog'], now_iso(), json.dumps(r['backlog'])
+	needs = {n['id']: n for n in st['needs']}
+	for f in b['fiches']:
+		n = needs.get(f['besoin']) if f['etat'] == 'lancée' else None
+		if n and n['status'] in ('done', 'dropped'):
+			fait = n['status'] == 'done'
+			backlog.noter(b, f['id'], f"besoin {n['id']} fait" if fait else f"abandon de l'exécution (besoin {n['id']})",
+			              maintenant, par='regisseur')
+			f.update(etat='faite' if fait else 'prête', besoin=n['id'] if fait else None)
+	etats = {f['id']: f['etat'] for f in b['fiches']}
+	st['lot'] = [i for i in st['lot'] if etats.get(i) == 'prête']
+	if st['lot']:
+		lancer_fiches(st, r, list(st['lot']), 'Place libre')
+	st['backlog'] = vue_backlog(st, r)
+	if json.dumps(b) != avant:
+		ecrire_backlog(st, r)
 
 
 def click_perm(nid, rep):
@@ -1201,7 +1517,11 @@ def need_line(st, n):
 		meta.append(f"modèle {e(m)}" + (f", effort {e(ef)}" if ef else '') if m else 'modèle inconnu')
 	if n.get('overBudgetUsd'):
 		meta.append(f"budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(cout_besoin(n))}) : continuer, réduire ou arrêter ?")
-	if n['overBudget'] and n['budgetMin'] and not n.get('overBudgetUsd'):
+	if n.get('budgetJetons'):  # comme le coût : le consommé lu, ou « consommé inconnu », jamais 0
+		j = jetons_besoin(n)
+		meta.append('consommé inconnu' if j is None else f"{jetons(j)} / {jetons(n['budgetJetons'])} jetons"
+		            + (' dépassé : continuer, réduire ou arrêter ?' if n.get('overBudgetJetons') else ''))
+	if n['overBudget'] and n['budgetMin'] and not n.get('overBudgetUsd') and not n.get('overBudgetJetons'):
 		meta.append(f"budget de {e(n['budgetMin'])} min dépassé : continuer, réduire ou arrêter ?")
 	if n.get('seen') or n.get('costByPanel'):  # un agent est suivi : sa dépense, ou « coût inconnu » (tiret de Cate, usage illisible)
 		c = cout_besoin(n)
@@ -1216,6 +1536,10 @@ def need_line(st, n):
 		meta.append('demande : ' + ' · '.join(x for x in (code, e(perm['motif'])) if x))
 	if n['closeFailed']:
 		meta.append("fermeture refusée (agent en plein tour ou travail non enregistré) : à fermer à la main")
+	if n['status'] == 'open' and n.get('manques'):  # écrit par le tour : ce que la condition de fin attend encore
+		meta.append('manque : ' + ', '.join(e(m) for m in n['manques']))
+	if n['status'] == 'done' and 'tests-local' in (n['doneWhen'] or '').split(','):
+		meta.append('tests déclarés, non revérifiés')
 	if n['status'] == 'done' and n['evidence']:
 		ev = n['evidence']
 		meta.append(f'preuve : <a href="{e(ev)}">{e(ev)}</a>' if ev.startswith('http') else f'preuve : {e(ev)}')
@@ -1404,9 +1728,7 @@ def gh_needed(st):
 			continue
 		if n['kind'] in ('pr', 'issue') and (n['ref'] or '').isdigit():
 			nums.add(n['ref'])
-		m = re.match(r'^(pr-merged|issue-closed):(\d+)$', n['doneWhen'] or '')
-		if m:
-			nums.add(m.group(2))
+		nums |= nums_fin(n)
 	return sorted(nums, key=int)
 
 
@@ -1415,7 +1737,8 @@ def gh_states(st, nums):
 	if not nums or not repo:
 		return {}
 	owner, name = repo.split('/')
-	fields = ' '.join(f'n{x}: issueOrPullRequest(number:{x}){{... on PullRequest{{state url}} ... on Issue{{state url}}}}'
+	rollup = 'commits(last:1){nodes{commit{statusCheckRollup{state}}}}'  # ci-green : même appel, aucun gh de plus
+	fields = ' '.join(f'n{x}: issueOrPullRequest(number:{x}){{... on PullRequest{{state url {rollup}}} ... on Issue{{state url}}}}'
 	                  for x in nums)
 	query = f'query{{repository(owner:"{owner}",name:"{name}"){{{fields}}}}}'
 	code, out, err = RUN(['gh', 'api', 'graphql', '-f', f'query={query}'], timeout=GH_TIMEOUT)
@@ -1423,7 +1746,14 @@ def gh_states(st, nums):
 		log(f'gh graphql : {err.strip()}')
 		return {}
 	data = (json.loads(out).get('data') or {}).get('repository') or {}
-	return {k[1:]: v for k, v in data.items() if v}
+	return {k[1:]: {'state': v.get('state'), 'url': v.get('url'), 'checks': etat_checks(v)} for k, v in data.items() if v}
+
+
+def etat_checks(noeud):
+	"""État du statusCheckRollup du dernier commit d'une PR (SUCCESS, FAILURE, PENDING...), None s'il n'y en a pas."""
+	with contextlib.suppress(KeyError, IndexError, TypeError, AttributeError):
+		return noeud['commits']['nodes'][-1]['commit']['statusCheckRollup']['state']
+	return None
 
 
 # ---------- demandes de permission d'un agent bloqué ----------
@@ -1538,10 +1868,12 @@ def orphelins(st, rows, agents):
 	        and not r.get('caller') and p not in st['orphanGardes'] and not protege(st, p, None)}
 
 
-def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
+def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mesures=None):
 	"""Un tour du régisseur : met l'état à jour, rend les effets ('close', panneau, besoin) et ('notify', panneau, texte).
 	screens : écran lu de chaque agent bloqué ({panneau: texte}), pour afficher sa demande.
-	panneaux : lignes de cate panel list par id ; sans elles, pas de balayage des orphelins."""
+	panneaux : lignes de cate panel list par id ; sans elles, pas de balayage des orphelins.
+	mesures : lignes de cate agent usage par panneau (jetons), déjà lues ; None si illisibles."""
+	import backlog  # voir registres()
 	screens = screens or {}
 	orch = st['panels'].get('orchestrator')
 	effects = []
@@ -1565,8 +1897,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 		if n['status'] != 'open':
 			continue
 		ref_state = gh.get(n['ref'] or '') if n['kind'] in ('pr', 'issue') else None
-		m = re.match(r'^(pr-merged|issue-closed):(\d+)$', n['doneWhen'] or '')
-		cond = gh.get(m.group(2)) if m else None
+		fait, n['manques'] = fin(n, gh)
 		done_by = None
 		if ref_state and n['kind'] == 'pr' and ref_state['state'] == 'CLOSED':
 			close_need(st, n['id'], 'dropped')
@@ -1575,8 +1906,9 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 			continue
 		if ref_state and ref_state['state'] in ('MERGED', 'CLOSED'):
 			done_by = ref_state
-		elif cond and cond['state'] == ('MERGED' if m.group(1) == 'pr-merged' else 'CLOSED'):
-			done_by = cond
+		elif fait:
+			nums = sorted(nums_fin(n), key=int)  # fait sans --evidence : au moins une condition machine, donc un numéro lu
+			done_by = next((gh[x] for x in nums if gh[x].get('url')), gh[nums[0]])
 		if done_by:
 			close_need(st, n['id'], 'done', done_by.get('url') or done_by['state'])
 			effects += [('close', p, n['id']) for p in n['panels'] if p in live]
@@ -1625,6 +1957,14 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 		if n.get('budgetUsd') and c is not None and c > n['budgetUsd'] and not n.get('overBudgetUsd'):
 			n['overBudget'] = n['overBudgetUsd'] = True
 			once(f"budget-usd:{n['id']}", orch, f"Budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(c)}) : {n['title']} ({n['id']}).")
+		for p in n['panels']:  # dernier relevé de jetons par panneau, comme le coût ; illisible : rien posé
+			j = backlog.consomme(mesures, [p])
+			if j is not None:
+				n.setdefault('jetonsParPanneau', {})[p] = j
+		j = jetons_besoin(n)
+		if n.get('budgetJetons') and j is not None and j > n['budgetJetons'] and not n.get('overBudgetJetons'):
+			n['overBudget'] = n['overBudgetJetons'] = True
+			once(f"budget-jetons:{n['id']}", orch, f"Budget en jetons dépassé ({jetons(j)} / {jetons(n['budgetJetons'])} jetons) : {n['title']} ({n['id']}).")
 		if n['budgetMin'] and now - n.get('createdTs', now) > n['budgetMin'] * 60:
 			n['overBudget'] = True
 			once(f"budget:{n['id']}", orch, f"Budget de {n['budgetMin']} min dépassé : {n['title']} ({n['id']}).")
@@ -1652,7 +1992,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None):
 			else:
 				continue
 			effects.append(('toast', n['id'], (st['repo'], f"{prefixe}{n['id']} {n['title']} : {action_attendue(st, n)}")))
-	mine = [a for a in agents if a['panelId'] not in (orch, st['panels'].get('regisseur'))]
+	mine = [a for a in agents if a['panelId'] not in (orch, st['panels'].get('regisseur'))]  # l'interlocuteur prend une place (spec 010, plan.md:64)
 	active = len([a for a in mine if a.get('state') == 'running'])
 	waiting = len([a for a in mine if a.get('state') == 'waitingForInput'])
 	vivants = active + waiting
@@ -2041,8 +2381,9 @@ def un_tour():
 		merge_apply(st, merges)
 		st['garde'] = garde
 		st['pratiques'] = pol
-		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage)
+		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage, mesures)
 		apply(st, effects)
+		fiches_tour(st)
 		orch = st['panels'].get('orchestrator')
 	for eff in effects:
 		log(f'{eff[0]} {eff[1]} {eff[2]}')
@@ -2446,6 +2787,19 @@ STATE_DENY = "state.json s'écrit seulement par la CLI agence."
 PRATIQUES_DENY = "La politique (pratiques.json) se règle seulement par l'humain : agence pratiques set, unset ou preset."
 PRATIQUES_RE = re.compile(r'\bagence(\.py)?\s+(pratiques\s+(set|unset|preset)\b|start\b.*--max-agents\b)')
 POLITIQUES = ('.cate/tmp/agence/pratiques.json', '.config/agence/pratiques.json')
+BACKLOG_DENY = "backlog.json et decisions.json s'écrivent seulement par la CLI : agence fiche, agence decision."
+REGISTRES = ('.cate/tmp/agence/backlog.json', '.cate/tmp/agence/decisions.json')
+# Ce qui lance, relie, commande ou ferme du travail (spec 010, FR-002 ; agent send : spec 009, FR-003) :
+# seules commandes où la garde sonde l'appelant.
+# Lu sur lance() : continuations de ligne jointes, flags globaux retirés (cate les accepte avant et entre les mots).
+LANCE_RE = re.compile(r'\bcate\s+(agent\s+(start|send|interrupt)|panel\s+(create|link|unlink|close|group)'
+                      r'|terminal\s+(type|press|send|create))\b'
+                      r'|\bagence(\.py)?\s+(need\s+add|ask\b.*--merge|draft\s+new)\b', re.S)
+GLOBAUX_RE = re.compile(r'(?<=\s)(--json|--help|-h|--version)(?=\s|$)')
+
+
+def lance(cmd):
+	return LANCE_RE.search(GLOBAUX_RE.sub(' ', re.sub(r'\\\r?\n', ' ', cmd)))
 
 
 def send_match(st, tool, ti):
@@ -2475,7 +2829,8 @@ def envoi_ask(tool):
 
 def guard(payload, mode):
 	"""Décision PreToolUse ou None. mode 'send' : jamais None (ask sauf brouillon cliqué identique, aucune exception
-	de canal) ; 'pages' : pages du régisseur et state.json seulement."""
+	de canal) ; 'pages' : pages du régisseur, fichiers écrits par la CLI, et refus à l'interlocuteur de ce qui lance
+	(lance() : la sonde de l'appelant ne tourne que sur ces commandes, bornée à SONDE secondes ; en échec, elle laisse passer)."""
 	tool = payload.get('tool_name') or ''
 	ti = payload.get('tool_input') or {}
 	refus = envoi_ask(tool) if mode == 'send' else None
@@ -2514,6 +2869,12 @@ def guard(payload, mode):
 			return decision('deny', STATE_DENY)
 		if PRATIQUES_RE.search(cmd) or ('pratiques.json' in cmd and WRITE_RE.search(cmd) and 'agence' in cmd):
 			return decision('deny', PRATIQUES_DENY)
+		if (re.search(r'\b(backlog|decisions)\.json', cmd) and WRITE_RE.search(cmd)
+				and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or ''))):
+			return decision('deny', BACKLOG_DENY)
+		inter = st['panels'].get('interlocuteur')
+		if inter and lance(cmd) and caller_panel(SONDE) == inter:
+			return decision('deny', INTER_DENY)
 		return None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
@@ -2521,6 +2882,8 @@ def guard(payload, mode):
 		return decision('deny', STATE_DENY)
 	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith(POLITIQUES):
 		return decision('deny', PRATIQUES_DENY)
+	if tool in ('Write', 'Edit', 'MultiEdit') and (ti.get('file_path') or '').endswith(REGISTRES):
+		return decision('deny', BACKLOG_DENY)
 	return None
 
 
@@ -2848,15 +3211,21 @@ def parser():
 	add.add_argument('--unblocks')
 	add.add_argument('--panel', action='append')
 	add.add_argument('--from', dest='frm')
-	add.add_argument('--done-when')
+	add.add_argument('--done-when', help="conditions de fin séparées par une virgule : pr-merged:N, issue-closed:N, ci-green:N, "
+	                 "tests-local, report (draft-sent:ID est interne) ; sans elle, une tâche reçoit celle de la politique (preuve)")
+	add.add_argument('--issue', help="issue de la tâche (exigée si la politique dit issue : obligatoire)")
 	add.add_argument('--acceptance')
 	add.add_argument('--budget', type=int)
 	add.add_argument('--budget-usd', type=dollars_positifs, help="budget en dollars (la devise de cate agent usage, sans conversion) : le besoin passe en Bloquant au dépassement")
+	add.add_argument('--budget-jetons', type=entier_positif, help="budget en jetons (entrée + sortie des panneaux du besoin, cate agent usage) : le besoin passe en Bloquant au dépassement")
 	add.add_argument('--model', help="modèle voulu pour l'agent du besoin (id ou alias de l'agent CLI), que l'orchestrateur passe à cate agent start --model")
 	add.add_argument('--effort', choices=EFFORTS, help="niveau d'effort voulu (Claude Code), passé à cate agent start --effort")
 	pa = ns.add_parser('panel')
 	pa.add_argument('id')
 	pa.add_argument('panel_id')
+	pr = ns.add_parser('pr', help='rattacher la PR N aux conditions de PR (pr-merged, ci-green) du besoin')
+	pr.add_argument('id')
+	pr.add_argument('num', type=int, metavar='N')
 	for name in ('done', 'drop'):
 		x = ns.add_parser(name)
 		x.add_argument('id')
@@ -2869,6 +3238,51 @@ def parser():
 	li = ns.add_parser('list')
 	li.add_argument('--open', action='store_true')
 	n.set_defaults(fn=cmd_need)
+
+	fi = sub.add_parser('fiche', help="backlog de fiches (spec 010) : discussion <-> prête par la CLI ; lancée, faite, abandonnée au clic")
+	fis = fi.add_subparsers(dest='action', required=True)
+	fa = fis.add_parser('add')
+	fa.add_argument('titre')
+	fe = fis.add_parser('edit')
+	fe.add_argument('id')
+	fe.add_argument('--titre', dest='titre_opt')
+	for x in (fa, fe):
+		x.add_argument('--type', help='bug, idee, retour, audit ou tache')
+		x.add_argument('--preuve', help='forme de --done-when (agence need add)')
+		x.add_argument('--priorite', help='P1, P2 ou P3')
+		x.add_argument('--fichier', action='append', help='chemin ou dossier probable, relatif (répétable ; edit : remplace la liste)')
+		x.add_argument('--dependance', action='append', help='id de fiche (répétable)')
+		x.add_argument('--budget-jetons', type=int)
+		x.add_argument('--vision', help='point de la vision servi (couche ou FR de la spec 009)')
+		x.add_argument('--modele')
+		x.add_argument('--decision', action='append', help='id de décision liée (répétable)')
+	fet = fis.add_parser('etat')
+	fet.add_argument('id')
+	fet.add_argument('etat', help='discussion ou prête')
+	fn = fis.add_parser('note')
+	fn.add_argument('id')
+	fn.add_argument('texte')
+	fl = fis.add_parser('list')
+	fl.add_argument('--etat')
+	fis.add_parser('show').add_argument('id')
+	fis.add_parser('brief', help="texte fixe de la fiche pour l'orchestrateur, décisions actives liées comprises").add_argument('id')
+	fis.add_parser('plan', help='vagues sans fichier commun, dépendances et plafond ; chaque attente nommée').add_argument('ids', nargs='+')
+	for x in fis.choices.values():
+		x.add_argument('--json', action='store_true')
+	fi.set_defaults(fn=cmd_fiche)
+	de = sub.add_parser('decision', help="registre de décisions (spec 010) : add les propose ; active, rejetée, révoquée au clic")
+	des = de.add_subparsers(dest='action', required=True)
+	da = des.add_parser('add')
+	da.add_argument('objet')
+	da.add_argument('--pourquoi', required=True)
+	da.add_argument('--alternative', action='append', help='alternative écartée (répétable)')
+	da.add_argument('--invalide', action='append', help="ce qu'elle invalide (répétable)")
+	da.add_argument('--structurante', action='store_true')
+	des.add_parser('list').add_argument('--active', action='store_true')
+	des.add_parser('show').add_argument('id')
+	for x in des.choices.values():
+		x.add_argument('--json', action='store_true')
+	de.set_defaults(fn=cmd_decision)
 
 	d = sub.add_parser('draft')
 	ds = d.add_subparsers(dest='action', required=True)
