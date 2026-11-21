@@ -443,6 +443,37 @@ class PonctuelEfface(Base):
 		self.assertEqual(self.lit(self.projet), {'agents': {'max': 2}})  # le réglage du workspace reste
 
 
+class PonctuelValide(Base):
+	"""corr-008 (a) : une écriture se valide avec la couche ponctuelle ; refusée, rien n'est écrit et la politique publiée
+	reste valide."""
+
+	def setUp(self):
+		super().setUp()
+		self.assertEqual(self.agence('start', '--max-agents', '1')[0], 0)
+		self.c2 = self.sch['coherences'][1]['phrase']
+
+	def test_route_set_refuse_avec_la_couche_ponctuelle(self):
+		self.assertEqual(self.post('/pratiques/set', cle='verification', valeur='differente'), (400, self.c2))
+		self.assertFalse(os.path.exists(self.projet))
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], st['pratiques']['erreur']), ({'agents.max': 1}, None))
+
+	def test_cli_set_refuse_avec_la_couche_ponctuelle(self):
+		code, _, err = self.agence('pratiques', 'set', 'verification', 'differente')
+		self.assertEqual(code, 2)
+		self.assertIn(self.c2, err)
+		self.assertFalse(os.path.exists(self.projet))
+
+	def test_preset_refuse_avec_la_couche_ponctuelle(self):
+		self.assertEqual(self.post('/pratiques/preset', nom='pr-tdd')[0], 400)
+		self.assertFalse(os.path.exists(self.projet))
+
+	def test_la_cle_reglee_quitte_la_couche_avant_la_validation(self):
+		self.assertEqual(self.post('/pratiques/set', cle=['verification', 'agents.max'], valeur=['differente', '2'])[0], 303)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st), st['pratiques']['erreur']), ({}, 2, None))
+
+
 class Notifications(Base):
 	"""T022 : notifications.systeme et notifications.rappel remplacent st['notify'] et le rappel codé en dur."""
 

@@ -1483,15 +1483,15 @@ def click_pratiques(action, form):
 			if action == 'set':
 				cles, vals = form.get('cle') or [], form.get('valeur') or []
 				paires = list(zip(cles, map(pratiques.lire_valeur, vals))) if len(cles) == len(vals) else []
-				pratiques.regler_plusieurs(racine, home, paires)
+				pratiques.regler_plusieurs(racine, home, paires, ponctuel=st['ponctuel'])
 				for cle, _ in paires:  # la valeur choisie s'applique (FR-010)
 					st['ponctuel'].pop(cle, None)
 			elif action == 'unset' and un('cle') in st['ponctuel']:  # revenir au réglage du workspace : la couche seule
 				st['ponctuel'].pop(un('cle'))
 			elif action == 'unset':
-				pratiques.retirer(racine, home, un('cle'), None)
+				pratiques.retirer(racine, home, un('cle'), None, st['ponctuel'])
 			else:
-				pratiques.poser_preset(racine, home, un('nom'), remplacer=un('remplacer') == '1')
+				pratiques.poser_preset(racine, home, un('nom'), remplacer=un('remplacer') == '1', ponctuel=st['ponctuel'])
 		except pratiques.Invalide as err:
 			return 400, err.phrase
 		st['pratiques'] = publier(politique(st=st))
@@ -3269,13 +3269,13 @@ def cmd_pratiques(a):
 	try:
 		if a.action == 'set':
 			with tx() as st:  # la valeur choisie s'applique : sa valeur ponctuelle est retirée (spec 008 FR-010)
-				print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev)}')
+				print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev, st["ponctuel"])}')
 				if st['ponctuel'].pop(a.cle, None) is not None:
 					st['pratiques'] = publier(politique(st=st))
 		elif a.action == 'unset':
-			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev)}')
+			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev, load()["ponctuel"])}')
 		elif a.action == 'preset':
-			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer)}')
+			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer, load()["ponctuel"])}')
 		pol = pratiques.verifier(racine, home, load()['ponctuel'])  # show dit la source ponctuel (spec 008)
 	except pratiques.Invalide as err:
 		raise Env(f'pratiques : {err} ({err.phrase})')

@@ -225,8 +225,9 @@ def verifier(racine, home, ponctuel=None):
 
 # ---------- écriture (la CLI seule) ----------
 
-def _modifier(racine, home, dev, change, lire=True):
-	"""Applique change(contenu) au fichier visé, valide la politique entière qui en résulte, puis écrit (verrou, atomique).
+def _modifier(racine, home, dev, change, lire=True, ponctuel=None):
+	"""Applique change(contenu) au fichier visé, valide la politique entière qui en résulte avec la couche ponctuelle qui
+	restera (celle de l'état), puis écrit (verrou, atomique). Refus : rien d'écrit, la politique publiée reste valide.
 	lire=False : part d'un objet vide, sans lire l'ancien fichier (repartir d'un fichier illisible)."""
 	chemin = fichier_dev(home) if dev else fichier_projet(racine)
 	if not chemin:
@@ -239,7 +240,7 @@ def _modifier(racine, home, dev, change, lire=True):
 		if not isinstance(contenu, dict):
 			raise Invalide(f'{chemin} : la racine doit être un objet JSON', ILLISIBLE)
 		change(contenu)
-		fusionner(schema(), _couches(racine, home, (chemin, contenu)))
+		fusionner(schema(), _couches(racine, home, (chemin, contenu), ponctuel))
 		fd, tmp = tempfile.mkstemp(dir=d, prefix='tmp-pratiques-')
 		with os.fdopen(fd, 'w') as f:
 			json.dump(contenu, f, ensure_ascii=False, indent=1)
@@ -263,14 +264,15 @@ def _dev(cle, dev):
 	return spec['portee'] == 'dev'
 
 
-def regler(racine, home, cle, valeur, dev=False):
+def regler(racine, home, cle, valeur, dev=False, ponctuel=None):
 	if cle == 'preset':
-		return poser_preset(racine, home, valeur, dev)
-	return regler_plusieurs(racine, home, [(cle, valeur)], dev)
+		return poser_preset(racine, home, valeur, dev, ponctuel=ponctuel)
+	return regler_plusieurs(racine, home, [(cle, valeur)], dev, ponctuel)
 
 
-def regler_plusieurs(racine, home, paires, dev=None):
-	"""Plusieurs réglages d'un seul fichier en une écriture : tous ou aucun. dev=None : la portée de chaque clé."""
+def regler_plusieurs(racine, home, paires, dev=None, ponctuel=None):
+	"""Plusieurs réglages d'un seul fichier en une écriture : tous ou aucun. dev=None : la portée de chaque clé.
+	ponctuel : la couche de l'état ; une clé réglée la quitte (spec 008 FR-010), le reste compte dans la validation."""
 	if not paires:
 		raise Invalide('aucun réglage reçu', 'Aucun réglage reçu.')
 	portees = {_dev(cle, dev) for cle, _ in paires}
@@ -286,10 +288,12 @@ def regler_plusieurs(racine, home, paires, dev=None):
 					d[t] = {}
 				d = d[t]
 			d[fin] = valeur
-	return _modifier(racine, home, portees.pop(), change)
+	reglees = {cle for cle, _ in paires}
+	reste = {k: v for k, v in (ponctuel or {}).items() if k not in reglees}
+	return _modifier(racine, home, portees.pop(), change, ponctuel=reste)
 
 
-def retirer(racine, home, cle, dev=False):
+def retirer(racine, home, cle, dev=False, ponctuel=None):
 	dev = _dev(cle, dev)
 
 	def change(contenu):
@@ -303,16 +307,16 @@ def retirer(racine, home, cle, dev=False):
 		for parent, t in reversed(list(zip(pile, tete))):  # objets vidés retirés
 			if not parent[t]:
 				del parent[t]
-	return _modifier(racine, home, dev, change)
+	return _modifier(racine, home, dev, change, ponctuel=ponctuel)
 
 
-def poser_preset(racine, home, nom, dev=False, remplacer=False):
+def poser_preset(racine, home, nom, dev=False, remplacer=False, ponctuel=None):
 	"""remplacer : le fichier ne garde que le preset (un modèle choisi efface les réglages posés à côté)."""
 	def change(contenu):
 		if remplacer:
 			contenu.clear()
 		contenu['preset'] = nom
-	return _modifier(racine, home, dev, change, lire=not remplacer)
+	return _modifier(racine, home, dev, change, lire=not remplacer, ponctuel=ponctuel)
 
 
 # ---------- vue publiée pour le formulaire du panneau (spec 008, FR-003) ----------
