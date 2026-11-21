@@ -473,3 +473,13 @@ it('says to restart a regisseur that stopped during the first questions, with on
     expect(send).toHaveBeenCalledWith({ kind: 'orchestrator.restart' })
   }
 })
+
+it('keeps « Accès des agents à Cate » usable when the regisseur is stopped and the policy unreadable (FR-016)', () => {
+  const ui = installMockClientUi()
+  render(snapshot({ pratiques: reglages({ erreur: 'illisible' }), regisseur: { state: 'stopped', error: null, settingsHint: null } }))
+  act(() => button('Réglages')!.click())
+  const acces = button('Accès des agents à Cate')!
+  expect(acces.disabled).toBe(false)
+  act(() => acces.click())
+  expect(ui.openSettings).toHaveBeenCalledWith('cli')
+})
