@@ -189,28 +189,38 @@ def _touche(v, permis):
 	return any(x in permis for x in v) if isinstance(v, list) else v in permis
 
 
-def _couches(racine, home, remplace=None):
+def _couches(racine, home, remplace=None, ponctuel=None):
+	"""ponctuel : {'agents.max': 6}, les options du dernier `agence start` (spec 008 FR-009), en dernier."""
 	out = []
 	for source, chemin in (('dev', fichier_dev(home)), ('projet', fichier_projet(racine))):
 		contenu = remplace[1] if remplace and remplace[0] == chemin else _lire(chemin)
 		out.append((source, chemin, contenu))
+	if ponctuel:
+		imbrique = {}
+		for cle, v in ponctuel.items():
+			tete, fin = _chemin(cle)
+			d = imbrique
+			for t in tete:
+				d = d.setdefault(t, {})
+			d[fin] = v
+		out.append(('ponctuel', 'option de agence start', imbrique))
 	return out
 
 
-def charger(racine, home):
+def charger(racine, home, ponctuel=None):
 	"""Politique effective. Fichier invalide : valeurs de neutre et `erreur` renseignée (seuls ceux qui agissent refusent)."""
 	sch = schema()
 	try:
-		return fusionner(sch, _couches(racine, home))
+		return fusionner(sch, _couches(racine, home, ponctuel=ponctuel))
 	except Invalide as err:
 		pol = fusionner(sch, [])
 		pol['erreur'] = str(err)
 		return pol
 
 
-def verifier(racine, home):
+def verifier(racine, home, ponctuel=None):
 	"""check : Invalide si l'un des fichiers ou leur combinaison est refusé ; n'écrit rien."""
-	return fusionner(schema(), _couches(racine, home))
+	return fusionner(schema(), _couches(racine, home, ponctuel=ponctuel))
 
 
 # ---------- écriture (la CLI seule) ----------

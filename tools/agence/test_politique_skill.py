@@ -72,5 +72,30 @@ class Politique(unittest.TestCase):
 		self.assertIn('jamais deux implémenteurs sur le même fichier', self.texte)
 
 
+class Reglages(unittest.TestCase):
+	"""Spec 008, lot 2, T024 : le skill ne recopie ni le plafond, ni le rappel, ni la coupure ; les options sont ponctuelles."""
+
+	def setUp(self):
+		with open(SKILL, encoding='utf-8') as f:
+			self.texte = f.read()
+
+	def test_plus_de_valeur_recopiee(self):
+		for chaine in ('Au plus 4 agents', 'après 5 min', "l'écrit"):
+			with self.subTest(chaine=chaine):
+				self.assertNotIn(chaine, self.texte)
+
+	def test_plafond_et_options(self):
+		lignes = [l for l in self.texte.splitlines() if '--max-agents' in l]
+		self.assertTrue(lignes)
+		for l in lignes:
+			self.assertIn('agence pratiques show', l)
+			self.assertIn('ponctuel', l)
+		notif = [l for l in self.texte.splitlines() if '--no-notify' in l]
+		self.assertTrue(notif and all('ponctuel' in l and 'notifications.' in l for l in notif))
+
+	def test_modele_et_effort_du_workspace(self):
+		self.assertRegex(self.texte, r'agents\.modele[^\n]*agents\.effort')
+
+
 if __name__ == '__main__':
 	unittest.main()

@@ -356,5 +356,164 @@ class Routes(Base):
 		self.assertEqual(self.lit(self.projet), {'preset': 'pr-tdd'})
 
 
+# ---------- lot 2 : couche ponctuelle (FR-009, FR-010) ----------
+
+class Ponctuel(Base):
+	"""T020 : une option de `agence start` vaut jusqu'au prochain `agence start`, jamais dans le fichier du projet."""
+
+	def octets(self):
+		with open(self.projet, 'rb') as f:
+			return f.read()
+
+	def test_max_agents_ponctuel_fichier_intact(self):
+		self.ecrit(self.projet, {'agents': {'max': 4}})
+		avant = self.octets()
+		self.assertEqual(self.agence('start', '--max-agents', '6')[0], 0)
+		st = agence.load()
+		self.assertEqual(st['ponctuel'], {'agents.max': 6})
+		self.assertEqual(self.octets(), avant)
+		self.assertEqual(agence.plafond(st), 6)
+		self.assertEqual(self.show()['sources']['agents.max'], 'ponctuel')
+		self.assertEqual(next(c for c in st['pratiques']['champs'] if c['cle'] == 'agents.max')['origine'], 'ponctuel')
+
+	def test_start_sans_option_vide_la_couche(self):
+		self.ecrit(self.projet, {'agents': {'max': 4}})
+		self.agence('start', '--max-agents', '6', '--no-notify')
+		self.assertEqual(agence.load()['ponctuel'], {'agents.max': 6, 'notifications.systeme': 'non'})
+		self.assertEqual(self.agence('start')[0], 0)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({}, 4))
+		self.assertEqual(self.show()['sources']['agents.max'], 'projet')
+
+	def test_hors_bornes_refuse_code_2_phrase_du_schema(self):
+		code, _, err = self.agence('start', '--max-agents', '40')
+		self.assertEqual(code, 2)
+		self.assertIn(self.sch['cles']['agents.max']['nom'], err)
+		self.assertEqual(agence.load()['ponctuel'], {})
+		self.assertFalse(os.path.exists(self.projet))
+
+	def test_coherence_avec_le_workspace_refusee(self):
+		self.ecrit(self.projet, {'verification': 'differente'})
+		code, _, err = self.agence('start', '--max-agents', '1')
+		self.assertEqual(code, 2)
+		self.assertIn(self.sch['coherences'][1]['phrase'], err)
+
+	def test_etat_ancien_max_agents_et_notify_ignores(self):
+		with agence.tx():
+			pass
+		with open(agence.state_file()) as f:
+			vieux = json.load(f)
+		vieux.pop('ponctuel', None)
+		vieux.update(maxAgents=2, notify=False)
+		with open(agence.state_file(), 'w') as f:
+			json.dump(vieux, f)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({}, 4))
+		self.assertEqual(agence.valeurs(st)['notifications.systeme'], 'oui')
+		self.assertNotIn('notify', agence.empty())
+
+	def test_charger_couche_ponctuelle_validee(self):
+		pol = pratiques.charger(self.racine, self.home, {'agents.max': 6})
+		self.assertEqual((pol['valeurs']['agents.max'], pol['sources']['agents.max'], pol['erreur']), (6, 'ponctuel', None))
+		self.assertTrue(pratiques.charger(self.racine, self.home, {'agents.max': 40})['erreur'])
+
+
+class PonctuelEfface(Base):
+	"""T021 : la valeur choisie par l'humain s'applique : un réglage de la clé retire sa valeur ponctuelle."""
+
+	def setUp(self):
+		super().setUp()
+		self.agence('start', '--max-agents', '6', '--no-notify')
+
+	def test_pratiques_set_retire_la_cle_ponctuelle(self):
+		self.assertEqual(self.agence('pratiques', 'set', 'agents.max', '3')[0], 0)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({'notifications.systeme': 'non'}, 3))
+
+	def test_route_set_retire_la_cle_ponctuelle(self):
+		self.assertEqual(self.post('/pratiques/set', cle='agents.max', valeur='3')[0], 303)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({'notifications.systeme': 'non'}, 3))
+
+	def test_route_unset_d_une_cle_ponctuelle_revient_au_workspace(self):
+		self.ecrit(self.projet, {'agents': {'max': 2}})
+		self.assertEqual(self.post('/pratiques/unset', cle='agents.max')[0], 303)
+		st = agence.load()
+		self.assertEqual((st['ponctuel'], agence.plafond(st)), ({'notifications.systeme': 'non'}, 2))
+		self.assertEqual(self.lit(self.projet), {'agents': {'max': 2}})  # le réglage du workspace reste
+
+
+class Notifications(Base):
+	"""T022 : notifications.systeme et notifications.rappel remplacent st['notify'] et le rappel codé en dur."""
+
+	def setUp(self):
+		super().setUp()
+		with agence.tx() as st:
+			st['panels']['orchestrator'] = 'o1'
+			agence.add_need(st, 'task', 'Valider', owner=agence.OWNER_HUMAIN, panels=['b1'])
+
+	def toasts(self, now):
+		with agence.tx() as st:
+			effects = agence.tick(st, {'o1', 'b1'}, [], {}, now, None)
+		return [e for e in effects if e[0] == 'toast']
+
+	def test_systeme_non_aucun_toast(self):
+		self.ecrit(self.projet, {'notifications': {'systeme': 'non'}})
+		self.assertEqual(self.toasts(1000.0), [])
+
+	def test_no_notify_ponctuel_aucun_toast(self):
+		self.agence('start', '--no-notify')
+		self.assertEqual(self.toasts(1000.0), [])
+		self.agence('start')
+		self.assertEqual(len(self.toasts(1001.0)), 1)
+
+	def test_rappel_zero_aucun_rappel(self):
+		self.ecrit(self.projet, {'notifications': {'rappel': 0}})
+		self.assertEqual(len(self.toasts(1000.0)), 1)
+		self.assertEqual(self.toasts(1000.0 + 86400), [])
+
+	def test_rappel_900_apres_900_s_et_pas_avant(self):
+		self.ecrit(self.projet, {'notifications': {'rappel': 900}})
+		self.assertEqual(len(self.toasts(1000.0)), 1)
+		self.assertEqual(self.toasts(1899.0), [])
+		rappel = self.toasts(1900.0)
+		self.assertEqual(len(rappel), 1)
+		self.assertTrue(rappel[0][2][1].startswith('Rappel'))
+
+	def test_plus_de_rappel_ni_de_notify_en_dur(self):
+		with open(os.path.join(HERE, 'agence.py'), encoding='utf-8') as f:
+			trouves = [l.strip() for l in f if re.search(r"maxAgents|st\['notify'\]|RAPPEL", l)]
+		self.assertEqual(trouves, [])
+
+
+class ModeleEffort(Base):
+	"""T023 : sans --model ni --effort, une tâche prend le modèle et l'effort du workspace, origine dite par need show."""
+
+	def need(self, *opts):
+		code, out, err = self.agence('need', 'add', 'Faire', '--kind', 'task', *opts)
+		self.assertEqual(code, 0, err)
+		nid = out.strip()
+		return next(n for n in agence.load()['needs'] if n['id'] == nid), self.agence('need', 'show', nid)[1]
+
+	def test_defaut_du_workspace(self):
+		self.ecrit(self.projet, {'agents': {'modele': 'sonnet', 'effort': 'high'}})
+		n, show = self.need()
+		self.assertEqual((n['model'], n['effort']), ('sonnet', 'high'))
+		self.assertIn('--model sonnet (workspace)', show)
+		self.assertIn('--effort high (workspace)', show)
+
+	def test_l_option_l_emporte(self):
+		self.ecrit(self.projet, {'agents': {'modele': 'sonnet', 'effort': 'high'}})
+		n, show = self.need('--model', 'opus', '--effort', 'low')
+		self.assertEqual((n['model'], n['effort']), ('opus', 'low'))
+		self.assertIn('--model opus (besoin)', show)
+		self.assertIn('--effort low (besoin)', show)
+
+	def test_auto_ne_stocke_rien(self):
+		n, show = self.need()
+		self.assertEqual((n['model'], n['effort']), (None, None))
+		self.assertNotIn('réglages', show)
+
+
 if __name__ == '__main__':
 	unittest.main()

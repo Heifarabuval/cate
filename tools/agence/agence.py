@@ -5,7 +5,7 @@ Seule cette CLI écrit l'état <repo>/.cate/tmp/agence/state.json (verrou fcntl,
 écriture atomique). L'humain qui valide s'appelle `agence nom` : AGENCE_NOM, sinon
 la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'humain ».
 
-  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant), avec --model si modele.interlocuteur est posé ; --no-notify coupe les notifications système du projet ; --max-agents écrit agents.max dans la politique du projet
+  agence start [--no-notify] [--max-agents N]  canvas « Agence : <repo> » + orchestrateur, puis un seul Interlocuteur (/interlocuteur, spec 010 : écrit des fiches, ne lance rien) relié au panneau agence (idempotent, adopte le vivant), avec --model si modele.interlocuteur est posé ; --no-notify et --max-agents sont ponctuels (spec 008) : valables jusqu'au prochain agence start, jamais écrits dans la politique
   agence boot [--from ID]            par l'orchestrateur : régisseur + page de suivi, reliés
   agence need add|panel|pr|done|drop|list   add --done-when : conditions de fin séparées par une virgule (pr-merged:N, issue-closed:N, ci-green:N, tests-local, report), dérivées de la politique sans elle ; need pr ID N rattache la PR ; add --model <id> --effort <niveau> : réglages voulus, passés par l'orchestrateur à cate agent start ; le suivi montre ceux que cate agent list rend
   agence need log ID "<décision>"    journal daté du besoin ; need show ID le rend, boot rend celui des besoins ouverts
@@ -166,15 +166,16 @@ def draft_path(did):
 
 def empty():
 	return {'repo': os.path.basename(root()), 'ghRepo': None, 'panels': {}, 'port': None, 'seq': 0,
-	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'notify': True,
+	        'needs': [], 'drafts': [], 'questions': [], 'notified': [], 'agentsActive': 0, 'agentsWaiting': 0, 'titles': {}, 'ponctuel': {},
 	        'orphanVus': {}, 'orphanGardes': [], 'humain': "L'humain", 'garde': None, 'pratiques': None,
 	        'backlog': None, 'lot': []}  # backlog : vue publiée pour le panneau agence ; lot : fiches cliquées qui attendent leur place
 
 
-def politique(agir=False):
-	"""Politique effective (pratiques.py). agir : une commande qui agit selon elle refuse (Env) une politique en erreur."""
+def politique(agir=False, st=None):
+	"""Politique effective (pratiques.py). agir : une commande qui agit selon elle refuse (Env) une politique en erreur.
+	st : l'état, dont la couche ponctuelle du dernier `agence start` (spec 008) ; sans lui, l'état sur disque."""
 	import pratiques  # à côté de ce fichier (livré par le tarball) ; importé ici : --version et les gardes n'en dépendent pas
-	pol = pratiques.charger(root(), os.environ.get('HOME'))
+	pol = pratiques.charger(root(), os.environ.get('HOME'), (st or load())['ponctuel'])
 	if agir and pol['erreur']:
 		raise Env(f"pratiques invalides, rien fait : {pol['erreur']} (agence pratiques check)")
 	return pol
@@ -182,7 +183,7 @@ def politique(agir=False):
 
 def valeurs(st):
 	"""Valeurs publiées par le dernier tour du régisseur, sinon lues dans les fichiers."""
-	return (st.get('pratiques') or politique())['valeurs']
+	return (st.get('pratiques') or politique(st=st))['valeurs']
 
 
 def publier(pol):
@@ -192,7 +193,7 @@ def publier(pol):
 
 
 def plafond(st):
-	return valeurs(st)['agents.max']  # agents vivants, en plein tour ou en attente ; la clé maxAgents d'un état ancien est ignorée
+	return valeurs(st)['agents.max']  # agents vivants, en plein tour ou en attente
 
 
 def load(path=None):
@@ -306,7 +307,8 @@ def dollars(c):
 def need_text(n):
 	"""Besoin et son journal, une ligne chacun."""
 	head = f"{n['id']}\t{n['status']}\t{n['kind']}\t{qui(n)}\t{n['title']}"
-	voulu = ' '.join(f'--{k} {n[k]}' for k in ('model', 'effort') if n.get(k))  # à passer à cate agent start
+	orig = n.get('origines') or {}  # besoin ou workspace (spec 008) ; absent d'un besoin ancien
+	voulu = ' '.join(f'--{k} {n[k]}' + (f' ({orig[k]})' if k in orig else '') for k in ('model', 'effort') if n.get(k))
 	return '\n'.join([head] + ([f'\tréglages : {voulu}'] if voulu else []) + [f"\t{j['ts']}\t{j['by']}\t{j['text']}" for j in n.get('journal', [])])
 
 
@@ -433,7 +435,6 @@ def notify(panel, msg):
 		log(f'message à {panel} non remis : {e}')
 
 
-RAPPEL = 300  # secondes sans réponse avant l'unique rappel
 TOAST = ['osascript', '-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title (item 1 of argv)',
          '-e', 'end run', '--']  # script constant : titre et texte passent en arguments, jamais dans le script
 
@@ -516,19 +517,23 @@ def jours_valides(v):
 
 
 def cmd_start(a):
+	"""Les options sont ponctuelles (spec 008 FR-009) : la couche est remplacée par les seules options passées, jamais
+	écrite dans la politique ; refusée comme un réglage (bornes et cohérences, phrase du schéma)."""
 	require_cate()
-	if a.max_agents is not None:
-		import pratiques  # voir politique()
-		try:
-			pratiques.regler(root(), os.environ.get('HOME'), 'agents.max', a.max_agents)
-		except pratiques.Invalide as err:
-			raise Env(f'pratiques : {err}')
+	import pratiques  # voir politique()
+	ponctuel = {k: v for k, v in (('agents.max', a.max_agents),
+	                              ('notifications.systeme', None if a.notify is None else 'oui' if a.notify else 'non'))
+	            if v is not None}
+	try:
+		pratiques.verifier(root(), os.environ.get('HOME'), ponctuel)
+	except pratiques.Invalide as err:
+		raise Env(f'pratiques : {err} ({err.phrase})')
 	live = live_rows()
 	if live is None:
 		raise Refus('cate panel list illisible')
 	with tx() as st:
-		if a.notify is not None:
-			st['notify'] = a.notify
+		st['ponctuel'] = ponctuel
+		st['pratiques'] = publier(politique(st=st))
 		p = st['panels']
 		orch = p.get('orchestrator')
 		if orch not in live:
@@ -659,11 +664,16 @@ def cmd_need(a):
 				pratiques.conditions(done_when, saisie=True)
 			except pratiques.Invalide as err:
 				raise Env(str(err))
+		origines = {k: 'besoin' for k in ('model', 'effort') if getattr(a, k)}
 		if a.kind == 'task':
 			v = politique(agir=True)['valeurs']
 			if v['issue'] == 'obligatoire' and not a.issue:
 				raise Refus('issue obligatoire (pratiques) : une tâche porte --issue N')
 			done_when = done_when or pratiques.done_when_defaut(v)
+			for k, cle in (('model', 'agents.modele'), ('effort', 'agents.effort')):  # spec 008 FR-012 : l'option l'emporte
+				if not getattr(a, k) and v[cle] != 'auto':
+					setattr(a, k, v[cle])
+					origines[k] = 'workspace'
 		by_orch = bool(a.panel) and me is not None and me == panels.get('orchestrator')
 		with tx() as st:
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
@@ -671,6 +681,7 @@ def cmd_need(a):
 			                source=a.frm, panels=a.panel or (), done_when=done_when, acceptance=a.acceptance,
 			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue,
 			                budget_jetons=a.budget_jetons)
+			n.setdefault('origines', origines)  # besoin rendu tel quel (doublon) : ses origines restent
 			if by_orch:
 				launch(n, a.panel)
 		print(n['id'])
@@ -1385,13 +1396,17 @@ def click_pratiques(action, form):
 				cles, vals = form.get('cle') or [], form.get('valeur') or []
 				paires = list(zip(cles, map(pratiques.lire_valeur, vals))) if len(cles) == len(vals) else []
 				pratiques.regler_plusieurs(racine, home, paires)
+				for cle, _ in paires:  # la valeur choisie s'applique (FR-010)
+					st['ponctuel'].pop(cle, None)
+			elif action == 'unset' and un('cle') in st['ponctuel']:  # revenir au réglage du workspace : la couche seule
+				st['ponctuel'].pop(un('cle'))
 			elif action == 'unset':
 				pratiques.retirer(racine, home, un('cle'), None)
 			else:
 				pratiques.poser_preset(racine, home, un('nom'), remplacer=un('remplacer') == '1')
 		except pratiques.Invalide as err:
 			return 400, err.phrase
-		st['pratiques'] = publier(politique())
+		st['pratiques'] = publier(politique(st=st))
 	return 303, '/'
 
 
@@ -2202,14 +2217,15 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 				n, neuf = add_need(st, 'human', f'Fermer le panneau « {titre} » (sans agent) ?', ref=f'orphan:{p}', owner=OWNER_HUMAIN)
 				if neuf:
 					n['orphan'] = {'panel': p, 'title': titre}
-	for n in st['needs']:  # une notification par ligne qui attend, un rappel, puis rien ; le réglage se relit à chaque tour
+	reglages = valeurs(st)  # notifications.* (spec 008), relues à chaque tour
+	for n in st['needs']:  # une notification par ligne qui attend, un rappel, puis rien
 		if not attend(n):
 			n.pop('notifTs', None)  # la ligne repart de zéro si elle attend de nouveau
 			n.pop('notifRappel', None)
-		elif st['notify']:
+		elif reglages['notifications.systeme'] == 'oui':
 			if 'notifTs' not in n:
 				n['notifTs'], prefixe = now, ''
-			elif not n.get('notifRappel') and now - n['notifTs'] >= RAPPEL:
+			elif reglages['notifications.rappel'] and not n.get('notifRappel') and now - n['notifTs'] >= reglages['notifications.rappel']:
 				n['notifRappel'], prefixe = True, 'Rappel : '
 			else:
 				continue
@@ -2601,7 +2617,7 @@ def un_tour():
 	mesures = lire_mesures()  # idem : une lecture par tour, None si Cate la refuse
 	usage = couts(mesures)
 	garde = hooks_statut()  # gardes du HOME courant, lus hors transaction ; le panneau affiche une bannière sauf « actif »
-	pol = politique()  # invalide : neutre et erreur publiée, le tour continue
+	pol = politique(st=snap)  # invalide : neutre et erreur publiée, le tour continue
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
@@ -3058,7 +3074,7 @@ def garde_plafond(st):
 	if v + w < maxi:
 		return None
 	return decision('deny', f'Plafond atteint : {v + w} agents vivants sur {maxi} (dernier compte publié par le régisseur). '
-	                        f"Ferme un agent fini ou mets la tâche en file ; seul {nom()} relève le plafond (agence start --max-agents <n>).")
+	                        f"Ferme un agent fini ou mets la tâche en file ; seul {nom()} relève le plafond (réglage « Agents en même temps » du panneau agence).")
 
 
 def send_match(st, tool, ti):
@@ -3156,12 +3172,15 @@ def cmd_pratiques(a):
 	racine, home = root(), os.environ.get('HOME')
 	try:
 		if a.action == 'set':
-			print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev)}')
+			with tx() as st:  # la valeur choisie s'applique : sa valeur ponctuelle est retirée (spec 008 FR-010)
+				print(f'écrit : {pratiques.regler(racine, home, a.cle, pratiques.lire_valeur(a.valeur), a.dev)}')
+				if st['ponctuel'].pop(a.cle, None) is not None:
+					st['pratiques'] = publier(politique(st=st))
 		elif a.action == 'unset':
 			print(f'écrit : {pratiques.retirer(racine, home, a.cle, a.dev)}')
 		elif a.action == 'preset':
 			print(f'écrit : {pratiques.poser_preset(racine, home, a.nom, a.dev, a.remplacer)}')
-		pol = pratiques.verifier(racine, home)
+		pol = pratiques.verifier(racine, home, load()['ponctuel'])  # show dit la source ponctuel (spec 008)
 	except pratiques.Invalide as err:
 		raise Env(f'pratiques : {err} ({err.phrase})')
 	if a.action == 'show' and a.json:
@@ -3454,9 +3473,9 @@ def parser():
 	sub = p.add_subparsers(dest='cmd', required=True)
 	s = sub.add_parser('start')
 	s.add_argument('--notify', action=argparse.BooleanOptionalAction, default=None,
-	               help="notification système quand une ligne attend l'humain (activée par défaut ; --no-notify la coupe pour ce projet, relue à chaque tour)")
+	               help="ponctuel, jusqu'au prochain start : notification système quand une ligne attend l'humain (réglage durable : notifications.systeme)")
 	s.add_argument('--max-agents', type=entier_positif, metavar='N',
-	               help="plafond d'agents vivants pour ce projet : écrit agents.max dans sa politique (agence pratiques show ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
+	               help="ponctuel, jusqu'au prochain start : plafond d'agents vivants (réglage durable : agents.max, voir pratiques show ; les agents en attente de saisie comptent, l'orchestrateur et le régisseur non)")
 	s.set_defaults(fn=cmd_start)
 	b = sub.add_parser('boot')
 	b.add_argument('--from', dest='frm')
