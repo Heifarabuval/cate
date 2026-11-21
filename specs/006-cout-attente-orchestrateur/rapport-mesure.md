@@ -39,3 +39,30 @@ Aucun journal n'est copié dans le dépôt.
 ### À retenir pour le lot 4
 
 I1 à I4 « avant » : I1 = 344 252 (moyenne), I2 = 11,35 %, I3 = 131 tours (13,85 %), I4 = 220 140. Échantillon : un projet, un orchestrateur, du 2026-11-18 au 2026-11-20, 10 sessions.
+
+## Après
+
+Mesure du 2026-11-21 vers 12:00 +0100, en lecture seule sur `~/.claude/projects/-Users-ADFINITAS-Documents-cate/`. La règle du skill est sur `origin/main` depuis le commit `df386ee1` (2026-11-21 11:20 +0100).
+
+| Indicateur | Avant | Après |
+|---|---|---|
+| I1 jetons lus par passage d'attente | 344 252 (moyenne) | non mesuré : 0 appel `agent wait`, donc 0 passage |
+| I2 part des passages d'attente | 11,35 % | non mesuré : 0 passage |
+| I3 tours forcés par un Stop hook | 131 tours (13,85 %) | non mesuré : échantillon trop petit (voir ci-dessous) |
+| I4 contexte médian par tour | 220 140 | non mesuré : échantillon trop petit |
+
+Motif. Les tours dont l'horodatage est postérieur à 2026-11-21T10:20:41Z : 2 journaux sur les 12 les plus récents du dossier en ont, 24 et 38 tours (62 au total), avec 0 appel `agent wait` (commande : script `python3 -I` jetable, hors dépôt, qui compte les messages `assistant` dédoublonnés par `message.id` après cet instant et les appels Bash contenant `agent wait`). Aucune vague de 3 agents ni 10 min d'attente depuis la règle (FR-006). `attente_mesure.py` n'a pas de filtre par date : le lancer sur ces journaux mélangerait l'avant et l'après, donc il n'a pas été lancé. Aucune vague n'a été lancée pour créer de la donnée (exclu par le brief).
+
+### Décision provisoire
+
+Aucune des trois décisions (a), (b), (c) n'est tranchable sans mesure : le critère de chacune (SC-001, SC-002, SC-003) porte sur I1 à I3 après la règle, et ces trois valeurs sont « non mesuré ». Rien n'est estimé. Provisoirement : garder la règle du skill, ne rouvrir ni Q5 (b) ni la piste 4 (c), ne pas clore #100 (a), et refaire la mesure après une vague réelle (T030).
+
+### Ce qui n'est pas mesuré
+
+- I1 à I4 après la règle (motif ci-dessus).
+- Si les agents rapportent bien par `cate agent send` et si le filet de 600 s se déclenche au plus une fois par vague (hypothèse de SC-002).
+- Le coût en dollars (`costUsd` nul, SC-006).
+
+### Pour refaire la mesure
+
+Après une vague réelle (au moins 3 agents, 10 min d'attente) : `cate agent usage --json > usage.json` (garder le panneau Orchestrateur), puis `python3 -I tools/agence/attente_mesure.py ~/.claude/projects/-Users-ADFINITAS-Documents-cate --usage-json usage.json`. Limite : le script lit les sessions entières ; pour isoler l'après, ne lui donner que les sessions démarrées après le 2026-11-21 11:20 +0100 (hors périmètre de ce lot : pas de modification du script).
