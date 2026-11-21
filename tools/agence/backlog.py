@@ -460,21 +460,28 @@ def brief(fiche, decisions, plan=None, ecriture=()):
 LENTILLES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lentilles.json')
 
 
+def fichier_lentilles(racine):
+	"""Le fichier de lentilles du projet, à côté de sa politique, s'il existe : il remplace la liste livrée (FR-007)."""
+	projet = chemin(racine, 'lentilles.json')
+	return projet if os.path.isfile(projet) else LENTILLES
+
+
 def charger_lentilles(path=LENTILLES):
 	"""La liste des lentilles (fichier de données éditable) : nom (un mot, unique), consigne, modele (null : défaut du CLI)."""
+	nom = 'lentilles.json' if path == LENTILLES else 'lentilles.json du projet'
 	try:
 		with open(path) as f:
 			ls = json.load(f)
 	except (OSError, ValueError) as err:
-		raise Invalide(f'lentilles.json illisible : {err}')
+		raise Invalide(f'{nom} illisible : {err}')
 	if not isinstance(ls, list) or not ls:
-		raise Invalide('lentilles.json : une liste non vide attendue')
+		raise Invalide(f'{nom} : une liste non vide attendue')
 	for x in ls:
 		if not (isinstance(x, dict) and set(x) == {'nom', 'consigne', 'modele'} and _txt(x['nom'])
 		        and re.fullmatch(r'[\w-]+', x['nom']) and _txt(x['consigne']) and x['consigne'].strip() and _txt_nul(x['modele'])):
-			raise Invalide(f'lentilles.json : lentille invalide {json.dumps(x, ensure_ascii=False)} (nom en un mot, consigne, modele)')
+			raise Invalide(f'{nom} : lentille invalide {json.dumps(x, ensure_ascii=False)} (nom en un mot, consigne, modele)')
 	if len({x['nom'] for x in ls}) != len(ls):
-		raise Invalide('lentilles.json : nom en double')
+		raise Invalide(f'{nom} : nom en double')
 	return ls
 
 

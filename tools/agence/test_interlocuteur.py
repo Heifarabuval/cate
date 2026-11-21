@@ -29,6 +29,9 @@ class Skill(unittest.TestCase):
 			with self.subTest(cmd=cmd):
 				self.assertIn(cmd, self.texte)
 
+	def test_propose_une_lentille_a_la_demande_par_sa_carte(self):
+		self.assertIn('agence lentille F<n> --carte', self.texte)
+
 	def test_ne_cite_aucune_commande_qui_lance(self):
 		for cmd in ('cate agent start', 'agence need add', 'agence ask', 'Hermes'):
 			with self.subTest(cmd=cmd):

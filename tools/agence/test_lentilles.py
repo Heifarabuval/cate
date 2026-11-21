@@ -16,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import agence  # noqa: E402
 import backlog  # noqa: E402
+import pratiques  # noqa: E402
 from test_revue import NOW, Carte  # noqa: E402
 
 LIVREES = os.path.join(HERE, 'lentilles.json')
@@ -164,6 +165,28 @@ class Eclairer(Carte):
 		j = json.loads(sortie.getvalue())
 		self.assertEqual(set(j), {'nom', 'modele', 'brief'})
 		self.assertIn('F1 : Exporter le registre', j['brief'])
+
+	def test_fichier_du_projet_remplace_la_liste_livree(self):
+		"""FR-007 : liste éditable par projet, à côté du fichier de politique du projet ; invalide, refus lisible."""
+		projet = backlog.chemin(self.tmp, 'lentilles.json')
+		self.assertEqual(os.path.dirname(projet), os.path.dirname(pratiques.fichier_projet(self.tmp)))
+		with open(projet, 'w') as f:
+			json.dump([{'nom': 'juriste', 'consigne': 'Lis la fiche comme un juriste.', 'modele': None}], f)
+		code, out = self.cli('lentille', 'F1', '--hasard')
+		self.assertEqual(code, 0)
+		self.assertIn('Lentille juriste : Lis la fiche comme un juriste.', out)
+		code, _ = self.cli('lentille', 'F1', '--nom', 'novice')  # la liste livrée est remplacée, pas complétée
+		self.assertNotEqual(code, 0)
+		with open(projet, 'w') as f:
+			json.dump([{'nom': 'juriste'}], f)
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+			code = agence.main(['lentille', 'F1', '--hasard'])
+		self.assertNotEqual(code, 0)
+		self.assertIn('lentilles.json du projet : lentille invalide', err.getvalue())
+		self.assertNotIn('Traceback', err.getvalue())
+		os.remove(projet)
+		self.assertEqual(self.cli('lentille', 'F1', '--nom', 'novice')[0], 0)
 
 	def test_note_de_lentille_ne_change_ni_etat_ni_registre(self):
 		self.repond(self.proposer('--structurante'), 'Valider')

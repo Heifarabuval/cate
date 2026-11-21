@@ -2290,6 +2290,9 @@ lock (schema in `tools/agence/backlog.py`, shipped next to the CLI); the
 `pages` guard refuses agents any direct write of both files. A card moves
 `discussion` <-> `prête` through the CLI; `lancée`, `faite` and `abandonnée`,
 like a decision becoming `active`, come from a click only.
+The lenses (`agence lentille`) come from `tools/agence/lentilles.json`; a
+project's `<root>/.cate/tmp/agence/lentilles.json`, when present, replaces that
+list, and an invalid one refuses the command.
 The regisseur publishes the backlog as `backlog` in `state.json` (cards, waves, waits, file error; shape in `src/panels/agence/contract/fixtures/vue-backlog.json`), the panel's snapshot carries it (null for a CLI that publishes none), and « Lancer (n) » is the `fiches.lancer` op, a POST of the checked ids to `/fiches/lancer`.
 Each project has one **interlocutor**: `agence start` starts a Claude Code
 terminal titled `Interlocuteur` with `/interlocuteur` (the bundled skill

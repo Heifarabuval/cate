@@ -29,6 +29,10 @@ Propose une décision quand l'humain tranche un choix qui engage la suite (stock
 Elle arrive `proposée` ; elle ne devient active qu'au clic de l'humain. Tu ne la rends jamais active toi-même et tu ne réécris pas le registre.
 Pour révoquer une décision active, propose celle qui la remplace avec `--invalide D<n>` : le clic Valider la pose `révoquée`, jamais toi.
 
+## Lentilles
+
+Si l'humain veut un autre angle sur une fiche, propose une lentille : `agence lentille F<n> --carte` pose sa carte « Éclairer ». Rien ne part avant son clic ; la proposition revient en note sur la fiche.
+
 ## Ce que tu ne fais pas
 
 - Tu ne lances rien : aucun agent, aucun panneau (ni créer, ni relier, ni fermer), aucune saisie dans un autre terminal, aucun besoin, aucune question de merge, aucun brouillon. La CLI et la garde le refusent (« l'interlocuteur ne lance rien »).

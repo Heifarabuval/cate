@@ -20,7 +20,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence pratiques show|set|unset|preset [--remplacer]|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
   agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon agents.modele, null s'il n'est pas posé ou vaut auto ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond) ; --remplace F<n>, --doublon-de F<n> (spec 013) : la fiche remplacée ou doublon ne passe plus prête, lien inconnu ou en cycle refusé
   agence decision add|list|show|export [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n> ; show liste les fiches qui la citent ; export écrit docs/decisions.md (actives triées par date, spec 013), à commiter par une PR de docs ; Valider une décision structurante pose une carte « Éclairer » pour les fiches qui la citent
-  agence lentille F<n> --nom N|--hasard [--carte] [--json]  lentille (spec 010, lot 8) : brief d'angle (consigne de lentilles.json + la fiche seule) ; --carte pose une carte « Éclairer » ; au clic, l'orchestrateur lance un agent à contexte vierge, sa proposition s'attache par agence fiche note, rien n'est tranché
+  agence lentille F<n> --nom N|--hasard [--carte] [--json]  lentille (spec 010, lot 8) : brief d'angle (consigne de lentilles.json, celui du projet s'il existe, + la fiche seule) ; --carte pose une carte « Éclairer » ; au clic, l'orchestrateur lance un agent à contexte vierge, sa proposition s'attache par agence fiche note, rien n'est tranché
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -974,7 +974,7 @@ def cmd_lentille(a):
 			carte_eclairer(st, [f], f'{a.id} à la demande')
 		return 0
 	try:
-		x = backlog.tirer(backlog.charger_lentilles(), a.nom)
+		x = backlog.tirer(backlog.charger_lentilles(backlog.fichier_lentilles(root())), a.nom)
 	except backlog.Invalide as err:
 		raise Env(str(err))
 	except backlog.Refus as err:
@@ -3981,7 +3981,7 @@ def parser():
 	le = sub.add_parser('lentille', help="lentille (spec 010, lot 8) : brief d'angle sur une fiche seule, ou --carte ; un agent seulement au clic")
 	le.add_argument('id')
 	lg_ = le.add_mutually_exclusive_group(required=True)
-	lg_.add_argument('--nom', help='nom dans lentilles.json')
+	lg_.add_argument('--nom', help='nom dans lentilles.json (celui du projet, à côté de sa politique, remplace la liste livrée)')
 	lg_.add_argument('--hasard', action='store_true', help='tirée dans lentilles.json')
 	lg_.add_argument('--carte', action='store_true', help="pose une carte « Éclairer » : l'humain clique, l'orchestrateur lance")
 	le.add_argument('--json', action='store_true')
