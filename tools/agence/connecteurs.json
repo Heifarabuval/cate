@@ -1,10 +1,1 @@
-[
- {"id": "regies-dsp", "nom": "Régies publicitaires", "explique": "Dépenses et diffusion par régie, en lignes brutes sur une période. Lecture seule : aucun outil d'écriture.",
-  "acces": "mcp", "serveur": "mcp-dsp",
-  "lecture": ["dsp_fetch_meta", "dsp_fetch_google_ads", "dsp_fetch_bing", "dsp_fetch_thetradedesk", "dsp_fetch_adroll",
-              "dsp_fetch_antvoice", "dsp_list_connectors", "dsp_list_meta_accounts", "dsp_list_google_accounts",
-              "dsp_list_bing_accounts", "dsp_list_adroll_org", "dsp_test_meta"],
-  "ecriture": []},
- {"id": "tableur-budget", "nom": "Tableur du budget", "explique": "Le budget planifié de la campagne, lu dans le navigateur. Lecture seule.",
-  "acces": "navigateur", "lecture": [], "ecriture": [], "panneau": "https://docs.google.com/spreadsheets/"}
-]
+[]

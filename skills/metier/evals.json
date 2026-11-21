@@ -21,7 +21,7 @@
     },
     {
       "id": 4,
-      "prompt": "on démarre la fiche de rapprochement des dépenses",
+      "prompt": "on démarre la fiche d'audit des balises du site",
       "expected_output": "L'agent lance agence pratiques show et agence connecteur check, ouvre les panneaux du métier, signale à l'orchestrateur un outil absent, et termine par agence need done avec le chemin du fichier de preuve du métier.",
       "files": []
     }

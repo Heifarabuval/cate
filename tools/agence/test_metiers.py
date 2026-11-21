@@ -156,29 +156,39 @@ class Catalogue(unittest.TestCase):
 SKILL = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'skills', 'metier')
 
 
-class Cobaye(unittest.TestCase):
-	"""T051 : le media planner (hypothèse 009 Q4, research.md du lot 0), connecteurs classés au lot 0."""
+RACINE = os.path.dirname(os.path.dirname(HERE))
+# Décision de l'humain (PR 186) : le serveur des régies vit dans un autre dépôt ; motifs écrits en morceaux pour ne
+# pas se citer eux-mêmes.
+CITATIONS_INTERDITES = ('mcp-' + 'dsp', 'dsp' + '_', 'regies-' + 'dsp')
 
-	def setUp(self):
-		self.cat = metiers.charger(HERE)
-		self.m = metiers.metier(self.cat, 'media-planner')
 
-	def test_metier_livre(self):
-		self.assertIsNotNone(self.m)
-		self.assertEqual([p['type'] for p in self.m['validateur']], ['fichier'])
-		self.assertTrue(self.m['recettes'])
-		self.assertTrue(self.m['panneaux'])
+class CatalogueLivre(unittest.TestCase):
+	"""Le catalogue livré ne garde que le métier dev ; les autres métiers vivent dans les fixtures des tests."""
 
-	def test_regies_en_lecture_seule(self):
-		c = metiers.connecteur(self.cat, 'regies-dsp')
-		self.assertEqual((c['acces'], c['ecriture']), ('mcp', []))
-		self.assertIn('regies-dsp', self.m['connecteurs'])
+	def test_seul_le_metier_dev(self):
+		cat = metiers.charger(HERE)
+		self.assertEqual([m['id'] for m in cat['metiers']], [metiers.DEV])
+		self.assertEqual(cat['connecteurs'], [])
 
-	def test_outil_qui_rend_un_jeton_jamais_autorise(self):
-		"""research.md, écart 1 : l'outil qui déchiffre les jetons n'est ni lecture ni écriture déclarée : la garde le
-		classe écriture (échec fermé) et aucune carte ne peut le viser (draft new refuse un outil non déclaré)."""
-		c, outil, sens = metiers.classer('mcp__mcp-dsp__dsp_get_token', self.cat)
-		self.assertEqual((c['id'], sens), ('regies-dsp', 'ecriture'))
+	def test_aucun_fichier_livre_ne_cite_le_serveur_des_regies(self):
+		cites = []
+		for base in (os.path.join(RACINE, 'tools', 'agence'), os.path.join(RACINE, 'skills'), os.path.join(RACINE, 'docs')):
+			for dossier, sous, fichiers in os.walk(base):
+				sous[:] = [s for s in sous if s not in ('fixtures', '__pycache__')]
+				for nom in fichiers:
+					if nom.startswith('test_') or nom.endswith('.pyc'):
+						continue
+					chemin = os.path.join(dossier, nom)
+					with open(chemin, encoding='utf-8', errors='replace') as f:
+						texte = f.read()
+					cites += [(os.path.relpath(chemin, RACINE), m) for m in CITATIONS_INTERDITES if m in texte]
+		self.assertEqual(cites, [])
+
+	def test_outil_non_declare_d_un_serveur_declare_jamais_autorise(self):
+		"""research.md, écart 1 : un outil qui n'est ni lecture ni écriture déclarée (celui qui rend un jeton) est classé
+		écriture (échec fermé) et aucune carte ne peut le viser (draft new refuse un outil non déclaré)."""
+		c, outil, sens = metiers.classer('mcp__factice__rendre_jeton', metiers.charger(FIXTURES))
+		self.assertEqual((c['id'], sens), ('factice', 'ecriture'))
 		self.assertNotIn(outil, c['lecture'] + c['ecriture'])
 
 

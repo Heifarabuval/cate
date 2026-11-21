@@ -2276,6 +2276,8 @@ and the three writing commands.
 Trades and connectors (spec 012) are two catalogues shipped next to the CLI,
 `tools/agence/metiers.json` and `tools/agence/connecteurs.json`, validated by
 `tools/agence/metiers.py` (schema, no secret value) and edited only by a PR.
+The shipped catalogues hold only the `dev` trade and no connector; the tests
+read theirs from `tools/agence/fixtures/metiers/` (`AGENCE_CATALOGUES`).
 The policy picks them with three keys: `metier` (default `dev`),
 `connecteurs.lecture` (default: every connector of the trade) and
 `connecteurs.ecriture` (default: none); a connector outside the trade is

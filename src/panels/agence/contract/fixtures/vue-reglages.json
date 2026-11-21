@@ -14,10 +14,6 @@
     {
      "valeur": "dev",
      "libelle": "Développement"
-    },
-    {
-     "valeur": "media-planner",
-     "libelle": "Media planner"
     }
    ],
    "bornes": null,
