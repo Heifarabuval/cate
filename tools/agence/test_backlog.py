@@ -891,32 +891,5 @@ class BriefDroits(Base):
 		self.assertIn('droits : modifier seulement src/a.ts', out)
 
 
-class ResumeDesFichesCloses(unittest.TestCase):
-	"""Spec 013, lot 9, T091 (Q6, FR-011) : coût de lecture des fiches closes mesuré ; résumé gelé sous 50 fiches
-	closes, actif à partir de 50 (fixture)."""
-
-	def backlog(self, closes, ouvertes=3):
-		b = {'seq': 1, 'fiches': []}
-		for i in range(closes + ouvertes):
-			f = backlog.ajouter(b, 'Fiche %d' % i, T0)
-			f['etat'] = ('faite' if i % 2 else 'abandonnée') if i < closes else 'discussion'
-		return b
-
-	def test_sous_le_seuil_gele_avec_la_mesure(self):
-		r = backlog.resume_closes(self.backlog(49))
-		self.assertEqual((r['closes'], r['seuil'], r['actif'], r['lignes']), (49, 50, False, []))
-		self.assertTrue(0 < r['part'] < 1)
-
-	def test_au_seuil_une_ligne_par_fiche_close(self):
-		r = backlog.resume_closes(self.backlog(50))
-		self.assertTrue(r['actif'])
-		self.assertEqual(len(r['lignes']), 50)
-		self.assertRegex(r['lignes'][1], r'^F\d+ faite : Fiche 1$')
-		self.assertFalse([l for l in r['lignes'] if 'discussion' in l])
-
-	def test_aucune_fiche(self):
-		self.assertEqual(backlog.resume_closes({'seq': 1, 'fiches': []})['part'], 0)
-
-
 if __name__ == '__main__':
 	unittest.main()

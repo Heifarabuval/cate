@@ -17,7 +17,6 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   comparer --avant REF --apres REF  économie de jetons : pilotes et issue de comparaison rejoués en `claude -p`
                       avec l'outil à chaque ref ; « annuler » (code 1) si un arbitre vert avant ne l'est plus après ;
                       « verdict impossible » (code 2) si un `claude -p` sort en échec
-  porte RAPPORT       recette (spec 013, lot 9) : « proposer » (0) si le rapport dit garder, sinon « annulée » (1)
 BRAS : nu ou outil. R : ~/.cache/agence-bench ; S : specs/011-mesure-benchmark ; D : ce dépôt.
 Code 2 : refus (message sur la sortie d'erreur) ou verdict impossible. Tant que la source de seuil.json dit « hypothèse »,
 debut, mesure et rapport refusent : l'humain confirme les valeurs et change la source.
@@ -632,22 +631,6 @@ def comparer(a):
 	return 2 if echec else 1 if casse else 0
 
 
-def porte(a):
-	"""Porte des recettes (spec 013, lot 9, #175) : une recette proposée ne va à l'humain que si le rapport de `comparer`
-	dit « garder » (code 0, « proposer ») ; « annuler », « verdict impossible » ou un rapport sans verdict l'annulent
-	(code 1) avec la raison lue. Gelée jusqu'à G3 (013 FR-011) : aucun parcours ne l'appelle encore."""
-	try:
-		with open(a.rapport, encoding='utf-8') as f:
-			m = re.search(r'^Verdict : (.+?)\.?$', f.read(), re.M)
-	except OSError as e:
-		raise Refus('rapport illisible : %s' % e)
-	if m and m.group(1).startswith('garder'):
-		print('proposer : %s' % m.group(1))
-		return 0
-	print('recette annulée : %s' % (m.group(1) if m else 'rapport sans verdict'))
-	return 1
-
-
 def main(argv=None):
 	ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
 	ap.add_argument('--racine', default=os.path.join(os.path.expanduser('~'), '.cache', 'agence-bench'))
@@ -665,13 +648,12 @@ def main(argv=None):
 	p = sub.add_parser('comparer')
 	p.add_argument('--avant', required=True, metavar='REF')
 	p.add_argument('--apres', required=True, metavar='REF')
-	sub.add_parser('porte', help='recette : proposer si le rapport de comparer dit garder, sinon annuler').add_argument('rapport')
 	sub.add_parser('revue')
 	sub.add_parser('rapport')
 	a = ap.parse_args(argv)
 	try:
 		return {'select': select, 'prepare': prepare, 'debut': debut, 'fini': fini, 'controle': controle, 'mesure': mesure,
-			'revue': revue, 'rapport': rapport, 'comparer': comparer, 'porte': porte}[a.cmd](a)
+			'revue': revue, 'rapport': rapport, 'comparer': comparer}[a.cmd](a)
 	except Refus as e:
 		print(e, file=sys.stderr)
 		return 2
