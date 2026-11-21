@@ -279,6 +279,21 @@ def decisions_actives(d):
 	return [x for x in d['decisions'] if x['statut'] == 'active']
 
 
+def registre_md(d):
+	"""Registre durable (spec 013, FR-005, Q1) : décisions actives triées par date, objet, date, pourquoi, alternatives.
+	Aucune date d'export : deux exports du même registre sont identiques. Une copie, jamais une source."""
+	lignes = ['# Décisions actives', '', "Copie du registre de l'agence écrite par `agence decision export`. "
+	          'La source reste le registre : ne pas éditer à la main, refaire l\'export.', '']
+	for x in sorted(decisions_actives(d), key=lambda x: (x['date'], int(x['id'][1:]))):
+		lignes += [f"## {x['id']} : {x['objet']}", '', f"- date : {x['date'][:10]}", f"- pourquoi : {x['pourquoi']}"]
+		lignes += [f"- alternatives écartées : {', '.join(x['alternatives'])}"] if x['alternatives'] else []
+		lignes += ['- structurante'] if x['structurante'] else []
+		lignes.append('')
+	if not decisions_actives(d):
+		lignes += ['Aucune décision active.', '']
+	return '\n'.join(lignes)
+
+
 def revoquees(d, x):
 	"""Décisions actives que x invalide (ids cités dans x['invalide'])."""
 	return [y for y in decisions_actives(d) if y['id'] in x['invalide'] and y['id'] != x['id']]

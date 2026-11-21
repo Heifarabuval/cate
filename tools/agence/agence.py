@@ -18,8 +18,8 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
-  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon modele.implementation, null s'il n'est pas posé ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond)
-  agence decision add|list|show [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n>
+  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon modele.implementation, null s'il n'est pas posé ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond) ; --remplace F<n>, --doublon-de F<n> (spec 013) : la fiche remplacée ou doublon ne passe plus prête, lien inconnu ou en cycle refusé
+  agence decision add|list|show|export [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n> ; show liste les fiches qui la citent ; export écrit docs/decisions.md (actives triées par date, spec 013), à commiter par une PR de docs
   agence url                         adresse de la page de suivi
   agence nom                         nom de l'humain et sa source
   agence observe list [--jours N] [--refs] [--json]  journal d'observation de l'humain, en lecture seule (spec 003) : par défaut le décompte et les types d'événements, sans adresse ; --refs ajoute une ligne par observation (adresse, identifiant) et avertit que le terminal enregistre la sortie (terminal-logs/, hors rétention de 14 jours et hors « Tout effacer ») ; refusé tant que le réglage cliObservationEnabled est fermé, et jamais lu par un agent
@@ -814,6 +814,12 @@ def cmd_decision(a):
 		return sortie(x, a.json, x['id'])
 	with registres() as r:
 		d = r['decisions']
+		if a.action == 'export':  # registre durable (spec 013, Q1) : un fichier du dépôt, commité par une PR de docs
+			cible = os.path.join(root(), 'docs', 'decisions.md')
+			os.makedirs(os.path.dirname(cible), exist_ok=True)
+			with open(cible, 'w') as f:
+				f.write(backlog.registre_md(d))
+			return print(cible)
 		if a.action == 'show':  # fiches qui la citent : lien inverse calculé, jamais stocké (spec 013, FR-004)
 			x = backlog.trouver(d['decisions'], a.id)
 			x = {**x, 'fiches': [f['id'] for f in r['backlog']['fiches'] if x['id'] in f['decisions']]}
@@ -3452,6 +3458,7 @@ def parser():
 	da.add_argument('--structurante', action='store_true')
 	des.add_parser('list').add_argument('--active', action='store_true')
 	des.add_parser('show').add_argument('id')
+	des.add_parser('export', help='écrit docs/decisions.md : décisions actives triées par date, à commiter par une PR de docs')
 	for x in des.choices.values():
 		x.add_argument('--json', action='store_true')
 	de.set_defaults(fn=cmd_decision)

@@ -709,5 +709,56 @@ class CliLiens(Base):
 		self.assertNotIn('fiches', json.loads(self.lit(self.registre))['decisions'][0])  # calculé, jamais stocké
 
 
+class Export(Base):
+	"""Spec 013 lot 4 (T040, Q1 : docs/decisions.md) : `agence decision export` écrit les décisions actives, triées par
+	date, avec leur pourquoi, et rien d'autre."""
+
+	def poser_registre(self):
+		d = backlog.vide_decisions()
+		for objet, date in (('Markdown', '2026-11-19T10:00:00+00:00'), ('Proposée', '2026-11-18T10:00:00+00:00'),
+		                    ('JSON seulement', '2026-11-12T10:00:00+00:00'), ('Rejetée', '2026-11-13T10:00:00+00:00'),
+		                    ('Ancienne', '2026-11-10T10:00:00+00:00'), ('Remplaçante', '2026-11-15T10:00:00+00:00')):
+			backlog.decision_ajouter(d, objet, f'parce que {objet.lower()}', date, alternatives=['SQLite'] if objet == 'Markdown' else ())
+		for did in ('D1', 'D3', 'D5'):
+			backlog.decider(d, did, 'valider')
+		backlog.decider(d, 'D4', 'rejeter')
+		d['decisions'][5]['invalide'] = ['D5']
+		backlog.decider(d, 'D6', 'valider')  # révoque D5
+		backlog.ecrire(self.racine, 'decisions.json', d)
+		return d
+
+	def test_export_actives_triees_par_date_et_rien_d_autre(self):
+		self.poser_registre()
+		registre =self.lit(os.path.join(self.racine, '.cate', 'tmp', 'agence', 'decisions.json'))
+		code, out, err = self.agence('decision', 'export')
+		self.assertEqual(code, 0, err)
+		cible = os.path.join(self.racine, 'docs', 'decisions.md')
+		self.assertEqual(out.strip(), cible)
+		texte = self.lit(cible)
+		titres = [l for l in texte.splitlines() if l.startswith('## ')]
+		self.assertEqual(titres, ['## D3 : JSON seulement', '## D6 : Remplaçante', '## D1 : Markdown'])
+		for x in ('parce que json seulement', 'parce que markdown', '2026-11-12', 'SQLite'):
+			self.assertIn(x, texte)
+		for x in ('Proposée', 'Rejetée', 'Ancienne'):
+			self.assertNotIn(x, texte)
+		self.assertEqual(self.lit(os.path.join(self.racine, '.cate', 'tmp', 'agence', 'decisions.json')), registre)
+		self.assertFalse(os.path.exists(self.fichier))  # backlog.json non créé
+		self.assertEqual(os.listdir(os.path.join(self.racine, 'docs')), ['decisions.md'])
+
+	def test_deux_exports_identiques(self):
+		self.poser_registre()
+		self.agence('decision', 'export')
+		cible = os.path.join(self.racine, 'docs', 'decisions.md')
+		premier = self.lit(cible)
+		self.agence('decision', 'export')
+		self.assertEqual(self.lit(cible), premier)  # aucune date d'export : le diff d'une PR de docs ne montre que les décisions
+
+	def test_registre_vide_fichier_sans_decision(self):
+		self.assertEqual(self.agence('decision', 'export')[0], 0)
+		texte = self.lit(os.path.join(self.racine, 'docs', 'decisions.md'))
+		self.assertNotIn('## ', texte)
+		self.assertIn('Aucune décision active', texte)
+
+
 if __name__ == '__main__':
 	unittest.main()
