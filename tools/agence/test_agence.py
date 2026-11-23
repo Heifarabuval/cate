@@ -454,26 +454,27 @@ class Demarrage(Base):
 
 
 class BootSousPanneauAgence(Base):
-	def test_orchestrateur_agence_rien_a_creer_port_pose(self):
+	def test_orchestrateur_agence_ni_regisseur_ni_suivi_port_pose(self):
 		with agence.tx() as st:
 			st['panels'] = {'orchestrator': 'o1'}
-		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}])
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}, {'panelId': 'b1', 'type': 'boite'},
+		                                           {'panelId': 'i1', 'type': 'terminal', 'title': 'Interlocuteur'}])
 		code, out = self.cli('boot')
 		self.assertEqual(code, 0)
 		self.assertIn('régisseur tenu par le panneau agence', out)
-		self.assertFalse(self.run.ran('cate', 'panel', 'create'))
+		self.assertFalse(self.run.ran('cate', 'panel', 'create'))  # boîte et interlocuteur déjà là
 		self.assertFalse(self.run.ran('cate', 'terminal'))
-		self.assertFalse(self.run.ran('cate', 'panel', 'link'))
 		st = self.state()
 		self.assertTrue(st['port'])  # le régisseur du panneau (agence watch) en a besoin
-		self.assertEqual(st['panels'], {'orchestrator': 'o1'})
+		self.assertEqual(st['panels'], {'orchestrator': 'o1', 'interlocuteur': 'i1'})
 
 	def test_from_designe_l_orchestrateur_agence(self):
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o9', 'type': 'agence'}])
 		code, out = self.cli('boot', '--from', 'o9')
 		self.assertEqual(code, 0)
 		self.assertIn('régisseur tenu par le panneau agence', out)
-		self.assertFalse(self.run.ran('cate', 'panel', 'create'))
+		self.assertEqual(self.state()['panels']['orchestrator'], 'o9')
+		self.assertFalse(self.run.ran('cate', 'terminal'))
 
 	def test_orchestrateur_terminal_chemin_actuel(self):
 		with agence.tx() as st:

@@ -689,7 +689,11 @@ def cmd_boot(a):
 		if not st['port']:
 			st['port'] = free_port()
 		if orch in live and live[orch].get('type') == 'agence':  # le panneau tient lui-même régisseur et suivi
-			print('régisseur tenu par le panneau agence')
+			# Un clic sur « Start Agence » suffit : l'interlocuteur et la boîte de validation viennent avec.
+			inter = interlocuteur(live, p)
+			if not any(r.get('type') == 'boite' for r in live.values()):
+				cate('panel', 'create', 'boite')
+			print(f'régisseur tenu par le panneau agence, interlocuteur {inter}')
 			return 0
 		reg = p.get('regisseur') if p.get('regisseur') in live else adopt(live, 'Régisseur', 'terminal')
 		fresh = reg is None

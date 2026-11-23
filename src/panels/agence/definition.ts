@@ -1,7 +1,8 @@
 // The agence panel type: the orchestrator's conversation next to the project
 // follow-up (specs/002-panneau-agence). Pure. No `api`: no `cate` method
-// reaches its ops, only the view does. Created from the menus ("New
-// Orchestrator") or by the CLI.
+// reaches its ops, only the view does. Created from the menus ("Start
+// Agence") or by the CLI; its orchestrator's `agence boot` adds the
+// interlocuteur and the validation inbox when they are missing.
 
 import { channel } from '@kernel/rpc/contract'
 import { definePanel } from '@panels/framework/contract'
@@ -18,7 +19,7 @@ export default definePanel({
   minimumSize: { width: 420, height: 280 },
   canLiveOnCanvas: true,
   ownsKeyboard: true,
-  creation: { order: 9, title: 'New Orchestrator' },
+  creation: { order: 9, title: 'Start Agence' },
   defaultTitle: 'Agence',
   channel: channel<AgenceSnapshot, Partial<AgenceSnapshot>, AgenceOp>(),
   fields,
