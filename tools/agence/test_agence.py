@@ -3987,5 +3987,230 @@ class LancerSauteLaFile(Base):
 			self.assertEqual(agence.vue_backlog(st, r)['enFile'], ['F1'])
 
 
+ATTEND_REEL = agence.attend
+
+
+class InvariantValidation(Base):
+	"""F41 / D4 / D5 : la vue de validation est calculée de l'état ; chaque attente de l'humain y paraît une fois, aucune autre,
+	et chaque ligne a une action qui agit ou la raison d'attendre. Une carte sans fin (validée, annulée, périmée) fait échouer.
+
+	INVENTAIRE : la table ATTENTES EST l'inventaire (un cas = une ligne, aucun autre document) : clé, famille, donnée qui
+	la prouve, action possible ou raison d'attendre. Familles : « bloque » (quelque chose attend la réponse), « valider »
+	(l'humain approuve ou refuse), « lancer » (l'humain démarre), None (n'attend pas l'humain : la vue ne doit pas le montrer).
+	Hors agence.py, sans signal dans l'état : seuil d'usage D1 (95 %), voir NON_COUVERT.
+	"""
+	ATTENTES = [
+		# clé, famille, preuve (donnée de l'état), action (sous-chaîne d'un lien ou d'un clic de la ligne) ou raison (texte de la ligne)
+		('question', 'bloque', "need human ref q<N>, blocking, question ouverte", '/ask/q1'),
+		('merge', 'valider', "question à action merge (gh) ouverte", '/ask/q1'),
+		('brouillon', 'valider', "need draft ouvert, draft à valider", '/draft/d1/drop'),
+		('permission', 'bloque', "need.agentBlocked et perm.choix lus à l'écran", '/perm/n1/oui'),
+		('besoin_humain', 'valider', "need owner humain sans carte", 'se ferme'),
+		('budget', 'bloque', "need.overBudget (budgetMin dépassé)", 'continuer, réduire ou arrêter'),
+		('worktree', 'valider', "need.worktree proposé après PR mergée", '/wt/n1/remove'),
+		('orphelin', 'valider', "need.orphan : panneau sans agent vu deux tours", '/orphan/n1/close'),
+		('fermeture_refusee', 'bloque', "need.closeFailed", 'à fermer à la main'),
+		('decision', 'valider', "décision proposée du registre, carte posée", '/ask/q'),
+		('eclairer', 'valider', "carte Éclairer, fiche non terminale", '/ask/q'),
+		('jeter', 'valider', "carte Jeter, besoin ouvert", '/ask/q'),
+		('fiche_prete', 'lancer', "fiche etat prête : dans vagues ou attentes du plan", '/fiches/lancer'),
+		('ci_rouge', None, "need pr, CI en échec : l'agent corrige, l'humain n'a rien à faire", None),
+		('besoin_agent_en_cours', None, "need owner agent sans blocage", None),
+	]
+	NON_COUVERT = ["seuil_usage : D1 n'a aucun signal dans l'état ni dans agence.py (rien à montrer, rien à tester)"]
+
+	def setUp(self):
+		super().setUp()
+		self.booted()
+
+	# -- états
+
+	def fiches(self, etat='prête', n=1):
+		with agence.verrou():
+			b = backlog.charger(self.tmp)['backlog']
+			for i in range(n):
+				f = backlog.ajouter(b, f'Fiche {i}', '2026-11-20T10:00:00+00:00', type='tache', preuve='pr-merged:', priorite='P2',
+				                    budgetJetons=10000, vision='FR-003', fichiers=[f'src/{i}.ts'])
+				if etat == 'prête':
+					backlog.transition(b, f['id'], 'prête', '2026-11-20T10:00:00+00:00')
+			backlog.ecrire(self.tmp, 'backlog.json', b)
+
+	def besoin(self, owner='agent', kind='task', **champs):
+		with agence.tx() as st:
+			n, _ = agence.add_need(st, kind, champs.pop('title', 'Tâche'), owner=owner)
+			n.update(champs)
+
+	def construire(self, cle):
+		if cle in ('question', 'merge'):
+			args = ('--merge', 'Heifarabuval/cate#4') if cle == 'merge' else ('--option', 'A|x', '--option', 'B|y')
+			self.cli('ask', '--from', 'a1', *args, 'Question ?')
+		elif cle == 'brouillon':
+			self.cli('draft', 'new', '--cible', 'issue:Heifarabuval/cate', '--titre', 'T', 'Corps')
+		elif cle == 'permission':
+			with agence.tx() as st:
+				agence.add_need(st, 'task', 'Pousser', panels=['a1'])
+				st['titles'] = {'a1': 'impl'}
+				agence.tick(st, {'a1'}, Permission.AGENT, {}, 1000.0, {'a1': ECRAN_HOOK})
+		elif cle == 'besoin_humain':
+			self.besoin(owner=agence.OWNER_HUMAIN, title='Valider le texte')
+		elif cle == 'budget':
+			self.besoin(overBudget=True, budgetMin=10)
+		elif cle == 'worktree':
+			self.besoin(owner=agence.OWNER_HUMAIN, kind='human', worktree={'path': '/x/n9-impl', 'branch': 'feat/x'})
+		elif cle == 'orphelin':
+			self.besoin(owner=agence.OWNER_HUMAIN, kind='human', orphan={'panel': 'p9', 'title': 'T'})
+		elif cle == 'fermeture_refusee':
+			self.besoin(closeFailed=True)
+		elif cle == 'decision':
+			self.cli('decision', 'add', 'Choisir X', '--pourquoi', 'parce que')
+		elif cle == 'eclairer':
+			self.fiches('discussion')
+			self.cli('lentille', 'F1', '--carte')
+		elif cle == 'jeter':
+			self.besoin()
+			self.run.reply(['git', '-C', self.tmp, 'worktree', 'list'], f'worktree {self.tmp}\nHEAD a\nbranch refs/heads/main\n')
+			self.cli('need', 'jeter', 'n1')
+		elif cle == 'fiche_prete':
+			self.fiches()
+		elif cle == 'ci_rouge':
+			with agence.tx() as st:
+				agence.add_need(st, 'pr', 'PR 5', ref=5, done_when='ci-green:5', panels=['a1'])
+				agence.tick(st, {'a1'}, [{'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}],
+				            {'5': {'state': 'OPEN', 'ci': 'FAILURE'}}, 1000.0)
+		else:
+			self.besoin()
+
+	def finir(self, cle):
+		"""L'événement qui règle l'attente : un clic, ou la CLI pour les attentes sans bouton."""
+		clic = {'question': ('/ask/q1', {'choice': ['0']}), 'merge': ('/ask/q1', {'choice': ['1']}),
+		        'permission': ('/perm/n1/non', {}), 'worktree': ('/wt/n1/keep', {}), 'orphelin': ('/orphan/n1/keep', {}),
+		        'decision': ('/decision/D1/rejeter', {}), 'eclairer': ('/lentille/F1/eclairer', {}),
+		        'jeter': ('/besoin/n1/jeter', {}), 'fiche_prete': ('/fiches/lancer', {'ids': ['F1']})}
+		if cle == 'brouillon':
+			did = self.state()['drafts'][0]['id']
+			agence.click(f'/draft/{did}/drop', self.shown(did))
+		elif cle == 'ci_rouge':  # la CI passe, la PR est mergée : le tour ferme le besoin
+			with agence.tx() as st:
+				agence.tick(st, {'a1'}, [], {'5': {'state': 'MERGED', 'url': 'u5'}}, 1000.0)
+		elif cle in clic:
+			agence.click(*clic[cle])
+			if cle == 'permission':  # la réponse est tapée ; le tour suivant voit l'agent repartir
+				with agence.tx() as st:
+					agence.tick(st, {'a1'}, [{'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}], {}, 1000.0)
+		else:  # besoin_humain, budget, fermeture_refusee : la CLI ferme, aucun clic n'existe
+			self.cli('need', 'done', 'n1', '--evidence', 'ok')
+
+	# -- la vue et ses invariants
+
+	@staticmethod
+	def lignes(page):
+		"""{classe de section: [<li>...]} pour Bloquant (block) et À faire par (me)."""
+		return {c: re.findall(r'<li>(.*?)</li>', h, re.S)
+		        for c, h in re.findall(r'<section class="(block|me)">(.*?)</section>', page, re.S)}
+
+	@staticmethod
+	def vivant(st, r, path):
+		"""Le clic proposé agirait-il encore ? Même condition que sa route."""
+		parts = path.split('/')
+		kind = parts[1]
+		if kind == 'decision':
+			return next(x for x in r['decisions']['decisions'] if x['id'] == parts[2])['statut'] == 'proposée'
+		if kind in ('lentille', 'fiche'):
+			f = next((f for f in r['backlog']['fiches'] if f['id'] == parts[2]), None)
+			return bool(f) and (f['etat'] not in backlog.TERMINAUX if kind == 'lentille' else f['etat'] == 'discussion')
+		if kind == 'besoin':
+			n = agence.find(st, 'needs', parts[2])
+			return n['status'] == 'open' and not (parts[3] == 'preuve' and parts[4] in (n.get('preuves') or {}))
+		return True
+
+	def verifie_vue(self):
+		"""Les invariants. AssertionError à la première violation."""
+		st = self.state()
+		page = agence.page_suivi(st)
+		vues = self.lignes(page)
+		montres = sorted(html.unescape(re.search(r'<b>(.*?)</b>', li, re.S).group(1)) for ls in vues.values() for li in ls)
+		attendues = sorted(n['title'] for n in st['needs'] if ATTEND_REEL(n))
+		self.assertEqual(montres, attendues, 'chaque attente une fois, aucune autre')
+		for li in (li for ls in vues.values() for li in ls):
+			agit = re.findall(r'action="([^"]+)"|href="(/[^"]+)"', li)
+			texte = html.unescape(re.sub(r'<[^>]+>', ' ', li))
+			raison = any(m in texte for m in ('à traiter dans le panneau', 'dépassé', 'à fermer à la main', 'manque', 'se ferme',
+			                                  'trop longue'))
+			self.assertTrue(agit or raison, f'attente sans action ni raison : {texte}')
+		r, _ = agence.registres_sous_verrou()
+		for q in (q for q in st['questions'] if q['answer'] is None):
+			n = agence.find(st, 'needs', q['needId'])
+			self.assertEqual(n['status'], 'open', f"carte {q['id']} ouverte sur un besoin fini")
+			reels = [c for c in (q.get('clics') or []) if c]
+			if reels:
+				self.assertTrue(any(self.vivant(st, r, c) for c in reels), f"carte périmée {q['id']} : {q['question'][:50]}")
+		for f in (f for f in r['backlog']['fiches'] if f['etat'] == 'prête'):
+			p = backlog.plan([f], set(), 3, 4)  # lançable ou raison nommée
+			self.assertTrue(f['id'] in p['part'] or f['id'] in p['attente'], f"fiche prête {f['id']} sans vague ni raison")
+		return st, page, vues
+
+	def test_vue_vide(self):
+		self.assertEqual(sum(map(len, self.verifie_vue()[2].values())), 0)
+
+	def test_toutes_les_attentes_ensemble(self):
+		for cle, *_ in self.ATTENTES:
+			if cle not in ('merge', 'jeter', 'eclairer'):  # q1 et n1 pris par d'autres cas
+				self.construire(cle)
+		self.verifie_vue()
+
+	def test_une_carte_sans_fin_fait_echouer_le_test(self):
+		self.construire('decision')
+		with agence.verrou():  # le trou : la décision est réglée hors clic, la carte reste ouverte
+			r, _ = agence.registres_sous_verrou()
+			r['decisions']['decisions'][0]['statut'] = 'active'
+			backlog.ecrire(self.tmp, 'decisions.json', r['decisions'])
+		with self.assertRaises(AssertionError):
+			self.verifie_vue()
+
+	def test_question_dont_le_panneau_se_ferme_ne_reste_pas_ouverte(self):
+		self.construire('question')
+		with agence.tx() as st:  # l'humain ferme le panneau de la question : le besoin tombe, la carte doit tomber avec
+			agence.tick(st, set(), [], {}, 1000.0)
+		self.assertEqual(self.state()['needs'][0]['status'], 'dropped')
+		self.verifie_vue()
+
+	def test_une_attente_cachee_fait_echouer_le_test(self):
+		self.construire('budget')
+		with mock.patch.object(agence, 'attend', lambda n: False), self.assertRaises(AssertionError):
+			self.verifie_vue()
+
+
+def _cas(cle, famille, preuve, action):
+	def attente(self):
+		self.construire(cle)
+		st, page, vues = self.verifie_vue()
+		lignes = [li for ls in vues.values() for li in ls]
+		if famille is None:
+			self.assertEqual(lignes, [], f'{cle} ne doit pas paraître')
+		elif famille == 'lancer':
+			self.assertEqual(lignes, [])  # pas un besoin : la vue backlog (D5)
+			r, _ = agence.registres_sous_verrou()
+			v = agence.vue_backlog(st, r)
+			self.assertEqual([f['etat'] for f in v['fiches']], ['prête'])
+			self.assertTrue(v['vagues'] or v['attentes'])
+		else:
+			self.assertEqual(len(lignes), 1, f'{cle} : une ligne')
+			self.assertIn(action, html.unescape(lignes[0]))
+
+	def fin(self):
+		self.construire(cle)
+		self.finir(cle)
+		st, page, vues = self.verifie_vue()
+		self.assertEqual([li for ls in vues.values() for li in ls], [], f'{cle} réglée mais encore montrée')
+		self.assertEqual([q['id'] for q in st['questions'] if q['answer'] is None], [], f'{cle} : carte jamais fermée')
+	return attente, fin
+
+
+for _c in InvariantValidation.ATTENTES:
+	_a, _f = _cas(*_c)
+	setattr(InvariantValidation, f'test_attente_{_c[0]}', _a)
+	setattr(InvariantValidation, f'test_scenario_{_c[0]}', _f)
+
+
 if __name__ == '__main__':
 	unittest.main()

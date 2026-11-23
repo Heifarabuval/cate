@@ -2072,6 +2072,8 @@ def need_line(st, n):
 		if perm and n.get('permNonConfirmee') and n.get('permAnswered') == perm_sig(perm):
 			meta.append('réponse envoyée, non confirmée')
 		meta.append(f"à traiter dans le panneau « {e(st['titles'].get(n['blockedPanel']) or n['blockedPanel'])} »")
+	if n['status'] == 'open' and n['owner'] == OWNER_HUMAIN and not actions and not n['agentBlocked']:  # aucun bouton : dire comment elle se ferme
+		meta.append(f"se ferme sur {e(n['doneWhen'])}" if fin_lisible(n) else f"se ferme par agence need done {e(n['id'])} --evidence ...")
 	head = f'<div style="display:flex;justify-content:space-between;gap:8px"><span>{" ".join(parts)}</span><span>{actions}</span></div>'
 	return f'<li>{head}<div class="meta">{" · ".join(meta)}</div></li>'
 
@@ -2432,6 +2434,9 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 		in_flight = n['kind'] == 'draft' and any(d['id'] == n['ref'] and (d['statut'] == 'envoyer' or d.get('incertain')) for d in st['drafts'])
 		if n['panels'] and not any(p in live for p in n['panels']) and not in_flight:
 			close_need(st, n['id'], 'dropped')
+			for q in st['questions']:  # sa carte n'a plus de besoin : jamais ouverte sans fin
+				if q['needId'] == n['id'] and q['answer'] is None:
+					q['answer'] = 'panneau fermé'
 			if n['kind'] == 'draft':
 				with contextlib.suppress(Refus):
 					d = find(st, 'drafts', n['ref'])
