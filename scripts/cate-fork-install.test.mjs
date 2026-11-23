@@ -241,7 +241,8 @@ dir=""
 case "$1" in -C) dir=$2; shift 2 ;; esac
 case "$1" in
   clone) url=$3; for last; do :; done; mkdir -p "$last/.git" "$last/tools/agence"; echo "$url" > "$last/.git/origin"; printf '${ENGINES}' > "$last/package.json"
-    cp "$AGENCE_SRC" "$last/tools/agence/agence" ;;
+    cp "$AGENCE_SRC" "$last/tools/agence/agence"
+    mkdir -p "$last/skills/orchestrateur"; echo orchestrateur > "$last/skills/orchestrateur/SKILL.md" ;;
   config) cat "$dir/.git/origin" 2>/dev/null || echo https://github.com/Heifarabuval/cate.git ;;
   fetch) [ "\${FAKE_FETCH_FAIL:-0}" = 0 ] || exit 1 ;;
   rev-parse) echo "\${FAKE_SHA:-${SHA}}" ;;
@@ -1003,6 +1004,56 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         ).toBe("new\n");
       });
 
+    describe("fork skills and leftovers of the official app", () => {
+      const skill = (name = "orchestrateur") => path.join(home, ".claude/skills", name);
+      const realPs = which("ps");
+
+      it("copies the built skills to ~/.claude/skills, once per commit, and follows the next one", () => {
+        nvm("22.22.2");
+        expect(run(UPDATE).code).toBe(0);
+        expect(readFileSync(path.join(skill(), "SKILL.md"), "utf8")).toBe("orchestrateur\n");
+        expect(readFileSync(path.join(skill(), ".cate-fork"), "utf8")).toBe(`${SHA}\n`);
+        expect(run(UPDATE).code).toBe(0);
+        expect(log().match(/skill orchestrateur installed/g)).toHaveLength(1);
+        writeFileSync(path.join(build, "skills/orchestrateur/SKILL.md"), "v2\n");
+        expect(run(UPDATE, [], { FAKE_SHA: SHA2 }).code).toBe(0);
+        expect(readFileSync(path.join(skill(), "SKILL.md"), "utf8")).toBe("v2\n");
+        expect(readFileSync(path.join(skill(), ".cate-fork"), "utf8")).toBe(`${SHA2}\n`);
+      });
+
+      it("never touches a skill folder of the person's own, nor copies a failed build's skills", () => {
+        nvm("22.22.2");
+        write(path.join(skill(), "SKILL.md"), "mine\n");
+        expect(run(UPDATE, [], { FAKE_NPM_FAIL: "1" }).code).toBe(1);
+        expect(readFileSync(path.join(skill(), "SKILL.md"), "utf8")).toBe("mine\n");
+        rmSync(skill(), { recursive: true });
+        expect(run(UPDATE, [], { FAKE_NPM_FAIL: "1" }).code).toBe(1);
+        expect(existsSync(skill())).toBe(false);
+        write(path.join(skill(), "SKILL.md"), "mine\n");
+        expect(run(UPDATE).code).toBe(0);
+        expect(readFileSync(path.join(skill(), "SKILL.md"), "utf8")).toBe("mine\n");
+        expect(existsSync(path.join(skill(), ".cate-fork"))).toBe(false);
+      });
+
+      it("names the official app and an old-runtime daemon in the summary, and stops nothing", () => {
+        nvm("22.22.2");
+        fake("defaults", 'echo "${FAKE_VERSION:-}"');
+        fake("ps", `[ -n "\${FAKE_PS:-}" ] && printf '%s\\n' "$FAKE_PS" || exec ${realPs} "$@"`);
+        const daemon = (v) =>
+          `/Users/x/.cate/runtime/${v}+af342f4d8a2b/runtime/bin/node /Users/x/.cate/runtime/${v}+af342f4d8a2b/runtime.cjs serve /Users/x/Email`;
+        const rest = (out) => out.split("\n").filter((l) => l.startsWith("Reste : "));
+        const old = run(INSTALL, [], { FAKE_VERSION: "2.1.2", FAKE_PS: daemon("2.1.2") });
+        expect(old.code).toBe(0);
+        expect(rest(old.out)).toEqual([
+          "Reste : app Cate officielle 2.1.2 encore en place → quitter Cate (Cmd+Q), le fork s'installe dans les 10 min",
+          "Reste : un workspace tourne sur l'ancien runtime (sans agence ni /orchestrateur) → quitter Cate puis pkill -TERM -f '\\.cate/runtime/.*/runtime\\.cjs serve'",
+        ]);
+        expect(count(/^pkill@/)).toBe(0);
+        const fork = run(INSTALL, [], { FAKE_VERSION: "2.1.1-fork.1", FAKE_PS: daemon("2.1.1-fork.1") });
+        expect(rest(fork.out)).toEqual([]);
+      });
+    });
+
     describe("send guards and doctor", () => {
       const plist = () =>
         path.join(home, "Library/LaunchAgents/com.cate.fork-update.plist");
@@ -1033,7 +1084,7 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         ]);
       });
 
-      it("--sans-gardes skips the guards, still runs the doctor, and never touches ~/.claude", () => {
+      it("--sans-gardes skips the guards, still runs the doctor, and never touches settings.json", () => {
         nvm("22.22.2");
         const r = run(INSTALL, ["--sans-gardes"], {
           FAKE_DOCTOR: "manque\tgardes\tgardes agence inactif\t→ agence hooks install\n",
@@ -1041,7 +1092,7 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         });
         expect(r.code).toBe(0);
         expect(agence()).toEqual(["doctor --prerequis --hors-cate"]);
-        expect(existsSync(path.join(home, ".claude"))).toBe(false);
+        expect(existsSync(settings())).toBe(false);
         expect(rest(r.out)).toEqual(["Reste : gardes → agence hooks install"]);
       });
 

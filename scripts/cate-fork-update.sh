@@ -326,6 +326,35 @@ maybe_build() {
 	return 1
 }
 
+# The fork's skills (/orchestrateur and the others) in ~/.claude/skills, so they
+# work in any folder, even one Cate never seeded (no .claude/ in it). Only from
+# a commit that built: the tree is then at SHA. A copy carries a .cate-fork
+# marker with its commit and follows each build; a folder without the marker
+# is the person's own and is never touched.
+install_skills() {
+	[ "$SHA" = "$staged" ] || [ "$SHA" = "$(cat "$DIR.installed" 2> /dev/null)" ] || return 0
+	src=$DIR/skills
+	[ -d "$src" ] || return 0
+	dest=$HOME/.claude/skills
+	for s in "$src"/*/; do
+		name=$(basename "$s")
+		d=$dest/$name
+		[ -f "$s/SKILL.md" ] || continue
+		if [ -e "$d" ] || [ -L "$d" ]; then
+			[ -f "$d/.cate-fork" ] && [ ! -L "$d" ] || continue
+			[ "$(cat "$d/.cate-fork")" != "$SHA" ] || continue
+		fi
+		mkdir -p "$dest"
+		rm -rf "$d.new"
+		if cp -R "$s" "$d.new" && printf '%s\n' "$SHA" > "$d.new/.cate-fork" && rm -rf "$d" && mv "$d.new" "$d"; then
+			log "skill $name installed in $dest from $(short "$SHA")"
+		else
+			rm -rf "$d.new"
+			log "skill $name not installed in $dest"
+		fi
+	done
+}
+
 install_failed() {
 	log "$1"
 	notify_once "install:$staged" "Cate : installation de $(short "$staged") impossible. Voir le journal."
@@ -445,6 +474,7 @@ main() {
 
 	rc=0
 	maybe_build || rc=$?
+	install_skills
 	install_staged
 	exit "$rc"
 }

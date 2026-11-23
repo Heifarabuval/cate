@@ -7,7 +7,9 @@
 # ~/.local/bin, writes and loads the launchd agent (every 10 minutes), then
 # builds and installs Cate once, then plugs the send guards into
 # ~/.claude/settings.json (agence hooks install, which backs it up first) and
-# runs agence doctor --prerequis --hors-cate, both with the clone's CLI.
+# runs agence doctor --prerequis --hors-cate, both with the clone's CLI. Each
+# good build also copies the fork's skills to ~/.claude/skills (cate-fork-update).
+# The summary names an official app or an old-runtime daemon still running.
 # Safe to run again: same result, no duplicate.
 # Usage: cate-fork-install.sh [--sans-launchd] [--sans-gardes] [--branche <ref>]
 #   --sans-gardes  leave ~/.claude untouched (someone whose own guards cover the same tools)
@@ -99,6 +101,20 @@ rest() {
 			for (i = 1; i <= n && (n <= 3 || i < 3); i++) print l[i]
 			if (n > 3) print "Reste : " n - 2 " autres : " all
 		}'
+}
+
+# What still runs the official Cate: the app (the fork replaces it once Cate
+# is closed) or a workspace daemon on a runtime that is not the fork's (it
+# keeps serving `cate` without `agence` until stopped). Names it, stops nothing.
+ancien() {
+	v=$(defaults read "${CATE_APPS_DIR:-/Applications}/Cate.app/Contents/Info" CFBundleShortVersionString 2> /dev/null || true)
+	case $v in
+		'' | *-fork*) ;;
+		*) echo "Reste : app Cate officielle $v encore en place → quitter Cate (Cmd+Q), le fork s'installe dans les 10 min" ;;
+	esac
+	if ps -axo command= | grep '/\.cate/runtime/[^/]*/runtime\.cjs serve' | grep -qv -e '-fork'; then
+		echo "Reste : un workspace tourne sur l'ancien runtime (sans agence ni /orchestrateur) → quitter Cate puis pkill -TERM -f '\\.cate/runtime/.*/runtime\\.cjs serve'"
+	fi
 }
 
 main() {
@@ -193,6 +209,8 @@ main() {
 			"$AGENCE" hooks install || die "gardes non branchés ($AGENCE hooks install : code $?). Agent $LABEL gardé ; recoller la même ligne."
 		fi
 		reste=$(rest)
+		vieux=$(ancien)
+		[ -z "$vieux" ] || reste=$(printf '%s\n%s' "$vieux" "$reste")
 	fi
 
 	state=$(tail -n 1 "$LOG" 2> /dev/null || true)

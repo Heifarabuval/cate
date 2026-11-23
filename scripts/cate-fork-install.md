@@ -16,8 +16,9 @@ curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate
 2. Copie `cate-fork-update` dans `~/.local/bin`.
 3. Écrit l'agent launchd `com.cate.fork-update` (toutes les 10 minutes, priorité basse) dans `~/Library/LaunchAgents` et le charge.
 4. Construit le fork une première fois et l'installe dans `/Applications` (10 à 20 min, durée non mesurée). Fermer Terminal pendant ce temps ne casse rien : l'agent est déjà chargé et reprend la construction dans les 10 minutes.
-5. Après un premier build réussi, branche les gardes d'envoi avec la CLI du clone (`~/.local/share/cate-build/tools/agence/agence hooks install`) : sauvegarde de `~/.claude/settings.json` d'abord, puis deux entrées `PreToolUse` ajoutées, les hooks existants gardés. Un échec arrête la ligne (code non nul) ; l'agent reste chargé ; recoller la même ligne. `--sans-gardes` saute cette étape et ne touche pas à `~/.claude`.
-6. Lance `agence doctor --prerequis --hors-cate` (lecture seule) et dit en 3 lignes au plus ce qui reste à faire à la main (`Reste : <point> → <commande>`, rien si tout est là). Les points qui exigent Cate (réglages CLI du workspace, skill semé) sont à vérifier ensuite dans un terminal Cate : `agence doctor --prerequis`.
+5. Après un premier build réussi, branche les gardes d'envoi avec la CLI du clone (`~/.local/share/cate-build/tools/agence/agence hooks install`) : sauvegarde de `~/.claude/settings.json` d'abord, puis deux entrées `PreToolUse` ajoutées, les hooks existants gardés. Un échec arrête la ligne (code non nul) ; l'agent reste chargé ; recoller la même ligne. `--sans-gardes` saute cette étape et ne touche pas à `~/.claude/settings.json`.
+6. Copie les skills du fork (`orchestrateur`, `interlocuteur`, `metier`, `cate-cli`...) dans `~/.claude/skills` : `/orchestrateur` marche dans tout dossier, même sans `.claude/`. Chaque copie porte un marqueur `.cate-fork` et suit chaque build réussi ; un dossier de skill sans ce marqueur (le sien) n'est jamais touché.
+7. Lance `agence doctor --prerequis --hors-cate` (lecture seule) et dit en 3 lignes au plus ce qui reste à faire à la main (`Reste : <point> → <commande>`, rien si tout est là). Nomme aussi une app Cate officielle encore en place ou un workspace resté sur l'ancien runtime (sans `agence`), avec la commande ; rien n'est arrêté. Les points qui exigent Cate (réglages CLI du workspace, skill semé) sont à vérifier ensuite dans un terminal Cate : `agence doctor --prerequis`.
 
 Un build en échec ne branche aucun garde et ne lance pas `doctor`.
 
@@ -44,6 +45,7 @@ Ce que la ligne et l'agent écrivent (relevé dans les scripts et les outils du 
 | `~/.local/share/cate-build.staged`, `.installed`, `.failed`, `.notified`, `.lock` | l'état de l'agent, à côté du clone, jamais dedans |
 | `~/.config/cate-fork-update.conf` | les réglages, seulement si un réglage est donné |
 | `~/.claude/settings.json` (et sa sauvegarde `settings.json.bak-agence-<AAAAMMJJ-HHMMSS>` à côté, faite d'abord) | les gardes d'envoi agence (deux entrées `PreToolUse`), sauf `--sans-gardes` |
+| `~/.claude/skills/<skill>/` (avec `.cate-fork`) | les skills du fork, suivis à chaque build ; laissés à la désinstallation |
 | `~/Library/Logs/cate-fork-update.log` (et `.log.1` au-delà de 1 Mo) | le journal |
 | `~/.npm/` | le cache de `npm ci` |
 | `~/Library/Caches/electron/`, `~/Library/Caches/electron-builder/` | Electron et les outils de packaging, téléchargés par `npm ci` et le packaging |
@@ -61,7 +63,7 @@ La ligne ne touche ni les données des workspaces (`~/.cate/`) ni les réglages 
 
 `--sans-launchd` installe le script sans le planifier : `sh cate-fork-install.sh --sans-launchd`.
 
-`--sans-gardes` laisse `~/.claude/settings.json` intact, pour qui a déjà ses propres gardes sur les mêmes outils (deux gardes sur un même outil se contredisent) : `curl -fsSL .../cate-fork-install.sh | sh -s -- --sans-gardes`. Le résumé nomme alors les gardes comme reste à faire.
+`--sans-gardes` laisse `~/.claude/settings.json` intact (les skills sont copiés quand même), pour qui a déjà ses propres gardes sur les mêmes outils (deux gardes sur un même outil se contredisent) : `curl -fsSL .../cate-fork-install.sh | sh -s -- --sans-gardes`. Le résumé nomme alors les gardes comme reste à faire.
 
 ## Ce que ça signifie
 
