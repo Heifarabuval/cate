@@ -20,7 +20,7 @@ TERMINAUX = ('faite', 'abandonnée')
 TYPES = ('bug', 'idee', 'retour', 'audit', 'tache')
 PRIORITES = ('P1', 'P2', 'P3')
 STATUTS = ('proposée', 'active', 'rejetée', 'révoquée')
-EXIGES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'budgetJetons', 'vision')  # pour passer prête
+EXIGES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'vision')  # pour passer prête
 # Référentiel des points de vision (spec 010, Q2) : couches et FR de la spec 009. Hors liste : signalée par la revue, jamais refusée.
 VISION = tuple(f'couche-{i}' for i in range(1, 5)) + tuple(f'FR-{i:03d}' for i in range(1, 15))
 
