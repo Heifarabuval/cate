@@ -25,6 +25,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
+import backlog  # noqa: E402
 import pratiques  # noqa: E402
 
 
@@ -3939,6 +3940,44 @@ class DepotOrigin(Base):
 		r = agence.gh_states({'ghRepo': '0-AI-UG/cate'}, ['170'])
 		self.assertIn('repository(owner:"Heifarabuval",name:"cate")', self.run.ran('gh', 'api', 'graphql')[0][-1])
 		self.assertEqual((r['170']['type'], r['170']['repo']), ('Issue', 'Heifarabuval/cate'))
+
+class LancerSauteLaFile(Base):
+	"""F36 : « Lancer » saute les prêtes déjà en file au lieu de refuser tout le clic ; le N du bouton ne compte que les lançables."""
+
+	def setUp(self):
+		super().setUp()
+		self.booted()
+		with agence.verrou():
+			b = backlog.charger(self.tmp)['backlog']
+			for titre in ('A', 'B', 'C'):
+				f = backlog.ajouter(b, titre, '2026-11-20T10:00:00+00:00', type='tache', preuve='pr-merged:', priorite='P2',
+				                    budgetJetons=10000, vision='FR-003', fichiers=[f'src/{titre}.ts'])
+				backlog.transition(b, f['id'], 'prête', '2026-11-20T10:00:00+00:00')
+			backlog.ecrire(self.tmp, 'backlog.json', b)
+
+	def clic(self, ids, lot=()):
+		with agence.tx() as st:
+			st['lot'] = list(lot)
+			st['agentsActive'] = 0
+		return agence.click('/fiches/lancer', {'ids': [ids]})
+
+	def refs(self):
+		return sorted(n['ref'] for n in self.state()['needs'])
+
+	def test_une_en_file_est_sautee_l_autre_part(self):
+		code, msg = self.clic('F1,F2', lot=['F2'])
+		self.assertEqual(code, 200)
+		self.assertIn('F2 déjà en file, sautée', msg)
+		self.assertEqual(self.refs(), ['fiche:F1'])
+
+	def test_tout_en_file_ou_non_pret_ne_lance_rien_et_le_dit(self):
+		code, msg = self.clic('F1,F2', lot=['F1', 'F2'])
+		self.assertEqual(code, 409)
+		self.assertIn('F1, F2 déjà en file, sautées : rien lancé', msg)
+		code, msg = self.clic('F1,F9', lot=['F1'])
+		self.assertEqual(code, 409)
+		self.assertIn('F9 introuvable', msg)
+		self.assertEqual(self.refs(), [])
 
 
 if __name__ == '__main__':
