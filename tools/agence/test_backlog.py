@@ -53,9 +53,15 @@ class Schema(unittest.TestCase):
 					backlog.modifier(b, 'F1', T0, titre=vide)
 				self.assertEqual(b['fiches'][0]['titre'], 'x')
 
+	def test_prete_sans_budget_jetons(self):
+		b = backlog.vide()
+		f = backlog.ajouter(b, 'x', T0, **{**COMPLETE, 'budgetJetons': None})
+		self.assertEqual(backlog.manques(f), [])
+		backlog.transition(b, 'F1', 'prête', T0)
+		self.assertEqual(f['etat'], 'prête')
+
 	def test_prete_exige_chaque_champ_seul(self):
-		vides = {'titre': '', 'type': None, 'preuve': None, 'priorite': None, 'fichiers': [], 'budgetJetons': None,
-		         'vision': ''}
+		vides = {'titre': '', 'type': None, 'preuve': None, 'priorite': None, 'fichiers': [], 'vision': ''}
 		for champ, vide in vides.items():
 			with self.subTest(champ=champ):
 				b = backlog.vide()
@@ -260,14 +266,15 @@ class Cli(Base):
 		f = json.loads(self.lit(self.fichier))['fiches'][0]
 		self.assertEqual((f['id'], f['etat'], f['type']), ('F1', 'discussion', 'idee'))
 
-	def test_prete_refusee_nomme_les_cinq_manques(self):
+	def test_prete_refusee_nomme_les_quatre_manques(self):
 		self.agence('fiche', 'add', 'x', '--type', 'idee')
 		avant = self.lit(self.fichier)
 		code, _, err = self.agence('fiche', 'etat', 'F1', 'prête')
 		self.assertEqual(code, 1)
-		for champ in ('preuve', 'priorite', 'fichiers', 'budgetJetons', 'vision'):
+		for champ in ('preuve', 'priorite', 'fichiers', 'vision'):
 			self.assertIn(champ, err)
 		self.assertNotIn('titre', err)
+		self.assertNotIn('budgetJetons', err)
 		self.assertEqual(self.lit(self.fichier), avant)
 
 	def test_edit_puis_prete(self):
