@@ -427,6 +427,7 @@ const backlog: NonNullable<AgenceSnapshot['backlog']> = {
   fiches: [{ id: 'F2', titre: 'Renommer la section', etat: 'prête', priorite: 'P1', budgetJetons: 5000, consomme: null }],
   vagues: [['F2']],
   attentes: {},
+  enFile: [],
   erreur: null,
 }
 

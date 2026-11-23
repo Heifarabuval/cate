@@ -416,7 +416,8 @@ function backlogView(raw: unknown): BacklogView | null {
   }
   const vagues = Array.isArray(raw.vagues) ? raw.vagues.filter((vague): vague is string[] => Array.isArray(vague) && vague.every((id) => typeof id === 'string')) : []
   const attentes = isRecord(raw.attentes) ? Object.fromEntries(Object.entries(raw.attentes).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {}
-  return { fiches, vagues, attentes, erreur: typeof raw.erreur === 'string' && raw.erreur ? raw.erreur : null }
+  const enFile = Array.isArray(raw.enFile) ? raw.enFile.filter((id): id is string => typeof id === 'string') : []
+  return { fiches, vagues, attentes, enFile, erreur: typeof raw.erreur === 'string' && raw.erreur ? raw.erreur : null }
 }
 
 function questions(state: AgenceState, now: number, pratiques: PratiquesView | null): Record<string, QuestionView> {

@@ -1810,13 +1810,14 @@ def vue_backlog(st, r, erreur=None):
 	prêtes contre les lancées, erreur de fichier. consomme : jetons du besoin de la fiche, None sans mesure."""
 	import backlog  # voir registres()
 	if erreur:
-		return {'fiches': [], 'vagues': [], 'attentes': {}, 'erreur': erreur}
+		return {'fiches': [], 'vagues': [], 'attentes': {}, 'enFile': [], 'erreur': erreur}
 	fs, needs = r['backlog']['fiches'], {n['id']: n for n in st['needs']}
+	prêtes = {f['id'] for f in fs if f['etat'] == 'prête'}
 	p = backlog.plan([f for f in fs if f['etat'] == 'prête'], {f['id'] for f in fs if f['etat'] == 'faite'}, place_libre(st),
 	                 plafond(st), occupees=[f for f in fs if f['etat'] == 'lancée'])
 	return {'fiches': [{**{k: f[k] for k in ('id', 'titre', 'etat', 'priorite', 'budgetJetons')},
 	                    'consomme': jetons_besoin(needs[f['besoin']]) if f['besoin'] in needs else None} for f in fs],
-	        'vagues': p['vagues'], 'attentes': p['attente'], 'erreur': None}
+	        'vagues': p['vagues'], 'attentes': p['attente'], 'enFile': [i for i in st['lot'] if i in prêtes], 'erreur': None}
 
 
 def registres_sous_verrou():

@@ -3979,6 +3979,13 @@ class LancerSauteLaFile(Base):
 		self.assertIn('F9 introuvable', msg)
 		self.assertEqual(self.refs(), [])
 
+	def test_vue_en_file_exclut_non_pretes(self):
+		with agence.tx() as st:
+			st['lot'] = ['F1', 'F3']
+			r, _ = agence.registres_sous_verrou()
+			r['backlog']['fiches'][2]['etat'] = 'discussion'  # F3 plus prête : pas « en file »
+			self.assertEqual(agence.vue_backlog(st, r)['enFile'], ['F1'])
+
 
 if __name__ == '__main__':
 	unittest.main()
