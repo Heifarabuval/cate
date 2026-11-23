@@ -2968,9 +2968,11 @@ def un_tour():
 def cmd_watch(a):
 	global TOKEN, PAGES
 	require_cate()
-	st = load()
-	if not st['port']:
-		raise Refus("pas de port : l'orchestrateur lance d'abord « agence boot »")
+	# Projet neuf : les premières questions attendent le régisseur avant que
+	# l'orchestrateur lance « agence boot » ; le régisseur prend alors le port lui-même.
+	with tx() as st:
+		if not st['port']:
+			st['port'] = free_port()
 	if a.token_stdin:
 		TOKEN = read_token_stdin()
 		PAGES = False
