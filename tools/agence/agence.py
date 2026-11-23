@@ -1836,7 +1836,7 @@ def ecrire_backlog(st, r):
 
 
 def click_lancer(ids):
-	"""« Lancer » sur des fiches prêtes (FR-003) : refus sans rien créer si une n'est plus prête ou attend déjà (double clic)."""
+	"""« Lancer » sur des fiches prêtes (FR-003) : refus sans rien créer si une n'est plus prête (double clic) ; une prête déjà en file est sautée."""
 	if not all(re.fullmatch(r'F[1-9]\d*', i) for i in ids):
 		return 400, 'Fiches attendues : ids=F1,F2.'
 	with tx() as st:
@@ -1845,14 +1845,18 @@ def click_lancer(ids):
 			st['backlog'] = vue_backlog(st, None, erreur)
 			return 409, f'{erreur} : rien lancé.'
 		etats = {f['id']: f['etat'] for f in r['backlog']['fiches']}
-		for i in ids:
-			if etats.get(i) != 'prête' or i in st['lot']:
-				motif = 'introuvable' if i not in etats else 'attend déjà sa place' if etats[i] == 'prête' else f'est {etats[i]}'
-				return 409, f'{i} {motif} : rien lancé.'
-		lancer_fiches(st, r, ids, f'Lancer, clic de {nom()}')
+		refus = [f"{i} {'introuvable' if i not in etats else 'est ' + etats[i]}" for i in dict.fromkeys(ids) if etats.get(i) != 'prête']
+		if refus:
+			return 409, f"{' ; '.join(refus)} : rien lancé."
+		en_file = [i for i in dict.fromkeys(ids) if i in st['lot']]  # prêtes déjà en file : sautées, pas un refus
+		saute = f"{', '.join(en_file)} déjà en file, sautée{'s' * (len(en_file) > 1)}"
+		libres = [i for i in ids if i not in en_file]
+		if not libres:
+			return 409, f'{saute} : rien lancé.'
+		lancer_fiches(st, r, libres, f'Lancer, clic de {nom()}')
 		st['backlog'] = vue_backlog(st, r)
 		ecrire_backlog(st, r)
-	return 303, '/'
+	return (200, f'{saute}.') if en_file else (303, '/')
 
 
 def fiches_tour(st):
