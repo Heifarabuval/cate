@@ -562,9 +562,14 @@ def url(st, path):
 
 
 def gh_repo(st):
-	if not st.get('ghRepo'):
-		code, out, _ = RUN(['gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'])
-		st['ghRepo'] = out.strip() if code == 0 and out.strip() else None
+	"""Dépôt du projet, relu du remote origin à chaque appel : `gh repo view` préfère `upstream` dans un fork,
+	et l'ancien ghRepo de l'état ne sert que de repli quand origin est illisible, puis gh repo view."""
+	try:
+		st['ghRepo'] = repo_origin(root())
+	except ValueError:
+		if not st.get('ghRepo'):
+			code, out, _ = RUN(['gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'])
+			st['ghRepo'] = out.strip() if code == 0 and out.strip() else None
 	return st['ghRepo']
 
 
@@ -2242,7 +2247,7 @@ def gh_states(st, nums):
 		return {}
 	owner, name = repo.split('/')
 	rollup = 'commits(last:1){nodes{commit{statusCheckRollup{state}}}}'  # ci-green : même appel, aucun gh de plus
-	fields = ' '.join(f'n{x}: issueOrPullRequest(number:{x}){{... on PullRequest{{state url {rollup}}} ... on Issue{{state url}}}}'
+	fields = ' '.join(f'n{x}: issueOrPullRequest(number:{x}){{__typename ... on PullRequest{{state url {rollup}}} ... on Issue{{state url}}}}'
 	                  for x in nums)
 	query = f'query{{repository(owner:"{owner}",name:"{name}"){{{fields}}}}}'
 	code, out, err = RUN(['gh', 'api', 'graphql', '-f', f'query={query}'], timeout=GH_TIMEOUT)
@@ -2250,7 +2255,7 @@ def gh_states(st, nums):
 		log(f'gh graphql : {err.strip()}')
 		return {}
 	data = (json.loads(out).get('data') or {}).get('repository') or {}
-	return {k[1:]: {'state': v.get('state'), 'url': v.get('url'), 'checks': etat_checks(v)} for k, v in data.items() if v}
+	return {k[1:]: {'repo': repo, 'type': v.get('__typename'), 'state': v.get('state'), 'url': v.get('url'), 'checks': etat_checks(v)} for k, v in data.items() if v}
 
 
 def etat_checks(noeud):
@@ -2952,7 +2957,7 @@ def un_tour():
 	pol = politique(st=snap)  # invalide : neutre et erreur publiée, le tour continue
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
-		st['ghRepo'] = st['ghRepo'] or snap['ghRepo']
+		st['ghRepo'] = snap['ghRepo'] or st['ghRepo']
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
 		st['garde'] = garde
