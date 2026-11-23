@@ -61,6 +61,14 @@ it('keeps « Lancer (0) » disabled until a fiche is checked, then sends the che
   expect(lancer().textContent).toBe('Lancer (0)')
 })
 
+it('leaves the prêtes already in the queue out of the checkboxes and of « Lancer (n) »', () => {
+  render({ ...published, enFile: ['F2'] })
+  expect(box('F2')).toBeNull()
+  check('F4')
+  check('F5')
+  expect(lancer().textContent).toBe('Lancer (2)')
+})
+
 it('sends once on a double click: the button waits while the launch is in flight', async () => {
   let resolve!: (result: AgenceOpResult) => void
   send.mockImplementation(() => new Promise((r) => { resolve = r }))
@@ -90,7 +98,7 @@ it('says why a prête waits', () => {
 })
 
 it('shows the file error banner and launches nothing', () => {
-  render({ fiches: published.fiches, vagues: [], attentes: {}, erreur: 'backlog.json : F2 : etat invalide' })
+  render({ fiches: published.fiches, vagues: [], attentes: {}, enFile: [], erreur: 'backlog.json : F2 : etat invalide' })
   expect(host.querySelector('[role="alert"], [data-tone="error"]')?.textContent ?? host.textContent).toContain('Backlog invalide : backlog.json : F2 : etat invalide')
   check('F2')
   expect(lancer().disabled).toBe(true)

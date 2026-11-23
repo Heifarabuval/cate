@@ -22,7 +22,7 @@ const jetons = (value: number | null): string => value === null ? 'inconnu' : St
 export default function Backlog({ backlog, send }: { backlog: BacklogView; send(op: AgenceOp): Promise<unknown> }) {
   const [checked, setChecked] = useState<string[]>([])
   const action = useAction()
-  const pretes = new Set(backlog.fiches.filter((fiche) => fiche.etat === 'prête').map((fiche) => fiche.id))
+  const pretes = new Set(backlog.fiches.filter((fiche) => fiche.etat === 'prête' && !backlog.enFile.includes(fiche.id)).map((fiche) => fiche.id))
   // A fiche that left prête (launched elsewhere) is no longer part of the batch.
   const ids = checked.filter((id) => pretes.has(id))
   const total = totalLot(backlog.fiches)
@@ -36,7 +36,7 @@ export default function Backlog({ backlog, send }: { backlog: BacklogView; send(
 
   const line = (fiche: FicheView) => (
     <li key={fiche.id} data-testid="fiche" data-fiche={fiche.id} className="flex items-baseline gap-2 py-0.5">
-      {fiche.etat === 'prête' && (
+      {fiche.etat === 'prête' && !backlog.enFile.includes(fiche.id) && (
         <input type="checkbox" className="shrink-0 text-primary accent-agent" data-fiche={fiche.id} aria-label={`${fiche.id} ${fiche.titre}`} checked={ids.includes(fiche.id)} onChange={() => toggle(fiche.id)} />
       )}
       <span className="min-w-0 flex-1 break-words text-primary">{`${fiche.id} ${fiche.titre}`}{fiche.priorite && <span className="text-secondary">{` · ${fiche.priorite}`}</span>}</span>

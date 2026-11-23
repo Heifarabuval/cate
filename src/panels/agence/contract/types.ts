@@ -180,6 +180,8 @@ export type BacklogView = {
   fiches: FicheView[]
   vagues: string[][]
   attentes: Record<string, string>
+  /** Prêtes already queued by a click (waiting for a place): skipped by « Lancer », not counted in its n. */
+  enFile: string[]
   erreur: string | null
 }
 

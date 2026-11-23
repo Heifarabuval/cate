@@ -735,8 +735,8 @@ describe('AgenceSession', () => {
     })
 
     it('serves the file error the regisseur published', async () => {
-      const { session } = await started({ fiches: [], vagues: [], attentes: {}, erreur: 'backlog.json : F2 : etat invalide' })
-      expect(snap(session).backlog).toEqual({ fiches: [], vagues: [], attentes: {}, erreur: 'backlog.json : F2 : etat invalide' })
+      const { session } = await started({ fiches: [], vagues: [], attentes: {}, enFile: [], erreur: 'backlog.json : F2 : etat invalide' })
+      expect(snap(session).backlog).toEqual({ fiches: [], vagues: [], attentes: {}, enFile: [], erreur: 'backlog.json : F2 : etat invalide' })
     })
 
     it('serves null without a backlog (old CLI), with a wrong shape, or when agence is missing', async () => {
