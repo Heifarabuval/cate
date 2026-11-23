@@ -73,6 +73,23 @@ class Demarrage(Base):
 		links = [c[3:7] for c in self.run.ran('cate', 'panel', 'link')]
 		self.assertIn(['p2', 'p1', '--kind', 'context'], links)
 
+	def test_boot_du_panneau_agence_cree_interlocuteur_et_boite_une_fois(self):
+		# Clic droit > Start Agence : le panneau lance l'orchestrateur, dont « agence boot » complète l'équipe.
+		with agence.tx() as st:
+			st['panels'] = {'orchestrator': 'o1'}
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}])
+		code, out = self.cli('boot')
+		self.assertEqual(code, 0)
+		self.assertIn('régisseur tenu par le panneau agence', out)
+		self.assertEqual(len(self.inter_starts()), 1)
+		self.assertEqual([c[3] for c in self.run.ran('cate', 'panel', 'create')], ['boite'])
+		inter = self.state()['panels']['interlocuteur']
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}, {'panelId': 'b1', 'type': 'boite'},
+		                                           {'panelId': inter, 'type': 'terminal', 'title': 'Interlocuteur'}])
+		self.assertEqual(self.cli('boot')[0], 0)
+		self.assertEqual(len(self.inter_starts()), 1)
+		self.assertEqual(len(self.run.ran('cate', 'panel', 'create')), 1)
+
 	def test_start_deux_fois_un_seul_interlocuteur(self):
 		self.assertEqual(self.cli('start')[0], 0)
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'},

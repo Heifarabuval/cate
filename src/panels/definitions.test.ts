@@ -19,7 +19,7 @@ it('declares the agence panel: an execution panel with no cate api', () => {
   expect(agence?.icon).toBe('briefcase')
   expect(agence?.relation?.execution).toBe(true)
   expect(agence?.api).toBeUndefined()
-  expect(creatableDefinitions().map((definition) => definition.creation?.title ?? definition.label)).toContain('New Orchestrator')
+  expect(creatableDefinitions().map((definition) => definition.creation?.title ?? definition.label)).toContain('Start Agence')
   expect(PANEL_TYPES).toContain('agence')
 })
 
