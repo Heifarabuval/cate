@@ -330,6 +330,23 @@ class Pages(Garde):
 				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
 		self.vide(self.hook(self.pages_cmd, 'Bash', {'command': "cate agent send --panel abc 'lit $(x) > state.json et `y`'"}))
 
+	def test_lecture_d_un_fichier_d_etat_passe(self):
+		"""Issue 170 : une lecture (jq, cat) qui redirige ailleurs ou compare avec > n'écrit pas le fichier d'état ;
+		une écriture du fichier, même enchaînée après une lecture, reste refusée."""
+		self.installe()
+		self.orchestre()
+		for nom in ('state.json', 'backlog.json', 'decisions.json', 'pratiques.json'):
+			f = os.path.join(self.projet, '.cate', 'tmp', 'agence', nom)
+			for cmd in (f"jq '.needs | length' {f} 2>/dev/null", f"jq '.needs[] | select(.n > 1)' {f}",
+			            f'cat {f} | python3 -m json.tool', f'jq . {f} > /tmp/copie.json', f'grep -c open {f} || echo 0'):
+				with self.subTest(cmd=cmd):
+					self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+			for cmd in (f'jq . {f} 2>/dev/null > {f}.t && mv {f}.t {f}', f'jq ".x=1" {f} >{f}', f'cat {f} >> {f}',
+			            f'jq . {f} | tee {f}', f'jq . {f}; rm {f}', f'python3 -c "import json; json.dump({{}}, open(\'{f}\', \'w\'))"',
+			            f'jq . {f} && echo "$(echo {{}} > {f})"', f"sed -i '' s/a/b/ {f}"):
+				with self.subTest(cmd=cmd):
+					self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+
 	def test_plafond_agents_refuse_aux_agents(self):
 		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
 		self.installe()

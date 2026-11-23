@@ -40,6 +40,7 @@ import math
 import os
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import stat
@@ -3362,7 +3363,30 @@ def decision(kind, reason):
 
 
 FETCH_RE = re.compile(r'\b(curl|wget|http|https|xh|nc|python3?|node|ruby|perl|open|osascript)\b')
-WRITE_RE = re.compile(r'(>|sed -i|\btee\b|\bmv\b|\bcp\b|\brm\b|python|perl|truncate|\bjq\b.*>)')
+WRITE_RE = re.compile(r'(>|sed -i|\btee\b|\bmv\b|\bcp\b|\brm\b|python|perl|truncate)')
+OUTIL_RE = re.compile(r'(sed -i|\btee\b|\bmv\b|\bcp\b|\brm\b|python|perl|truncate)')
+
+
+def ecrit(cmd, nom):
+	"""Vrai si une commande simple de `cmd` écrit le fichier `nom` (regex) : redirection vers lui, ou outil d'écriture
+	dans la même commande que son nom. Une lecture (`jq ... 2>/dev/null`, `| python3`, `> /tmp/x`) n'écrit pas (issue 170).
+	ponytail: lecture lexicale, `F=state.json; rm $F` passe ; quote non fermée : la ligne entière, comme avant."""
+	try:
+		lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+		lex.whitespace_split = True
+		mots = list(lex)
+	except ValueError:
+		return bool(re.search(nom, cmd) and WRITE_RE.search(cmd))
+	commandes, courante = [], []
+	for mot in mots:  # ;, &&, ||, |, &, ( et ) séparent ; > et < restent dans la commande
+		if mot and set(mot) <= set('();|&') and mot != '&':
+			commandes.append(courante)
+			courante = []
+		else:
+			courante.append(mot)
+	commandes.append(courante)
+	return any(re.search(nom, c) and (OUTIL_RE.search(c) or re.search(r'>\s*\S*' + nom, c))
+	           for c in (' '.join(m) for m in commandes))
 PAGE_DENY = "Les pages du régisseur sont pour l'humain : un agent ne clique pas à sa place."
 STATE_DENY = "state.json s'écrit seulement par la CLI agence."
 PRATIQUES_DENY = "La politique (pratiques.json) se règle seulement par l'humain : agence pratiques set, unset ou preset."
@@ -3546,11 +3570,11 @@ def guard(payload, mode):
 			if any(p and p in cmd for p in pages) or re.search(r'/(draft|ask)/', cmd):
 				return decision('deny', PAGE_DENY)
 		cmd = sans_message(cmd)  # le texte d'un rapport qui cite un fichier d'état n'est pas une écriture
-		if 'state.json' in cmd and WRITE_RE.search(cmd) and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or '')):
+		if ecrit(cmd, r'state\.json') and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or '')):
 			return decision('deny', STATE_DENY)
-		if PRATIQUES_RE.search(cmd) or ('pratiques.json' in cmd and WRITE_RE.search(cmd) and 'agence' in cmd):
+		if PRATIQUES_RE.search(cmd) or (ecrit(cmd, r'pratiques\.json') and 'agence' in cmd):
 			return decision('deny', PRATIQUES_DENY)
-		if (re.search(r'\b(backlog|decisions)\.json', cmd) and WRITE_RE.search(cmd)
+		if (ecrit(cmd, r'\b(backlog|decisions)\.json')
 				and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or ''))):
 			return decision('deny', BACKLOG_DENY)
 		inter = st['panels'].get('interlocuteur')
