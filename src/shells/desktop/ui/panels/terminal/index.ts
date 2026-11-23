@@ -17,5 +17,5 @@ registerTabMenuItems(terminalTabMenu)
  *  `TerminalSnapshot` it is given, in the name of the hosting `panelId`. */
 export const TerminalPane = lazy(() => import('./TerminalView'))
 
-export { confirmCloseTerminals, runningProcess, terminalCloseGuard } from './confirmClose'
+export { confirmCloseTerminals, runningProcess, snapshotOf, terminalCloseGuard } from './confirmClose'
 export { installTerminalViewSettings, type TerminalSettingsSource } from './parts/settings'

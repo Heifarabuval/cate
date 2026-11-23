@@ -32,19 +32,19 @@ export async function confirmCloseTerminals(snapshots: readonly (TerminalSnapsho
 
 /** The session's snapshot, waiting briefly for the first one of a channel
  *  opened just for the close. */
-function snapshotOf(session: SessionHandle | null): Promise<TerminalSnapshot | null> {
+export function snapshotOf<T = TerminalSnapshot>(session: SessionHandle | null): Promise<T | null> {
   if (!session) return Promise.resolve(null)
-  const current = session.getSnapshot() as { snapshot: TerminalSnapshot } | null
+  const current = session.getSnapshot() as { snapshot: T } | null
   if (current) return Promise.resolve(current.snapshot)
   return new Promise((resolve) => {
-    const done = (value: TerminalSnapshot | null) => {
+    const done = (value: T | null) => {
       clearTimeout(timer)
       off()
       resolve(value)
     }
     const timer = setTimeout(() => done(null), FIRST_SNAPSHOT_MS)
     const off = session.subscribe(() => {
-      const state = session.getSnapshot() as { snapshot: TerminalSnapshot } | null
+      const state = session.getSnapshot() as { snapshot: T } | null
       if (state) done(state.snapshot)
     })
   })
