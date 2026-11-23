@@ -484,6 +484,16 @@ class ValidationPlan(Base):
 				self.refus('plan.validation', self.projet)
 
 
+class TypeDuNumero(unittest.TestCase):
+	def test_issue_closed_sur_une_pr_et_pr_merged_sur_une_issue(self):
+		pr = {'7': {'type': 'PullRequest', 'state': 'MERGED', 'repo': 'o/r'}}
+		issue = {'7': {'type': 'Issue', 'state': 'CLOSED', 'repo': 'o/r'}}
+		self.assertEqual(pratiques.evaluer('issue-closed:7', pr), (False, ['#7 est une PR, pas une issue (dépôt o/r)']))
+		self.assertEqual(pratiques.evaluer('pr-merged:7', issue), (False, ['#7 est une issue, pas une PR (dépôt o/r)']))
+		self.assertEqual(pratiques.evaluer('issue-closed:7', issue), (True, []))
+		self.assertEqual(pratiques.evaluer('pr-merged:7', pr), (True, []))
+
+
 # ---------- T006 : le régisseur publie la politique (FR-013) ----------
 
 class Tour(Base):

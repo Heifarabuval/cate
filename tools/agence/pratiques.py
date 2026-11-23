@@ -422,6 +422,7 @@ CONDITION_RE = re.compile(r'^(?:(pr-merged|issue-closed|ci-green):(\d*)|(tests-l
                           r'|(preuve):([\w.-]+))$')
 VERS_CONDITION = {'pr-mergee': 'pr-merged:', 'ci-verte': 'ci-green:', 'tests-locaux': 'tests-local', 'rapport': 'report'}
 ATTENDU = {'pr-merged': 'MERGED', 'issue-closed': 'CLOSED'}
+TYPE = {'pr-merged': 'PullRequest', 'issue-closed': 'Issue'}
 MANQUE = {'pr-merged': 'PR non mergée', 'issue-closed': 'issue non fermée', 'ci-green': 'checks non verts',
           'tests-local': 'tests à déclarer (need done --evidence)', 'report': 'rapport attendu (need done --evidence)',
           'draft-sent': 'brouillon non envoyé'}
@@ -475,6 +476,7 @@ def evaluer(done_when, faits, evidence=None, preuves=None):
 	manques = []
 	for nom, arg in conditions(done_when):
 		f = faits.get(arg) if arg else None
+		depot = f" (dépôt {f['repo']})" if f and f.get('repo') else ''
 		if nom == 'preuve':
 			manque = f"preuve attendue : {arg} ({(preuves or {}).get(arg, 'inconnue')})"
 		elif nom not in ('pr-merged', 'issue-closed', 'ci-green'):
@@ -485,6 +487,8 @@ def evaluer(done_when, faits, evidence=None, preuves=None):
 			manque = f'#{arg} : état inconnu'
 		elif nom == 'ci-green':
 			manque = None if f.get('checks') == 'SUCCESS' else 'checks inconnus' if f.get('checks') is None else MANQUE[nom]
+		elif f.get('type') and f['type'] != TYPE[nom]:
+			manque = f"#{arg} est {'une PR, pas une issue' if f['type'] == 'PullRequest' else 'une issue, pas une PR'}{depot}"
 		else:
 			manque = None if f.get('state') == ATTENDU[nom] else MANQUE[nom]
 		if manque:

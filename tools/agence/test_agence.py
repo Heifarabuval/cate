@@ -3920,5 +3920,26 @@ class Version(unittest.TestCase):
 		self.assertEqual((r.returncode, r.stdout.strip()), (0, 'dev'))
 
 
+class DepotOrigin(Base):
+	def test_depot_lu_depuis_origin_malgre_upstream_et_ancien_cache(self):
+		self.run.reply(['git', '-C', self.tmp, 'remote', 'get-url', 'origin'], 'git@github.com:Heifarabuval/cate.git\n')
+		self.run.reply(['gh', 'repo', 'view'], '0-AI-UG/cate\n')
+		st = {'ghRepo': '0-AI-UG/cate'}
+		self.assertEqual(agence.gh_repo(st), 'Heifarabuval/cate')
+		self.assertEqual(st['ghRepo'], 'Heifarabuval/cate')
+
+	def test_repli_gh_repo_view_si_origin_illisible(self):
+		self.run.reply(['git', '-C', self.tmp, 'remote', 'get-url', 'origin'], '', code=2, err='no remote')
+		self.run.reply(['gh', 'repo', 'view'], 'o/r\n')
+		self.assertEqual(agence.gh_repo({'ghRepo': None}), 'o/r')
+
+	def test_gh_states_interroge_origin_et_rend_le_type(self):
+		self.run.reply(['git', '-C', self.tmp, 'remote', 'get-url', 'origin'], 'https://github.com/Heifarabuval/cate.git\n')
+		self.run.reply(['gh', 'api', 'graphql'], {'data': {'repository': {'n170': {'__typename': 'Issue', 'state': 'CLOSED', 'url': 'u'}}}})
+		r = agence.gh_states({'ghRepo': '0-AI-UG/cate'}, ['170'])
+		self.assertIn('repository(owner:"Heifarabuval",name:"cate")', self.run.ran('gh', 'api', 'graphql')[0][-1])
+		self.assertEqual((r['170']['type'], r['170']['repo']), ('Issue', 'Heifarabuval/cate'))
+
+
 if __name__ == '__main__':
 	unittest.main()
