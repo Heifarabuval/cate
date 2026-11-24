@@ -18,7 +18,7 @@ la clé gitconfig agence.nom, sinon le premier mot de user.name, sinon « L'huma
   agence hooks install|uninstall|status [--settings F] [--json]   gardes dans ~/.claude/settings.json (sur commande de l'humain)
   agence declencheurs bilan [--jours N] [--json]  journal des déclencheurs (spec 004) : par commande, décisions, réussites, échecs, gain médian, seuil à réviser ; lecture seule, sans identifiant de panneau ; en lot 2 rien ne part, les décisions sont « blanc »
   agence pratiques show|set|unset|preset [--remplacer]|check|brief [--dev] [--json]  politique de flux du dev (spec 005) : <repo>/.cate/tmp/agence/pratiques.json, puis ~/.config/agence/pratiques.json, puis le preset neutre ; set, unset et preset sont à l'humain
-  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, budgetJetons, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon agents.modele, null s'il n'est pas posé ou vaut auto ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond) ; --remplace F<n>, --doublon-de F<n> (spec 013) : la fiche remplacée ou doublon ne passe plus prête, lien inconnu ou en cycle refusé
+  agence fiche add|edit|etat|note|list|show|brief|plan [--json]  backlog de fiches (spec 010) : <repo>/.cate/tmp/agence/backlog.json ; etat : discussion <-> prête seulement (prête exige titre, type, preuve, priorite, fichiers, vision) ; lancée, faite, abandonnée au clic ; add sans --modele : modele.structurant si la fiche cite une décision structurante, sinon agents.modele, null s'il n'est pas posé ou vaut auto ; brief : texte de la fiche pour l'orchestrateur ; plan F1 F2... : vagues sans fichier commun, chaque attente nommée (dépendance, chevauchement, plafond) ; --remplace F<n>, --doublon-de F<n> (spec 013) : la fiche remplacée ou doublon ne passe plus prête, lien inconnu ou en cycle refusé
   agence decision add|list|show|export [--active] [--json]  registre (spec 010) : decisions.json ; add propose (statut proposée) et pose sa carte Valider, Rejeter ; active, rejetée au clic ; Valider révoque les actives citées par --invalide D<n> ; show liste les fiches qui la citent ; export écrit docs/decisions.md (actives triées par date, spec 013), à commiter par une PR de docs ; Valider une décision structurante pose une carte « Éclairer » pour les fiches qui la citent
   agence lentille F<n> --nom N|--hasard [--carte] [--json]  lentille (spec 010, lot 8) : brief d'angle (consigne de lentilles.json, celui du projet s'il existe, + la fiche seule) ; --carte pose une carte « Éclairer » ; au clic, l'orchestrateur lance un agent à contexte vierge, sa proposition s'attache par agence fiche note, rien n'est tranché
   agence url                         adresse de la page de suivi
@@ -530,6 +530,12 @@ def toast(titre, texte):
 		log(f'notification non envoyée : {err.strip()}')
 
 
+def bloque_sur_saisie(a):
+	"""Agent arrêté sur une permission ou une question : il attend une saisie ET ne peut pas recevoir de prompt.
+	Sinon (waitingForInput, prompt libre) son tour est fini : au repos, rien à répondre (#196). Seul endroit qui le dit."""
+	return a.get('state') == 'waitingForInput' and not a.get('canReceivePrompt', True)
+
+
 def attend(n):
 	"""Ligne ouverte qui attend l'humain : liste « À toi » du suivi (le bloquant d'abord)."""
 	return n['status'] == 'open' and (n['owner'] == OWNER_HUMAIN or n['blocking'] or n['overBudget']
@@ -891,6 +897,9 @@ def cmd_fiche(a):
 				champs['modele'] = backlog.modele_propose(propose, champs.get('decisions', []), r['decisions']['decisions'])
 			f = backlog.ajouter(b, a.titre, now_iso(), **champs)
 		elif a.action == 'edit':
+			if a.retire_dependance:  # liste complète moins les retraits ; --dependance ajoute à ce qui reste
+				reste = [d for d in backlog.trouver(b['fiches'], a.id)['dependances'] if d not in a.retire_dependance]
+				champs['dependances'] = reste + [d for d in champs.get('dependances', []) if d not in reste]
 			f = backlog.modifier(b, a.id, now_iso(), **champs)
 		elif a.action == 'etat':
 			f = backlog.transition(b, a.id, a.etat, now_iso())
@@ -2016,7 +2025,7 @@ def agent_attend(panel):
 		agents = cate('agent', 'list', timeout=SCREEN_TIMEOUT)
 		agents = agents if isinstance(agents, list) else agents.get('agents', [])
 		a = next((a for a in agents if a.get('panelId') == panel), None)
-		return bool(a) and a.get('state') == 'waitingForInput' and not a.get('canReceivePrompt', True)
+		return bool(a) and bloque_sur_saisie(a)
 	except (ValueError, KeyError, TypeError, AttributeError):  # JSON inattendu de cate
 		raise Refus("État de l'agent illisible : rien n'est envoyé.")
 
@@ -2148,7 +2157,8 @@ def need_line(st, n):
 		if perm and n.get('permNonConfirmee') and n.get('permAnswered') == perm_sig(perm):
 			meta.append('réponse envoyée, non confirmée')
 		meta.append(f"à traiter dans le panneau « {e(st['titles'].get(n['blockedPanel']) or n['blockedPanel'])} »")
-	if n['status'] == 'open' and n['owner'] == OWNER_HUMAIN and not actions and not n['agentBlocked']:  # aucun bouton : dire comment elle se ferme
+	lue = n['agentBlocked'] and n.get('blockedPanel') or n['closeFailed']  # déjà dite ci-dessus : panneau à ouvrir, fermeture à la main
+	if n['status'] == 'open' and attend(n) and not actions and not lue:  # aucun bouton : dire comment elle se ferme
 		meta.append(f"se ferme sur {e(n['doneWhen'])}" if fin_lisible(n) else f"se ferme par agence need done {e(n['id'])} --evidence ...")
 	head = f'<div style="display:flex;justify-content:space-between;gap:8px"><span>{" ".join(parts)}</span><span>{actions}</span></div>'
 	return f'<li>{head}<div class="meta">{" · ".join(meta)}</div></li>'
@@ -2442,7 +2452,7 @@ def ecrans_a_lire(snap, agents):
 	"""Panneaux d'agents bloqués (même test que tick) portés par un besoin ouvert."""
 	ouverts = {p for n in snap['needs'] if n['status'] == 'open' for p in n['panels']}
 	return [a['panelId'] for a in agents
-	        if a['panelId'] in ouverts and a['state'] == 'waitingForInput' and not a.get('canReceivePrompt', True)]
+	        if a['panelId'] in ouverts and bloque_sur_saisie(a)]
 
 
 def set_perm(n, panel, text):
@@ -2530,7 +2540,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 			if not a:
 				continue
 			seen = True
-			if a['state'] == 'waitingForInput' and not a.get('canReceivePrompt', True):
+			if bloque_sur_saisie(a):
 				blocked.append(p)
 				once(f"blocked:{p}:{n['id']}", orch, f"Agent {a.get('title') or p} bloqué (permission ou question) sur {n['id']}.")
 			if a['state'] == 'finished':
@@ -4107,6 +4117,7 @@ def parser():
 		x.add_argument('--vision', help='point de la vision servi (couche ou FR de la spec 009)')
 		x.add_argument('--modele')
 		x.add_argument('--decision', action='append', help='id de décision liée (répétable)')
+	fe.add_argument('--retire-dependance', action='append', help='id de fiche à retirer des dépendances (répétable)')
 	fet = fis.add_parser('etat')
 	fet.add_argument('id')
 	fet.add_argument('etat', help='discussion ou prête')

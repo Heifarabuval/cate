@@ -4085,6 +4085,8 @@ class InvariantValidation(Base):
 		('worktree', 'valider', "need.worktree proposé après PR mergée", '/wt/n1/remove'),
 		('orphelin', 'valider', "need.orphan : panneau sans agent vu deux tours", '/orphan/n1/close'),
 		('fermeture_refusee', 'bloque', "need.closeFailed", 'à fermer à la main'),
+		('agent_bloquant', 'bloque', "need d'agent blocking, sans carte ni panneau lu", 'se ferme'),
+		('agent_bloque_sans_panneau', 'bloque', "need.agentBlocked sans blockedPanel ni demande lue", 'se ferme'),
 		('decision', 'valider', "décision proposée du registre, carte posée", '/ask/q'),
 		('eclairer', 'valider', "carte Éclairer, fiche non terminale", '/ask/q'),
 		('jeter', 'valider', "carte Jeter, besoin ouvert", '/ask/q'),
@@ -4136,6 +4138,10 @@ class InvariantValidation(Base):
 			self.besoin(owner=agence.OWNER_HUMAIN, kind='human', orphan={'panel': 'p9', 'title': 'T'})
 		elif cle == 'fermeture_refusee':
 			self.besoin(closeFailed=True)
+		elif cle == 'agent_bloquant':
+			self.besoin(blocking=True)
+		elif cle == 'agent_bloque_sans_panneau':
+			self.besoin(agentBlocked=True)
 		elif cle == 'decision':
 			self.cli('decision', 'add', 'Choisir X', '--pourquoi', 'parce que')
 		elif cle == 'eclairer':
@@ -4172,7 +4178,7 @@ class InvariantValidation(Base):
 			if cle == 'permission':  # la réponse est tapée ; le tour suivant voit l'agent repartir
 				with agence.tx() as st:
 					agence.tick(st, {'a1'}, [{'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}], {}, 1000.0)
-		else:  # besoin_humain, budget, fermeture_refusee : la CLI ferme, aucun clic n'existe
+		else:  # besoin_humain, budget, fermeture_refusee, agent_bloquant, agent_bloque_sans_panneau : la CLI ferme, aucun clic n'existe
 			self.cli('need', 'done', 'n1', '--evidence', 'ok')
 
 	# -- la vue et ses invariants
@@ -4285,6 +4291,43 @@ for _c in InvariantValidation.ATTENTES:
 	_a, _f = _cas(*_c)
 	setattr(InvariantValidation, f'test_attente_{_c[0]}', _a)
 	setattr(InvariantValidation, f'test_scenario_{_c[0]}', _f)
+
+
+class GardeFousF48(Base):
+	"""F48 : un garde-fou par cause racine du retour de session du 2026-11-23 (voir docs du rapport)."""
+
+	# cause 3, faux signaux : un seul test « bloqué sur une saisie », partout (#196, #198)
+	def test_bloque_sur_saisie_table_de_verite(self):
+		for etat, recoit, attendu in (('waitingForInput', False, True), ('waitingForInput', True, False),
+		                              ('running', False, False), ('finished', True, False)):
+			with self.subTest(etat=etat, recoit=recoit):
+				self.assertIs(agence.bloque_sur_saisie({'state': etat, 'canReceivePrompt': recoit}), attendu)
+		self.assertFalse(agence.bloque_sur_saisie({'state': 'waitingForInput'}))  # champ absent : au repos, jamais un faux blocage
+
+	def test_aucune_copie_du_test_de_blocage(self):
+		with open(agence.__file__, encoding='utf-8') as f:
+			copies = [i for i, l in enumerate(f, 1) if "not a.get('canReceivePrompt', True)" in l]
+		self.assertEqual(len(copies), 1, f'le test de blocage vit dans bloque_sur_saisie seulement : lignes {copies}')
+
+	# cause 4, outils incomplets : toute dépendance posée se retire
+	def test_fiche_edit_retire_une_dependance(self):
+		self.cli('fiche', 'add', 'a')
+		self.cli('fiche', 'add', 'b', '--dependance', 'F1')
+		code, _ = self.cli('fiche', 'edit', 'F2', '--retire-dependance', 'F1')
+		self.assertEqual(code, 0)
+		self.assertEqual(backlog.charger(self.tmp)['backlog']['fiches'][1]['dependances'], [])
+
+	# cause 5, cache périmé : le dépôt GitHub s'écrit dans gh_repo et au tour, nulle part ailleurs (#203)
+	def test_ghrepo_ecrit_seulement_par_gh_repo_et_le_tour(self):
+		import ast
+		with open(agence.__file__, encoding='utf-8') as f:
+			arbre = ast.parse(f.read())
+		ecrivains = set()
+		for fn in (x for x in ast.walk(arbre) if isinstance(x, ast.FunctionDef)):
+			for a in (x for x in ast.walk(fn) if isinstance(x, ast.Assign)):
+				if any(isinstance(t, ast.Subscript) and getattr(t.slice, 'value', None) == 'ghRepo' for t in a.targets):
+					ecrivains.add(fn.name)
+		self.assertEqual(ecrivains, {'gh_repo', 'un_tour'})
 
 
 if __name__ == '__main__':

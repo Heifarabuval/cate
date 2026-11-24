@@ -192,6 +192,10 @@ def _poser(b, f, champs, maintenant):
 	if neuve['etat'] == 'prête' and manques(neuve):
 		raise Refus(f"{f['id']} est prête : {', '.join(manques(neuve))} ne peut pas manquer")
 	fiches = [neuve if x is f else x for x in b['fiches']]
+	etats = {x['id']: x['etat'] for x in fiches}
+	morte = next((d for d in neuve['dependances'] if d not in f['dependances'] and etats.get(d) == 'abandonnée'), None)
+	if morte:  # elle ne sera jamais faite : la fiche attendrait pour toujours
+		raise Refus(f"{neuve['id']} : dépendance {morte} abandonnée, elle ne sera jamais faite")
 	err = _liens(fiches) or next((f"{g['id']} est prête : {origine(fiches, g)} ; repasse-la d'abord en discussion"
 	                              for g in fiches if g['etat'] == 'prête' and origine(fiches, g)), None)
 	if err:
