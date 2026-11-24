@@ -20,9 +20,9 @@ Liens :
 
 Chaque question est tranchée par l'hypothèse de travail de 009 quand elle existe (renvoi `009:ligne`), sinon par l'hypothèse écrite ici. Aucune ne change le périmètre fixé par 009 : aucune n'a été posée à Heifara par `agence ask`.
 
-- Q: Quel seuil fait passer la couche 1 ? → A: hypothèse de 009 (`009:198`) : on garde si le **temps actif de l'humain baisse d'au moins 30 %** à qualité égale ou meilleure. Le surcoût de jetons accepté d'avance n'a pas de valeur dans 009 : **hypothèse ici, +50 % de jetons au plus** (médiane du rapport outil / nu). Les deux valeurs sont écrites dans `seuil.json` et **Heifara les confirme ou les change avant le premier rejeu** (tâche [H] T040) ; sans ce fichier commité, le rapport refuse de rendre un verdict.
+- Q: Quel seuil fait passer la couche 1 ? → A: on garde si le **temps actif de l'humain baisse d'au moins 25 %** à qualité égale ou meilleure (rapport médian outil / nu ≤ 0,75 ; 009:198 disait 30 %). Le surcoût de jetons accepté est de **+50 % au plus** (médiane du rapport outil / nu ≤ 1,5). Valeurs validées par Heifara le 2026-11-24 et écrites dans `seuil.json` (tâche [H] T040) ; sans ce fichier commité, le rapport refuse de rendre un verdict.
 - Q: Quels indicateurs bloquent le verdict ? → A: le temps actif (gain attendu, `009:30`), la qualité (non-infériorité) et les jetons (plafond de surcoût). Le **temps mural est rapporté, pas bloquant** : 009 dit que le gain attendu n'est pas là (`009:30`). Hypothèse.
-- Q: Combien d'issues ? → A: 009 dit 10 à 15 (`009:77`). Règle fixée d'avance : **2 issues de pilote** (non comptées, elles calibrent la mesure), puis **10 issues** ; si le rapport médian du temps actif tombe entre 0,65 et 0,75 (à 5 points du seuil), on rejoue **5 issues de plus** déjà tirées, et le verdict se prend sur 15. Hypothèse.
+- Q: Combien d'issues ? → A: 009 dit 10 à 15 (`009:77`). Règle fixée d'avance : **2 issues de pilote** (non comptées, elles calibrent la mesure), puis **10 issues** ; si le rapport médian du temps actif tombe entre 0,65 et 0,75 (zone `non_conclusif` de `seuil.json`), on rejoue **5 issues de plus** déjà tirées, et le verdict se prend sur 15. Hypothèse.
 - Q: Quelles issues sont éligibles ? → A: une issue du fork fermée par une PR mergée (`closingIssuesReferences` non vide) dont la PR touche au moins un fichier de test unitaire (`*.test.ts`, `*.test.tsx`, `test_*.py`), hors e2e (`e2e/`). Le 2026-11-20 à 20:24 UTC, `gh pr list -R Heifarabuval/cate --state merged --limit 200` rend 84 PR mergées, 22 qui ferment une issue, **20 qui ferment une issue et touchent un test** : le vivier suffit pour 2 + 10 + 5 + 1 = 18, avec 2 de marge (avant le filtre lockfile et e2e, non appliqué ce jour). Hypothèse : le fork seul, pas upstream.
 - Q: Quel est le « commit parent » ? → A: le `baseRefOid` de la PR (le commit d'où le travail est parti), pas le parent du commit de merge : les PR du fork sont mergées par squash ou rebase, le parent du merge contient parfois d'autres PR. Hypothèse.
 - Q: Qu'est-ce que « Claude Code nu » ? → A: un seul terminal, `claude` lancé à la racine du clone, **même `~/.claude`** (même CLAUDE.md global, mêmes skills, mêmes hooks), **même modèle**, **même mode de permission** que le bras outil. La seule différence est la couche d'orchestration : ni agence, ni orchestrateur, ni interlocuteur, ni panneaux reliés. Hypothèse : on mesure l'outil, pas la configuration personnelle.
@@ -154,7 +154,7 @@ Le harnais ne lance ni l'app Cate, ni Electron, ni Playwright, ni `npm run dev`,
 
 Chacune a son hypothèse, appliquée ci-dessus ; aucune ne bloque le lot 1.
 
-1. **Surcoût de jetons accepté** : +50 % (hypothèse). Heifara fixe la valeur dans `seuil.json` (T040) avant le premier rejeu.
+1. **Surcoût de jetons accepté** : +50 %, validé par Heifara le 2026-11-24 dans `seuil.json` (T040).
 2. **Plafond d'une intervention** : 180 s (hypothèse), calibré au pilote (SC-005).
 3. **Campagne avant ou après le MVP de 010** : après (hypothèse) ; le pilote tourne avant.
 4. **Revue à l'aveugle** : par Heifara, environ 5 min par diff (hypothèse) ; si elle coûte trop, le rapport s'en passe et le dit (qualité sur a et b seulement).

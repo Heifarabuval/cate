@@ -113,7 +113,7 @@ Ordre conseillé : {1, 2} ensemble, puis 3, puis {4 puis 5} et {6} ensemble. Les
 ### Implémentation
 
 - [ ] T026 [US1] `tools/agence/benchmark.py` : `mesure`, `revue`, `rapport` ; lit `seuil.json` et `selection.json` ; écrit `rapport-benchmark.md` (tableau par bras, par issue, verdict, limites). Rend T020 à T025 verts. Modèle : opus.
-- [ ] T027 [P] [US1] `specs/011-mesure-benchmark/seuil.json` : valeurs d'hypothèse de plan.md (protocole, point 2), marquées `"source": "hypothèse 011, à confirmer par Heifara"`. Modèle : haiku.
+- [ ] T027 [P] [US1] `specs/011-mesure-benchmark/seuil.json` : valeurs de plan.md (protocole, point 2), marquées `"source": "hypothèse 011, à confirmer par Heifara"` puis `"validé par l'humain le 2026-11-24"` (temps actif 0,75, jetons 1,5). Modèle : haiku.
 - [ ] T028 Portes et PR du lot 3. Modèle : haiku.
 
 **Checkpoint lot 3** : `benchmark.py rapport` sur la fixture rend « passe » ; après une retouche de `seuil.json`, il refuse.
