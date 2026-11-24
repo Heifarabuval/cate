@@ -3436,6 +3436,19 @@ def sans_message(cmd):
 	                      else m.group(1) + '""', cmd)
 
 
+TEXTE_RE = re.compile(r'(\bagence(?:\.py)?\s+(?:fiche|decision)\b)((?:[^;&|\n"\']|"(?:[^"\\]|\\.)*"|\'[^\']*\')*)', re.S)
+CITE_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'', re.S)
+
+
+def sans_texte(cmd):
+	"""Vide les textes cités d'un `agence fiche` ou `agence decision` (note, titre, pourquoi, vision) : ce sont des
+	données, pas une commande (issue 212). La suite de la ligne reste lue, comme une substitution entre guillemets doubles."""
+	def vide(c):
+		t = c.group(0)
+		return t if t[0] == '"' and ('$(' in t or '`' in t) else '""'
+	return TEXTE_RE.sub(lambda m: m.group(1) + CITE_RE.sub(vide, m.group(2)), cmd)
+
+
 def demarre(cmd):
 	m = lance(cmd)
 	return bool(m) and m.group(2) == 'start'
@@ -3574,10 +3587,10 @@ def guard(payload, mode):
 	port = st.get('port')
 	local = re.compile(rf'(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]):{port}\b') if port else None
 	if tool == 'Bash':
-		cmd = ti.get('command') or ''
+		cmd = sans_texte(ti.get('command') or '')
 		if local and local.search(cmd):
 			return decision('deny', PAGE_DENY)
-		if FETCH_RE.search(cmd) and ('agence url' in cmd or re.search(r'127\.0\.0\.1|localhost', cmd)):
+		if FETCH_RE.search(cmd) and 'agence url' in cmd:  # un autre port local n'est pas le régisseur (issue 214)
 			return decision('deny', PAGE_DENY)
 		if re.search(r'\bcate\s+browser\b', cmd):
 			pages = [p for n in st['needs'] if n['status'] == 'open' and n['kind'] in ('draft', 'human') for p in n['panels']]
