@@ -4,9 +4,11 @@ import { InlineNotice } from '../../kernel/interaction'
 import { ActionButton, refusal, useAction } from './action'
 import { ACTION } from './styles'
 
-/** The groups in the order the person acts on them; `discussion` is folded. */
-const GROUPES: Array<[FicheEtat, string]> = [
+/** The groups in the order the person acts on them; `discussion` is folded. A prête
+ *  already in the queue is « En file »: it waits for its place, no click starts it. */
+const GROUPES: Array<[FicheEtat | 'enFile', string]> = [
   ['prête', 'Prêtes'],
+  ['enFile', 'En file'],
   ['lancée', 'Lancées'],
   ['discussion', 'Discussion'],
   ['faite', 'Faites'],
@@ -35,12 +37,13 @@ export default function Backlog({ backlog, send }: { backlog: BacklogView; send(
   })
 
   const line = (fiche: FicheView) => (
-    <li key={fiche.id} data-testid="fiche" data-fiche={fiche.id} className="flex items-baseline gap-2 py-0.5">
+    <li key={fiche.id} data-testid="fiche" data-fiche={fiche.id} className="flex flex-wrap items-baseline gap-x-2 py-0.5">
       {fiche.etat === 'prête' && !backlog.enFile.includes(fiche.id) && (
         <input type="checkbox" className="shrink-0 text-primary accent-agent" data-fiche={fiche.id} aria-label={`${fiche.id} ${fiche.titre}`} checked={ids.includes(fiche.id)} onChange={() => toggle(fiche.id)} />
       )}
       <span className="min-w-0 flex-1 break-words text-primary">{`${fiche.id} ${fiche.titre}`}{fiche.priorite && <span className="text-secondary">{` · ${fiche.priorite}`}</span>}</span>
-      {backlog.attentes[fiche.id] && fiche.etat === 'prête' && <span className="shrink-0 text-secondary">{`attend : ${backlog.attentes[fiche.id]}`}</span>}
+      {/* On its own line: a long path beside the title squeezed it to one letter a line. */}
+      {backlog.attentes[fiche.id] && fiche.etat === 'prête' && <span data-testid="attend" className="basis-full break-all text-secondary">{`attend : ${backlog.attentes[fiche.id]}`}</span>}
       {fiche.etat === 'lancée' && <span className="shrink-0 text-secondary">{`${jetons(fiche.consomme)} / ${jetons(fiche.budgetJetons)} jetons`}</span>}
     </li>
   )
@@ -50,7 +53,8 @@ export default function Backlog({ backlog, send }: { backlog: BacklogView; send(
       <h2 className="mb-1 font-medium text-primary">Backlog</h2>
       {backlog.erreur && <InlineNotice tone="error" className="mb-1.5 !text-primary">{`Backlog invalide : ${backlog.erreur}`}</InlineNotice>}
       {GROUPES.map(([etat, label]) => {
-        const fiches = backlog.fiches.filter((fiche) => fiche.etat === etat)
+        const queued = (fiche: FicheView) => fiche.etat === 'prête' && backlog.enFile.includes(fiche.id)
+        const fiches = backlog.fiches.filter((fiche) => etat === 'enFile' ? queued(fiche) : fiche.etat === etat && !queued(fiche))
         if (fiches.length === 0) return null
         const title = `${label} (${fiches.length})`
         return etat === 'discussion'
