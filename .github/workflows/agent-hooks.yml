@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   matrix:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     outputs:
       agents: ${{ steps.agents.outputs.agents }}
     steps:
@@ -31,7 +31,7 @@ jobs:
 
   hooks:
     needs: matrix
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -83,6 +83,6 @@ jobs:
     name: Agent hook regression gate
     if: always()
     needs: [matrix, hooks]
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - run: test '${{ needs.hooks.result }}' = success

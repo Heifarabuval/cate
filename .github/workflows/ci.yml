@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-latest]
 
     runs-on: ${{ matrix.os }}
     # Without this, a hung step (e.g. a test leaving a child process that holds
@@ -47,13 +47,6 @@ jobs:
       # lockfile drift out of sync; regenerate with `npm install` locally.
       - name: Install dependencies
         run: npm ci
-
-      # Build the same native addon shipped in Linux runtime tarballs and inspect
-      # its ELF symbol versions. This catches a future image/toolchain change
-      # that would make terminals fail on glibc 2.28–2.31 hosts (#604).
-      - name: Linux runtime glibc compatibility regression
-        if: runner.os == 'Linux'
-        run: npm run test:runtime:linux-glibc
 
       - name: Build
         run: npm run build
@@ -89,10 +82,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-24.04, not ubuntu-latest: 26.04 no longer ships Python 3.9.
-        os: [macos-latest, ubuntu-24.04]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
-    # The suite takes 9 to 10 minutes on the macOS runner (80 seconds on Ubuntu).
+    # The suite takes 9 to 10 minutes on the macOS runner.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -101,37 +93,3 @@ jobs:
           python-version: "3.9"
       - name: Agence tests
         run: npm run test:agence
-
-  # The release builds a runtime tarball per target; build the Linux one here
-  # so a broken staging step (CLI, natives, BUILD, checksum) fails the PR
-  # instead of the release.
-  runtime-tarball:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.22.2
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Install setuptools (needed by node-gyp)
-        run: pip install setuptools
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build runtime tarball (linux-x64)
-        run: node scripts/build-runtime-tarball.mjs --target linux-x64 --docker
-
-      - name: Check the tarball installs
-        run: |
-          tgz=$(ls dist-runtime/cate-runtime-*-linux-x64.tgz)
-          (cd dist-runtime && sha256sum -c "$(basename "$tgz").sha256")
-          mkdir -p /tmp/rt && tar -xzf "$tgz" -C /tmp/rt
-          grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?\+[0-9a-f]{12}$' /tmp/rt/BUILD
-          /tmp/rt/runtime/bin/node /tmp/rt/cate/dist/cli.cjs --help > /dev/null

@@ -18,7 +18,7 @@ env:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
@@ -59,7 +59,7 @@ jobs:
   release:
     # The installers ship the runtime tarballs the `runtime` job published to
     # this release (the same bytes a remote install downloads), so the app
-    # waits for them. linux-arm64 has no installer and builds on its own.
+    # waits for them.
     needs: [create-release, runtime]
     strategy:
       fail-fast: false
@@ -67,10 +67,6 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-          - os: ubuntu-latest
-            platform: linux
-          - os: windows-latest
-            platform: win
 
     runs-on: ${{ matrix.os }}
 
@@ -119,8 +115,7 @@ jobs:
         run: bash scripts/ci-mac-signing-keychain.sh
 
       # The local workspace runs the runtime daemon tarball shipped inside the
-      # installer (electron-builder.yml extraResources). Linux and Windows ship
-      # one, runtime-host.tgz. A single macOS .app runs on either CPU and the
+      # installer (electron-builder.yml extraResources). A single macOS .app runs on either CPU and the
       # daemon's bundled node + node-pty are arch-specific (an arm64 daemon
       # cannot exec on an Intel Mac, #384), so it ships both,
       # runtime-host-<arch>.tgz, and picks one at runtime
@@ -137,13 +132,8 @@ jobs:
               --pattern "cate-runtime-*-$1.tgz" --dir dist-runtime --clobber
             cp dist-runtime/cate-runtime-*-"$1".tgz "dist-runtime/$2"
           }
-          case "${{ matrix.platform }}" in
-            mac)
-              stage darwin-arm64 runtime-host-arm64.tgz
-              stage darwin-x64 runtime-host-x64.tgz ;;
-            linux) stage linux-x64 runtime-host.tgz ;;
-            win) stage win32-x64 runtime-host.tgz ;;
-          esac
+          stage darwin-arm64 runtime-host-arm64.tgz
+          stage darwin-x64 runtime-host-x64.tgz
 
       - name: Stage both macOS @parcel/watcher arches
         if: matrix.platform == 'mac'
@@ -182,27 +172,6 @@ jobs:
           # creates a Developer ID provisioning profile for com.cate.app.
           CATE_PASSKEYS_PROFILE_BASE64: ${{ secrets.CATE_PASSKEYS_PROFILE_BASE64 }}
 
-      - name: Package (Linux)
-        if: matrix.platform == 'linux'
-        run: npx electron-builder --linux --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Package (Windows)
-        if: matrix.platform == 'win'
-        # Code signing: set the WINDOWS_CERTS (base64 of the .pfx) +
-        # WINDOWS_CERTS_PASSWORD repo secrets and electron-builder signs the
-        # installer + exe automatically (removes the SmartScreen "unknown
-        # publisher" warning). When the secrets are absent the build still
-        # succeeds — it just produces an unsigned artifact, so this is safe to
-        # land before the certificate is provisioned. (Microsoft's newer Azure
-        # Trusted Signing is the alternative if an OV/EV .pfx isn't available.)
-        run: npx electron-builder --win --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
-
       - name: Upload release assets
         shell: bash
         env:
@@ -226,9 +195,8 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # Per-target cate-runtime daemon tarballs, each with its .sha256. macOS and
-  # Windows build on matching runners; Linux uses the pinned old-glibc
-  # container. Uploaded to the same release so an install can pull its tarball
+  # Per-target cate-runtime daemon tarballs, each with its .sha256. macOS builds
+  # on matching runners. Uploaded to the same release so an install can pull its tarball
   # straight from the release URL (src/runtime/daemon/node/install.ts,
   # scripts/install.sh), and the installers ship the same bytes.
   runtime:
@@ -237,9 +205,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux-x64
-            docker: true
           - os: macos-latest
             target: darwin-arm64
           # Intel macOS. node-pty's native binary can't be cross-built for x64
@@ -249,8 +214,6 @@ jobs:
           # a self-hosted Intel runner or Intel support has to be dropped.
           - os: macos-15-intel
             target: darwin-x64
-          - os: windows-latest
-            target: win32-x64
 
     runs-on: ${{ matrix.os }}
 
@@ -271,30 +234,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Stage node-pty from build/Release. macOS/Windows installs use a shipped
-      # prebuild (build/Release empty) so compile from source. Linux is
-      # compiled in the pinned old-glibc container; the host build produced by
-      # npm ci is deliberately ignored.
-      # The windows runner image ships Visual Studio 2026 (18.x), which node-gyp
-      # only learned to detect in 12.1.0, hence the node-gyp override in
-      # package.json. Without it this step fails with "could not find any Visual
-      # Studio installation to use".
-      - name: Compile node-pty from source (mac/win; Linux builds it in Docker)
-        if: runner.os != 'Linux'
+      # macOS installs use a shipped prebuild (build/Release empty), so
+      # compile node-pty from source.
+      - name: Compile node-pty from source
         run: npm rebuild node-pty --build-from-source
 
       # Sign the bundled darwin natives so the tarball notarizes inside the app
       # and a mac host that pulls it from the release runs Developer
       # ID-signed binaries (no Gatekeeper quarantine block).
       - name: Set up macOS signing for runtime natives
-        if: startsWith(matrix.target, 'darwin-')
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
         run: bash scripts/ci-mac-signing-keychain.sh
 
       - name: Build runtime tarball (${{ matrix.target }})
-        run: node scripts/build-runtime-tarball.mjs --target ${{ matrix.target }} ${{ matrix.docker && '--docker' || '' }}
+        run: node scripts/build-runtime-tarball.mjs --target ${{ matrix.target }}
 
       - name: Upload runtime tarball
         shell: bash
@@ -307,47 +262,9 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # Linux arm64 runs under QEMU and is slow; no installer needs it, so it
-  # builds beside the app jobs instead of before them.
-  runtime-linux-arm64:
-    needs: create-release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.22.2
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Install setuptools (needed by node-gyp)
-        run: pip install setuptools
-
-      - uses: docker/setup-qemu-action@v4
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build runtime tarball (linux-arm64)
-        run: node scripts/build-runtime-tarball.mjs --target linux-arm64 --docker
-
-      - name: Upload runtime tarball
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.create-release.outputs.tag }}
-        run: |
-          gh release upload "$TAG_NAME" dist-runtime/cate-runtime-*-linux-arm64.tgz \
-            dist-runtime/cate-runtime-*-linux-arm64.tgz.sha256 \
-            --repo "${{ github.repository }}" \
-            --clobber
-
   publish-release:
-    needs: [create-release, release, runtime, runtime-linux-arm64]
-    runs-on: ubuntu-latest
+    needs: [create-release, release, runtime]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
 
