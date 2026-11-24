@@ -65,7 +65,7 @@ it('lists one « À toi » list, blocking first; a line is its project, need, ex
     ],
   })
   const headings = [...host.querySelectorAll('h2')].map((heading) => heading.textContent)
-  expect(headings).toEqual(['À toi'])
+  expect(headings).toEqual(['À toi3'])
   const lines = [...host.querySelectorAll('[data-testid="ligne"]')]
   expect(lines).toHaveLength(3)
   expect(lines[0].textContent).toContain('cate')
@@ -81,7 +81,7 @@ it('lists one « À toi » list, blocking first; a line is its project, need, ex
 
 it('shows a heading only for a section that has lines', () => {
   render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1')] })
-  expect([...host.querySelectorAll('h2')].map((heading) => heading.textContent)).toEqual(['À toi'])
+  expect([...host.querySelectorAll('h2')].map((heading) => heading.textContent)).toEqual(['À toi1'])
 })
 
 it('says nothing waits, how many projects are watched and how many workspaces are not open', () => {

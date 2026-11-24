@@ -1,11 +1,13 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Check } from 'lucide-react'
 import { focusPanel, revealPanel } from '@client/host'
 import type { AgenceOp, AgenceOpResult, BacklogView, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
-import { ActionButton, refusal, ROW_ENTER, useAction } from './action'
+import { ActionButton, refusal, ROW_ENTER, ROW_LEAVE, ROW_SHELL, useAction } from './action'
 import { LancerPretes } from './Backlog'
 import QuestionCard from './QuestionCard'
 import { ACTION, LINK } from './styles'
+import { useLeaving } from './useLeaving'
 
 const SECTIONS = [
   // `dot` tells the section by a marker: the status colors are too pale as text on a light theme.
@@ -91,7 +93,7 @@ interface RowActions {
   compact?: boolean
 }
 
-function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string; enter: boolean } & RowActions) {
+function Row({ row, workspaceId, questions, send, compact, enter: arrived, leaving, onRead, onRebase, onOpenUrl }: { row: NeedRow; workspaceId: string; enter: boolean; leaving: boolean } & RowActions) {
   const action = row.action
   // Latched when the line mounts: a later render of the list does not cut the fade.
   const [enter] = useState(arrived)
@@ -114,7 +116,8 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
       ? [{ key: 'keep', label: 'Garder', op: { kind: 'orphan', needId: row.id, choix: 'keep' } as AgenceOp }, { key: 'close', label: 'Fermer', op: { kind: 'orphan', needId: row.id, choix: 'close' } as AgenceOp }]
       : []
   return (
-    <li className={`px-3 py-2 border-t border-subtle first:border-t-0 ${enter ? ROW_ENTER : ''}`}>
+    <li aria-hidden={leaving || undefined} className={`${ROW_SHELL} border-t border-subtle first:border-t-0 ${leaving ? ROW_LEAVE : ''} ${enter ? ROW_ENTER : ''}`}>
+      <div className="min-h-0 overflow-hidden px-3 py-2.5">
       <div className="flex items-start gap-2">
         <span data-testid="need-title" className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary" title={row.title}>{row.title}</span>
         {action?.type === 'draft' && (
@@ -161,35 +164,41 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
       )}
       {act.error && !(answering && question) && <InlineNotice tone="error" className="mt-1 !text-primary">{act.error}</InlineNotice>}
       {answering && question && <QuestionCard question={question} send={send} action={act} compact={compact} onDone={() => setAnswering(false)} />}
+      </div>
     </li>
   )
 }
 
+/** One section: its lines, which fade in when new and fold away when they leave. */
+function Section({ title, dot, rows, empty, children, ...rest }: { title: string; dot: string; rows: NeedRow[]; empty: string; children?: ReactNode; workspaceId: string } & RowActions) {
+  const shown = useLeaving(rows, (row) => row.id)
+  return (
+    <section className="overflow-hidden rounded-lg border border-subtle bg-surface-2">
+      <h2 className="flex items-center gap-2 border-b border-subtle px-3 py-2 text-[12px] font-semibold text-primary">
+        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200 motion-reduce:transition-none ${dot}`} />
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <span className="rounded-full bg-surface-4 px-1.5 text-[11px] font-medium tabular-nums text-secondary">{rows.length}</span>
+      </h2>
+      {shown.length === 0
+        ? <div className="flex items-center gap-1.5 px-3 py-2.5 text-[12px] text-secondary"><Check aria-hidden size={12} />{empty}</div>
+        : <ul>{shown.map(({ item, entering, leaving }) => <Row key={item.id} row={item} enter={entering} leaving={leaving} {...rest} />)}</ul>}
+      {children}
+    </section>
+  )
+}
+
 export default function SuiviList({ workspaceId, suivi, backlog, questions, send, compact, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView; backlog?: BacklogView | null } & RowActions) {
-  // A line is new to its section when it was not there at the last render: it fades in
-  // (a line that changes section arrives in the next one, not nowhere). Not on first display.
-  const seen = useRef<Set<string> | null>(null)
-  const here = SECTIONS.flatMap(({ key }) => rowsOf(suivi, key).map((row) => `${key}/${row.id}`))
-  const previous = seen.current
-  useEffect(() => { seen.current = new Set(here) })
   return (
     <div className="flex flex-col gap-3 p-3">
-      <header>
-        <h1 className="truncate text-[15px] font-semibold text-primary">{suivi.repo}</h1>
-        <div className="text-[11px] text-secondary">Agents actifs : {suivi.agentsActive}</div>
+      <header className="flex items-baseline gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-primary">{suivi.repo}</h1>
+        <div className="shrink-0 whitespace-nowrap text-[11px] text-secondary">Agents actifs : {suivi.agentsActive}</div>
       </header>
       {suivi.error && <InlineNotice tone="warning" className="!text-primary">{suivi.error}</InlineNotice>}
       {SECTIONS.map(({ key, title, dot }) => (
-        <section key={key} className="rounded-lg border border-subtle bg-surface-2">
-          <h2 className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-primary border-b border-subtle">
-            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-            {`${title} (${rowsOf(suivi, key).length})`}
-          </h2>
-          {rowsOf(suivi, key).length === 0
-            ? <div className="px-3 py-2 text-[12px] text-secondary">Rien.</div>
-            : <ul>{rowsOf(suivi, key).map((row) => <Row key={row.id} row={row} enter={previous !== null && !previous.has(`${key}/${row.id}`)} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+        <Section key={key} title={title} dot={dot} rows={rowsOf(suivi, key)} empty={key === 'aToi' ? 'Rien ne t\'attend.' : 'Rien.'} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl}>
           {key === 'aToi' && backlog && <LancerPretes backlog={backlog} send={send} />}
-        </section>
+        </Section>
       ))}
     </div>
   )
