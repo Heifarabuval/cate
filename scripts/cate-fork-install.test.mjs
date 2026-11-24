@@ -1006,7 +1006,6 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
 
     describe("fork skills and leftovers of the official app", () => {
       const skill = (name = "orchestrateur") => path.join(home, ".claude/skills", name);
-      const realPs = which("ps");
 
       it("copies the built skills to ~/.claude/skills, once per commit, and follows the next one", () => {
         nvm("22.22.2");
@@ -1038,7 +1037,7 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
       it("names the official app and an old-runtime daemon in the summary, and stops nothing", () => {
         nvm("22.22.2");
         fake("defaults", 'echo "${FAKE_VERSION:-}"');
-        fake("ps", `[ -n "\${FAKE_PS:-}" ] && printf '%s\\n' "$FAKE_PS" || exec ${realPs} "$@"`);
+        fake("ps", `[ -n "\${FAKE_PS:-}" ] && printf '%s\\n' "$FAKE_PS" || exec ${which("ps")} "$@"`);  // resolved in the test: a skipped suite (Windows) still runs this describe body
         const daemon = (v) =>
           `/Users/x/.cate/runtime/${v}+af342f4d8a2b/runtime/bin/node /Users/x/.cate/runtime/${v}+af342f4d8a2b/runtime.cjs serve /Users/x/Email`;
         const rest = (out) => out.split("\n").filter((l) => l.startsWith("Reste : "));
