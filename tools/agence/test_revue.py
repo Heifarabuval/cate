@@ -144,16 +144,16 @@ class RevueContenu(unittest.TestCase):
 		backlog.ajouter(b, 'dans la vision', il_y_a(1), vision='FR-003')
 		for objet, jours, structurante in (('cette semaine', 2, True), ('ancienne', 8, True), ('mineure', 1, False)):
 			backlog.decision_ajouter(d, objet, 'p', il_y_a(jours), structurante=structurante)
-		r = backlog.revue(b, d, [{'id': 'n4', 'title': 'Gros lot'}], NOW)
+		r = backlog.revue(b, d, NOW)
 		self.assertEqual([f['id'] for f in r['perimees']], ['F1'])
-		self.assertEqual([n['id'] for n in r['depassements']], ['n4'])
+		self.assertNotIn('depassements', r)
 		self.assertEqual([x['id'] for x in r['structurantes']], ['D1'])
 		self.assertEqual([f['id'] for f in r['horsVision']], ['F3'])
 
 	def test_rien_ne_derive_rien_a_lister(self):
 		b = backlog.vide()
 		backlog.ajouter(b, 'récente', il_y_a(1))
-		self.assertIsNone(backlog.revue(b, backlog.vide_decisions(), [], NOW))
+		self.assertIsNone(backlog.revue(b, backlog.vide_decisions(), NOW))
 
 
 class Revue(Carte):

@@ -15,7 +15,7 @@ function replaceState(value: unknown): void {
   writeFileSync(tmp, typeof value === 'string' ? value : JSON.stringify(value))
   renameSync(tmp, stateFile())
 }
-const need = (id: string, title: string) => ({ id, kind: 'task', title, ref: null, owner: 'agent', blocking: false, unblocks: null, panels: [], acceptance: null, budgetMin: null, evidence: null, status: 'open', closeFailed: false, agentBlocked: false, overBudget: false, updated: '2026-11-17T10:00:00+00:00' })
+const need = (id: string, title: string) => ({ id, kind: 'task', title, ref: null, owner: 'agent', blocking: false, unblocks: null, panels: [], acceptance: null, evidence: null, status: 'open', closeFailed: false, agentBlocked: false, updated: '2026-11-17T10:00:00+00:00' })
 const state = (...titles: string[]) => ({ repo: 'cate', needs: titles.map((title, i) => need(`n${i + 1}`, title)), drafts: [], questions: [] })
 const start = (pollMs = 2000) => {
   files = createStateFiles({ dir, pollMs, onChange: (read) => reads.push(read) })

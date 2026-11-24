@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Spec 010, lot 4 : clic « Lancer » (FR-003, SC-001), message unique à l'orchestrateur, suite au tour du régisseur,
-budget en jetons (FR-006), vue `backlog` publiée pour le panneau agence (contrat du lot 5).
+jetons lus sans budget, vue `backlog` publiée pour le panneau agence (contrat du lot 5).
 
 `cate` est simulé (FakeRun) ; état en dossier temporaire et faux HOME (Base de test_agence)."""
 import concurrent.futures
@@ -20,7 +20,7 @@ from test_agence import Base  # noqa: E402
 from test_portable import REPO  # noqa: E402
 
 T0 = '2026-11-20T10:00:00+00:00'
-COMPLETE = {'type': 'tache', 'preuve': 'pr-merged:', 'priorite': 'P2', 'budgetJetons': 10000, 'vision': 'FR-003'}
+COMPLETE = {'type': 'tache', 'preuve': 'pr-merged:', 'priorite': 'P2', 'vision': 'FR-003'}
 # Copie de src/panels/agence/contract/fixtures/vue-backlog.json (branche du lot 5) : ce test tourne sans src/.
 FIXTURE = os.path.join(HERE, 'fixtures', 'vue-backlog.json')
 FIXTURE_SRC = os.path.join(REPO, 'src', 'panels', 'agence', 'contract', 'fixtures', 'vue-backlog.json')
@@ -91,7 +91,8 @@ class Clic(Lancer):
 				self.assertEqual(b[fid]['besoin'], needs[f'fiche:{fid}']['id'])
 				self.assertEqual(b[fid]['journal'][-1]['by'], 'clic')
 				n = needs[f'fiche:{fid}']
-				self.assertEqual((n['kind'], n['doneWhen'], n['budgetJetons']), ('task', 'pr-merged:', 10000))
+				self.assertEqual((n['kind'], n['doneWhen']), ('task', 'pr-merged:'))
+				self.assertNotIn('budgetJetons', n)
 		self.assertEqual(b['F2']['etat'], 'prête')
 		self.assertEqual(self.state()['backlog']['attentes'], {'F2': 'chevauche F1 sur src/a.ts'})
 
@@ -280,39 +281,32 @@ class Suite(Lancer):
 		self.assertEqual(self.backlog()['F2']['etat'], 'lancée')
 
 
-class Budget(Lancer):
-	"""T063 : budget en jetons suivi comme le budget en dollars, sans appel cate de plus par tour."""
+class Jetons(Lancer):
+	"""Jetons lus et affichés, jamais bloquants, sans appel cate de plus par tour."""
 
 	def besoin(self, **k):
 		with agence.tx() as st:
 			return agence.add_need(st, 'task', 'Budget', panels=['a1'], **k)[0]['id']
 
-	def test_depassement_carte_et_bloquant(self):
-		nid = self.besoin(budget_jetons=10000)
+	def test_jetons_affiches_sans_bloquer(self):
+		nid = self.besoin()
 		self.un_tour(agents=[{'panelId': 'a1', 'state': 'running'}], live=['a1'],
 		             usage=[{'panelId': 'a1', 'inputTokens': 6000, 'outputTokens': 5000, 'costUsd': 0.1}])
 		n = agence.find(self.state(), 'needs', nid)
-		self.assertTrue(n['overBudget'])
-		self.assertTrue(n['overBudgetJetons'])
-		self.assertIn('11 000 / 10 000 jetons', agence.page_suivi(self.state()))
-		self.assertEqual(agence.action_attendue(self.state(), n), 'budget dépassé')
-		self.assertEqual(len([c for c in self.envois() if 'jetons' in c[-2]]), 1)
+		self.assertFalse(agence.attend(n))
+		self.assertIn('11 000 jetons', agence.page_suivi(self.state()))
+		self.assertFalse([c for c in self.envois() if 'udget' in c[-2]])
 
-	def test_mesures_illisibles_rien_pose_consomme_inconnu(self):
-		nid = self.besoin(budget_jetons=10000)
+	def test_mesures_illisibles_rien_pose(self):
+		self.besoin()
 		self.un_tour(agents=[{'panelId': 'a1', 'state': 'running'}], live=['a1'], usage='pas du json')
-		n = agence.find(self.state(), 'needs', nid)
-		self.assertFalse(n['overBudget'])
-		self.assertFalse(n.get('overBudgetJetons'))
-		self.assertIn('consommé inconnu', agence.page_suivi(self.state()))
+		self.assertNotIn('jetons', agence.page_suivi(self.state()))
 
 	def test_valeurs_hostiles_ignorees(self):
-		nid = self.besoin(budget_jetons=10)
+		self.besoin()
 		self.un_tour(agents=[{'panelId': 'a1', 'state': 'running'}], live=['a1'],
 		             usage=[{'panelId': 'a1', 'inputTokens': float('nan'), 'outputTokens': -50}])
-		n = agence.find(self.state(), 'needs', nid)
-		self.assertFalse(n['overBudget'])
-		self.assertIn('consommé inconnu', agence.page_suivi(self.state()))
+		self.assertNotIn('jetons', agence.page_suivi(self.state()))
 
 	def test_aucun_appel_cate_de_plus_par_tour(self):
 		usage = [{'panelId': 'a1', 'inputTokens': 6000, 'outputTokens': 5000}]
@@ -322,21 +316,15 @@ class Budget(Lancer):
 		avant = len(self.run.calls)
 		tour()
 		sans = len(self.run.calls) - avant
-		self.besoin(budget_jetons=100000, ref='b2')  # sous le budget : aucune notification attendue
+		self.besoin(ref='b2')
 		avant = len(self.run.calls)
 		tour()
 		self.assertEqual(len(self.run.calls) - avant, sans)
 		self.assertEqual(len(self.run.ran('cate', 'agent', 'usage')), 3)
 
-	def test_need_add_budget_jetons(self):
-		code, out = self.cli('need', 'add', 'x', '--kind', 'cmd', '--budget-jetons', '5000')
-		self.assertEqual(code, 0)
-		self.assertEqual(agence.find(self.state(), 'needs', out.strip())['budgetJetons'], 5000)
-		for faux in ('0', '-3', 'abc'):
-			with self.subTest(valeur=faux):
-				with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
-					self.cli('need', 'add', 'x', '--kind', 'cmd', '--budget-jetons', faux)
-
+	def test_need_add_refuse_budget_jetons(self):
+		with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+			self.cli('need', 'add', 'x', '--kind', 'cmd', '--budget-jetons', '5000')
 
 class Contrat(Lancer):
 	"""La vue `backlog` publiée a exactement les champs de la fixture du lot 5 ; `consomme` jamais 0 par défaut."""
@@ -376,7 +364,8 @@ class Contrat(Lancer):
 		vue = {f['id']: f for f in self.state()['backlog']['fiches']}
 		self.assertEqual(vue['F1']['consomme'], 1000)
 		self.assertIsNone(vue['F2']['consomme'])
-		self.assertEqual((vue['F1']['budgetJetons'], vue['F1']['priorite'], vue['F1']['titre']), (10000, 'P2', 'A'))
+		self.assertEqual((vue['F1']['priorite'], vue['F1']['titre']), ('P2', 'A'))
+		self.assertNotIn('budgetJetons', vue['F1'])
 
 	def test_consomme_jamais_nan_ni_negatif(self):
 		self.fiches(('A', ['src/a.ts']))

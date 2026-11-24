@@ -426,7 +426,6 @@ function backlogView(raw: unknown): BacklogView | null {
       titre: fiche.titre,
       etat: fiche.etat as FicheView['etat'],
       priorite: typeof fiche.priorite === 'string' ? fiche.priorite : null,
-      budgetJetons: numberOrNull(fiche.budgetJetons),
       consomme: numberOrNull(fiche.consomme),
     })
   }

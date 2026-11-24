@@ -2311,17 +2311,16 @@ the regisseur do not.
 The regisseur's `/fiches/lancer` route (the panel's « Lancer ») plans the
 checked `prête` cards against the `lancée` ones and the free seats. For each
 card of wave 1 it creates a task need (`ref fiche:F<n>`, the card's proof as
-done condition, its token budget and model), marks the card `lancée` and sends
+done condition and model), marks the card `lancée` and sends
 the orchestrator one message with the wave, the waiting cards and their briefs.
 The other cards stay in the clicked batch and leave at the turn a seat frees,
 without a new click. A card that is no longer `prête`, or already waits, refuses
 the whole click (409). A need `done` makes its card `faite`; `dropped` puts it
 back to `prête`.
-A need's **token budget** (`budgetJetons`, `agence need add --budget-jetons`)
-is compared, at each regisseur turn, with the sum of the last `cate agent usage`
-reading of each of its panels. Past the budget, the need turns `overBudget`, the
-orchestrator is told once, and the need's card shows « consommé / budget jetons »
-(« consommé inconnu » without a reading).
+A need has no budget: nothing blocks on tokens, dollars or minutes. At each
+regisseur turn the sum of the last `cate agent usage` reading of each of its
+panels is kept, and the need's card shows « N jetons » and its cost, only when a
+reading exists.
 The panel's snapshot carries it as `pratiques` (null for a CLI that publishes
 none): one line « Pratiques : <preset> (<source>) », each value with its source
 when opened, a banner for an invalid file, and the merge method on the Merger

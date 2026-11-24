@@ -287,8 +287,8 @@ it('offers Supprimer and Garder on a merged worktree, Fermer and Garder on a pan
 })
 
 it('says why a line waits when no button answers it', () => {
-  render({ type: 'link' }, state(), { meta: ['agent bloqué sur une permission ou une question', 'budget de 10 min dépassé : continuer, réduire ou arrêter ?'] })
-  expect(host.querySelector('[data-testid="ligne-raison"]')!.textContent).toBe('agent bloqué sur une permission ou une question · budget de 10 min dépassé : continuer, réduire ou arrêter ?')
+  render({ type: 'link' }, state(), { meta: ['agent bloqué sur une permission ou une question', 'manque : PR non mergée'] })
+  expect(host.querySelector('[data-testid="ligne-raison"]')!.textContent).toBe('agent bloqué sur une permission ou une question · manque : PR non mergée')
 })
 
 it('greys an option already taken and recommends the first one still possible', async () => {

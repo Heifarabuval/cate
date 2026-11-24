@@ -26,7 +26,7 @@ def fiche_complete():
 	b = backlog.vide()
 	backlog.ajouter(b, 'Autre fiche secrète', NOW)
 	f = backlog.ajouter(b, 'Exporter le registre', NOW, type='tache', priorite='P2', preuve='pr-merged:', fichiers=['docs/decisions.md'],
-	                    dependances=['F1'], budgetJetons=20000, vision='FR-007', decisions=['D1'])
+	                    dependances=['F1'], vision='FR-007', decisions=['D1'])
 	backlog.noter(b, f['id'], 'journal secret', NOW)
 	return f
 

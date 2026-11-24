@@ -128,7 +128,7 @@ const record = (fields: Record<string, Json> = {}): PanelRecord => ({ id: 'ag1',
 
 const need = (id: string, patch: Record<string, unknown> = {}) => ({
   id, kind: 'task', title: id, ref: null, owner: 'agent', blocking: false, unblocks: null, panels: [], acceptance: null,
-  budgetMin: null, evidence: null, status: 'open', closeFailed: false, agentBlocked: false, overBudget: false,
+  evidence: null, status: 'open', closeFailed: false, agentBlocked: false,
   updated: '2026-11-17T10:00:00+00:00', ...patch,
 })
 const state = (patch: Partial<AgenceState> = {}): AgenceState => ({
@@ -817,7 +817,7 @@ describe('AgenceSession', () => {
 
     it('drops a fiche of the wrong shape and keeps the unknown consumption unknown, never 0', async () => {
       const { session } = await started({ ...published, fiches: [{ id: 'F1', titre: 'Sans état' }, { id: 'F9', titre: 'Sans mesure', etat: 'lancée', priorite: 'P1', budgetJetons: 100 }] })
-      expect(snap(session).backlog?.fiches).toEqual([{ id: 'F9', titre: 'Sans mesure', etat: 'lancée', priorite: 'P1', budgetJetons: 100, consomme: null }])
+      expect(snap(session).backlog?.fiches).toEqual([{ id: 'F9', titre: 'Sans mesure', etat: 'lancée', priorite: 'P1', consomme: null }])
     })
 
     it('fiches.lancer answers ok on the reply the CLI really sends for a success', async () => {

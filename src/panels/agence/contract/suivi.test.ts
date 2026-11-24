@@ -85,13 +85,12 @@ describe('classify', () => {
     expect(sections.aFaire.find((row) => row.title === 'Valider le brouillon issue')!.meta).toEqual(['modifié à 14:05'])
   })
 
-  it('says a dollar overrun in dollars, never as minutes, and still blocks the need', () => {
-    const need = state.needs.find((candidate) => candidate.status === 'open' && candidate.owner !== 'heifara' && !candidate.overBudget)!
-    const over = { ...need, budgetMin: null, budgetUsd: 2, overBudget: true, overBudgetUsd: true, costByPanel: { a1: 2.4 } }
-    const out = classify({ ...state, needs: [over] }, {}, now)
-    expect(out.bloquant).toHaveLength(1)
-    expect(out.bloquant[0].meta).toContain('budget de 2.00 $ dépassé (coût 2,40 $) : continuer, réduire ou arrêter ?')
-    expect(out.bloquant[0].meta.join()).not.toContain('min dépassé')
+  it('ignores the budget fields of an older state: an overrun blocks nothing and says nothing', () => {
+    const need = state.needs.find((candidate) => candidate.status === 'open' && candidate.owner !== 'heifara' && !candidate.blocking && !candidate.agentBlocked && !candidate.closeFailed)!
+    const old = { ...need, budgetMin: 1, budgetUsd: 2, overBudget: true, overBudgetUsd: true, costByPanel: { a1: 2.4 } }
+    const out = classify({ ...state, needs: [old] } as AgenceState, {}, now)
+    expect(out.bloquant).toHaveLength(0)
+    expect(out.reste.flatMap((row) => row.meta).join()).not.toContain('dépassé')
   })
 
   it("carries each need's creation time, for the inbox's cross-project sort", () => {
@@ -101,7 +100,7 @@ describe('classify', () => {
   })
 
   it("carries the permission an agent waits on in the need's line, with Oui/Non only when the screen was readable", () => {
-    const base = state.needs.find((need) => need.status === 'open' && need.owner !== 'heifara' && !need.overBudget && !need.blocking)!
+    const base = state.needs.find((need) => need.status === 'open' && need.owner !== 'heifara' && !need.blocking)!
     const perm = { genre: 'hook', commande: 'rm -rf build', motif: 'nettoyage', choix: ['oui', 'non'], panel: 'p2' }
     const rowOf = (patch: Partial<StateNeed>) => {
       const out = classify({ ...state, needs: [{ ...base, agentBlocked: true, ...patch }] }, {}, now)
