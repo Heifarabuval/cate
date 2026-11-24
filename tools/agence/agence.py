@@ -1860,6 +1860,16 @@ def click_lancer(ids):
 	return (200, f'{saute}.') if en_file else (303, '/')
 
 
+def preuve_a_l_abandon(st, n):
+	"""(fait, manques) d'un besoin abandonné, lu sur GitHub maintenant. Seule une condition de PR mergée ou d'issue
+	fermée peut le dire fait ; les conditions humaines ne comptent plus. Sans telle condition : (False, []).
+	ponytail: un appel gh sous le verrou, une seule fois par fiche abandonnée ; hors verrou si les abandons se multiplient."""
+	import pratiques  # voir politique()
+	if not fin_lisible(n) or not any(nom in ('pr-merged', 'issue-closed') for nom, _ in pratiques.conditions(n['doneWhen'])):
+		return False, []
+	return fin(n, gh_states(st, sorted(nums_fin(n), key=int)), evidence=True)
+
+
 def fiches_tour(st):
 	"""Tour du régisseur, sous le verrou : besoin done, fiche faite ; dropped, fiche prête (nouveau clic) ; le lot cliqué
 	part quand une place se libère ; vue publiée. Fichier invalide : erreur publiée, rien lancé."""
@@ -1873,9 +1883,12 @@ def fiches_tour(st):
 	for f in b['fiches']:
 		n = needs.get(f['besoin']) if f['etat'] == 'lancée' else None
 		if n and n['status'] in ('done', 'dropped'):
-			fait = n['status'] == 'done'
-			backlog.noter(b, f['id'], f"besoin {n['id']} fait" if fait else f"abandon de l'exécution (besoin {n['id']})",
-			              maintenant, par='regisseur')
+			fait, ligne = n['status'] == 'done', f"besoin {n['id']} fait"
+			if not fait:  # abandon : la preuve se revérifie, un travail déjà mergé ne se relance pas (issue 213)
+				fait, manques = preuve_a_l_abandon(st, n)
+				ligne = (f"besoin {n['id']} abandonné, preuve vraie ({n['doneWhen']})" if fait
+				         else f"abandon de l'exécution (besoin {n['id']})" + (f" : {', '.join(manques)}" if manques else ''))
+			backlog.noter(b, f['id'], ligne, maintenant, par='regisseur')
 			f.update(etat='faite' if fait else 'prête', besoin=n['id'] if fait else None)
 	etats = {f['id']: f['etat'] for f in b['fiches']}
 	st['lot'] = [i for i in st['lot'] if etats.get(i) == 'prête']
