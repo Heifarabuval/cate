@@ -519,6 +519,29 @@ class CliDetections(Base):
 		self.assertEqual(p['part'], ['F1', 'F2', 'F3'][:maxi - 3])
 		self.assertEqual(p['attente'].get('F3'), f'plafond ({maxi})')
 
+	def test_plan_cli_et_panneau_meme_calcul(self):
+		# F58 : une fiche lancée tient ses fichiers ; le CLI et la vue du panneau rendent le même plan
+		for fichier in ('src/a.ts', 'src/a.ts', 'src/b.ts'):
+			self.agence('fiche', 'add', 'x', '--fichier', fichier, '--priorite', 'P2')
+		with agence.tx() as st:
+			r, _ = agence.registres_sous_verrou()
+			r['backlog']['fiches'][0]['etat'] = 'lancée'
+			r['backlog']['fiches'][1]['etat'] = r['backlog']['fiches'][2]['etat'] = 'prête'
+			agence.ecrire_backlog(st, r)
+		p = json.loads(self.agence('fiche', 'plan', 'F2', 'F3', '--json')[1])
+		with agence.tx() as st:
+			r, _ = agence.registres_sous_verrou()
+			v = agence.vue_backlog(st, r)
+		self.assertEqual(p['vagues'], v['vagues'])
+		self.assertEqual(p['attente'], v['attentes'])
+
+	def test_plafond_lu_dans_la_politique(self):
+		# F58 : agents.max réglé après le dernier tour du régisseur vaut tout de suite, sans état publié périmé
+		with agence.tx() as st:
+			st['pratiques'] = agence.publier(agence.politique(st=st))
+		pratiques.regler(agence.root(), os.environ['HOME'], 'agents.max', 2)
+		self.assertEqual(agence.plafond(agence.load()), 2)
+
 	def test_brief(self):
 		self.agence('fiche', 'add', 'x', '--fichier', 'src/a.ts', '--budget-jetons', '5000')
 		code, out, _ = self.agence('fiche', 'brief', 'F1')

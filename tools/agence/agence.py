@@ -194,7 +194,7 @@ def publier(pol):
 
 
 def plafond(st):
-	return valeurs(st)['agents.max']  # agents vivants, en plein tour ou en attente
+	return politique(st=st)['valeurs']['agents.max']  # agents vivants, en plein tour ou en attente ; lu dans la politique, jamais dans un état publié
 
 
 def load(path=None):
@@ -904,9 +904,7 @@ def cmd_fiche(a):
 			                      politique()['valeurs']['plan.validation'], connecteurs_en_ecriture(politique()['valeurs']))
 			return sortie(texte, a.json, texte)
 		elif a.action == 'plan':
-			st = load()  # place = agents.max moins les agents vivants publiés par le dernier tour du régisseur
-			p = backlog.plan([backlog.trouver(b['fiches'], i) for i in a.ids], {f['id'] for f in b['fiches'] if f['etat'] == 'faite'},
-			                 plafond(st) - st['agentsActive'] - st['agentsWaiting'], plafond(st))
+			p = plan_lancement(load(), b['fiches'], [backlog.trouver(b['fiches'], i) for i in a.ids])
 			return sortie(p, a.json, '\n'.join([f"vague {i + 1} : {', '.join(v)}" for i, v in enumerate(p['vagues'])] +
 			                                   [f'part : {", ".join(p["part"]) or "aucune"}'] +
 			                                   [f'{i} attend : {m}' for i, m in p['attente'].items()]))
@@ -1830,14 +1828,20 @@ def place_libre(st):
 	return plafond(st) - st['agentsActive'] - st['agentsWaiting'] - len(attendus)
 
 
+def plan_lancement(st, fiches, lot):
+	"""Le seul calcul du plan de lancement (CLI, clic Lancer, vue du panneau) : lot contre les fiches faites et lancées."""
+	import backlog  # voir registres()
+	return backlog.plan(lot, {f['id'] for f in fiches if f['etat'] == 'faite'}, place_libre(st), plafond(st),
+	                    occupees=[f for f in fiches if f['etat'] == 'lancée'])
+
+
 def lancer_fiches(st, r, ids, entete):
 	"""Sous le verrou : plan des prêtes ids contre les lancées ; un besoin par fiche qui part (fiche lancée, journal),
 	les autres restent dans le lot avec leur motif ; un seul message à l'orchestrateur, seulement si une fiche part."""
 	import backlog  # voir registres()
 	b, maintenant = r['backlog'], now_iso()
 	par_id = {f['id']: f for f in b['fiches']}
-	p = backlog.plan([par_id[i] for i in ids], {f['id'] for f in b['fiches'] if f['etat'] == 'faite'}, place_libre(st),
-	                 plafond(st), occupees=[f for f in b['fiches'] if f['etat'] == 'lancée'])
+	p = plan_lancement(st, b['fiches'], [par_id[i] for i in ids])
 	briefs = []
 	for fid in p['part']:
 		f = par_id[fid]
@@ -1865,8 +1869,7 @@ def vue_backlog(st, r, erreur=None):
 		return {'fiches': [], 'vagues': [], 'attentes': {}, 'enFile': [], 'erreur': erreur}
 	fs, needs = r['backlog']['fiches'], {n['id']: n for n in st['needs']}
 	prêtes = {f['id'] for f in fs if f['etat'] == 'prête'}
-	p = backlog.plan([f for f in fs if f['etat'] == 'prête'], {f['id'] for f in fs if f['etat'] == 'faite'}, place_libre(st),
-	                 plafond(st), occupees=[f for f in fs if f['etat'] == 'lancée'])
+	p = plan_lancement(st, fs, [f for f in fs if f['etat'] == 'prête'])
 	return {'fiches': [{**{k: f[k] for k in ('id', 'titre', 'etat', 'priorite', 'budgetJetons')},
 	                    'consomme': jetons_besoin(needs[f['besoin']]) if f['besoin'] in needs else None} for f in fs],
 	        'vagues': p['vagues'], 'attentes': p['attente'], 'enFile': [i for i in st['lot'] if i in prêtes], 'erreur': None}
