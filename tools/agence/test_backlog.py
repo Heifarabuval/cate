@@ -98,6 +98,16 @@ class Schema(unittest.TestCase):
 		self.assertIn('F9', str(cm.exception))
 		self.assertEqual(b['fiches'], [])
 
+	def test_dependance_abandonnee_refusee(self):
+		"""F48 : une dépendance qui ne sera jamais faite bloquerait la fiche pour toujours."""
+		b = backlog.vide()
+		backlog.ajouter(b, 'a', T0)
+		b['fiches'][0]['etat'] = 'abandonnée'
+		with self.assertRaises(backlog.Refus) as cm:
+			backlog.ajouter(b, 'b', T0, dependances=['F1'])
+		self.assertIn('F1', str(cm.exception))
+		self.assertEqual(len(b['fiches']), 1)
+
 	def test_cycle_refuse_et_nomme(self):
 		b = backlog.vide()
 		backlog.ajouter(b, 'a', T0)

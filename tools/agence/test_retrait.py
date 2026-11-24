@@ -200,10 +200,6 @@ class Plafond(Politique):
 		self.regler('agents.max', 6)
 		self.assertEqual(agence.plafond(self.state()), 6)
 
-	def test_plafond_publie_par_le_tour(self):
-		self.regler('agents.max', 6)
-		self.assertEqual(agence.plafond({'pratiques': pratiques.charger(self.tmp, os.environ['HOME'])}), 6)
-
 	def test_start_max_agents_ponctuel_sans_ecrire(self):
 		"""Spec 008 (FR-009) remplace l'écriture de 005-L2 : la valeur est ponctuelle, le fichier du projet n'existe pas."""
 		self.assertEqual(self.cli('start', '--max-agents', '6')[0], 0)

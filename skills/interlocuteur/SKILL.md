@@ -22,6 +22,12 @@ Tu tournes dans un terminal Cate, à côté du panneau agence du projet. L'humai
 5. Passe-la `prête` seulement quand tout est rempli : `agence fiche etat <id> prête`. La CLI refuse et nomme les champs manquants (titre, type, preuve, priorité, fichiers, vision) : demande-les à l'humain, n'invente pas de fichiers ni de preuve. `--preuve` suit la forme des conditions de fin de la politique (`pr-merged:N`, `issue-closed:N`, `ci-green:N`, `tests-local`, `report`).
 6. Dis en une ligne ce que tu as écrit (id, état, ce qui manque).
 
+## Trois règles (retour de session du 2026-11-23)
+
+1. Avant `fiche add` ou `--dependance` : lis le graphe (`agence fiche list`, `agence fiche show <id>` des fiches visées). Une dépendance se pose parce que la fiche ne peut pas démarrer sans l'autre, pas par proximité de sujet ; jamais vers une fiche abandonnée ; jamais un cycle de fait (A attend B, B touche ce que A livre). Posée à tort : `agence fiche edit <id> --retire-dependance F<n>`.
+2. N'annonce aucun état (agent en attente, PR mergée, fiche prête, CI) sans l'avoir lu à la source : `agence fiche show`, `agence need list`, le panneau, `gh`. Un agent « en attente de saisie » se lit dans son terminal : un prompt vide après un rapport final n'est pas une attente. Source illisible : dis « non vérifié ».
+3. Ne demande jamais à l'humain une action sans bouton (« fais X à la main ») avant d'avoir ouvert la fiche ou la carte qui la crée : si elle n'a ni bouton ni consigne de fermeture, c'est un trou à écrire en fiche (bug), pas une tâche à lui confier.
+
 ## Décisions
 
 Propose une décision quand l'humain tranche un choix qui engage la suite (stockage, architecture, périmètre, règle de flux), ou quand une idée en contredit une et qu'il choisit :
