@@ -134,7 +134,7 @@ test('Lire et envoyer shows the draft under À faire, then sends exactly that te
   await expect.poll(async () => (await snapshot(panelId)).regisseur.state, { timeout: 30_000 }).toBe('running')
 
   // « À faire » holds the draft's need, with its button.
-  await expect(page.getByText('À faire par Heifara (1)')).toBeVisible()
+  await expect(page.getByText('À toi (1)')).toBeVisible()
   await expect(page.getByTestId('need-title')).toHaveText(NEED.title)
   await readDraft()
 
@@ -160,7 +160,7 @@ test('Lire et envoyer shows the draft under À faire, then sends exactly that te
   await expect.poll(() => stateFile().drafts[0].statut).toBe('envoyé')
   expect(stateFile().drafts[0].url).toBe('https://github.com/acme/site/issues/42')
   expect(stateFile().needs[0]).toMatchObject({ status: 'done', evidence: 'https://github.com/acme/site/issues/42' })
-  await expect(page.getByText('À faire par Heifara (0)')).toBeVisible()
+  await expect(page.getByText('À toi (0)')).toBeVisible()
   await expect(page.getByText('Fait (1)')).toBeVisible()
   await expect(page.getByText('preuve : https://github.com/acme/site/issues/42')).toBeVisible()
   await expect.poll(async () => Object.keys((await snapshot(panelId)).drafts)).toEqual([])
@@ -291,7 +291,7 @@ test('a regisseur that stopped is explained and restarts from the panel', async 
   writeDraftText(root, 'd1', TEXT)
   await press(banner.getByRole('button', { name: 'Relancer le régisseur' }))
   await expect(banner).toBeHidden({ timeout: 30_000 })
-  await expect(page.getByText('À faire par Heifara (1)')).toBeVisible()
+  await expect(page.getByText('À toi (1)')).toBeVisible()
   expect(regisseurPids()).toHaveLength(1)
 })
 
