@@ -4,23 +4,15 @@ import type { ActionsState, BoiteActions, Ligne as LigneData } from '@client/boi
 import { Button, InlineNotice } from '../../kernel/interaction'
 import { MarkdownPreview } from '../editor/MarkdownPreview'
 import { ROW_ENTER, ROW_LEAVE, ROW_SHELL } from '../agence/action'
+import { ageLabel, FOCUS } from '../agence/rowParts'
 
 /** The action to take (accent tint, primary text), and the plain one: readable in every theme, never wrapped. */
 const ACTION = 'min-h-7 shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary disabled:!opacity-100'
 const PLAIN = 'min-h-7 shrink-0 whitespace-nowrap !text-primary'
-const LINK = 'min-w-0 truncate text-left hover:underline'
+const LINK = `min-w-0 truncate text-left hover:underline ${FOCUS}`
+/** A panel the line links: a chip, as the follow-up's. */
+const CHIP = `min-h-5 min-w-0 max-w-full truncate rounded-full bg-surface-4 px-2 text-left text-primary transition-colors duration-150 hover:bg-surface-5 motion-reduce:transition-none ${FOCUS}`
 const OPTION = 'flex w-full items-start gap-1.5 rounded-md border px-2 py-2 text-left text-[12px] text-primary transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.99] disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100'
-
-/** How long it has waited, coarse: « 30 min », « 2 h », « 2 j »; empty when the time is unknown. */
-export function ageLabel(since: string, now: number): string {
-  const then = Date.parse(since)
-  if (!then) return ''
-  const minutes = Math.max(0, Math.round((now - then) / 60_000))
-  if (minutes < 1) return "à l'instant"
-  if (minutes < 60) return `${minutes} min`
-  const hours = Math.round(minutes / 60)
-  return hours < 24 ? `${hours} h` : `${Math.round(hours / 24)} j`
-}
 
 interface LigneProps {
   ligne: LigneData
@@ -163,10 +155,10 @@ export default function Ligne({ ligne, now, actions, state, selected = false, en
       {/* No button answers this line from here: it says why it waits. */}
       {ligne.meta.length > 0 && <div data-testid="ligne-raison" className="min-w-0 break-words text-[11px] text-secondary">{ligne.meta.join(' · ')}</div>}
       {ligne.links.length > 0 && (
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] text-secondary">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-secondary">
           {ligne.links.map((link) => link.closed
             ? <span key={link.panelId} className="min-w-0 truncate">{`${link.title} · fermé`}</span>
-            : <button key={link.panelId} type="button" className={LINK} onClick={() => void settle(actions.open(key, link.panelId))}>{link.title}</button>)}
+            : <button key={link.panelId} type="button" className={CHIP} onClick={() => void settle(actions.open(key, link.panelId))}>{link.title}</button>)}
         </div>
       )}
       {!live && (
