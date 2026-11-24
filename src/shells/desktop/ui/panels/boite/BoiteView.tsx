@@ -27,10 +27,9 @@ export default function BoiteView({ panelId }: PanelViewProps) {
     else if (outcome.type === 'send') void actions.send(outcome.key)
   }), [panelId])
   const now = Date.now()
-  const sections = [
-    { title: 'Bloquant', dot: 'bg-danger', rows: rows.filter((row) => row.blocking) },
-    { title: 'À faire', dot: 'bg-warning', rows: rows.filter((row) => !row.blocking) },
-  ].filter((section) => section.rows.length > 0)
+  // One list, most urgent first: what blocks comes before the rest, the order of the rows kept inside each.
+  const sections = [{ title: 'À toi', dot: 'bg-warning', rows: [...rows.filter((row) => row.blocking), ...rows.filter((row) => !row.blocking)] }]
+    .filter((section) => section.rows.length > 0)
   // A project with no line yet says why: still read, or unreadable. Never « Rien ne t'attend » over it.
   const withRows = new Set(rows.map((row) => row.root))
   const unsettled = projects.filter((project) => project.state !== 'live' && !withRows.has(project.root))

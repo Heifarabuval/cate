@@ -211,7 +211,7 @@ class SansNomEnDur(Base):
 		with agence.tx() as st:
 			agence.add_need(st, 'human', 'Décider C', owner=agence.OWNER_HUMAIN, blocking=True)
 		page = agence.page_suivi(self.state())
-		self.assertIn('À faire par Max', page)
+		self.assertIn('À toi', page)
 		self.assertNotIn('heifara', page.lower())
 
 	def test_owner_humain_en_entree_et_en_sortie(self):
@@ -310,7 +310,6 @@ class NomDansLesTextes(Base):
 		with agence.tx() as st:
 			agence.add_need(st, 'human', 'Décider C', owner=agence.OWNER_HUMAIN, blocking=True)
 		page = agence.page_suivi(self.state())
-		self.assertIn('À faire par &lt;b&gt;x&lt;/b&gt;&amp;&quot;', page)
 		self.assertNotIn('<b>x</b>', page)
 
 
@@ -1412,11 +1411,11 @@ class Suivi(Base):
 			d, _ = agence.add_need(st, 'task', 'Fait D')
 			agence.close_need(st, d['id'], 'done', 'https://github.com/x/y/pull/3')
 		page = agence.page_suivi(self.state())
-		order = [page.index(s) for s in ('Bloquant', 'À faire par Max', 'Fait', 'Reste à faire')]
+		order = [page.index(s) for s in ('À toi', 'Fait', 'Reste à faire')]
 		self.assertEqual(order, sorted(order))
 		self.assertIn('débloque la PR', page)
 		self.assertIn('https://github.com/x/y/pull/3', page)
-		self.assertLess(page.index('Bloque B'), page.index('À faire par Max'))
+		self.assertLess(page.index('Bloque B'), page.index('Décider C'))
 		self.assertGreater(page.index('Reste A'), page.index('Reste à faire'))
 
 	def test_echappement_html(self):
@@ -2884,7 +2883,7 @@ class Permission(Base):
 	def test_ligne_bloquant_commande_motif_oui_non(self):
 		self.tour(ECRAN_HOOK)
 		page = self.page()
-		self.assertLess(page.index('Bloquant'), page.index('force-with-lease=feat/agent-done-when'))
+		self.assertLess(page.index('À toi'), page.index('force-with-lease=feat/agent-done-when'))
 		self.assertIn('réécrit la branche distante', page)
 		self.assertIn(f'/perm/{self.nid}/oui', page)
 		self.assertIn(f'/perm/{self.nid}/non', page)
@@ -3840,7 +3839,7 @@ class CoutBesoin(Base):
 		self.assertEqual([e for e in effects if e[0] == 'notify' and 'Budget' in e[2]][0][1], 'o1')
 		page = agence.page_suivi(self.state())
 		self.assertIn('budget de 2.00 $ dépassé', page)
-		self.assertLess(page.index('Bloquant'), page.index('Implémenter'))
+		self.assertLess(page.index('À toi'), page.index('Implémenter'))
 		self.assertFalse([e for e in self.tick({'a1': 2.6}) if e[0] == 'notify' and 'Budget' in e[2]])
 
 	def test_budget_min_garde_son_message(self):
@@ -4180,7 +4179,7 @@ class InvariantValidation(Base):
 
 	@staticmethod
 	def lignes(page):
-		"""{classe de section: [<li>...]} pour Bloquant (block) et À faire par (me)."""
+		"""{classe de section: [<li>...]} pour la liste « À toi » (me)."""
 		return {c: re.findall(r'<li>(.*?)</li>', h, re.S)
 		        for c, h in re.findall(r'<section class="(block|me)">(.*?)</section>', page, re.S)}
 

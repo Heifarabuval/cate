@@ -51,17 +51,11 @@ afterEach(() => {
   host.remove()
 })
 
-it('shows the four sections in order with their counts, empty ones included', () => {
+it('shows « À toi » (blocking first) then the state sections, with their counts, empty ones included', () => {
   render(suivi({ bloquant: [row('a')], aFaire: [row('b'), row('c')], fait: [], reste: [row('d')] }))
-  expect(headings()).toEqual(['Bloquant (1)', 'À faire par Max (2)', 'Fait (0)', 'Reste à faire (1)'])
+  expect(headings()).toEqual(['À toi (3)', 'Fait (0)', 'Reste à faire (1)'])
+  expect([...host.querySelectorAll('[data-testid="need-title"]')].slice(0, 3).map((t) => t.textContent)).toEqual(['Besoin a', 'Besoin b', 'Besoin c'])
   expect(host.textContent).toContain('Rien.')
-})
-
-it("shows the human's name as written, never as a replacement pattern", () => {
-  for (const humain of ["Jo $& Co", "$'x", '$$', '$`']) {
-    render({ ...suivi(), humain })
-    expect(headings()[1]).toBe(`À faire par ${humain} (0)`)
-  }
 })
 
 it('shows the repository, the active agents and the read error', () => {

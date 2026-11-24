@@ -531,7 +531,7 @@ def toast(titre, texte):
 
 
 def attend(n):
-	"""Ligne ouverte qui attend l'humain : sections « À faire par <nom> » ou « Bloquant » du suivi."""
+	"""Ligne ouverte qui attend l'humain : liste « À toi » du suivi (le bloquant d'abord)."""
 	return n['status'] == 'open' and (n['owner'] == OWNER_HUMAIN or n['blocking'] or n['overBudget']
 	                                  or n['agentBlocked'] or n['closeFailed'])
 
@@ -2048,7 +2048,7 @@ main{{max-width:860px;margin:0 auto;padding:16px}}
 h1{{font-size:20px;margin:0 0 4px}} .sub{{color:#59636e;margin-bottom:16px}}
 section{{border:1px solid #d1d9e0;border-radius:6px;margin-bottom:16px}}
 section>h2{{font-size:14px;margin:0;padding:8px 12px;background:#f6f8fa;border-bottom:1px solid #d1d9e0;border-radius:6px 6px 0 0}}
-section.block>h2{{background:#ffebe9;color:#82071e}} section.me>h2{{background:#fff8c5}}
+section.me>h2{{background:#fff8c5}}
 ul{{list-style:none;margin:0;padding:0}} li{{padding:8px 12px;border-top:1px solid #eff2f5}} li:first-child{{border-top:0}}
 .meta{{color:#59636e;font-size:12px}} .empty{{color:#59636e;padding:8px 12px}}
 form{{display:inline}} .btn{{font:inherit;font-weight:600;border:1px solid #d1d9e0;border-radius:6px;padding:4px 12px;
@@ -2170,7 +2170,7 @@ def page_suivi(st):
 	body = (f"<h1>{e(st['repo'])}</h1><div class=\"sub\">Agents : {st['agentsActive']} en cours, {st['agentsWaiting']} en attente (plafond {plafond(st)}) · "
 	        f"dépense des agents : {cout_texte(total, partiel) if total is not None else 'coût inconnu'} · "
 	        f"mis à jour {time.strftime('%H:%M:%S')}</div>"
-	        + section(st, 'Bloquant', block, 'block') + section(st, f'À faire par {nom()}', mine, 'me')
+	        + section(st, 'À toi', block + mine, 'me')
 	        + section(st, 'Fait', done) + section(st, 'Reste à faire', rest))
 	return layout(f"Suivi : {st['repo']}", body, refresh=True)
 
@@ -3052,7 +3052,7 @@ def un_tour():
 	with tx() as st:
 		st['titles'] = {p: r.get('title') or '' for p, r in rows.items()}
 		st['ghRepo'] = snap['ghRepo'] or st['ghRepo']
-		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
+		st['humain'] = nom()  # nom de l'humain, publié au panneau
 		merge_apply(st, merges)
 		perimes_apply(st, perimes, time.time())
 		st['garde'] = garde
