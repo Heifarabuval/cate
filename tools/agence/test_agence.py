@@ -9,6 +9,7 @@ import html
 import http.client
 import io
 import json
+from datetime import datetime
 import os
 import re
 import shutil
@@ -3832,6 +3833,70 @@ class CoutBesoin(Base):
 		self.run.reply(['cate', 'agent', 'usage'], [{'panelId': 'a1', 'costUsd': 0.75}])
 		agence.un_tour()
 		self.assertEqual(self.n()['costByPanel'], {'a1': 0.75})
+
+	def cercle(self, cree=True):
+		d = os.path.join(os.environ['HOME'], '.cate', 'panneaux', 'cercle')
+		if cree:
+			os.makedirs(d)
+		agence.DONNEES.update(t=0.0, h=None)
+		return d
+
+	def tour_usage(self, jetons):
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'}])
+		self.run.reply(['cate', 'agent', 'list'], [])
+		self.run.reply(['cate', 'agent', 'usage'], [{'panelId': 'a1', 'title': 'impl', 'contextTokens': jetons, 'costUsd': 0.5}])
+		agence.un_tour()
+
+	def test_tour_ecrit_donnees_json_du_panneau_cercle(self):
+		self.booted()
+		d = self.cercle()
+		self.tour_usage(1000)
+		with open(os.path.join(d, 'donnees.json'), encoding='utf-8') as f:
+			donnees = json.load(f)
+		self.assertEqual(sorted(donnees), ['bilan', 'ecritA', 'usage'])
+		self.assertEqual(donnees['usage'][0]['contextTokens'], 1000)
+		self.assertEqual(donnees['bilan']['commandes'], [])
+		datetime.fromisoformat(donnees['ecritA'].replace('Z', '+00:00'))
+		self.assertEqual(os.listdir(d), ['donnees.json'])
+		self.assertEqual(os.listdir(os.path.dirname(d)), ['cercle'])  # aucun temporaire laissé
+
+	def test_tour_n_ecrit_pas_sans_dossier_du_panneau(self):
+		self.booted()
+		d = self.cercle(cree=False)
+		self.tour_usage(1000)
+		self.assertFalse(os.path.exists(os.path.dirname(d)))
+
+	def test_tour_n_ecrit_pas_deux_fois_sans_changement(self):
+		self.booted()
+		d = self.cercle()
+		self.tour_usage(1000)
+		f = os.path.join(d, 'donnees.json')
+		os.utime(f, (1, 1))
+		agence.DONNEES['t'] = 0.0  # le délai de 15 s est passé : seul le contenu retient l'écriture
+		self.tour_usage(1000)
+		self.assertEqual(os.stat(f).st_mtime, 1)
+
+	def test_tour_n_ecrit_pas_plus_d_une_fois_par_15_s(self):
+		self.booted()
+		d = self.cercle()
+		self.tour_usage(1000)
+		self.tour_usage(2000)  # contenu changé, mais 15 s pas écoulées
+		with open(os.path.join(d, 'donnees.json'), encoding='utf-8') as f:
+			self.assertEqual(json.load(f)['usage'][0]['contextTokens'], 1000)
+		agence.DONNEES['t'] -= 16
+		self.tour_usage(2000)
+		with open(os.path.join(d, 'donnees.json'), encoding='utf-8') as f:
+			self.assertEqual(json.load(f)['usage'][0]['contextTokens'], 2000)
+
+	def test_tour_continue_si_le_dossier_du_panneau_est_en_lecture_seule(self):
+		self.booted()
+		d = self.cercle()
+		os.chmod(d, 0o500)
+		try:
+			self.tour_usage(1000)  # ne lève pas
+			self.assertEqual(os.listdir(d), [])
+		finally:
+			os.chmod(d, 0o700)
 
 	def test_tour_du_regisseur_avec_usage_refuse_continue(self):
 		self.need()

@@ -3018,6 +3018,36 @@ def lire_usage():
 	return couts(lire_mesures())
 
 
+DONNEES = {'t': 0.0, 'h': None}  # dernière écriture de donnees.json : heure et empreinte du contenu utile
+DONNEES_PAUSE = 15  # s : chaque écriture dans le dossier d'un panneau le recharge (moins de 2 s), donc pas plus d'une par 15 s
+
+
+def ecrire_donnees(mesures, maintenant):
+	"""Écrit ~/.cate/panneaux/cercle/donnees.json pour le panneau perso Cercle, qui ne lit que son dossier.
+	Rien si le dossier n'existe pas, si le contenu n'a pas changé ou si la dernière écriture date de moins de 15 s.
+	Le fichier temporaire est dans le dossier parent : seul le rename touche le dossier surveillé."""
+	dossier = os.path.join(os.environ.get('HOME') or '', '.cate', 'panneaux', 'cercle')
+	if not os.path.isdir(dossier) or maintenant - DONNEES['t'] < DONNEES_PAUSE:
+		return
+	utile = {'usage': None if mesures is None else list(mesures.values()), 'bilan': bilan(root(), JOURS_BILAN, maintenant)}
+	h = hashlib.sha256(json.dumps(utile, sort_keys=True).encode()).hexdigest()
+	if h == DONNEES['h']:
+		return
+	tmp = None
+	try:
+		fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dossier), prefix='.tmp-donnees-')
+		with os.fdopen(fd, 'w', encoding='utf-8') as f:
+			json.dump({'ecritA': datetime.fromtimestamp(maintenant, timezone.utc).isoformat(timespec='seconds'), **utile}, f, ensure_ascii=False)
+		os.replace(tmp, os.path.join(dossier, 'donnees.json'))
+		DONNEES.update(t=maintenant, h=h)
+	except (OSError, Refus, ValueError) as err:
+		if tmp:
+			with contextlib.suppress(OSError):
+				os.remove(tmp)
+		DONNEES['t'] = maintenant  # un échec ne se rejoue pas à chaque tour
+		log(f'donnees.json : {err}')
+
+
 def un_tour():
 	rows = live_rows()
 	if rows is None:
@@ -3052,6 +3082,7 @@ def un_tour():
 		                           'actifs': pol['valeurs']['declencheurs.actifs']}, time.time())
 	except (Refus, OSError) as err:
 		log(f'déclencheurs : {err}')
+	ecrire_donnees(mesures, time.time())
 
 
 def cmd_watch(a):
