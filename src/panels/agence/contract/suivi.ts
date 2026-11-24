@@ -72,6 +72,8 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
   }
   if (need.agentBlocked) meta.push('agent bloqué sur une permission ou une question')
   if (need.closeFailed) meta.push('fermeture refusée (travail non sauvegardé ou programme en cours) : à fermer à la main')
+  // Why no merge card comes yet: the line says what its end condition still waits for.
+  if (need.status === 'open' && need.manques?.length) meta.push(`manque : ${need.manques.join(', ')}`)
   const evidence = need.status === 'done' && need.evidence ? need.evidence : null
   if (evidence) meta.push(`preuve : ${evidence}`)
   if (need.kind === 'draft') {

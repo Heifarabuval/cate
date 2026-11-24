@@ -48,6 +48,8 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
 
   return (
     <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-subtle bg-surface-1 p-2">
+      {/* The line shows one truncated line of it: the whole question is read here before answering. */}
+      <div data-testid="question-texte" className="break-words font-medium text-primary">{ligne.title}</div>
       {action.ghUnknown && <div className="text-[11px] text-secondary">état GitHub inconnu</div>}
       {action.options.map((option, index) => {
         // Merger greyed: « Merger quand même » takes the option's place, its reasons right above.

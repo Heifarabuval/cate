@@ -147,3 +147,20 @@ describe('a draft that can no longer leave (issue 201)', () => {
     expect(meta(null).some((item) => item.startsWith('périmé'))).toBe(false)
   })
 })
+
+describe('why no merge card comes yet (issue 198)', () => {
+  const need = (extra: object) => ({ ...state.needs[0], id: 'n96', kind: 'task', ref: null, owner: 'agent', status: 'open', title: 'Corriger', panels: [], agentBlocked: false, perm: null, blocking: false, overBudget: false, closeFailed: false, ...extra })
+  const meta = (extra: object) => {
+    const sections = classify({ ...state, needs: [need(extra)] } as AgenceState, {}, now)
+    return [...sections.reste, ...sections.fait][0].meta
+  }
+
+  it('says what the end condition of an open need still waits for', () => {
+    expect(meta({ manques: ['PR non mergée', 'checks non verts'] })).toContain('manque : PR non mergée, checks non verts')
+  })
+
+  it('says nothing once the need is done, or when nothing is missing', () => {
+    expect(meta({ manques: ['PR non mergée'], status: 'done' }).some((item) => item.startsWith('manque'))).toBe(false)
+    expect(meta({ manques: [] }).some((item) => item.startsWith('manque'))).toBe(false)
+  })
+})

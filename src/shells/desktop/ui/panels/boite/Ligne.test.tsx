@@ -301,3 +301,14 @@ it('greys an option already taken and recommends the first one still possible', 
   await click(/Éclairer F2/)
   expect(actions.answer).toHaveBeenCalledWith(KEY, { questionId: 'q1', choice: 1 })
 })
+
+it('shows the whole question in its card: the line only has one truncated line of it (issue 198)', async () => {
+  const long = 'F33 (niveau d\'info des panneaux) : quel panneau montre moins que lequel, et quelle info manque (agents, questions, merges) ?'
+  render(question(), state(), { title: long })
+  expect(host.querySelector('[data-testid="question-texte"]')).toBeNull()
+  await click('Répondre')
+  const texte = host.querySelector<HTMLElement>('[data-testid="question-texte"]')!
+  expect(texte.textContent).toBe(long)
+  expect(texte.className).toContain('break-words')
+  expect(texte.className).not.toContain('truncate')
+})

@@ -299,6 +299,8 @@ export interface StateNeed {
   perm?: { genre: string; commande: string; motif: string; choix: string[]; panel: string } | null
   /** Signature of the permission already answered: its buttons are gone. */
   permAnswered?: string | null
+  /** What the end condition still waits for, as the regisseur read it at its last turn (« PR non mergée », « checks non verts »). */
+  manques?: string[] | null
   /** A merged need's worktree the regisseur offers to remove. */
   worktree?: { path: string; branch: string } | null
   /** A panel seen without an agent that the regisseur offers to close. */
