@@ -334,15 +334,15 @@ def reviser(b, fid, choix, maintenant):
 # ---------- détections (lot 2) : fonctions pures, aucun appel externe (SC-006) ----------
 
 def chevauche(a, b):
-	"""Premier chemin commun de a et b (le plus long des deux : un fichier et son dossier donnent le fichier), sinon None.
-	Comparaison par segments après posixpath.normpath : src/a et src/ab.ts ne se chevauchent pas."""
+	"""Premier fichier commun de a et b (après posixpath.normpath), sinon None.
+	Un chevauchement est un fichier identique, pas un préfixe : deux fiches du même dossier ne se bloquent pas."""
 	for p in a['fichiers']:
 		for q in b['fichiers']:
 			if not p.strip() or not q.strip():  # chemin vide : il ne désigne rien, pas la racine
 				continue
 			x, y = posixpath.normpath(p), posixpath.normpath(q)
-			if x == y or '.' in (x, y) or y.startswith(x + '/') or x.startswith(y + '/'):
-				return max(x, y, key=len)
+			if x == y:
+				return x
 	return None
 
 

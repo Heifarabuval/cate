@@ -345,8 +345,10 @@ class Detections(unittest.TestCase):
 	def test_chevauche(self):
 		f = lambda *p: {'fichiers': list(p)}  # noqa: E731
 		self.assertTrue(backlog.chevauche(f('src/a.ts'), f('src/a.ts')))
-		self.assertTrue(backlog.chevauche(f('src/a/'), f('src/a/b.ts')))
-		self.assertTrue(backlog.chevauche(f('src/a/b.ts'), f('./src/a')))
+		self.assertTrue(backlog.chevauche(f('src/a/b.ts'), f('./src/a/b.ts')))
+		self.assertEqual(backlog.chevauche(f('src/a/b.ts', 'x.ts'), f('src/a/b.ts')), 'src/a/b.ts')
+		self.assertIsNone(backlog.chevauche(f('src/a/b.ts'), f('src/a/c.ts')))  # même dossier, fichiers distincts
+		self.assertIsNone(backlog.chevauche(f('src/a/'), f('src/a/b.ts')))  # un dossier n'est pas un fichier commun
 		self.assertFalse(backlog.chevauche(f('src/a'), f('src/ab.ts')))
 		self.assertFalse(backlog.chevauche(f('src/a.ts'), f('src/b.ts', 'docs/')))
 
