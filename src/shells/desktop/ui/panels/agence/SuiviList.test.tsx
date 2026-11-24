@@ -97,7 +97,8 @@ it('makes the #N of a PR a link that opens in Cate, not in the system browser', 
   expect(event.defaultPrevented).toBe(true)
   expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/8')
   expect(ui.openExternal).not.toHaveBeenCalled()
-  expect(host.textContent).toContain('débloque C007')
+  expect(host.textContent).toContain('Débloque')
+  expect(host.textContent).toContain('C007')
 })
 
 it('makes the evidence URL of a done need a link, and leaves plain evidence as text', () => {
@@ -109,12 +110,14 @@ it('makes the evidence URL of a done need a link, and leaves plain evidence as t
   expect(links.map((a) => a.getAttribute('href'))).toEqual(['https://github.com/x/y/pull/9'])
   act(() => links[0].click())
   expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/9')
-  expect(host.textContent).toContain('preuve : sortie de test 4')
+  expect(host.textContent).toContain('Preuve')
+  expect(host.textContent).toContain('sortie de test 4')
 })
 
 it('shows the linked panels in the meta line', () => {
   render(suivi({ reste: [row('l', { meta: ['panneau : Impl C002'], links: [{ panelId: 'p1', title: 'Impl C002', closed: false }] })] }))
-  expect(host.textContent).toContain('panneau : Impl C002')
+  expect(host.textContent).toContain('Panneau')
+  expect(host.textContent).toContain('Impl C002')
 })
 
 it('offers « Demander le rebase » on a merge greyed by a conflict, and only there', () => {
@@ -193,7 +196,7 @@ it('acts on the panel clicked when a line links several', async () => {
     { panelId: 'p1', title: 'Impl C002', closed: false },
     { panelId: 'p2', title: 'Review lot C', closed: false },
   ])] }))
-  expect(host.textContent).toContain('panneau : ')
+  expect(host.textContent).toContain('Panneau')
   const second = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Review lot C')!
   await act(async () => { second.click() })
   expect(host_.order).toEqual(['reveal:p2', 'focus:p2'])
@@ -205,7 +208,7 @@ it('shows a closed panel by its last known title followed by « fermé », not c
     { panelId: 'p2', title: 'Review lot C', closed: false },
   ])] }))
   expect(host.textContent).toContain('Impl C002 · fermé')
-  expect([...host.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Review lot C'])
+  expect([...host.querySelectorAll('button:not([aria-expanded])')].map((b) => b.textContent)).toEqual(['Review lot C'])
   await act(async () => { host.querySelector<HTMLElement>('[data-testid="closed-panel"]')!.click() })
   expect(host_.revealPanel).not.toHaveBeenCalled()
   expect(host.textContent!.toLowerCase()).not.toContain('introuvable')
@@ -356,4 +359,84 @@ it('shows the regisseur\'s refusal of an offer on its line', async () => {
   render(suivi({ aFaire: [row('n48', { kind: 'human', action: { type: 'worktree', branch: 'fix/x' } })] }))
   await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Supprimer')!.click() })
   expect(host.textContent).toContain('Le worktree a changé : rien supprimé.')
+})
+
+const done = (patch: Partial<NeedRow> = {}) => row('f1', {
+  title: 'Livrer la passe 2', created: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+  meta: ['acceptation : portes vertes', 'preuve : https://github.com/x/y/pull/239', 'panneau : Impl n999'],
+  links: [{ panelId: 'p1', title: 'Impl n999', closed: true }], ...patch,
+})
+const toggle = () => host.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+const details = () => document.getElementById(toggle().getAttribute('aria-controls')!)!
+
+it('folds a done line to a title, a state pill, a « #239 » chip and its age, never the raw text or URL', () => {
+  render(suivi({ fait: [done()] }))
+  const line = host.querySelector('li')!
+  expect(line.querySelector('[data-testid="need-title"]')!.textContent).toBe('Livrer la passe 2')
+  expect(line.querySelector('[data-testid="need-status"]')!.textContent).toBe('Fermé')
+  const chip = line.querySelector<HTMLAnchorElement>('[data-testid="need-ref"]')!
+  expect(chip.textContent).toBe('#239')
+  expect(chip.querySelector('svg')).not.toBeNull()
+  expect(chip.getAttribute('href')).toBe('https://github.com/x/y/pull/239')
+  expect(line.textContent).toContain('il y a 2 h')
+  expect(line.textContent).not.toContain('https://')
+  expect(line.querySelectorAll('a')).toHaveLength(1)
+  act(() => chip.click())
+  expect(onOpenUrl).toHaveBeenCalledWith('https://github.com/x/y/pull/239')
+})
+
+it('says « Fait » while a panel of the line lives, and « En attente » on a line still to do', () => {
+  render(suivi({ fait: [done({ links: [{ panelId: 'p1', title: 'Impl n999', closed: false }] })], reste: [row('r1')] }))
+  expect([...host.querySelectorAll('[data-testid="need-status"]')].map((pill) => pill.textContent)).toEqual(['Fait', 'En attente'])
+})
+
+it('opens the details of a line on click: labeled fields, aria-expanded, a height that opens and a chevron that turns', () => {
+  render(suivi({ fait: [done()] }))
+  expect(toggle().tagName).toBe('BUTTON')
+  expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  expect(details().className).toMatch(/grid-rows-\[0fr\]/)
+  expect(details().className).toMatch(/invisible/)
+  expect(toggle().querySelector('svg')!.getAttribute('class')).not.toMatch(/rotate-90/)
+  act(() => toggle().click())
+  expect(toggle().getAttribute('aria-expanded')).toBe('true')
+  expect(details().className).toMatch(/grid-rows-\[1fr\]/)
+  expect(details().className).not.toMatch(/invisible/)
+  expect(details().className).toMatch(/duration-200/)
+  expect(details().className).toMatch(/motion-reduce:transition-none/)
+  expect(toggle().querySelector('svg')!.getAttribute('class')).toMatch(/rotate-90/)
+  expect([...details().querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(['Acceptation', 'Panneau'])
+  expect(details().textContent).toContain('portes vertes')
+  expect(details().textContent).toContain('Impl n999 · fermé')
+  act(() => toggle().click())
+  expect(toggle().getAttribute('aria-expanded')).toBe('false')
+})
+
+it('is opened from the keyboard: a native button, so Enter and Space are its own', () => {
+  render(suivi({ fait: [done()] }))
+  expect(toggle().type).toBe('button')
+  expect(toggle().tabIndex).toBe(0)
+  expect(toggle().className).toMatch(/focus-visible:outline/)
+  expect(toggle().getAttribute('aria-controls')).toBe(details().id)
+})
+
+it('keeps the other lines folded when one opens, and gives a line with no detail no toggle', () => {
+  render(suivi({ fait: [done(), row('g', { title: 'Sans détail' })] }))
+  expect(host.querySelectorAll('button[aria-expanded]')).toHaveLength(1)
+  act(() => toggle().click())
+  expect(host.querySelectorAll('[aria-expanded="true"]')).toHaveLength(1)
+})
+
+it('shows a non-PR evidence URL as a short link in the details, not as a chip', () => {
+  render(suivi({ fait: [row('e', { meta: ['preuve : https://example.com/rapport/12'] })] }))
+  expect(host.querySelector('[data-testid="need-ref"]')).toBeNull()
+  const link = host.querySelector('a')!
+  expect(link.textContent).toBe('example.com/rapport/12')
+  expect(link.getAttribute('href')).toBe('https://example.com/rapport/12')
+})
+
+it('keeps the reason an action waits for under the title, outside the details', () => {
+  render(suivi({ aFaire: [row('q2', { kind: 'human', meta: ['Merger grisé : conflit avec la base'], action: { type: 'question', questionId: 'q2', rebase: true } })] }))
+  expect(host.querySelector('[data-testid="need-notes"]')!.textContent).toBe('Merger grisé : conflit avec la base')
+  expect(host.querySelector('button[aria-expanded]')).toBeNull()
+  expect(host.querySelector('[data-testid="need-status"]')).toBeNull()
 })
