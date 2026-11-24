@@ -626,6 +626,38 @@ class Brouillons(Base):
 		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did))[0], 409)
 		self.assertEqual(len(self.run.ran('gh', 'issue', 'create')), 1)
 
+	def test_brouillon_de_pr_refuse_sans_branche_poussee_ou_sans_commit_d_avance(self):
+		"""Issue 200 : la branche se vérifie à la création du brouillon, pas au clic de l'humain."""
+		self.booted()
+		compare = ['gh', 'api', 'repos/o/r/compare/main...fix/x']
+		for reponse, raison in (({'code': 1, 'err': 'gh: Not Found (HTTP 404)'}, 'branche fix/x non poussée sur o/r'),
+		                        ({'out': '0\n'}, 'aucun commit de fix/x devant main')):
+			with self.subTest(raison=raison):
+				self.run.reply(compare, **reponse)
+				err = io.StringIO()
+				with contextlib.redirect_stderr(err):
+					code, _ = self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')
+				self.assertEqual(code, 1)
+				self.assertIn(raison, err.getvalue())
+				self.assertEqual(self.state()['drafts'], [])
+		self.run.reply(compare, '2\n')
+		self.assertEqual(self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[0], 0)
+
+	def test_brouillon_de_pr_gh_illisible_ne_bloque_pas_la_creation(self):
+		self.booted()
+		self.run.reply(['gh', 'api', 'repos/o/r/compare/main...fix/x'], code=1, err='gh: timeout')
+		self.assertEqual(self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[0], 0)
+
+	def test_clic_envoyer_pr_reverifie_la_branche_et_dit_la_raison(self):
+		self.booted()
+		did = self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[1].strip()
+		self.run.reply(['gh', 'api', 'repos/o/r/compare/main...fix/x'], code=1, err='gh: Not Found (HTTP 404)')
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('branche fix/x non poussée sur o/r', msg)
+		self.assertEqual(self.run.ran('gh', 'pr', 'create'), [])
+		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
+
 	def test_clic_envoyer_mail_fige_et_previent(self):
 		did = self.new_draft(cible='mail:dg@exemple.fr', texte='Salut')
 		agence.click(f'/draft/{did}/send', self.shown(did))

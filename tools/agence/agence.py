@@ -1006,6 +1006,8 @@ def cmd_draft(a):
 		texte = sys.stdin.read() if a.texte == '-' else a.texte
 		if a.cible.startswith('outil:'):
 			texte = carte_outil(a.cible, texte)
+		if a.cible.startswith('pr:'):
+			branche_de_pr(a.cible)  # avant la carte : l'humain ne reçoit pas un brouillon qui ne peut pas partir
 		with tx() as st:
 			if not st['port']:
 				raise Refus("régisseur non démarré : l'orchestrateur lance d'abord « agence boot »")
@@ -1145,6 +1147,17 @@ def send_slack(d):
 	return link_url or f"slack:{channel}:{r.get('ts', '')}"
 
 
+def branche_de_pr(cible):
+	"""Refus si la tête d'une cible pr:<owner/repo>:<base>:<head> n'est pas sur le dépôt ou n'a aucun commit devant la
+	base (issue 200). gh illisible pour une autre raison : état inconnu, rien n'est refusé ici."""
+	repo, base, head = cible.split(':', 1)[1].split(':')
+	code, out, err = RUN(['gh', 'api', f'repos/{repo}/compare/{base}...{head}', '--jq', '.ahead_by'], timeout=GH_TIMEOUT)
+	if code != 0 and '404' in (err or out):
+		raise Refus(f'branche {head} non poussée sur {repo} : pousse-la avant le brouillon de PR')
+	if code == 0 and out.strip() == '0':
+		raise Refus(f'aucun commit de {head} devant {base} sur {repo} : rien à proposer')
+
+
 def send_gh(d):
 	"""Envoie par gh le texte figé ; rend l'URL créée."""
 	kind, rest = d['cible'].split(':', 1)
@@ -1153,6 +1166,7 @@ def send_gh(d):
 		cmd = ['gh', 'issue', 'create', '-R', rest, '--title', d['titre'] or d['texte'].splitlines()[0][:80],
 		       '--body-file', '-']
 	elif kind == 'pr':
+		branche_de_pr(d['cible'])
 		repo, base, head = rest.split(':')
 		cmd = ['gh', 'pr', 'create', '-R', repo, '--base', base, '--head', head,
 		       '--title', d['titre'] or d['texte'].splitlines()[0][:80], '--body-file', '-']
