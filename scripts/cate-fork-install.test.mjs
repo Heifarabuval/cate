@@ -32,7 +32,7 @@ const SHA2 = "b".repeat(40);
 const ENGINES = '{\\n  "engines": {\\n    "node": ">=22.16 <23"\\n  }\\n}\\n'; // as printf reads it
 const LONG_DASH = String.fromCharCode(0x2014);
 const BASIC =
-  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find cmp ps".split(
+  "sh awk sed grep cat date mkdir rmdir rm mv cp ls dirname basename head tail cut wc id chmod touch mktemp find cmp ps tar gzip".split(
     " ",
   );
 
@@ -103,7 +103,9 @@ if [ "$1" = "-v" ]; then cat "$d/.version"; exit 0; fi
 if [ "$1" = "scripts/package.mjs" ]; then
   echo "SELF_UPDATE=\${CATE_SELF_UPDATE-unset} $*" >> "$CALLS"
   [ "\${FAKE_PACKAGE_FAIL:-0}" = 0 ] || exit 1
-  mkdir -p release/mac-arm64/Cate.app/Contents; echo new > release/mac-arm64/Cate.app/Contents/id
+  mkdir -p release/mac-arm64/Cate.app/Contents/Resources; echo new > release/mac-arm64/Cate.app/Contents/id
+  t=$(mktemp -d); echo "\${FAKE_BUILD:-2.1.1-fork.1+cur}" > "$t/BUILD"
+  tar -czf release/mac-arm64/Cate.app/Contents/Resources/runtime-host-arm64.tgz -C "$t" ./BUILD
 fi`,
         dir,
       );
@@ -626,7 +628,101 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         }
       });
 
-      it("--self-test exits 0 and touches nothing", () => {
+      describe("daemons of an old build", () => {
+      const CUR = "2.1.1-fork.1+cur";
+      let spawned;
+      const wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+      // A stopped child of the test is a zombie until the event loop reaps it: not alive.
+      const alive = (pid) => {
+        const st = spawnSync("ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" }).stdout.trim();
+        return st !== "" && !st.startsWith("Z");
+      };
+      const kids = (pid) => spawnSync("pgrep", ["-P", String(pid)]).status === 0;
+      // A fake daemon: /bin/sh named .../.cate/runtime/<build>/runtime/bin/node under the fake HOME.
+      const daemon = (buildId, withChild) => {
+        assertSandbox(home);
+        const bin = path.join(home, ".cate/runtime", buildId, "runtime/bin/node");
+        mkdirSync(path.dirname(bin), { recursive: true });
+        if (!existsSync(bin)) symlinkSync("/bin/sh", bin);
+        const child = spawn(bin, ["-c", withChild ? "sleep 300 & wait" : "read x"], {
+          detached: true,
+          stdio: ["pipe", "ignore", "ignore"],
+        });
+        spawned.push(child);
+        for (let i = 0; i < 100; i++) {
+          const cmd = spawnSync("ps", ["-p", String(child.pid), "-o", "command="], { encoding: "utf8" }).stdout;
+          if (cmd.startsWith(bin) && kids(child.pid) === withChild) break;
+          wait(20);
+        }
+        return child.pid;
+      };
+      const installedApp = (buildId = CUR) => {
+        const res = path.join(apps, "Cate.app/Contents/Resources");
+        mkdirSync(res, { recursive: true });
+        writeFileSync(path.join(root, "BUILD"), `${buildId}\n`);
+        spawnSync("tar", ["-czf", path.join(res, "runtime-host-arm64.tgz"), "-C", root, "./BUILD"]);
+      };
+      beforeEach(() => {
+        spawned = [];
+      });
+      afterEach(() => {
+        for (const c of spawned) {
+          try {
+            process.kill(-c.pid, "SIGKILL");
+          } catch {}
+        }
+      });
+
+      it("--daemons lists what would be stopped and kept, and changes nothing", () => {
+        installedApp();
+        const bare = daemon("2.1.1-fork.1+old", false);
+        const busy = daemon("2.1.1-fork.1+busy", true);
+        const lookalike = daemon("2.1.1-fork.11cur", false); // "+" read as a regex would match it as CUR
+        const current = daemon(CUR, false);
+        const r = run(UPDATE, ["--daemons"]);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain(`stop ${bare} 2.1.1-fork.1+old`);
+        expect(r.out).toContain(`keep ${busy} 2.1.1-fork.1+busy`);
+        expect(r.out).toContain(`stop ${lookalike} 2.1.1-fork.11cur`);
+        expect(r.out).not.toContain(` ${current} `);
+        for (const pid of [bare, busy, lookalike, current]) expect(alive(pid)).toBe(true);
+        expect(existsSync(path.join(home, "Library/Logs/cate-fork-update.log"))).toBe(false);
+      });
+
+      it("--daemons says so and lists nothing when the app has no readable build", () => {
+        const bare = daemon("2.1.1-fork.1+old", false);
+        const r = run(UPDATE, ["--daemons"]);
+        expect(r.code).toBe(0);
+        expect(r.out).not.toMatch(/stop|keep/);
+        expect(alive(bare)).toBe(true);
+      });
+
+      it("after an install, stops old daemons without children by pid, keeps the others and notifies", () => {
+        nvm("22.22.2");
+        const bare = daemon("2.1.1-fork.1+old", false);
+        const busy = daemon("2.1.1-fork.1+busy", true);
+        const lookalike = daemon("2.1.1-fork.11cur", false);
+        const current = daemon(CUR, false);
+        expect(run(UPDATE, [], { FAKE_BUILD: CUR }).code).toBe(0);
+        wait(200);
+        expect(alive(bare)).toBe(false);
+        expect(alive(lookalike)).toBe(false);
+        expect(alive(busy)).toBe(true);
+        expect(alive(current)).toBe(true);
+        expect(log()).toContain(`daemon ${bare} 2.1.1-fork.1+old stopped`);
+        expect(log()).not.toContain(`daemon ${busy}`);
+        expect(called().filter((l) => /^osascript@.*1 daemons de l'ancien build gardés/.test(l))).toHaveLength(1);
+      });
+
+      it("stops no daemon while Cate is open, since nothing is installed", () => {
+        nvm("22.22.2");
+        const bare = daemon("2.1.1-fork.1+old", false);
+        expect(run(UPDATE, [], { FAKE_BUILD: CUR, FAKE_CATE_OPEN: "1" }).code).toBe(0);
+        expect(alive(bare)).toBe(true);
+      });
+    });
+
+    it("--self-test exits 0 and touches nothing", () => {
         const r = run(UPDATE, ["--self-test"]);
         expect([r.code, r.out]).toEqual([0, ""]);
         expect(readdirSync(home)).toEqual([]);

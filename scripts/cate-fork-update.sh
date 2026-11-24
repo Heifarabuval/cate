@@ -1,10 +1,13 @@
 #!/bin/sh
 # Rebuilds Cate from the fork when origin/<branch> moves, then installs it in
 # /Applications as soon as Cate is closed. launchd runs it every 10 minutes
-# (agent written by cate-fork-install.sh). It never stops a daemon and never
+# (agent written by cate-fork-install.sh). After an install it stops the
+# daemons of an older runtime build that have no child process; it never
 # starts Cate.
 #
-# Usage: cate-fork-update [--force] [--prereq] [--purge] [--self-test] [branch]
+# Usage: cate-fork-update [--force] [--prereq] [--daemons] [--purge] [--self-test] [branch]
+#   --daemons    list the daemons of an older build that would be stopped (no child)
+#                or kept (a terminal or agent lives under them), change nothing
 #   --force      build even if this commit is already installed, staged or failed
 #   --prereq     list what is missing (tools, Node, npm, connection), change nothing
 #   --purge      delete the build folder and its markers (used by the uninstaller)
@@ -368,6 +371,53 @@ install_skills() {
 	done
 }
 
+# Build id of the installed app: the BUILD file of the runtime tarball it embeds
+# (the folder name under ~/.cate/runtime/). "current" there only moves when the app starts.
+app_build() {
+	tar -xOzf "$APP/Contents/Resources/runtime-host-arm64.tgz" ./BUILD 2> /dev/null | head -n 1
+}
+
+# One line per daemon (<home>/.cate/runtime/<build>/runtime/bin/node) of a build
+# other than the app's: "stop|keep <pid> <build>", keep when it has a child.
+# Compared as strings, by pid: a build name holds "+", a regex operator.
+old_daemons() {
+	cur=$(app_build)
+	[ -n "$cur" ] || return 1
+	ps -axo pid=,ppid=,command= | CUR=$cur ROOT="$HOME/.cate/runtime/" awk '
+		{
+			pid = $1; ppid = $2
+			cmd = $0; sub(/^ *[0-9]+ +[0-9]+ +/, "", cmd)
+			kids[ppid]++
+			if (index(cmd, ENVIRON["ROOT"]) != 1) next
+			rest = substr(cmd, length(ENVIRON["ROOT"]) + 1)
+			n = index(rest, "/runtime/bin/node")
+			if (n < 2) next
+			build = substr(rest, 1, n - 1)
+			if (index(build, "/") || build == ENVIRON["CUR"]) next
+			tail = substr(rest, n + 17, 1)
+			if (tail != "" && tail != " ") next
+			pids[++c] = pid; builds[c] = build
+		}
+		END { for (i = 1; i <= c; i++) print (kids[pids[i]] ? "keep" : "stop"), pids[i], builds[i] }'
+}
+
+# Only after an install: Cate is closed, so a daemon without child carries nothing.
+clean_daemons() {
+	list=$(old_daemons) || { log "build of $APP unreadable, no daemon stopped"; return 0; }
+	kept=0
+	while read -r verdict pid build; do
+		[ -n "$verdict" ] || continue
+		if [ "$verdict" = stop ]; then
+			kill "$pid" 2> /dev/null && log "daemon $pid $build stopped (old build, no child)"
+		else
+			kept=$((kept + 1))
+		fi
+	done << EOF
+$list
+EOF
+	[ "$kept" = 0 ] || notify_once "daemons:$kept" "$kept daemons de l'ancien build gardés (agents vivants)"
+}
+
 install_failed() {
 	log "$1"
 	notify_once "install:$staged" "Cate : installation de $(short "$staged") impossible. Voir le journal."
@@ -396,6 +446,7 @@ install_staged() {
 	rm -rf "$APP.old" "$DIR.staged" "$NOTIFIED" "$DIR.failed"
 	log "installed $(short "$staged")"
 	notify "Fork $(short "$staged") installé"
+	clean_daemons
 }
 
 main() {
@@ -404,6 +455,7 @@ main() {
 		case $a in
 			--force) FORCE=1 ;;
 			--prereq) MODE=prereq ;;
+			--daemons) MODE=daemons ;;
 			--purge) MODE=purge ;;
 			--self-test) MODE=self_test ;;
 			-*) echo "option inconnue : $a" >&2; exit 64 ;;
@@ -444,6 +496,7 @@ main() {
 
 	case $MODE in
 		self_test) exit 0 ;;
+		daemons) old_daemons || echo "build de $APP illisible : rien à lister"; exit 0 ;;
 		prereq) if prereq; then exit 0; fi; exit 5 ;;
 		purge) purge; exit 0 ;;
 	esac

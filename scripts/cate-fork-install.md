@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate
 
 Un build en échec ne branche aucun garde et ne lance pas `doctor`.
 
-Ensuite, à chaque nouveau commit de `main`, l'agent construit le fork. Le remplacement de `/Applications/Cate.app` attend que Cate soit fermé. Aucun daemon n'est arrêté, Cate n'est jamais lancé.
+Ensuite, à chaque nouveau commit de `main`, l'agent construit le fork. Le remplacement de `/Applications/Cate.app` attend que Cate soit fermé. Cate n'est jamais lancé. Une fois l'app installée (Cate fermé), l'agent arrête (SIGTERM, par pid) les daemons d'un ancien build de runtime qui n'ont aucun processus enfant ; le build de référence est le fichier `BUILD` du tarball runtime embarqué dans l'app installée. Ceux qui ont des enfants (terminaux, agents) restent, avec une notification qui dit combien. `~/.local/bin/cate-fork-update --daemons` liste ce qui serait arrêté (`stop`) et gardé (`keep`), sans rien changer.
 
 Un build en échec laisse l'app installée intacte. Il est retenté aux passages suivants (réseau coupé, build interrompu), 3 échecs au plus par commit ; au troisième, une notification, puis l'agent attend le commit suivant. Relancer à la main : `~/.local/bin/cate-fork-update --force`.
 
@@ -84,7 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/<SHA>/scripts/cat
 - la connexion `gh` et l'installation de Claude Code : le résumé les nomme s'ils manquent ;
 - le réglage `cliTerminalInputEnabled` du workspace, coupé par défaut : un clic dans Cate, nommé par `agence doctor --prerequis`.
 
-Après une installation, le daemon du workspace garde l'ancien runtime jusqu'à sa mise à jour par l'app (cate#26 mergé : automatique quand le workspace est inactif).
+Après une installation, un daemon qui porte encore des terminaux ou agents garde l'ancien runtime jusqu'à sa mise à jour par l'app (cate#26 mergé : automatique quand le workspace est inactif).
 
 ## Garde-fous
 
