@@ -322,6 +322,8 @@ export interface StateDraft {
   modifie?: string | null
   /** Slack send of unknown outcome (`confirme=1` resends). */
   incertain?: boolean
+  /** Why the draft can no longer leave (a PR whose branch is gone), as the regisseur last checked; null or absent when it can. */
+  perime?: string | null
 }
 
 export interface StateQuestion {

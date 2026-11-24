@@ -76,6 +76,7 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
   if (evidence) meta.push(`preuve : ${evidence}`)
   if (need.kind === 'draft') {
     for (const draft of state.drafts) if (draft.id === need.ref && draft.modifie) meta.push(`modifié à ${draft.modifie}`)
+    for (const draft of state.drafts) if (draft.id === need.ref && draft.perime) meta.push(`périmé : ${draft.perime}`)
   }
   if (links.length) meta.push(`panneau : ${links.map((link) => link.title).join(', ')}`)
   let action: NeedRow['action'] = null

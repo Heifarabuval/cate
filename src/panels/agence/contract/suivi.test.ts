@@ -137,3 +137,13 @@ describe('offers of the regisseur (issue 207)', () => {
     expect(sections.fait.find((row) => row.id === 'n92')!.action).toBeNull()
   })
 })
+
+describe('a draft that can no longer leave (issue 201)', () => {
+  it('says « périmé » with the reason the regisseur read, on the draft line', () => {
+    const need = { ...state.needs[0], id: 'n95', kind: 'draft', ref: 'd95', owner: 'heifara', status: 'open', title: 'Valider le brouillon', panels: [], agentBlocked: false, perm: null }
+    const draft = { id: 'd95', needId: 'n95', cible: 'pr:o/r:main:fix/x', titre: 'T', statut: 'à valider', url: null }
+    const meta = (perime: string | null) => classify({ ...state, needs: [need], drafts: [{ ...draft, perime }] } as AgenceState, {}, now).aFaire[0].meta
+    expect(meta('branche fix/x non poussée sur o/r')).toContain('périmé : branche fix/x non poussée sur o/r')
+    expect(meta(null).some((item) => item.startsWith('périmé'))).toBe(false)
+  })
+})
