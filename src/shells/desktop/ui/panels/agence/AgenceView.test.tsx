@@ -82,7 +82,7 @@ it('goes back to the list when the draft being read is gone (sent or dropped els
   act(() => button('Lire et envoyer')!.click())
   render(snapshot({ drafts: {} }))
   expect(host.querySelector('[data-testid="markdown-preview"]')).toBeNull()
-  expect(host.textContent).toContain('À faire par Max')
+  expect(host.textContent).toContain('À toi')
 })
 
 /** A ResizeObserver stand-in: `resize` reports the view's width. */
@@ -172,7 +172,7 @@ it('puts the conversation and the follow-up side by side when there is room', ()
   observer.resize(1000)
   expect(host.querySelector('[role="tablist"]')).toBeNull()
   expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
-  expect(host.textContent).toContain('À faire par Max')
+  expect(host.textContent).toContain('À toi')
 })
 
 it('switches to the tabs Conversation and Suivi under 640 px, keeping the terminal mounted', () => {
@@ -364,7 +364,7 @@ it('has no « Ouvrir le fichier » any more', () => {
 it('shows an invalid policy as a banner that names the key, the rest of the panel still there', () => {
   render(snapshot({ pratiques: pratiques({ erreur: 'pratiques.json : clé inconnue « livraison.mthode »' }) }))
   expect(host.textContent).toContain('clé inconnue « livraison.mthode »')
-  expect(host.textContent).toContain('À faire par Max')
+  expect(host.textContent).toContain('À toi')
 })
 
 it('shows nothing about the policy when the state has none (old CLI)', () => {
@@ -387,9 +387,9 @@ it('opens the settings form from « Réglages », in place of the follow-up, and
   act(() => button('Réglages')!.click())
   const column = host.querySelector('[data-testid="suivi-column"]')!
   expect(column.querySelector('[data-testid="reglage"][data-nom="Couleur du toit"]')).not.toBeNull()
-  expect(column.textContent).not.toContain('À faire par Max')
+  expect(column.textContent).not.toContain('À toi')
   act(() => button('Fermer les réglages')!.click())
-  expect(column.textContent).toContain('À faire par Max')
+  expect(column.textContent).toContain('À toi')
 })
 
 it('sends what the form asks through the session', async () => {
@@ -435,7 +435,7 @@ it('shows the backlog in the follow-up column and launches through the session',
   render(snapshot({ backlog }))
   const column = host.querySelector('[data-testid="suivi-column"]')!
   expect(column.textContent).toContain('Backlog')
-  expect(column.textContent).toContain('À faire par Max')
+  expect(column.textContent).toContain('À toi')
   act(() => host.querySelector<HTMLInputElement>('input[data-fiche="F2"]')!.click())
   await act(async () => { button('Lancer (1)')!.click() })
   expect(send).toHaveBeenCalledWith({ kind: 'fiches.lancer', ids: ['F2'] })
@@ -450,7 +450,7 @@ it('gives the whole panel to the first questions while the project has no settin
   render(snapshot({ pratiques: reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
   expect(host.querySelector('h2')!.textContent).toBe('De quelle couleur, le toit ?')
   expect(host.querySelector('[data-testid="terminal"]')).toBeNull()
-  expect(host.textContent).not.toContain('À faire par Max')
+  expect(host.textContent).not.toContain('À toi')
   await act(async () => { button('Passer')!.click() })
   expect(send).toHaveBeenCalledWith({ kind: 'pratique.questions', passer: true })
 })

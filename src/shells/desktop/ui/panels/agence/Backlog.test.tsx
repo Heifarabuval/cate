@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgenceOp, AgenceOpResult, BacklogView } from '@panels/agence/contract'
 import { installMockClientUi } from '../../../../../test/clientUi'
-import Backlog from './Backlog'
+import Backlog, { LancerPretes } from './Backlog'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -15,7 +15,7 @@ const published = JSON.parse(readFileSync(path.join(__dirname, '../../../../../p
 let host: HTMLDivElement
 let root: Root
 let send: ReturnType<typeof vi.fn<(op: AgenceOp) => Promise<unknown>>>
-const render = (backlog: BacklogView = published) => act(() => root.render(<Backlog backlog={backlog} send={send} />))
+const render = (backlog: BacklogView = published) => act(() => root.render(<><Backlog backlog={backlog} /><LancerPretes backlog={backlog} send={send} /></>))
 const lancer = () => [...host.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Lancer'))!
 const box = (id: string) => host.querySelector<HTMLInputElement>(`input[type="checkbox"][data-fiche="${id}"]`)
 const row = (id: string) => host.querySelector<HTMLElement>(`[data-testid="fiche"][data-fiche="${id}"]`)!
@@ -41,6 +41,13 @@ it('groups the fiches by state, discussion folded', () => {
   expect(group('discussion')!.tagName).toBe('DETAILS')
   expect((group('discussion') as HTMLDetailsElement).open).toBe(false)
   expect(group('discussion')!.textContent).toContain('Idée : lentilles au hasard')
+})
+
+it('shows state only: the backlog alone has no checkbox and no « Lancer » (D5)', () => {
+  act(() => root.render(<Backlog backlog={published} />))
+  expect(host.querySelector('input[type="checkbox"]')).toBeNull()
+  expect(host.querySelector('button')).toBeNull()
+  expect(host.textContent).not.toContain('À toi')
 })
 
 it('puts a checkbox on the prêtes only', () => {

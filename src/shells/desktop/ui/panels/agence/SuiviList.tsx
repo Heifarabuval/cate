@@ -1,18 +1,24 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { focusPanel, revealPanel } from '@client/host'
-import type { AgenceOp, AgenceOpResult, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
+import type { AgenceOp, AgenceOpResult, BacklogView, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
 import { ActionButton, refusal, ROW_ENTER, useAction } from './action'
+import { LancerPretes } from './Backlog'
 import QuestionCard from './QuestionCard'
 import { ACTION, LINK } from './styles'
 
 const SECTIONS = [
   // `dot` tells the section by a marker: the status colors are too pale as text on a light theme.
-  { key: 'bloquant', title: 'Bloquant', dot: 'bg-danger' },
-  { key: 'aFaire', title: 'À faire par {humain}', dot: 'bg-warning' },
+  { key: 'aToi', title: 'À toi', dot: 'bg-warning' },
   { key: 'fait', title: 'Fait', dot: 'bg-surface-6' },
   { key: 'reste', title: 'Reste à faire', dot: 'bg-surface-6' },
 ] as const
+
+type SectionKey = (typeof SECTIONS)[number]['key']
+
+/** The rows of a section. « À toi » is the one list of what waits for the human, most urgent
+ *  first: what blocks the agents, then what is theirs to do. */
+const rowsOf = (suivi: SuiviView, key: SectionKey): NeedRow[] => key === 'aToi' ? [...suivi.sections.bloquant, ...suivi.sections.aFaire] : suivi.sections[key]
 
 const EVIDENCE = 'preuve : '
 
@@ -159,11 +165,11 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
   )
 }
 
-export default function SuiviList({ workspaceId, suivi, questions, send, compact, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView } & RowActions) {
+export default function SuiviList({ workspaceId, suivi, backlog, questions, send, compact, onRead, onRebase, onOpenUrl }: { workspaceId: string; suivi: SuiviView; backlog?: BacklogView | null } & RowActions) {
   // A line is new to its section when it was not there at the last render: it fades in
   // (a line that changes section arrives in the next one, not nowhere). Not on first display.
   const seen = useRef<Set<string> | null>(null)
-  const here = SECTIONS.flatMap(({ key }) => suivi.sections[key].map((row) => `${key}/${row.id}`))
+  const here = SECTIONS.flatMap(({ key }) => rowsOf(suivi, key).map((row) => `${key}/${row.id}`))
   const previous = seen.current
   useEffect(() => { seen.current = new Set(here) })
   return (
@@ -177,11 +183,12 @@ export default function SuiviList({ workspaceId, suivi, questions, send, compact
         <section key={key} className="rounded-lg border border-subtle bg-surface-2">
           <h2 className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold text-primary border-b border-subtle">
             <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-            {`${title.replace('{humain}', () => suivi.humain)} (${suivi.sections[key].length})`}
+            {`${title} (${rowsOf(suivi, key).length})`}
           </h2>
-          {suivi.sections[key].length === 0
+          {rowsOf(suivi, key).length === 0
             ? <div className="px-3 py-2 text-[12px] text-secondary">Rien.</div>
-            : <ul>{suivi.sections[key].map((row) => <Row key={row.id} row={row} enter={previous !== null && !previous.has(`${key}/${row.id}`)} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+            : <ul>{rowsOf(suivi, key).map((row) => <Row key={row.id} row={row} enter={previous !== null && !previous.has(`${key}/${row.id}`)} workspaceId={workspaceId} questions={questions} send={send} compact={compact} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} />)}</ul>}
+          {key === 'aToi' && backlog && <LancerPretes backlog={backlog} send={send} />}
         </section>
       ))}
     </div>

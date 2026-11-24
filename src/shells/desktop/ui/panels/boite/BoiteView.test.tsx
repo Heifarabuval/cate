@@ -54,7 +54,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-it('lists Bloquant first, then À faire; a line is its project, need, expected action and age', () => {
+it('lists one « À toi » list, blocking first; a line is its project, need, expected action and age', () => {
   render({
     projects: [project('cate'), project('lamif')],
     closedWorkspaces: 0,
@@ -65,7 +65,7 @@ it('lists Bloquant first, then À faire; a line is its project, need, expected a
     ],
   })
   const headings = [...host.querySelectorAll('h2')].map((heading) => heading.textContent)
-  expect(headings).toEqual(['Bloquant', 'À faire'])
+  expect(headings).toEqual(['À toi'])
   const lines = [...host.querySelectorAll('[data-testid="ligne"]')]
   expect(lines).toHaveLength(3)
   expect(lines[0].textContent).toContain('cate')
@@ -81,7 +81,7 @@ it('lists Bloquant first, then À faire; a line is its project, need, expected a
 
 it('shows a heading only for a section that has lines', () => {
   render({ projects: [project('cate')], closedWorkspaces: 0, rows: [ligne('/a/cate#n1')] })
-  expect([...host.querySelectorAll('h2')].map((heading) => heading.textContent)).toEqual(['À faire'])
+  expect([...host.querySelectorAll('h2')].map((heading) => heading.textContent)).toEqual(['À toi'])
 })
 
 it('says nothing waits, how many projects are watched and how many workspaces are not open', () => {

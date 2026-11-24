@@ -18,16 +18,14 @@ const GROUPES: Array<[FicheEtat | 'enFile', string]> = [
 /** 11000 as « 11 000 »; an unknown amount is « inconnu », never 0. */
 const jetons = (value: number | null): string => value === null ? 'inconnu' : String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 
-/** The backlog the regisseur published: the fiches by state, a checkbox on each
- *  prête and « Lancer (n) », consumed against budget on each lancée. It reads
- *  nothing and writes nothing: « Lancer » sends `fiches.lancer`, the regisseur plans. */
-export default function Backlog({ backlog, send }: { backlog: BacklogView; send(op: AgenceOp): Promise<unknown> }) {
+/** What the human launches from « À toi »: a checkbox on each prête and « Lancer (n) ».
+ *  « Lancer » sends `fiches.lancer`, the regisseur plans. */
+export function LancerPretes({ backlog, send }: { backlog: BacklogView; send(op: AgenceOp): Promise<unknown> }) {
   const [checked, setChecked] = useState<string[]>([])
   const action = useAction()
   const pretes = new Set(backlog.fiches.filter((fiche) => fiche.etat === 'prête' && !backlog.enFile.includes(fiche.id)).map((fiche) => fiche.id))
   // A fiche that left prête (launched elsewhere) is no longer part of the batch.
   const ids = checked.filter((id) => pretes.has(id))
-  const total = totalLot(backlog.fiches)
   const toggle = (id: string) => setChecked(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id])
   const launch = () => void action.run('lancer', async () => {
     const result = await send({ kind: 'fiches.lancer', ids }) as AgenceOpResult
@@ -36,11 +34,41 @@ export default function Backlog({ backlog, send }: { backlog: BacklogView; send(
     return null
   })
 
+  const prêtes = backlog.fiches.filter((fiche) => pretes.has(fiche.id))
+  if (prêtes.length === 0) return null
+  return (
+    <section aria-label="Fiches à lancer" className="border-t border-subtle px-3 py-2 text-[12px]">
+      <h3 className="mb-1 text-secondary">{`Fiches prêtes à lancer (${prêtes.length})`}</h3>
+      <ul>
+        {prêtes.map((fiche) => (
+          <li key={fiche.id} className="flex items-baseline gap-x-2 py-0.5">
+            <input type="checkbox" className="shrink-0 text-primary accent-agent" data-fiche={fiche.id} aria-label={`${fiche.id} ${fiche.titre}`} checked={ids.includes(fiche.id)} onChange={() => toggle(fiche.id)} />
+            <span className="min-w-0 flex-1 break-words text-primary">{`${fiche.id} ${fiche.titre}`}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1.5 flex items-center gap-2">
+        <ActionButton
+          className={ACTION}
+          disabled={ids.length === 0 || backlog.erreur !== null}
+          busy={action.active === 'lancer'}
+          done={action.done === 'lancer'}
+          onClick={launch}
+        >
+          {`Lancer (${ids.length})`}
+        </ActionButton>
+        {action.error && <span className="min-w-0 break-words text-primary">{action.error}</span>}
+      </div>
+    </section>
+  )
+}
+
+/** The backlog the regisseur published: the fiches by state, consumed against
+ *  budget on each lancée. State only: what the human does is in « À toi ». */
+export default function Backlog({ backlog }: { backlog: BacklogView }) {
+  const total = totalLot(backlog.fiches)
   const line = (fiche: FicheView) => (
     <li key={fiche.id} data-testid="fiche" data-fiche={fiche.id} className="flex flex-wrap items-baseline gap-x-2 py-0.5">
-      {fiche.etat === 'prête' && !backlog.enFile.includes(fiche.id) && (
-        <input type="checkbox" className="shrink-0 text-primary accent-agent" data-fiche={fiche.id} aria-label={`${fiche.id} ${fiche.titre}`} checked={ids.includes(fiche.id)} onChange={() => toggle(fiche.id)} />
-      )}
       <span className="min-w-0 flex-1 break-words text-primary">{`${fiche.id} ${fiche.titre}`}{fiche.priorite && <span className="text-secondary">{` · ${fiche.priorite}`}</span>}</span>
       {/* On its own line: a long path beside the title squeezed it to one letter a line. */}
       {backlog.attentes[fiche.id] && fiche.etat === 'prête' && <span data-testid="attend" className="basis-full break-all text-secondary">{`attend : ${backlog.attentes[fiche.id]}`}</span>}
@@ -72,18 +100,6 @@ export default function Backlog({ backlog, send }: { backlog: BacklogView; send(
           )
       })}
       {total && <p data-testid="total" className="mt-1 text-secondary">{`Total des fiches lancées : ${jetons(total.consomme)} / ${jetons(total.budget)} jetons`}</p>}
-      <div className="mt-1.5 flex items-center gap-2">
-        <ActionButton
-          className={ACTION}
-          disabled={ids.length === 0 || backlog.erreur !== null}
-          busy={action.active === 'lancer'}
-          done={action.done === 'lancer'}
-          onClick={launch}
-        >
-          {`Lancer (${ids.length})`}
-        </ActionButton>
-        {action.error && <span className="min-w-0 break-words text-primary">{action.error}</span>}
-      </div>
     </section>
   )
 }

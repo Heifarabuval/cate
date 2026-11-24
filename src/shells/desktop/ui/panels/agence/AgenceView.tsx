@@ -203,7 +203,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {snapshot.pratiques?.champs && reglages
             ? <Reglages pratiques={snapshot.pratiques} disponible={snapshot.regisseur.state === 'running'} send={send} onClose={() => setReglages(false)} />
             : <>
-          {snapshot.backlog && !draft && <Backlog backlog={snapshot.backlog} send={send} />}
+          {snapshot.backlog && !draft && <Backlog backlog={snapshot.backlog} />}
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
             : snapshot.suivi
@@ -211,6 +211,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                 <SuiviList
                   workspaceId={workspaceId}
                   suivi={snapshot.suivi}
+                  backlog={snapshot.backlog}
                   questions={snapshot.questions}
                   send={send}
                   compact={compact}
