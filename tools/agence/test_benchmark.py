@@ -584,6 +584,25 @@ class Mesure(Specs):
 		self.assertEqual(r['temps_mural_s'], 66 * 60)
 		self.assertEqual(r['reprises'], 1)
 
+	def test_geste_annonce_par_l_orchestrateur_n_est_pas_humain(self):
+		# Marques posées par `machine` juste avant l'envoi de « lance » (11:00:00) et avant chaque fini (11:15:00, 12:05:00) :
+		# ces trois événements sont de machine ; les clics et « merci » (11:12:00), « autre » (12:00:00) restent humains.
+		p = os.path.join(self.racine, '14-outil.json')
+		with open(p) as f:
+			st = json.load(f)
+		st['machine'] = ['2026-01-01T10:59:50Z', '2026-01-01T11:14:50Z', '2026-01-01T12:04:50Z']
+		ecrire(p, json.dumps(st))
+		_, r = self.mesure()
+		self.assertEqual(r['temps_actif_s'], 30 + 60 + 180 + 115)
+		self.assertEqual(r['interventions'], 5)
+
+	def test_machine_pose_une_marque_dans_l_etat(self):
+		self.assertEqual(self.run_('machine', '14', 'outil').returncode, 2)  # rejeu non ouvert
+		ecrire(os.path.join(self.racine, 'ouvert.json'), json.dumps({'rejeu': '14-outil'}))
+		self.assertEqual(self.run_('machine', '14', 'outil').returncode, 0)
+		with open(os.path.join(self.racine, '14-outil.json')) as f:
+			self.assertEqual(len(json.load(f)['machine']), 1)
+
 	def test_clic_d_un_autre_besoin_compte(self):
 		with open(self.etat) as f:
 			st = json.load(f)
