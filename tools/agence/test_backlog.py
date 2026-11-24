@@ -23,8 +23,7 @@ import pratiques  # noqa: E402
 import test_lancer  # noqa: E402  (module seul : ses classes ne tournent pas deux fois)
 
 T0 = '2026-11-20T10:00:00+00:00'
-COMPLETE = {'type': 'tache', 'preuve': 'pr-merged:', 'priorite': 'P2', 'fichiers': ['src/a.ts'], 'budgetJetons': 10000,
-            'vision': 'FR-003'}
+COMPLETE = {'type': 'tache', 'preuve': 'pr-merged:', 'priorite': 'P2', 'fichiers': ['src/a.ts'], 'vision': 'FR-003'}
 
 
 class Schema(unittest.TestCase):
@@ -53,13 +52,6 @@ class Schema(unittest.TestCase):
 					backlog.modifier(b, 'F1', T0, titre=vide)
 				self.assertEqual(b['fiches'][0]['titre'], 'x')
 
-	def test_prete_sans_budget_jetons(self):
-		b = backlog.vide()
-		f = backlog.ajouter(b, 'x', T0, **{**COMPLETE, 'budgetJetons': None})
-		self.assertEqual(backlog.manques(f), [])
-		backlog.transition(b, 'F1', 'prête', T0)
-		self.assertEqual(f['etat'], 'prête')
-
 	def test_prete_exige_chaque_champ_seul(self):
 		vides = {'titre': '', 'type': None, 'preuve': None, 'priorite': None, 'fichiers': [], 'vision': ''}
 		for champ, vide in vides.items():
@@ -73,10 +65,12 @@ class Schema(unittest.TestCase):
 				self.assertIn(champ, str(cm.exception))
 				self.assertEqual(f['etat'], 'discussion')
 
-	def test_budget_nul_ou_negatif_refuse(self):
-		for v in (0, -5):
-			with self.subTest(v=v), self.assertRaises(backlog.Refus):
-				backlog.ajouter(backlog.vide(), 'x', T0, budgetJetons=v)
+	def test_fichier_ancien_avec_budget_jetons_l_ignore(self):  # coupe nette : le champ n'existe plus, un backlog.json ancien le perd
+		b = backlog.vide()
+		backlog.ajouter(b, 'x', T0)
+		b['fiches'][0]['budgetJetons'] = 10000
+		backlog.valider(b)
+		self.assertNotIn('budgetJetons', b['fiches'][0])
 
 	def test_prete_complete(self):
 		b = backlog.vide()
@@ -284,18 +278,17 @@ class Cli(Base):
 		for champ in ('preuve', 'priorite', 'fichiers', 'vision'):
 			self.assertIn(champ, err)
 		self.assertNotIn('titre', err)
-		self.assertNotIn('budgetJetons', err)
 		self.assertEqual(self.lit(self.fichier), avant)
 
 	def test_edit_puis_prete(self):
 		self.agence('fiche', 'add', 'x', '--type', 'idee')
 		code, _, err = self.agence('fiche', 'edit', 'F1', '--preuve', 'pr-merged:', '--priorite', 'P1', '--fichier', 'src/a.ts',
-		                           '--fichier', 'src/b/', '--budget-jetons', '20000', '--vision', 'FR-003')
+		                           '--fichier', 'src/b/', '--vision', 'FR-003')
 		self.assertEqual(code, 0, err)
 		self.assertEqual(self.agence('fiche', 'etat', 'F1', 'prête')[0], 0)
 		code, out, _ = self.agence('fiche', 'show', 'F1', '--json')
 		f = json.loads(out)
-		self.assertEqual((f['etat'], f['fichiers'], f['budgetJetons']), ('prête', ['src/a.ts', 'src/b/'], 20000))
+		self.assertEqual((f['etat'], f['fichiers']), ('prête', ['src/a.ts', 'src/b/']))
 
 	def test_etat_du_clic_refuse(self):
 		self.agence('fiche', 'add', 'x')
@@ -470,7 +463,7 @@ class Detections(unittest.TestCase):
 		b = backlog.vide()
 		f = backlog.ajouter(b, 'x', T0, **COMPLETE, decisions=['D1', 'D2'])
 		texte = backlog.brief(f, d['decisions'])
-		cles = ['titre', 'type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele', 'decisions']
+		cles = ['titre', 'type', 'priorite', 'preuve', 'fichiers', 'dependances', 'vision', 'modele', 'decisions']
 		lignes = texte.splitlines()
 		self.assertEqual(lignes[0], 'F1 : x')
 		self.assertEqual([l.split(' : ')[0] for l in lignes[1:len(cles)]], cles[1:])
@@ -553,11 +546,11 @@ class CliDetections(Base):
 		self.assertEqual(agence.plafond(agence.load()), 2)
 
 	def test_brief(self):
-		self.agence('fiche', 'add', 'x', '--fichier', 'src/a.ts', '--budget-jetons', '5000')
+		self.agence('fiche', 'add', 'x', '--fichier', 'src/a.ts')
 		code, out, _ = self.agence('fiche', 'brief', 'F1')
 		self.assertEqual(code, 0)
 		self.assertTrue(out.startswith('F1 : x\n'))
-		self.assertIn('budgetJetons : 5000', out)
+		self.assertNotIn('budgetJetons', out)
 
 
 class ModeleDefaut(Base):
@@ -806,7 +799,7 @@ class CliLiens(Base):
 	def test_doublon_prete_refusee_par_la_cli(self):
 		self.agence('fiche', 'add', 'x')
 		self.agence('fiche', 'add', 'y', '--doublon-de', 'F1', '--type', 'tache', '--preuve', 'pr-merged:', '--priorite', 'P2',
-		            '--fichier', 'src/a.ts', '--budget-jetons', '1000', '--vision', 'FR-003')
+		            '--fichier', 'src/a.ts', '--vision', 'FR-003')
 		code, _, err = self.agence('fiche', 'etat', 'F2', 'prête')
 		self.assertEqual(code, 1)
 		self.assertIn('F1', err)

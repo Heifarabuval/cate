@@ -174,7 +174,6 @@ export type FicheView = {
   titre: string
   etat: FicheEtat
   priorite: string | null
-  budgetJetons: number | null
   consomme: number | null
 }
 
@@ -190,18 +189,13 @@ export type BacklogView = {
   erreur: string | null
 }
 
-/** Consumed against budget over the lancées: each sum is null as soon as one of its
- *  terms is unknown (a partial sum would read as less than spent or allowed);
- *  null without a lancée. */
-export function totalLot(fiches: FicheView[]): { consomme: number | null; budget: number | null } | null {
+/** Tokens consumed over the lancées: null as soon as one term is unknown (a partial sum
+ *  would read as less than spent); null without a lancée. */
+export function totalLot(fiches: FicheView[]): { consomme: number | null } | null {
   const lancees = fiches.filter((fiche) => fiche.etat === 'lancée')
   if (lancees.length === 0) return null
-  const sum = (values: Array<number | null>): number | null =>
-    values.some((value) => value === null) ? null : values.reduce<number>((total, value) => total + value!, 0)
-  return {
-    consomme: sum(lancees.map((fiche) => fiche.consomme)),
-    budget: sum(lancees.map((fiche) => fiche.budgetJetons)),
-  }
+  const values = lancees.map((fiche) => fiche.consomme)
+  return { consomme: values.some((value) => value === null) ? null : values.reduce<number>((total, value) => total + value!, 0) }
 }
 
 export type AgenceSnapshot = {
@@ -286,9 +280,6 @@ export interface StateNeed {
   unblocks: string | null
   panels: string[]
   acceptance: string | null
-  budgetMin: number | null
-  /** Dollar budget (`need add --budget-usd`); absent from states written before it. */
-  budgetUsd?: number | null
   evidence: string | null
   status: 'open' | 'done' | string
   closeFailed: boolean
@@ -305,9 +296,6 @@ export interface StateNeed {
   worktree?: { path: string; branch: string } | null
   /** A panel seen without an agent that the regisseur offers to close. */
   orphan?: { panel: string; title: string } | null
-  /** True for a minutes overrun and for a dollar one. */
-  overBudget: boolean
-  overBudgetUsd?: boolean
   /** Last cost read per agent panel, in dollars; null when Cate gives none. */
   costByPanel?: Record<string, number | null>
   updated: string

@@ -2,14 +2,14 @@
  "_contrat": "Champ `backlog` que le régisseur publie dans son état à chaque tour (spec 010, lot 4) ; le panneau agence le lit tel quel (lot 5). Une fiche publiée porte au moins ces champs, noms de tools/agence/backlog.py, plus `consomme` (somme inputTokens + outputTokens des panneaux du besoin, null si aucune mesure lisible, jamais 0 à la place). `vagues` et `attentes` : le dernier `backlog.plan` des fiches prêtes ; `attentes` : id vers motif (« chevauche F1 », « plafond (4) », « dépendance F3 »). `erreur` : backlog.json ou decisions.json invalide, null sinon. Le clic « Lancer » poste /fiches/lancer avec le champ de formulaire ids=F2,F5 (ids séparés par des virgules).",
  "backlog": {
   "fiches": [
-   { "id": "F1", "titre": "Corriger le tri du suivi", "etat": "lancée", "priorite": "P1", "budgetJetons": 10000, "consomme": 11000 },
-   { "id": "F3", "titre": "Afficher le budget en jetons", "etat": "lancée", "priorite": "P2", "budgetJetons": 8000, "consomme": null },
-   { "id": "F2", "titre": "Renommer la section Bloquant", "etat": "prête", "priorite": "P1", "budgetJetons": 5000, "consomme": null },
-   { "id": "F4", "titre": "Tester la garde de l'interlocuteur", "etat": "prête", "priorite": "P2", "budgetJetons": 6000, "consomme": null },
-   { "id": "F5", "titre": "Documenter le backlog", "etat": "prête", "priorite": "P3", "budgetJetons": 2000, "consomme": null },
-   { "id": "F6", "titre": "Idée : lentilles au hasard", "etat": "discussion", "priorite": null, "budgetJetons": null, "consomme": null },
-   { "id": "F7", "titre": "Retirer la colonne Reste", "etat": "faite", "priorite": "P2", "budgetJetons": 3000, "consomme": 2500 },
-   { "id": "F8", "titre": "Stocker le backlog en SQLite", "etat": "abandonnée", "priorite": "P3", "budgetJetons": 4000, "consomme": null }
+   { "id": "F1", "titre": "Corriger le tri du suivi", "etat": "lancée", "priorite": "P1", "consomme": 11000 },
+   { "id": "F3", "titre": "Afficher les jetons consommés", "etat": "lancée", "priorite": "P2", "consomme": null },
+   { "id": "F2", "titre": "Renommer la section Bloquant", "etat": "prête", "priorite": "P1", "consomme": null },
+   { "id": "F4", "titre": "Tester la garde de l'interlocuteur", "etat": "prête", "priorite": "P2", "consomme": null },
+   { "id": "F5", "titre": "Documenter le backlog", "etat": "prête", "priorite": "P3", "consomme": null },
+   { "id": "F6", "titre": "Idée : lentilles au hasard", "etat": "discussion", "priorite": null, "consomme": null },
+   { "id": "F7", "titre": "Retirer la colonne Reste", "etat": "faite", "priorite": "P2", "consomme": 2500 },
+   { "id": "F8", "titre": "Stocker le backlog en SQLite", "etat": "abandonnée", "priorite": "P3", "consomme": null }
   ],
   "vagues": [["F5", "F4"], ["F2"]],
   "attentes": { "F2": "chevauche F1", "F4": "plafond (4)" },

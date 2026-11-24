@@ -424,7 +424,7 @@ it('keeps the policy line alone, without « Réglages », for a state without fi
 })
 
 const backlog: NonNullable<AgenceSnapshot['backlog']> = {
-  fiches: [{ id: 'F2', titre: 'Renommer la section', etat: 'prête', priorite: 'P1', budgetJetons: 5000, consomme: null }],
+  fiches: [{ id: 'F2', titre: 'Renommer la section', etat: 'prête', priorite: 'P1', consomme: null }],
   vagues: [['F2']],
   attentes: {},
   enFile: [],

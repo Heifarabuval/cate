@@ -352,13 +352,13 @@ class Etat(Base):
 		self.assertEqual((need['status'], need['evidence']), ('done', 'tests verts : 35/35'))
 
 	def test_need_add_options(self):
-		code, out = self.cli('need', 'add', '--kind', 'task', '--acceptance', 'tests verts', '--budget', '30',
+		code, out = self.cli('need', 'add', '--kind', 'task', '--acceptance', 'tests verts',
 		                     '--done-when', 'pr-merged:12', '--from', 'a1', 'Corriger le test')
 		self.assertEqual(code, 0)
 		need = self.state()['needs'][0]
 		self.assertEqual(out.strip(), need['id'])
-		self.assertEqual((need['acceptance'], need['budgetMin'], need['doneWhen'], need['source']),
-		                 ('tests verts', 30, 'pr-merged:12', 'a1'))
+		self.assertEqual((need['acceptance'], need['doneWhen'], need['source']),
+		                 ('tests verts', 'pr-merged:12', 'a1'))
 
 
 class Demarrage(Base):
@@ -1493,16 +1493,6 @@ class Tour(Base):
 		self.assertEqual(len([e for e in first if e[0] == 'notify']), 1)
 		self.assertFalse([e for e in second if e[0] == 'notify'])
 		self.assertTrue(self.state()['needs'][0]['agentBlocked'])
-
-	def test_budget_depasse_devient_bloquant(self):
-		self.booted()
-		with agence.tx() as st:
-			n, _ = agence.add_need(st, 'task', 'T', budget=10)
-			n['createdTs'] = 0.0
-		effects = self.tick(set(), now=11 * 60)
-		need = self.state()['needs'][0]
-		self.assertTrue(need['overBudget'])
-		self.assertTrue([e for e in effects if e[0] == 'notify'])
 
 	def test_action_heifara_constatee_previent_l_orchestrateur(self):
 		self.booted()
@@ -3742,7 +3732,7 @@ class CoutBesoin(Base):
 		self.need()
 		self.tick(None)
 		self.assertIn('coût inconnu', agence.page_suivi(self.state()))
-		self.assertFalse(self.n()['overBudget'])
+		self.assertFalse(agence.attend(self.n()))
 
 	def test_besoin_sans_agent_pas_de_ligne_cout(self):
 		self.need(panels=())
@@ -3794,16 +3784,6 @@ class CoutBesoin(Base):
 		self.tick({'a1': float('nan')})
 		self.assertEqual(self.n()['costByPanel'], {'a1': 2.0})
 
-	def test_budget_usd_refuse_zero_negatif_nan_infini(self):
-		self.booted()
-		for bad in ('0', '-1', 'nan', 'inf', '-inf', 'abc', ''):
-			err = io.StringIO()
-			with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
-				agence.main(['need', 'add', '--kind', 'task', f'--budget-usd={bad}', 'T'])
-			self.assertIn('--budget-usd', err.getvalue(), bad)
-		self.assertFalse(self.state()['needs'])
-		self.assertEqual(self.cli('need', 'add', '--kind', 'task', '--budget-usd', '0.5', 'T')[0], 0)
-
 	def test_total_partiel_dit_au_moins_sur_la_ligne_et_l_en_tete(self):
 		self.need(panels=('a1', 'a2'))
 		self.tick({'a1': 4.2, 'a2': None}, live=('o1', 'a1', 'a2'))
@@ -3822,38 +3802,16 @@ class CoutBesoin(Base):
 		self.need()
 		self.assertIn('dépense des agents : coût inconnu', agence.page_suivi(self.state()))
 
-	def test_budget_usd_enregistre(self):
-		self.booted()
-		self.assertEqual(self.cli('need', 'add', '--kind', 'task', '--budget-usd', '2.5', 'T')[0], 0)
-		self.assertEqual(self.n()['budgetUsd'], 2.5)
-		self.cli('need', 'add', '--kind', 'task', 'U')
-		self.assertIsNone(self.n(1)['budgetUsd'])
-
-	def test_depassement_du_budget_passe_le_besoin_en_bloquant_une_seule_notification(self):
-		self.need(budget_usd=2.0)
-		self.assertEqual(self.tick({'a1': 1.9}), [])
-		self.assertFalse(self.n()['overBudget'])
+	def test_besoin_au_dessus_de_son_budget_n_est_pas_bloquant(self):
+		self.need()
+		with agence.tx() as st:  # état écrit avant la suppression des budgets : les champs sont ignorés
+			st['needs'][0].update(budgetMin=1, budgetUsd=2.0, budgetJetons=1, overBudget=True, overBudgetUsd=True, createdTs=0)
 		effects = self.tick({'a1': 2.4})
-		self.assertTrue(self.n()['overBudget'] and self.n()['overBudgetUsd'])
-		self.assertTrue(agence.attend(self.n()))
-		self.assertEqual([e for e in effects if e[0] == 'notify' and 'Budget' in e[2]][0][1], 'o1')
+		self.assertFalse(agence.attend(self.n()))
+		self.assertFalse([e for e in effects if e[0] == 'notify' and 'udget' in e[2]])
 		page = agence.page_suivi(self.state())
-		self.assertIn('budget de 2.00 $ dépassé', page)
-		self.assertLess(page.index('À toi'), page.index('Implémenter'))
-		self.assertFalse([e for e in self.tick({'a1': 2.6}) if e[0] == 'notify' and 'Budget' in e[2]])
-
-	def test_budget_min_garde_son_message(self):
-		self.need(budget=1)
-		with agence.tx() as st:
-			st['needs'][0]['createdTs'] = 0
-		self.tick({})
-		self.assertIn('budget de 1 min dépassé', agence.page_suivi(self.state()))
-		self.assertNotIn('$ dépassé', agence.page_suivi(self.state()))
-
-	def test_budget_sans_cout_lisible_ne_bloque_pas(self):
-		self.need(budget_usd=2.0)
-		self.tick(None)
-		self.assertFalse(self.n()['overBudget'])
+		self.assertNotIn('dépassé', page)
+		self.assertIn('coût 2,40 $', page)
 
 	def test_lire_usage_rend_le_cout_par_panneau(self):
 		self.run.reply(['cate', 'agent', 'usage'], [
@@ -3886,16 +3844,16 @@ class CoutBesoin(Base):
 	def test_besoin_ancien_sans_les_cles_se_rend(self):
 		self.need()
 		with agence.tx() as st:
-			for k in ('budgetUsd', 'costByPanel', 'overBudgetUsd'):
+			for k in ('costByPanel',):
 				st['needs'][0].pop(k, None)
 		self.tick({'a1': 1.0})
 		self.assertIn('coût 1,00 $', agence.page_suivi(self.state()))
 
-	def test_aide_need_add_dit_le_budget_en_dollars(self):
-		with contextlib.redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()) as out:
-			with self.assertRaises(SystemExit):
-				agence.main(['need', 'add', '--help'])
-		self.assertIn('--budget-usd', out.getvalue())
+	def test_options_budget_retirees(self):
+		self.booted()
+		for opt in ('--budget', '--budget-usd', '--budget-jetons'):
+			with self.subTest(opt=opt), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+				agence.main(['need', 'add', '--kind', 'task', opt, '5', 'T'])
 
 
 class JaugeContexte(Base):
@@ -4026,7 +3984,7 @@ class LancerSauteLaFile(Base):
 			b = backlog.charger(self.tmp)['backlog']
 			for titre in ('A', 'B', 'C'):
 				f = backlog.ajouter(b, titre, '2026-11-20T10:00:00+00:00', type='tache', preuve='pr-merged:', priorite='P2',
-				                    budgetJetons=10000, vision='FR-003', fichiers=[f'src/{titre}.ts'])
+				                    vision='FR-003', fichiers=[f'src/{titre}.ts'])
 				backlog.transition(b, f['id'], 'prête', '2026-11-20T10:00:00+00:00')
 			backlog.ecrire(self.tmp, 'backlog.json', b)
 
@@ -4081,7 +4039,6 @@ class InvariantValidation(Base):
 		('brouillon', 'valider', "need draft ouvert, draft à valider", '/draft/d1/drop'),
 		('permission', 'bloque', "need.agentBlocked et perm.choix lus à l'écran", '/perm/n1/oui'),
 		('besoin_humain', 'valider', "need owner humain sans carte", 'se ferme'),
-		('budget', 'bloque', "need.overBudget (budgetMin dépassé)", 'continuer, réduire ou arrêter'),
 		('worktree', 'valider', "need.worktree proposé après PR mergée", '/wt/n1/remove'),
 		('orphelin', 'valider', "need.orphan : panneau sans agent vu deux tours", '/orphan/n1/close'),
 		('fermeture_refusee', 'bloque', "need.closeFailed", 'à fermer à la main'),
@@ -4107,7 +4064,7 @@ class InvariantValidation(Base):
 			b = backlog.charger(self.tmp)['backlog']
 			for i in range(n):
 				f = backlog.ajouter(b, f'Fiche {i}', '2026-11-20T10:00:00+00:00', type='tache', preuve='pr-merged:', priorite='P2',
-				                    budgetJetons=10000, vision='FR-003', fichiers=[f'src/{i}.ts'])
+				                    vision='FR-003', fichiers=[f'src/{i}.ts'])
 				if etat == 'prête':
 					backlog.transition(b, f['id'], 'prête', '2026-11-20T10:00:00+00:00')
 			backlog.ecrire(self.tmp, 'backlog.json', b)
@@ -4130,8 +4087,6 @@ class InvariantValidation(Base):
 				agence.tick(st, {'a1'}, Permission.AGENT, {}, 1000.0, {'a1': ECRAN_HOOK})
 		elif cle == 'besoin_humain':
 			self.besoin(owner=agence.OWNER_HUMAIN, title='Valider le texte')
-		elif cle == 'budget':
-			self.besoin(overBudget=True, budgetMin=10)
 		elif cle == 'worktree':
 			self.besoin(owner=agence.OWNER_HUMAIN, kind='human', worktree={'path': '/x/n9-impl', 'branch': 'feat/x'})
 		elif cle == 'orphelin':
@@ -4178,7 +4133,7 @@ class InvariantValidation(Base):
 			if cle == 'permission':  # la réponse est tapée ; le tour suivant voit l'agent repartir
 				with agence.tx() as st:
 					agence.tick(st, {'a1'}, [{'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}], {}, 1000.0)
-		else:  # besoin_humain, budget, fermeture_refusee, agent_bloquant, agent_bloque_sans_panneau : la CLI ferme, aucun clic n'existe
+		else:  # besoin_humain, fermeture_refusee, agent_bloquant, agent_bloque_sans_panneau : la CLI ferme, aucun clic n'existe
 			self.cli('need', 'done', 'n1', '--evidence', 'ok')
 
 	# -- la vue et ses invariants
@@ -4256,7 +4211,7 @@ class InvariantValidation(Base):
 		self.verifie_vue()
 
 	def test_une_attente_cachee_fait_echouer_le_test(self):
-		self.construire('budget')
+		self.construire('fermeture_refusee')
 		with mock.patch.object(agence, 'attend', lambda n: False), self.assertRaises(AssertionError):
 			self.verifie_vue()
 

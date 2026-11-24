@@ -39,7 +39,6 @@ CHAMPS_FICHE = {
 	'dependances': _liste,
 	'remplace': _liste,  # spec 013 : cette fiche rend celles-ci caduques
 	'doublonDe': _liste,  # spec 013 : même besoin que celles-ci
-	'budgetJetons': lambda v: v is None or (type(v) is int and v > 0),
 	'vision': _txt_nul,
 	'modele': _txt_nul,
 	'decisions': _liste,
@@ -60,7 +59,7 @@ CHAMPS_DECISION = {
 	'statut': lambda v: v in STATUTS,
 	'revoqueePar': _txt_nul,
 }
-EDITABLES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'budgetJetons', 'vision',
+EDITABLES = ('titre', 'type', 'preuve', 'priorite', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'vision',
              'modele', 'decisions')
 LIENS = ('dependances', 'remplace', 'doublonDe')  # listes d'ids de fiches : inconnu ou cycle refusé
 NOUVEAUX = ('remplace', 'doublonDe')  # spec 013, coupe nette : un backlog.json plus ancien ne les a pas
@@ -114,6 +113,9 @@ def _objets(contenu, racine_cles, coll, champs, nom):
 
 
 def valider(b):
+	for f in b['fiches'] if isinstance(b, dict) and isinstance(b.get('fiches'), list) else ():  # coupe nette : budgetJetons n'existe plus, un fichier ancien le perd
+		if isinstance(f, dict):
+			f.pop('budgetJetons', None)
 	_objets(b, ('seq', 'fiches', 'derniereRevue'), 'fiches', CHAMPS_FICHE, 'backlog.json')
 	if not _txt_nul(b['derniereRevue']):
 		raise Invalide('backlog.json : derniereRevue doit être une date ou null')
@@ -422,11 +424,10 @@ def revue_due(derniere, premiere_fiche, maintenant, jours=7):
 	return depuis is not None and _age(depuis, maintenant) >= timedelta(days=jours)
 
 
-def revue(b, d, depassements, maintenant):
-	"""Contenu de la carte de revue de cap (FR-009) : fiches périmées, besoins dont le budget est dépassé (tels que
-	passés), décisions structurantes des 7 derniers jours, fiches dont la vision est hors référentiel ; None si rien."""
+def revue(b, d, maintenant):
+	"""Contenu de la carte de revue de cap (FR-009) : fiches périmées,
+	décisions structurantes des 7 derniers jours, fiches dont la vision est hors référentiel ; None si rien."""
 	r = {'perimees': perimees(b['fiches'], maintenant),
-	     'depassements': list(depassements),
 	     'structurantes': [x for x in d['decisions'] if x['structurante'] and _age(x['date'], maintenant) <= timedelta(days=7)],
 	     'horsVision': [f for f in b['fiches'] if f['etat'] not in TERMINAUX and f['vision'] and f['vision'] not in VISION]}
 	return r if any(r.values()) else None
@@ -454,7 +455,7 @@ def brief(fiche, decisions, plan=None, ecriture=()):
 	liees = [x for x in decisions if x['id'] in fiche['decisions'] and x['statut'] == 'active']
 	return '\n'.join([f"{fiche['id']} : {fiche['titre']}"] +
 	                 [f'{c} : {val(fiche[c])}' for c in
-	                  ('type', 'priorite', 'preuve', 'fichiers', 'dependances', 'budgetJetons', 'vision', 'modele')] +
+	                  ('type', 'priorite', 'preuve', 'fichiers', 'dependances', 'vision', 'modele')] +
 	                 [f"decisions : {val([x['id'] for x in liees])}"] +
 	                 [f"  {x['id']} : {x['objet']} ; {x['pourquoi']}" for x in liees] +
 	                 (['plan : faire valider le plan avant le code (agence ask, attendre le clic)']

@@ -63,8 +63,8 @@ export function LancerPretes({ backlog, send }: { backlog: BacklogView; send(op:
   )
 }
 
-/** The backlog the regisseur published: the fiches by state, consumed against
- *  budget on each lancée. State only: what the human does is in « À toi ». */
+/** The backlog the regisseur published: the fiches by state, tokens consumed
+ *  on each lancée. State only: what the human does is in « À toi ». */
 export default function Backlog({ backlog }: { backlog: BacklogView }) {
   const total = totalLot(backlog.fiches)
   const line = (fiche: FicheView) => (
@@ -72,7 +72,7 @@ export default function Backlog({ backlog }: { backlog: BacklogView }) {
       <span className="min-w-0 flex-1 break-words text-primary">{`${fiche.id} ${fiche.titre}`}{fiche.priorite && <span className="text-secondary">{` · ${fiche.priorite}`}</span>}</span>
       {/* On its own line: a long path beside the title squeezed it to one letter a line. */}
       {backlog.attentes[fiche.id] && fiche.etat === 'prête' && <span data-testid="attend" className="basis-full break-all text-secondary">{`attend : ${backlog.attentes[fiche.id]}`}</span>}
-      {fiche.etat === 'lancée' && <span className="shrink-0 text-secondary">{`${jetons(fiche.consomme)} / ${jetons(fiche.budgetJetons)} jetons`}</span>}
+      {fiche.etat === 'lancée' && <span className="shrink-0 text-secondary">{`${jetons(fiche.consomme)} jetons`}</span>}
     </li>
   )
 
@@ -99,7 +99,7 @@ export default function Backlog({ backlog }: { backlog: BacklogView }) {
             </div>
           )
       })}
-      {total && <p data-testid="total" className="mt-1 text-secondary">{`Total des fiches lancées : ${jetons(total.consomme)} / ${jetons(total.budget)} jetons`}</p>}
+      {total && <p data-testid="total" className="mt-1 text-secondary">{`Total des fiches lancées : ${jetons(total.consomme)} jetons`}</p>}
     </section>
   )
 }

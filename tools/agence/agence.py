@@ -250,7 +250,7 @@ def find(st, coll, oid):
 
 
 def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=None, source=None,
-             panels=(), done_when=None, acceptance=None, budget=None, model=None, effort=None, budget_usd=None, issue=None, budget_jetons=None):
+             panels=(), done_when=None, acceptance=None, model=None, effort=None, issue=None):
 	"""Ajoute un besoin ; un besoin ouvert de même (kind, ref) est rendu tel quel (FR-006)."""
 	if kind not in KINDS:
 		raise Refus(f'kind inconnu : {kind} ({", ".join(KINDS)})')
@@ -262,8 +262,8 @@ def add_need(st, kind, title, ref=None, owner='agent', blocking=False, unblocks=
 				return n, False
 	n = {'id': new_id(st, 'n'), 'kind': kind, 'title': title, 'ref': ref, 'owner': owner, 'blocking': blocking,
 	     'unblocks': unblocks, 'source': source, 'panels': list(panels), 'doneWhen': done_when,
-	     'issue': issue, 'acceptance': acceptance, 'budgetMin': budget, 'budgetUsd': budget_usd, 'budgetJetons': budget_jetons, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
-	     'closeFailed': False, 'agentBlocked': False, 'overBudget': False,
+	     'issue': issue, 'acceptance': acceptance, 'model': model, 'effort': effort, 'evidence': None, 'status': 'open',
+	     'closeFailed': False, 'agentBlocked': False,
 	     'created': now_iso(), 'createdTs': time.time(), 'updated': now_iso()}
 	st['needs'].append(n)
 	return n, True
@@ -538,8 +538,7 @@ def bloque_sur_saisie(a):
 
 def attend(n):
 	"""Ligne ouverte qui attend l'humain : liste « À toi » du suivi (le bloquant d'abord)."""
-	return n['status'] == 'open' and (n['owner'] == OWNER_HUMAIN or n['blocking'] or n['overBudget']
-	                                  or n['agentBlocked'] or n['closeFailed'])
+	return n['status'] == 'open' and (n['owner'] == OWNER_HUMAIN or n['blocking'] or n['agentBlocked'] or n['closeFailed'])
 
 
 def action_attendue(st, n):
@@ -556,7 +555,7 @@ def action_attendue(st, n):
 		return 'lire et envoyer le brouillon'
 	if n['kind'] == 'human' and (n['ref'] or '').startswith('q'):
 		return 'répondre'
-	return 'budget dépassé' if n['overBudget'] else 'fermeture refusée' if n['closeFailed'] else 'à faire'
+	return 'fermeture refusée' if n['closeFailed'] else 'à faire'
 
 
 def log(msg):
@@ -586,16 +585,6 @@ def free_port():
 
 
 # ---------- démarrage ----------
-
-def dollars_positifs(v):
-	try:
-		c = float(v)
-	except ValueError:
-		c = None
-	if c is None or not math.isfinite(c) or c <= 0:
-		raise argparse.ArgumentTypeError(f'montant en dollars > 0 attendu (ni 0, ni négatif, ni NaN, ni infini), reçu {v!r}')
-	return c
-
 
 def entier_positif(v):
 	if not v.isdigit() or int(v) < 1:
@@ -779,8 +768,7 @@ def cmd_need(a):
 			owner = OWNER_HUMAIN if a.owner == 'humain' else a.owner
 			n, _ = add_need(st, a.kind, a.title, ref=a.ref, owner=owner, blocking=a.blocking, unblocks=a.unblocks,
 			                source=a.frm, panels=a.panel or (), done_when=done_when, acceptance=a.acceptance,
-			                budget=a.budget, model=a.model, effort=a.effort, budget_usd=a.budget_usd, issue=a.issue,
-			                budget_jetons=a.budget_jetons)
+			                model=a.model, effort=a.effort, issue=a.issue)
 			n.setdefault('origines', origines)  # besoin rendu tel quel (doublon) : ses origines restent
 			if by_orch:
 				launch(n, a.panel)
@@ -863,7 +851,7 @@ def fiche_texte(f, long=False):
 	if not long:
 		return ligne
 	champs = [(c, ', '.join(f[c]) if isinstance(f[c], list) else f[c]) for c in
-	          ('preuve', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'budgetJetons', 'vision', 'modele', 'decisions', 'besoin',
+	          ('preuve', 'fichiers', 'dependances', 'remplace', 'doublonDe', 'vision', 'modele', 'decisions', 'besoin',
 	           'creee', 'maj')]
 	return '\n'.join([ligne] + [f'  {c} : {v}' for c, v in champs if v not in (None, '')] +
 	                 [f"  {j['ts']} {j['by']} : {j['text']}" for j in f['journal']])
@@ -886,7 +874,7 @@ def cmd_fiche(a):
 	"""Fiches du backlog : add, edit, etat et note écrivent ; list et show lisent. Lancée, faite, abandonnée : au clic."""
 	import backlog  # voir registres()
 	champs = {'titre': getattr(a, 'titre_opt', None), 'type': a.type, 'preuve': a.preuve, 'priorite': a.priorite,
-	          'fichiers': a.fichier, 'dependances': a.dependance, 'remplace': a.remplace, 'doublonDe': a.doublon_de, 'budgetJetons': a.budget_jetons, 'vision': a.vision,
+	          'fichiers': a.fichier, 'dependances': a.dependance, 'remplace': a.remplace, 'doublonDe': a.doublon_de, 'vision': a.vision,
 	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
 	champs = {k: v for k, v in champs.items() if v is not None}
 	propose = a.action == 'add' and 'modele' not in champs and politique(agir=True)['valeurs']  # spec 010, lot 7
@@ -1801,14 +1789,13 @@ def revue_tour(st, r, maintenant):
 	if not backlog.revue_due(b['derniereRevue'], min((f['creee'] for f in b['fiches']), default=None), maintenant):
 		return
 	b['derniereRevue'] = maintenant
-	c = backlog.revue(b, r['decisions'], [n for n in st['needs'] if n['status'] == 'open' and n['overBudget']], maintenant)
+	c = backlog.revue(b, r['decisions'], maintenant)
 	if not c:
 		return
 	for q in st['questions']:
 		if q['answer'] is None and 'clics' in q and q['question'].startswith('Revue de cap'):  # la carte du régisseur, jamais une question d'agent
 			fermer_carte(st, q, 'remplacée par la revue suivante', 'dropped')
 	parties = [('en discussion depuis plus de 14 jours', [f['id'] for f in c['perimees']]),
-	           ('budgets dépassés', [f"{n['id']} {n['title']}" for n in c['depassements']]),
 	           ('décisions structurantes de la semaine', [f"{x['id']} {x['objet']}" for x in c['structurantes']]),
 	           ('vision hors référentiel', [f"{f['id']} ({f['vision']})" for f in c['horsVision']])]
 	fs = c['perimees']
@@ -1855,7 +1842,7 @@ def lancer_fiches(st, r, ids, entete):
 	for fid in p['part']:
 		f = par_id[fid]
 		n, _ = add_need(st, 'task', f['titre'], ref=f'fiche:{fid}', done_when=f['preuve'],
-		                budget_jetons=f['budgetJetons'], model=f['modele'])
+		                model=f['modele'])
 		note(n, f'fiche {fid} lancée au clic', 'clic')
 		backlog.noter(b, fid, f"lancée (besoin {n['id']})", maintenant, par='clic')
 		f.update(etat='lancée', besoin=n['id'])
@@ -1879,7 +1866,7 @@ def vue_backlog(st, r, erreur=None):
 	fs, needs = r['backlog']['fiches'], {n['id']: n for n in st['needs']}
 	prêtes = {f['id'] for f in fs if f['etat'] == 'prête'}
 	p = plan_lancement(st, fs, [f for f in fs if f['etat'] == 'prête'])
-	return {'fiches': [{**{k: f[k] for k in ('id', 'titre', 'etat', 'priorite', 'budgetJetons')},
+	return {'fiches': [{**{k: f[k] for k in ('id', 'titre', 'etat', 'priorite')},
 	                    'consomme': jetons_besoin(needs[f['besoin']]) if f['besoin'] in needs else None} for f in fs],
 	        'vagues': p['vagues'], 'attentes': p['attente'], 'enFile': [i for i in st['lot'] if i in prêtes], 'erreur': None}
 
@@ -2094,14 +2081,9 @@ def need_line(st, n):
 	if n.get('seen'):
 		m, ef = n['seen']['model'], n['seen']['effort']
 		meta.append(f"modèle {e(m)}" + (f", effort {e(ef)}" if ef else '') if m else 'modèle inconnu')
-	if n.get('overBudgetUsd'):
-		meta.append(f"budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(cout_besoin(n))}) : continuer, réduire ou arrêter ?")
-	if n.get('budgetJetons'):  # comme le coût : le consommé lu, ou « consommé inconnu », jamais 0
-		j = jetons_besoin(n)
-		meta.append('consommé inconnu' if j is None else f"{jetons(j)} / {jetons(n['budgetJetons'])} jetons"
-		            + (' dépassé : continuer, réduire ou arrêter ?' if n.get('overBudgetJetons') else ''))
-	if n['overBudget'] and n['budgetMin'] and not n.get('overBudgetUsd') and not n.get('overBudgetJetons'):
-		meta.append(f"budget de {e(n['budgetMin'])} min dépassé : continuer, réduire ou arrêter ?")
+	j = jetons_besoin(n)  # jetons lus, jamais un 0 inventé : rien sans mesure
+	if j is not None:
+		meta.append(f'{jetons(j)} jetons')
 	if n.get('seen') or n.get('costByPanel'):  # un agent est suivi : sa dépense, ou « coût inconnu » (tiret de Cate, usage illisible)
 		c = cout_besoin(n)
 		meta.append(f"coût {cout_texte(c, None in n['costByPanel'].values())}" if c is not None else 'coût inconnu')
@@ -2568,21 +2550,10 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 			n['contexte'] = ctx
 		else:
 			n.pop('contexte', None)
-		c = cout_besoin(n)
-		if n.get('budgetUsd') and c is not None and c > n['budgetUsd'] and not n.get('overBudgetUsd'):
-			n['overBudget'] = n['overBudgetUsd'] = True
-			once(f"budget-usd:{n['id']}", orch, f"Budget de {n['budgetUsd']:.2f} $ dépassé (coût {dollars(c)}) : {n['title']} ({n['id']}).")
 		for p in n['panels']:  # dernier relevé de jetons par panneau, comme le coût ; illisible : rien posé
 			j = backlog.consomme(mesures, [p])
 			if j is not None:
 				n.setdefault('jetonsParPanneau', {})[p] = j
-		j = jetons_besoin(n)
-		if n.get('budgetJetons') and j is not None and j > n['budgetJetons'] and not n.get('overBudgetJetons'):
-			n['overBudget'] = n['overBudgetJetons'] = True
-			once(f"budget-jetons:{n['id']}", orch, f"Budget en jetons dépassé ({jetons(j)} / {jetons(n['budgetJetons'])} jetons) : {n['title']} ({n['id']}).")
-		if n['budgetMin'] and now - n.get('createdTs', now) > n['budgetMin'] * 60:
-			n['overBudget'] = True
-			once(f"budget:{n['id']}", orch, f"Budget de {n['budgetMin']} min dépassé : {n['title']} ({n['id']}).")
 	if panneaux is not None:  # un orphelin n'est proposé qu'au 2e tour ; l'offre se clôt si le panneau meurt ou n'en est plus un
 		candidats = orphelins(st, panneaux, agents)
 		st['orphanVus'] = {p: st['orphanVus'].get(p, 0) + 1 for p in candidats}
@@ -4072,9 +4043,6 @@ def parser():
 	                 "tests-local, report (draft-sent:ID est interne) ; sans elle, une tâche reçoit celle de la politique (preuve)")
 	add.add_argument('--issue', help="issue de la tâche (exigée si la politique dit issue : obligatoire)")
 	add.add_argument('--acceptance')
-	add.add_argument('--budget', type=int)
-	add.add_argument('--budget-usd', type=dollars_positifs, help="budget en dollars (la devise de cate agent usage, sans conversion) : le besoin passe en Bloquant au dépassement")
-	add.add_argument('--budget-jetons', type=entier_positif, help="budget en jetons (entrée + sortie des panneaux du besoin, cate agent usage) : le besoin passe en Bloquant au dépassement")
 	add.add_argument('--model', help="modèle voulu pour l'agent du besoin (id ou alias de l'agent CLI), que l'orchestrateur passe à cate agent start --model")
 	add.add_argument('--effort', choices=EFFORTS, help="niveau d'effort voulu (Claude Code), passé à cate agent start --effort")
 	pa = ns.add_parser('panel')
@@ -4113,7 +4081,6 @@ def parser():
 		x.add_argument('--dependance', action='append', help='id de fiche (répétable)')
 		x.add_argument('--remplace', action='append', help='id de fiche que celle-ci rend caduque (répétable) : elle ne passe plus prête')
 		x.add_argument('--doublon-de', action='append', help="id de fiche d'origine (répétable) : celle-ci ne passe plus prête")
-		x.add_argument('--budget-jetons', type=int)
 		x.add_argument('--vision', help='point de la vision servi (couche ou FR de la spec 009)')
 		x.add_argument('--modele')
 		x.add_argument('--decision', action='append', help='id de décision liée (répétable)')

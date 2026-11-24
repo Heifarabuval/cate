@@ -111,21 +111,19 @@ it('shows the file error banner and launches nothing', () => {
   expect(lancer().disabled).toBe(true)
 })
 
-it('shows consumed against budget on each lancée, « inconnu » when unknown, never 0', () => {
+it('shows consumed tokens on each lancée, « inconnu » when unknown, never 0', () => {
   render()
-  expect(row('F1').textContent).toContain('11 000 / 10 000 jetons')
-  expect(row('F3').textContent).toContain('inconnu / 8 000 jetons')
+  expect(row('F1').textContent).toContain('11 000 jetons')
+  expect(row('F3').textContent).toContain('inconnu jetons')
   expect(row('F3').textContent).not.toContain('0 /')
   expect(row('F2').textContent).not.toContain('jetons')
 })
 
-it('totals the lancées: unknown when one consumption or one budget is unknown', () => {
+it('totals the lancées: unknown when one consumption is unknown', () => {
   render()
-  expect(host.querySelector('[data-testid="total"]')!.textContent).toBe('Total des fiches lancées : inconnu / 18 000 jetons')
+  expect(host.querySelector('[data-testid="total"]')!.textContent).toBe('Total des fiches lancées : inconnu jetons')
   render({ ...published, fiches: published.fiches.map((f) => f.id === 'F3' ? { ...f, consomme: 4000 } : f) })
-  expect(host.querySelector('[data-testid="total"]')!.textContent).toBe('Total des fiches lancées : 15 000 / 18 000 jetons')
-  render({ ...published, fiches: published.fiches.map((f) => f.id === 'F3' ? { ...f, consomme: 4000, budgetJetons: null } : f) })
-  expect(host.querySelector('[data-testid="total"]')!.textContent).toBe('Total des fiches lancées : 15 000 / inconnu jetons')
+  expect(host.querySelector('[data-testid="total"]')!.textContent).toBe('Total des fiches lancées : 15 000 jetons')
 })
 
 it('has no total without a lancée', () => {
