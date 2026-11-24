@@ -1,6 +1,6 @@
 {
- "source": "hypothèse 011, à confirmer par l'humain avant le premier rejeu",
- "temps_actif_max": 0.7,
+ "source": "validé par l'humain le 2026-11-24",
+ "temps_actif_max": 0.75,
  "jetons_max": 1.5,
  "non_conclusif": [0.65, 0.75],
  "plafond_s": 180,

@@ -242,8 +242,9 @@ class Rejeu(DepotJetable):
 
 	def test_debut_refuse_tant_que_le_seuil_est_une_hypothese(self):
 		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
-		shutil.copy(os.path.join(ROOT, 'specs', '011-mesure-benchmark', 'seuil.json'), self.specs)  # le seuil livré
-		self.git(self.specs, 'commit', '-qam', 'seuil livré')
+		ecrire(os.path.join(self.specs, 'seuil.json'), json.dumps({'source': 'hypothèse 011, à confirmer par Heifara',
+			'temps_actif_max': 0.7, 'jetons_max': 1.5, 'non_conclusif': [0.65, 0.75], 'plafond_s': 180, 'remarques_marge': 0.1}))
+		self.git(self.specs, 'commit', '-qam', 'seuil hypothèse')
 		r = self.run_('debut', '50', 'nu')
 		self.assertEqual(r.returncode, 2, r.stderr)
 		self.assertIn("hypothèse : l'humain confirme les valeurs et change la source", r.stderr)

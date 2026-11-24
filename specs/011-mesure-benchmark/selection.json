@@ -1,0 +1,473 @@
+{
+ "campagne": [
+  {
+   "issue": 131,
+   "premier": "nu"
+  },
+  {
+   "issue": 1,
+   "premier": "nu"
+  },
+  {
+   "issue": 3,
+   "premier": "nu"
+  },
+  {
+   "issue": 195,
+   "premier": "outil"
+  },
+  {
+   "issue": 170,
+   "premier": "outil"
+  },
+  {
+   "issue": 16,
+   "premier": "nu"
+  },
+  {
+   "issue": 69,
+   "premier": "outil"
+  },
+  {
+   "issue": 82,
+   "premier": "outil"
+  },
+  {
+   "issue": 83,
+   "premier": "nu"
+  },
+  {
+   "issue": 196,
+   "premier": "nu"
+  }
+ ],
+ "comparaison": {
+  "issue": 210
+ },
+ "depot": "Heifarabuval/cate",
+ "graine": 20261124,
+ "pilotes": [
+  {
+   "issue": 199,
+   "premier": "nu"
+  },
+  {
+   "issue": 26,
+   "premier": "nu"
+  }
+ ],
+ "reserve": [
+  {
+   "issue": 142,
+   "premier": "outil"
+  },
+  {
+   "issue": 79,
+   "premier": "nu"
+  },
+  {
+   "issue": 74,
+   "premier": "outil"
+  },
+  {
+   "issue": 72,
+   "premier": "outil"
+  },
+  {
+   "issue": 9,
+   "premier": "nu"
+  }
+ ],
+ "vivier": [
+  {
+   "base": "4ccb5120f4e92b869bfad79887470033a30c3a4b",
+   "head": "9a36c479f1c65138ce931d5170ed1c7d0dc0bb81",
+   "issue": 1,
+   "pr": 2,
+   "taille": 324,
+   "tests": [
+    "src/cli/engine.test.ts",
+    "src/panels/framework/runtime/framework.test.ts",
+    "src/runtime/daemon/daemon.workspace.test.ts",
+    "src/services/agents/runtime/start.test.ts"
+   ]
+  },
+  {
+   "base": "bba73a65d0b1ea0869f03bfa2f8f4d93a10c0d35",
+   "head": "49830674d99da7a4021c876692e40708617b0646",
+   "issue": 3,
+   "pr": 8,
+   "taille": 610,
+   "tests": [
+    "src/cli/engine.test.ts",
+    "src/services/agents/runtime/api.test.ts",
+    "src/services/agents/runtime/conversations.test.ts",
+    "src/services/agents/runtime/core.test.ts",
+    "src/services/agents/runtime/doneWhen.test.ts",
+    "src/services/agents/runtime/start.test.ts",
+    "src/services/agents/runtime/status.test.ts"
+   ]
+  },
+  {
+   "base": "944c9b23da38eee07963afdfe1a85f5c9cf2771b",
+   "head": "a407c3f18bf65b493b861c363cbeef328a18e064",
+   "issue": 11,
+   "pr": 13,
+   "taille": 294,
+   "tests": [
+    "src/cli/engine.test.ts",
+    "src/services/agents/contract/launch.test.ts",
+    "src/services/agents/runtime/api.test.ts",
+    "src/services/agents/runtime/start.test.ts",
+    "src/services/agents/runtime/terminal.test.ts"
+   ]
+  },
+  {
+   "base": "901514143c4ec6032c27fa09c8d941ee6435107e",
+   "head": "c8a8ce0bda264bf07571e3338dd5b22c8b28558e",
+   "issue": 12,
+   "pr": 14,
+   "taille": 226,
+   "tests": [
+    "src/services/agents/runtime/terminal.test.ts"
+   ]
+  },
+  {
+   "base": "6505d44107df1476288b1d97992be128ad46affc",
+   "head": "6d9cb2961456fb1b8fcd15fb6a7c72f4d86a90f5",
+   "issue": 16,
+   "pr": 20,
+   "taille": 698,
+   "tests": [
+    "src/cli/engine.test.ts",
+    "src/services/agents/runtime/api.test.ts",
+    "src/services/agents/runtime/conversations.test.ts",
+    "src/services/agents/runtime/core.test.ts",
+    "src/services/agents/runtime/stamps.test.ts",
+    "src/services/agents/runtime/start.test.ts",
+    "src/services/agents/runtime/terminal.test.ts",
+    "src/services/agents/runtime/usage/usage.test.ts"
+   ]
+  },
+  {
+   "base": "4c640482500e76e99728fea34a12b344d9a06188",
+   "head": "0f76b2e683cb01a364a1fead46f7d142011233a7",
+   "issue": 26,
+   "pr": 27,
+   "taille": 199,
+   "tests": [
+    "src/client/connections/runtimeUpdate.test.ts",
+    "src/client/connections/status.test.ts",
+    "src/shells/desktop/main/runtimeBundle.test.ts",
+    "src/shells/desktop/ui/app/workspace/RuntimeMismatch.test.tsx"
+   ]
+  },
+  {
+   "base": "c583921115acd958946c7e78da7ac079dffe38d7",
+   "head": "9b14cf7e8111fc3c7e78172ef53cab7fdf6ee4f4",
+   "issue": 32,
+   "pr": 33,
+   "taille": 224,
+   "tests": [
+    "src/shells/desktop/ui/panels/agence/QuestionCard.test.tsx",
+    "src/shells/desktop/ui/panels/agence/SuiviList.test.tsx",
+    "tools/agence/test_agence.py"
+   ]
+  },
+  {
+   "base": "3832852f2dd57b68b99aa5013e19a68d575851b9",
+   "head": "0b1dcde95d05e2f1ec7ebe0f82b10b6498dd4e7a",
+   "issue": 19,
+   "pr": 35,
+   "taille": 152,
+   "tests": [
+    "src/cli/format.test.ts",
+    "src/panels/framework/runtime/framework.test.ts",
+    "src/workspace/document/runtime/api.test.ts"
+   ]
+  },
+  {
+   "base": "c583921115acd958946c7e78da7ac079dffe38d7",
+   "head": "f983e25ef7681fb1d46cada811608363ecb9a922",
+   "issue": 10,
+   "pr": 36,
+   "taille": 469,
+   "tests": [
+    "src/shells/desktop/ui/panels/review/ReviewView.test.tsx"
+   ]
+  },
+  {
+   "base": "4e77a49469383cf15c6a879c3a2ab26887512f82",
+   "head": "42aca2cf58a33e326732bdbff52f6c4053ba09e1",
+   "issue": 9,
+   "pr": 38,
+   "taille": 1153,
+   "tests": [
+    "src/client/document/clientState.test.ts",
+    "src/shells/desktop/ui/app/actions/canvas.test.tsx",
+    "src/shells/desktop/ui/client/layout/canvas/CanvasNode.test.tsx",
+    "src/shells/desktop/ui/client/layout/canvas/frame/FrameLayer.test.tsx",
+    "src/shells/desktop/ui/client/layout/canvas/frame/promptText.test.tsx",
+    "src/shells/desktop/ui/client/layout/canvas/store.test.ts",
+    "src/shells/desktop/ui/client/layout/canvas/visibleNodes.test.tsx"
+   ]
+  },
+  {
+   "base": "8a526cee8fb08795a96471922773627d8303f0f4",
+   "head": "4e4c0d5cc8524212268d677084154d77dc71ac90",
+   "issue": 53,
+   "pr": 57,
+   "taille": 200,
+   "tests": [
+    "src/workspace/repository/runtime/nodeModules.test.ts"
+   ]
+  },
+  {
+   "base": "8a526cee8fb08795a96471922773627d8303f0f4",
+   "head": "a4e5f3f1576694ea3c1ff9a24b56d3c439051c8d",
+   "issue": 50,
+   "pr": 58,
+   "taille": 627,
+   "tests": [
+    "tools/agence/test_agence.py"
+   ]
+  },
+  {
+   "base": "49928ab10da164996e668208e0d01d8a06927dc7",
+   "head": "a0b8e2e9fe62446b3b806f4f64de49aa188e1d33",
+   "issue": 74,
+   "pr": 77,
+   "taille": 328,
+   "tests": [
+    "src/workspace/skills/runtime/service.test.ts"
+   ]
+  },
+  {
+   "base": "bb0ccbe95eeb58776112e34f26e0d315e3e7e17c",
+   "head": "9af7972675966fe697311e3df84931eecb69f912",
+   "issue": 79,
+   "pr": 85,
+   "taille": 13,
+   "tests": [
+    "src/cli/engine.test.ts"
+   ]
+  },
+  {
+   "base": "bb0ccbe95eeb58776112e34f26e0d315e3e7e17c",
+   "head": "40eb078e037ef0d213ac0468f6c255d25b33d4e7",
+   "issue": 82,
+   "pr": 86,
+   "taille": 36,
+   "tests": [
+    "src/panels/agence/session.test.ts",
+    "src/shells/desktop/ui/panels/agence/DraftReader.test.tsx"
+   ]
+  },
+  {
+   "base": "bb0ccbe95eeb58776112e34f26e0d315e3e7e17c",
+   "head": "ec10fcb9792a0d5be1cab5b7a0fe3c8711a282a4",
+   "issue": 83,
+   "pr": 87,
+   "taille": 63,
+   "tests": [
+    "tools/agence/test_preview.py"
+   ]
+  },
+  {
+   "base": "bb0ccbe95eeb58776112e34f26e0d315e3e7e17c",
+   "head": "b7b0603beca6a4eabcaf462c9476a07b66349c7f",
+   "issue": 84,
+   "pr": 90,
+   "taille": 15,
+   "tests": [
+    "src/panels/editor/contract/snapshot.test.ts"
+   ]
+  },
+  {
+   "base": "bb0ccbe95eeb58776112e34f26e0d315e3e7e17c",
+   "head": "dec79c9457439149db294515452fb9cb2761f622",
+   "issue": 81,
+   "pr": 91,
+   "taille": 660,
+   "tests": [
+    "src/client/host/surfaces.test.ts",
+    "src/panels/browser/session.test.ts",
+    "src/shells/desktop/main/sharedSignIns.test.ts",
+    "src/shells/desktop/main/webPartitions.test.ts",
+    "src/shells/desktop/ui/panels/browser/BrowserView.test.tsx",
+    "src/shells/desktop/ui/panels/browser/pageHost.test.tsx",
+    "src/shells/mobile/core/views.test.ts"
+   ]
+  },
+  {
+   "base": "d32a210b107512372a1f820ce9ff1e5100e7983f",
+   "head": "599a7527a7e86d51c6f25fe206e01088c515fb3d",
+   "issue": 72,
+   "pr": 96,
+   "taille": 104,
+   "tests": [
+    "tools/agence/test_agence.py",
+    "tools/agence/test_guard.py"
+   ]
+  },
+  {
+   "base": "7b41cd3202d4886a4ce0a0c09cfe755da19c2335",
+   "head": "f68a0578eec6502e29faae7bea981cb790b424c9",
+   "issue": 69,
+   "pr": 97,
+   "taille": 192,
+   "tests": [
+    "src/shells/desktop/ui/panels/boite/BoiteView.test.tsx"
+   ]
+  },
+  {
+   "base": "fd91eb8ce9e0ab51987ab4d781a47d155dadce21",
+   "head": "a74103153acea3746167eb4f01158c759eb1729d",
+   "issue": 142,
+   "pr": 171,
+   "taille": 3772,
+   "tests": [
+    "src/panels/agence/session.test.ts",
+    "src/panels/app/contract/grant.test.ts",
+    "src/panels/app/registry.test.ts",
+    "src/panels/app/runtime.test.ts",
+    "src/panels/app/runtime/capability.test.ts",
+    "src/panels/app/runtime/grants.test.ts",
+    "src/panels/app/runtime/import.test.ts",
+    "src/panels/app/runtime/scan.test.ts",
+    "src/panels/app/runtime/watch.test.ts",
+    "src/panels/app/session.test.ts",
+    "src/shells/desktop/ui/panels/agence/AgenceView.test.tsx",
+    "src/shells/desktop/ui/panels/agence/Backlog.test.tsx",
+    "src/shells/desktop/ui/panels/app/AppPanel.test.tsx",
+    "src/workspace/observation/runtime/journal.test.ts",
+    "src/workspace/observation/runtime/purge.test.ts",
+    "src/workspace/observation/runtime/read.test.ts",
+    "src/workspace/skills/runtime/service.test.ts",
+    "tools/agence/test_agence.py",
+    "tools/agence/test_backlog.py",
+    "tools/agence/test_guard.py",
+    "tools/agence/test_interlocuteur.py",
+    "tools/agence/test_lancer.py",
+    "tools/agence/test_politique_skill.py",
+    "tools/agence/test_preuve.py"
+   ]
+  },
+  {
+   "base": "75ea4a35c859148ac13bf47d5b76e3f7b0fb3ada",
+   "head": "db80b32e9f1e411182e42dc808a53532ecc34a22",
+   "issue": 131,
+   "pr": 186,
+   "taille": 6351,
+   "tests": [
+    "src/cli/engine.test.ts",
+    "src/panels/agence/contract/suivi.test.ts",
+    "src/panels/agence/parts/runtime/regisseur.test.ts",
+    "src/panels/agence/session.test.ts",
+    "src/panels/app/client/index.test.ts",
+    "src/panels/app/runtime.test.ts",
+    "src/panels/app/runtime/export.test.ts",
+    "src/panels/app/runtime/service.test.ts",
+    "src/panels/app/runtime/skill.test.ts",
+    "src/services/browser/client/showElement.test.ts",
+    "src/services/browser/contract/pickedElement.test.ts",
+    "src/services/browser/desktop/pageDriver.pick.test.ts",
+    "src/shells/desktop/ui/panels/agence/AgenceView.test.tsx",
+    "src/shells/desktop/ui/panels/agence/Backlog.test.tsx",
+    "src/shells/desktop/ui/panels/agence/PremieresQuestions.test.tsx",
+    "src/shells/desktop/ui/panels/agence/Reglages.test.tsx",
+    "src/shells/desktop/ui/panels/app/AppPanel.test.tsx",
+    "src/shells/desktop/ui/panels/app/AppsPage.test.tsx",
+    "src/shells/desktop/ui/panels/app/ImportCard.test.tsx",
+    "src/shells/desktop/ui/panels/browser/BrowserView.test.tsx",
+    "src/workspace/skills/runtime/service.test.ts"
+   ]
+  },
+  {
+   "base": "ca3e06621b9d96a185c6a025e95b9db10678974f",
+   "head": "1c97d836bc1e91fa10406b0976a00b270e5b0458",
+   "issue": 170,
+   "pr": 188,
+   "taille": 91,
+   "tests": [
+    "src/cli/format.test.ts",
+    "src/services/agents/runtime/api.test.ts",
+    "tools/agence/test_guard.py"
+   ]
+  },
+  {
+   "base": "d721165169977d2a1923d14f37ab790ec0fad8d1",
+   "head": "59713785b74872c47f72051adc0ec32407b8c5a0",
+   "issue": 204,
+   "pr": 205,
+   "taille": 19,
+   "tests": [
+    "tools/agence/test_backlog.py"
+   ]
+  },
+  {
+   "base": "d721165169977d2a1923d14f37ab790ec0fad8d1",
+   "head": "ae58b9c6883d01a9bc7d9fe6c2708a01b8ab91f0",
+   "issue": 203,
+   "pr": 206,
+   "taille": 52,
+   "tests": [
+    "tools/agence/test_agence.py",
+    "tools/agence/test_pratiques.py"
+   ]
+  },
+  {
+   "base": "fb67523954d9d49c6bb74c7e5521163bdbb48f91",
+   "head": "0c66902e3df4530d79ab260fbee290e4b332ae94",
+   "issue": 210,
+   "pr": 218,
+   "taille": 14,
+   "tests": [
+    "tools/agence/test_backlog.py"
+   ]
+  },
+  {
+   "base": "202fad378a432556a94f60e67d44367fa8846942",
+   "head": "d3de3d57f420e38b84c17dff14507b086aa44a10",
+   "issue": 199,
+   "pr": 221,
+   "taille": 85,
+   "tests": [
+    "src/shells/desktop/main/pipes.test.ts"
+   ]
+  },
+  {
+   "base": "202fad378a432556a94f60e67d44367fa8846942",
+   "head": "d51cbfc2cb6487a54a7648a6d3db7427aaba2f1c",
+   "issue": 196,
+   "pr": 222,
+   "taille": 354,
+   "tests": [
+    "src/shells/desktop/main/pipes.test.ts",
+    "tools/agence/test_agence.py",
+    "tools/agence/test_guard.py",
+    "tools/agence/test_lancer.py",
+    "tools/agence/test_lentilles.py"
+   ]
+  },
+  {
+   "base": "202fad378a432556a94f60e67d44367fa8846942",
+   "head": "b6c38b27ba46fca55500ff3bbb8a87541cc0cf61",
+   "issue": 195,
+   "pr": 223,
+   "taille": 368,
+   "tests": [
+    "src/client/boite/actions.test.ts",
+    "src/client/boite/merge.test.ts",
+    "src/panels/agence/contract/suivi.test.ts",
+    "src/panels/agence/session.test.ts",
+    "src/shells/desktop/main/pipes.test.ts",
+    "src/shells/desktop/ui/panels/agence/Backlog.test.tsx",
+    "src/shells/desktop/ui/panels/agence/QuestionCard.test.tsx",
+    "src/shells/desktop/ui/panels/agence/SuiviList.test.tsx",
+    "src/shells/desktop/ui/panels/boite/BoiteView.test.tsx",
+    "src/shells/desktop/ui/panels/boite/Ligne.test.tsx"
+   ]
+  }
+ ]
+}
