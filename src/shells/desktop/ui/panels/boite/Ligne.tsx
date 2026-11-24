@@ -3,12 +3,13 @@ import { clientUi } from '@kernel/interaction'
 import type { ActionsState, BoiteActions, Ligne as LigneData } from '@client/boite'
 import { Button, InlineNotice } from '../../kernel/interaction'
 import { MarkdownPreview } from '../editor/MarkdownPreview'
+import { ROW_ENTER, ROW_LEAVE, ROW_SHELL } from '../agence/action'
 
 /** The action to take (accent tint, primary text), and the plain one: readable in every theme, never wrapped. */
-const ACTION = 'shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary disabled:!opacity-100'
-const PLAIN = 'shrink-0 whitespace-nowrap !text-primary'
+const ACTION = 'min-h-7 shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary disabled:!opacity-100'
+const PLAIN = 'min-h-7 shrink-0 whitespace-nowrap !text-primary'
 const LINK = 'min-w-0 truncate text-left hover:underline'
-const OPTION = 'flex w-full items-start gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] text-primary hover:bg-hover disabled:opacity-60'
+const OPTION = 'flex w-full items-start gap-1.5 rounded-md border px-2 py-2 text-left text-[12px] text-primary transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.99] disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100'
 
 /** How long it has waited, coarse: « 30 min », « 2 h », « 2 j »; empty when the time is unknown. */
 export function ageLabel(since: string, now: number): string {
@@ -28,6 +29,10 @@ interface LigneProps {
   state: ActionsState
   /** The line the keyboard acts on. */
   selected?: boolean
+  /** The line is new since the last render: it fades in. */
+  enter?: boolean
+  /** The line was answered or sent: it folds away before it goes. */
+  leaving?: boolean
 }
 
 /** A question an agent asked: its options (the first one recommended), then a free answer. */
@@ -107,7 +112,9 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
 
 /** One line: project and age above, the need and its action below, then the
  *  card of the action. Every click goes through `actions` by the line's key. */
-export default function Ligne({ ligne, now, actions, state, selected = false }: LigneProps) {
+export default function Ligne({ ligne, now, actions, state, selected = false, enter: arrived = false, leaving = false }: LigneProps) {
+  // Latched when the line mounts: a later render of the list does not cut the fade.
+  const [enter] = useState(arrived)
   const [open, setOpen] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
@@ -129,7 +136,8 @@ export default function Ligne({ ligne, now, actions, state, selected = false }: 
   }
   const shown = state.shown[key] !== undefined && action.type === 'draft' && state.shown[key] === action.hash
   return (
-    <li ref={element} data-testid="ligne" aria-selected={selected || undefined} className={`flex min-w-0 flex-col gap-0.5 border-b border-subtle px-3 py-2 text-[12px] ${selected ? 'bg-hover shadow-[inset_2px_0_0] shadow-agent' : ''} ${live ? '' : 'opacity-70'}`}>
+    <li ref={element} data-testid="ligne" aria-selected={selected || undefined} aria-hidden={leaving || undefined} className={`${ROW_SHELL} border-b border-subtle text-[12px] ${leaving ? ROW_LEAVE : live ? '' : 'opacity-70'} ${enter ? ROW_ENTER : ''}`}>
+      <div className={`flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden px-3 py-2.5 transition-colors duration-150 motion-reduce:transition-none ${selected ? 'bg-hover shadow-[inset_2px_0_0] shadow-agent' : ''}`}>
       <div className="flex min-w-0 items-baseline gap-2 text-secondary">
         <button type="button" className={LINK} title={ligne.root} onClick={() => void settle(actions.open(key))}>{ligne.repo}</button>
         {age && <span className="ml-auto shrink-0 whitespace-nowrap">{age === "à l'instant" ? age : `depuis ${age}`}</span>}
@@ -190,6 +198,7 @@ export default function Ligne({ ligne, now, actions, state, selected = false }: 
         </div>
       )}
       {(notice ?? refusal) && <InlineNotice tone="error" className="mt-1 !text-primary">{notice ?? refusal}</InlineNotice>}
+      </div>
     </li>
   )
 }

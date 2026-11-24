@@ -9,14 +9,14 @@ const OFF = 'disabled:!border-subtle disabled:!bg-surface-3 disabled:!text-secon
 
 /** The action to take (Envoyer, Répondre, Demander le rebase): accent tint and border, primary text. */
 export const ACTION =
-  `shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary enabled:hover:!bg-agent/35 ${OFF}`
+  `min-h-7 shrink-0 whitespace-nowrap font-medium !border-agent !bg-agent/25 !text-primary enabled:hover:!bg-agent/35 ${OFF}`
 
 /** A destructive action (Abandonner, Merger quand même): danger tint, primary text. */
 export const ACTION_DANGER =
-  `shrink-0 whitespace-nowrap font-medium !border-danger !bg-danger-tint !text-primary ${OFF}`
+  `min-h-7 shrink-0 whitespace-nowrap font-medium !border-danger !bg-danger-tint !text-primary ${OFF}`
 
 /** Any other button (Modifier, Retour, Relancer): readable text, no emphasis. */
-export const ACTION_PLAIN = 'shrink-0 whitespace-nowrap !text-primary'
+export const ACTION_PLAIN = 'min-h-7 shrink-0 whitespace-nowrap !text-primary'
 
 /** A link in running text: underlined so it is not told by color alone. */
 export const LINK = 'text-primary underline decoration-agent hover:decoration-2'

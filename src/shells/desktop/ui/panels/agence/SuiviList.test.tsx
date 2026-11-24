@@ -32,6 +32,8 @@ const render = (view: SuiviView, questions: Record<string, QuestionView> = {}, c
   <SuiviList workspaceId="ws" suivi={view} questions={questions} send={send} onRead={onRead} onRebase={onRebase} onOpenUrl={onOpenUrl} compact={compact} />,
 ))
 const headings = () => [...host.querySelectorAll('h2')].map((h) => h.textContent)
+/** The lines that stay: a line that left folds away first (aria-hidden) and is not one. */
+const live = () => host.querySelectorAll('li:not([aria-hidden])')
 
 beforeEach(() => {
   ui = installMockClientUi()
@@ -53,7 +55,7 @@ afterEach(() => {
 
 it('shows « À toi » (blocking first) then the state sections, with their counts, empty ones included', () => {
   render(suivi({ bloquant: [row('a')], aFaire: [row('b'), row('c')], fait: [], reste: [row('d')] }))
-  expect(headings()).toEqual(['À toi (3)', 'Fait (0)', 'Reste à faire (1)'])
+  expect(headings()).toEqual(['À toi3', 'Fait0', 'Reste à faire1'])
   expect([...host.querySelectorAll('[data-testid="need-title"]')].slice(0, 3).map((t) => t.textContent)).toEqual(['Besoin a', 'Besoin b', 'Besoin c'])
   expect(host.textContent).toContain('Rien.')
 })
@@ -234,10 +236,10 @@ it('shows a refused rebase on the line, ready to try again', async () => {
 it('fades in a line that moves to another section, and none on the first display', () => {
   const moving = row('m1', { title: 'PR à merger' })
   render(suivi({ aFaire: [moving] }))
-  expect(host.querySelector('li')!.className).not.toMatch(/animate-sidebar-view-in/)
+  expect(live()[0]!.className).not.toMatch(/animate-sidebar-view-in/)
   render(suivi({ fait: [moving] }))
-  expect(host.querySelector('li')!.className).toMatch(/animate-sidebar-view-in/)
-  expect(host.querySelector('li')!.className).toMatch(/motion-reduce:animate-none/)
+  expect(live()[0]!.className).toMatch(/animate-sidebar-view-in/)
+  expect(live()[0]!.className).toMatch(/motion-reduce:animate-none/)
 })
 
 it('does not cut the fade when the list renders again meanwhile', () => {
@@ -246,7 +248,7 @@ it('does not cut the fade when the list renders again meanwhile', () => {
   render(suivi({ fait: [moving] }))
   render({ ...suivi({ fait: [moving] }), agentsActive: 3 })
   render({ ...suivi({ fait: [moving] }), agentsActive: 4 })
-  expect(host.querySelector('li')!.className).toMatch(/animate-sidebar-view-in/)
+  expect(live()[0]!.className).toMatch(/animate-sidebar-view-in/)
 })
 
 it('lets the rebase be asked again a few seconds after it was taken', async () => {

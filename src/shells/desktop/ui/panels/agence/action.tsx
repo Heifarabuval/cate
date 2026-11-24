@@ -16,6 +16,12 @@ const FEEDBACK = [
 /** A row that arrives (new, or moved to another section) fades in, 200 ms. */
 export const ROW_ENTER = 'animate-sidebar-view-in motion-reduce:animate-none'
 
+/** A row folds by its height (grid 1fr to 0fr, 200 ms): the one that follows rises
+ *  smoothly. The content sits in a child that clips it (`min-h-0 overflow-hidden`). */
+export const ROW_SHELL = 'grid grid-rows-[1fr] transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none'
+/** A row that left its list (validated, answered): folded, faded, not clickable. */
+export const ROW_LEAVE = 'pointer-events-none grid-rows-[0fr] border-transparent opacity-0'
+
 /** How long the check stays on a button before it is ready again. */
 const DONE_MS = 2500
 

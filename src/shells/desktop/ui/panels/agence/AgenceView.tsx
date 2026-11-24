@@ -53,7 +53,7 @@ function Pratiques({ pratiques, onReglages }: { pratiques: NonNullable<AgenceSna
   const label = `Pratiques : ${pratiques.preset} (${pratiques.sources.preset ?? 'défaut'})`
   const form = pratiques.champs !== undefined
   return (
-    <div className="border-b border-subtle px-3 py-1.5 text-[12px]">
+    <div className="border-b border-subtle px-3 py-2 text-[12px]">
       {pratiques.erreur && <InlineNotice tone="error" className="mb-1.5 !text-primary">{`Politique invalide : ${pratiques.erreur}`}</InlineNotice>}
       <div className="flex items-center gap-2">
         {form
@@ -141,7 +141,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
   const orchestratorDown = snapshot.orchestrator === 'exited' || snapshot.orchestrator === 'failed'
   const showConversation = !narrow || tab === 'conversation'
   const showSuivi = !narrow || tab === 'suivi'
-  const tabClass = (name: Tab) => `px-3 py-1.5 text-[12px] ${tab === name ? 'text-primary border-b-2 border-focus-blue' : 'text-secondary hover:text-primary'}`
+  const tabClass = (name: Tab) => `-mb-px px-3 py-2 text-[12px] transition-colors duration-150 motion-reduce:transition-none ${tab === name ? 'border-b-2 border-focus-blue text-primary' : 'border-b-2 border-transparent text-secondary hover:text-primary'}`
   const ids = (name: Tab) => ({ tab: `${uid}-tab-${name}`, panel: `${uid}-panel-${name}` })
   const panelProps = (name: Tab) => ({
     id: ids(name).panel,
@@ -203,7 +203,6 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           {snapshot.pratiques?.champs && reglages
             ? <Reglages pratiques={snapshot.pratiques} disponible={snapshot.regisseur.state === 'running'} send={send} onClose={() => setReglages(false)} />
             : <>
-          {snapshot.backlog && !draft && <Backlog backlog={snapshot.backlog} />}
           {draft
             ? <DraftReader workspaceId={workspaceId} panelId={panelId} draft={draft} send={send} onBack={() => setReading(null)} />
             : snapshot.suivi
@@ -224,6 +223,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
                 />
               )
               : <div className="p-4 text-[12px] text-secondary">Aucun suivi pour l&apos;instant.</div>}
+          {snapshot.backlog && !draft && <Backlog backlog={snapshot.backlog} />}
             </>}
         </section>
       </div>
