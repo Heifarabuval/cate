@@ -112,6 +112,7 @@ ancien() {
 		'' | *-fork*) ;;
 		*) echo "Reste : app Cate officielle $v encore en place → quitter Cate (Cmd+Q), le fork s'installe dans les 10 min" ;;
 	esac
+	# shellcheck disable=SC2009  # pgrep gives pids only: the second grep needs each command line
 	if ps -axo command= | grep '/\.cate/runtime/[^/]*/runtime\.cjs serve' | grep -qv -e '-fork'; then
 		echo "Reste : un workspace tourne sur l'ancien runtime (sans agence ni /orchestrateur) → quitter Cate puis pkill -TERM -f '\\.cate/runtime/.*/runtime\\.cjs serve'"
 	fi
