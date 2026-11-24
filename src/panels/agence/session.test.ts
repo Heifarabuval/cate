@@ -271,6 +271,17 @@ describe('AgenceSession', () => {
     expect(snap(session)).toMatchObject({ ptyId: null, orchestrator: 'failed' })
   })
 
+  it('marks the option of a regisseur card whose click is gone as already taken (issue 202)', async () => {
+    const options = [{ label: 'Éclairer F1', detail: 'a' }, { label: 'Éclairer F2', detail: 'b' }, { label: 'Vu', detail: '' }]
+    const { session } = setup({ files: { state: state({ questions: [
+      { id: 'q1', needId: 'n1', question: 'Éclairer ?', options, action: null, answer: null, clics: [null, '/lentille/F2/eclairer', ''] },
+      { id: 'q2', needId: 'n2', question: 'Sans clics', options, action: null, answer: null },
+    ] }) } })
+    await session.start()
+    expect(snap(session).questions.q1.options).toEqual([{ ...options[0], fait: true }, options[1], options[2]])
+    expect(snap(session).questions.q2.options).toEqual(options)
+  })
+
   it('serves the classified follow-up, open drafts with their hash and open questions', async () => {
     const files = {
       state: state({
@@ -667,6 +678,48 @@ describe('AgenceSession', () => {
       const { session } = await started([merge({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', ts: Date.now() / 1000 })])
       expect(snap(session).questions.q1).toMatchObject({ isMerge: true, locks: ['conflit avec la base'], ghUnknown: false, rebase: true })
       expect(snap(session).suivi?.sections.aFaire[0]).toMatchObject({ meta: ['Merger grisé : conflit avec la base'], action: { type: 'question', questionId: 'q1', rebase: true } })
+    })
+  })
+
+  describe('offers of the regisseur (issue 207)', () => {
+    const started = async (patch: Record<string, unknown>) => {
+      const setupped = setup({ files: { state: state({ needs: [need('n3', patch)] }) } })
+      await setupped.session.start()
+      return setupped
+    }
+    const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
+    const worktree = { worktree: { path: '/x/n2-impl', branch: 'fix/x' } }
+    const orphan = { orphan: { panel: 'p9', title: 'T' } }
+
+    it.each(['remove', 'keep'] as const)('posts the worktree choice %s to /wt/<needId>/%s', async (choix) => {
+      const { session, regisseurs } = await started(worktree)
+      await expect(op(session, { kind: 'worktree', needId: 'n3', choix })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: `/wt/n3/${choix}`, form: {} }])
+    })
+
+    it.each(['close', 'keep'] as const)('posts the orphan choice %s to /orphan/<needId>/%s', async (choix) => {
+      const { session, regisseurs } = await started(orphan)
+      await expect(op(session, { kind: 'orphan', needId: 'n3', choix })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: `/orphan/n3/${choix}`, form: {} }])
+    })
+
+    it.each([
+      ['a worktree op on a need that offers none', { kind: 'worktree', needId: 'n3', choix: 'remove' }, orphan],
+      ['an orphan op on a need that offers none', { kind: 'orphan', needId: 'n3', choix: 'close' }, worktree],
+      ['a closed need', { kind: 'worktree', needId: 'n3', choix: 'remove' }, { ...worktree, status: 'done' }],
+      ['an unknown choice', { kind: 'worktree', needId: 'n3', choix: 'close' }, worktree],
+      ['an id outside ^n\\d+$', { kind: 'worktree', needId: '../n3', choix: 'remove' }, worktree],
+    ])('refuses %s as invalid, posting nothing', async (_name, value, needPatch) => {
+      const { session, regisseurs } = await started(needPatch)
+      await expect(op(session, value as AgenceOp)).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it("renders the regisseur's refusal (409) with its message", async () => {
+      const { session, regisseurs } = await started(worktree)
+      const message = 'Le worktree a changé : rien supprimé.'
+      regisseurs.answer(async () => ({ code: 409, message }))
+      await expect(op(session, { kind: 'worktree', needId: 'n3', choix: 'remove' })).resolves.toEqual({ ok: false, error: 'conflict', message })
     })
   })
 

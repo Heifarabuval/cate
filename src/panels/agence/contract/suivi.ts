@@ -87,6 +87,10 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
     if (question?.action && merge?.ghUnknown) meta.push('état GitHub inconnu')
     if (merge?.locks.length) meta.push(`Merger grisé : ${merge.locks.join(' ; ')}`)
     action = { type: 'question', questionId: need.ref, rebase: merge?.rebase ?? false }
+  } else if (need.status === 'open' && need.worktree) {
+    action = { type: 'worktree', branch: need.worktree.branch }
+  } else if (need.status === 'open' && need.orphan) {
+    action = { type: 'orphan' }
   }
   // As the regisseur's buttons: only a blocked agent's readable, unanswered request.
   const perm = need.status === 'open' && need.agentBlocked && need.perm ? need.perm : null

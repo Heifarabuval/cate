@@ -29,10 +29,13 @@ export interface ProjectView {
 export type LigneAction =
   /** `texte` is what `hash` is the hash of: what the human reads before sending. */
   | { type: 'draft'; draftId: string; kind: DraftKind; hash: string; texte: string; inFlight: boolean }
-  | { type: 'question'; questionId: string; options: Array<{ label: string; detail: string }>; isMerge: boolean; locks: string[]; ghUnknown: boolean; rebase: boolean }
+  | { type: 'question'; questionId: string; options: Array<{ label: string; detail: string; fait?: true }>; isMerge: boolean; locks: string[]; ghUnknown: boolean; rebase: boolean }
   /** An agent waits on a permission whose screen was readable: Oui or Non, with the whole command and its reason. */
   | { type: 'perm'; command: string; reason: string; genre: string }
-  /** Nothing to answer from here: only the link to the panel. */
+  /** The regisseur offers to remove a merged need's worktree (Supprimer, Garder) or to close a panel without an agent (Fermer, Garder). */
+  | { type: 'worktree' }
+  | { type: 'orphan' }
+  /** Nothing to answer from here: the reason it waits (`Ligne.meta`) and the link to the panel. */
   | { type: 'link' }
 
 export interface Ligne {
@@ -50,6 +53,8 @@ export interface Ligne {
   /** ISO time the need was created. */
   waitingSince: string
   action: LigneAction
+  /** The mentions of the need's follow-up line: why it waits when no button answers it. */
+  meta: string[]
   links: Array<{ panelId: string; title: string; closed: boolean }>
   /** False when the project is not live: the row is greyed, only Relancer and the links work. */
   enabled: boolean

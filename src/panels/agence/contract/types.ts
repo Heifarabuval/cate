@@ -31,7 +31,8 @@ export type DraftView = {
 export type QuestionView = {
   id: string
   question: string
-  options: Array<{ label: string; detail: string }>
+  /** `fait`: this option was already taken (its click is gone): shown greyed, never clickable. */
+  options: Array<{ label: string; detail: string; fait?: true }>
   isMerge: boolean
   /** Why Merger is greyed (needs that target the PR, then the GitHub motif);
    *  « Merger quand même » passes over them. */
@@ -50,6 +51,10 @@ export type NeedAction =
   | { type: 'draft'; draftId: string; inFlight: boolean }
   /** `rebase`: Merger is greyed by a conflict, « Demander le rebase » is offered. */
   | { type: 'question'; questionId: string; rebase: boolean }
+  /** The regisseur offers to remove the worktree of a merged need: Supprimer or Garder. */
+  | { type: 'worktree'; branch: string }
+  /** A panel left without an agent: Fermer or Garder. */
+  | { type: 'orphan' }
 
 /** The permission an agent waits on, as the regisseur read it from the agent's
  *  screen. `choix`: Oui and Non can be sent from here (readable screen, not
@@ -233,6 +238,10 @@ export type AgenceOp =
   /** Oui or Non to the permission an agent waits on (need `needId`): the
    *  regisseur re-reads the agent's screen before it types. */
   | { kind: 'perm'; needId: string; reponse: 'oui' | 'non' }
+  /** Supprimer or Garder the worktree the regisseur offers on need `needId` (it re-checks the worktree before it removes). */
+  | { kind: 'worktree'; needId: string; choix: 'remove' | 'keep' }
+  /** Fermer or Garder the panel without an agent of need `needId`. */
+  | { kind: 'orphan'; needId: string; choix: 'close' | 'keep' }
   /** One setting of the form, written by the regisseur (`/pratiques/set`) in the file its scope names. */
   | { kind: 'pratique.set'; cle: string; valeur: PratiqueValeur }
   /** « Revenir au défaut »: the key leaves the file. */
@@ -290,6 +299,10 @@ export interface StateNeed {
   perm?: { genre: string; commande: string; motif: string; choix: string[]; panel: string } | null
   /** Signature of the permission already answered: its buttons are gone. */
   permAnswered?: string | null
+  /** A merged need's worktree the regisseur offers to remove. */
+  worktree?: { path: string; branch: string } | null
+  /** A panel seen without an agent that the regisseur offers to close. */
+  orphan?: { panel: string; title: string } | null
   /** True for a minutes overrun and for a dollar one. */
   overBudget: boolean
   overBudgetUsd?: boolean
@@ -319,6 +332,8 @@ export interface StateQuestion {
   /** `merge:<repo>#<number>`: answering the first option merges. */
   action: string | null
   answer: string | null
+  /** A regisseur card: the click of each option; null once that option was taken. */
+  clics?: Array<string | null> | null
   /** The PR's GitHub state as the regisseur last read it (`ts` in seconds). */
   gh?: { mergeable?: string; mergeStateStatus?: string; ts?: number } | null
 }

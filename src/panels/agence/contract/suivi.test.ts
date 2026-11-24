@@ -17,6 +17,7 @@ const known = (titles: Record<string, string>) =>
 const actions = ({ action }: NeedRow): string[] => {
   if (!action) return []
   if (action.type === 'draft') return [`draft:${action.draftId}`]
+  if (action.type !== 'question') return [action.type]
   return [...(action.rebase ? [`rebase:${action.questionId}`] : []), `question:${action.questionId}`]
 }
 const shape = (rows: NeedRow[]) => rows.map((row) => ({ title: row.title, meta: row.meta, actions: actions(row) }))
@@ -117,5 +118,22 @@ describe('classify', () => {
 
   it('classifies an empty state into four empty sections', () => {
     expect(classify({ ...state, needs: [], drafts: [], questions: [] }, {}, now)).toEqual({ bloquant: [], aFaire: [], fait: [], reste: [] })
+  })
+})
+
+describe('offers of the regisseur (issue 207)', () => {
+  const need = (id: string, extra: object) => ({ ...state.needs[0], id, kind: 'human', ref: null, owner: 'heifara', status: 'open', title: id, panels: [], agentBlocked: false, perm: null, ...extra })
+  const sections = classify({ ...state, needs: [
+    need('n90', { worktree: { path: '/x/n9-impl', branch: 'feat/x' } }),
+    need('n91', { orphan: { panel: 'p9', title: 'T' } }),
+    need('n92', { worktree: { path: '/x/n8-impl', branch: 'feat/y' }, status: 'done' }),
+  ] } as AgenceState, {}, now)
+
+  it('gives the worktree and the orphan panel an action the views draw as buttons', () => {
+    expect(sections.aFaire.map((row) => [row.id, row.action])).toEqual([['n90', { type: 'worktree', branch: 'feat/x' }], ['n91', { type: 'orphan' }]])
+  })
+
+  it('offers nothing on a need that is closed', () => {
+    expect(sections.fait.find((row) => row.id === 'n92')!.action).toBeNull()
   })
 })

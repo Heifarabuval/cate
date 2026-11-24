@@ -35,6 +35,8 @@ function actionOf(row: NeedRow, snapshot: AgenceSnapshot): LigneAction {
   } else if (action?.type === 'question') {
     const question = snapshot.questions[action.questionId]
     if (question) return { type: 'question', questionId: question.id, options: question.options, isMerge: question.isMerge, locks: question.locks, ghUnknown: question.ghUnknown, rebase: question.rebase }
+  } else if (action?.type === 'worktree' || action?.type === 'orphan') {
+    return { type: action.type }
   } else if (row.perm?.choix) {
     return { type: 'perm', command: row.perm.commande, reason: row.perm.motif, genre: row.perm.genre }
   }
@@ -77,6 +79,7 @@ export function merge(inputs: readonly ProjectInput[]): { projects: ProjectView[
         blocking: bloquant.includes(row),
         waitingSince: row.created ?? '',
         action: actionOf(row, snapshot),
+        meta: row.meta.filter((item) => !item.startsWith('panneau : ')),
         links: row.links,
         enabled: state === 'live',
         reason: error,
