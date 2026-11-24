@@ -18,6 +18,9 @@
 #   CATE_FORK_BRANCH  main
 #   CATE_BUILD_DIR    ~/.local/share/cate-build
 #   CATE_APPS_DIR     /Applications
+#   CATE_FORK_IDENTITY  (none: ad hoc) name of a code signing certificate of the
+#                     login keychain; signs each build with one identity, so
+#                     macOS keeps the app's permissions across rebuilds
 #
 # Exit: 0 done or nothing to do, 1 failure, 2 not macOS, 3 no suitable Node,
 # 4 disk space, 5 prerequisite missing, 6 build folder refused. Log: ~/Library/Logs/cate-fork-update.log
@@ -40,12 +43,12 @@ notify_once() {
 	notify "$2"
 }
 
-# Only the four settings are read, and never evaluated as code.
+# Only these settings are read, and never evaluated as code.
 load_conf() {
 	[ -f "$CONF" ] || return 0
 	# "|| [ -n ]": a last line without a final newline is read too.
 	while IFS='=' read -r k v || [ -n "$k" ]; do
-		case $k in CATE_FORK_REPO | CATE_FORK_BRANCH | CATE_BUILD_DIR | CATE_APPS_DIR) ;; *) continue ;; esac
+		case $k in CATE_FORK_REPO | CATE_FORK_BRANCH | CATE_BUILD_DIR | CATE_APPS_DIR | CATE_FORK_IDENTITY) ;; *) continue ;; esac
 		v=${v#\"}
 		v=${v%\"}
 		# shellcheck disable=SC2088  # a literal "~/" typed in the config is matched on purpose
@@ -248,6 +251,16 @@ stage() {
 	if codesign -dv "$built" 2>&1 | grep -q 'flags=.*runtime'; then
 		log "hardened runtime still on, not staged: the app would not start"
 		return 1
+	fi
+	# An ad hoc signature is the hash of the build: macOS sees a new app at each
+	# rebuild and asks for every permission again. A certificate of the login
+	# keychain, named by CATE_FORK_IDENTITY, gives the app one identity across builds.
+	if [ -n "${CATE_FORK_IDENTITY:-}" ]; then
+		if ! codesign --force --deep --sign "$CATE_FORK_IDENTITY" "$built"; then
+			log "identity \"$CATE_FORK_IDENTITY\" could not sign the build, not staged"
+			return 1
+		fi
+		log "signed with the identity \"$CATE_FORK_IDENTITY\""
 	fi
 	rm -rf "$DIR.staged"
 	mkdir -p "$DIR.staged"

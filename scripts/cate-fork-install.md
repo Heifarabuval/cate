@@ -115,7 +115,22 @@ curl -fsSL https://raw.githubusercontent.com/Heifarabuval/cate/main/scripts/cate
 
 Retire l'agent et le script. Ajouter `-s -- --purge` après `sh` supprime aussi le dossier de build. `--gardes` retire aussi les gardes d'envoi de `~/.claude/settings.json` (avec la CLI du clone, avant `--purge`) ; si elle ne peut pas, le dossier de build et le script de mise à jour restent (un second passage peut finir) et le code de sortie est 1. Sans `--gardes`, `~/.claude` n'est jamais touché. L'application installée, le journal et le fichier de réglages restent.
 
+## Garder les autorisations de macOS d'un build à l'autre
+
+Sans réglage, chaque build est signé en ad hoc : sa signature est l'empreinte du build. macOS voit donc une app nouvelle à chaque mise à jour et redemande ses autorisations (données d'autres apps, Photos, Musique). Pour une identité stable :
+
+1. Trousseaux d'accès, menu Trousseaux d'accès, Assistant de certification, Créer un certificat. Nom : `Cate Fork`. Type d'identité : Racine auto-signée. Type de certificat : Signature de code.
+2. Écrire le nom dans `~/.config/cate-fork-update.conf` :
+
+```sh
+CATE_FORK_IDENTITY="Cate Fork"
+```
+
+Le build suivant est signé avec ce certificat (`signed with the identity` dans `~/Library/Logs/cate-fork-update.log`). macOS redemande une dernière fois chaque autorisation, puis s'en souvient. Si le certificat manque ou ne peut pas signer, le build n'est pas installé et l'app en place reste.
+
 ## Non vérifié
+
+- Signature stable (`CATE_FORK_IDENTITY`) : couverte par les tests en faux HOME. Non essayée avec un vrai certificat, ni l'effet sur les autorisations de macOS observé sur plusieurs builds.
 
 - Gatekeeper : le script retire la quarantaine et signe l'app en ad hoc, mais l'ouverture sur un autre Mac n'a pas été essayée. Si macOS refuse d'ouvrir l'app, clic droit puis Ouvrir (non vérifié).
 - `agence hooks install` sur un vrai `~/.claude/settings.json` : couvert par les tests de la CLI et par ceux du script en faux HOME, pas exécuté sur un vrai Mac.

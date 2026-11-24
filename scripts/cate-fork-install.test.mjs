@@ -255,7 +255,7 @@ esac`,
       );
       fake(
         "codesign",
-        'if [ "${FAKE_HARDENED:-0}" = 0 ]; then echo "flags=0x2(adhoc)" >&2; else echo "flags=0x10002(adhoc,runtime)" >&2; fi',
+        'case "$1" in --force) [ "${FAKE_SIGN_FAIL:-0}" = 0 ] || exit 1; exit 0 ;; esac\nif [ "${FAKE_HARDENED:-0}" = 0 ]; then echo "flags=0x2(adhoc)" >&2; else echo "flags=0x10002(adhoc,runtime)" >&2; fi',
       );
       fake("ditto", 'cp -R "$1" "$2"');
       fake("xattr", "true");
@@ -496,6 +496,38 @@ cp "$SRC_SCRIPTS/$(basename "$url")" "$out"`,
         }
         expect(readdirSync(path.join(root, "relative"))).toEqual([]);
         expect(count(/^launchctl@|^git@|^npm@/)).toBe(0);
+      });
+
+      it("re-signs the build with CATE_FORK_IDENTITY so macOS keeps the permissions across rebuilds; ad hoc without it (issue 199)", () => {
+        nvm("22.22.2");
+        expect(run(UPDATE).code).toBe(0);
+        expect(count(/^codesign@.* --force /)).toBe(0);
+        expect(
+          run(UPDATE, ["--force"], { CATE_FORK_IDENTITY: "Cate Fork" }).code,
+        ).toBe(0);
+        const signed = called().filter((l) => /^codesign@.* --force /.test(l));
+        expect(signed).toHaveLength(1);
+        expect(signed[0]).toMatch(/--force --deep --sign Cate Fork .*Cate\.app$/);
+        expect(log()).toMatch(/signed with the identity "Cate Fork"/);
+        // The launchd agent has no environment: the setting comes from the conf file.
+        write(
+          path.join(home, ".config/cate-fork-update.conf"),
+          'CATE_FORK_IDENTITY="Cate Conf"\n',
+        );
+        expect(run(UPDATE, ["--force"]).code).toBe(0);
+        expect(
+          called().filter((l) => /--sign Cate Conf .*Cate\.app$/.test(l)),
+        ).toHaveLength(1);
+      });
+
+      it("does not stage a build its identity cannot sign", () => {
+        nvm("22.22.2");
+        expect(
+          run(UPDATE, [], { CATE_FORK_IDENTITY: "Absente", FAKE_SIGN_FAIL: "1" })
+            .code,
+        ).toBe(1);
+        expect(log()).toMatch(/identity "Absente" could not sign/);
+        expect(existsSync(`${build}.staged`)).toBe(false);
       });
 
       it("refuses to stage a hardened-runtime build, and survives a failed packaging step", () => {

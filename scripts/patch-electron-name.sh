@@ -37,4 +37,13 @@ if [ -f "$PLIST" ]; then
   if [ -f "build/icon.icns" ]; then
     cp build/icon.icns "node_modules/electron/dist/Electron.app/Contents/Resources/electron.icns"
   fi
+  # The Electron of npm has a signature that does not verify (no sealed resources),
+  # and the edits above change the bundle: macOS cannot tell it is the same app at the
+  # next launch and asks for every permission again. An ad hoc signature of the patched
+  # bundle verifies, and stays the same as long as the bundle does.
+  APP="node_modules/electron/dist/Electron.app"
+  if command -v codesign > /dev/null 2>&1 && ! codesign --verify --deep "$APP" 2> /dev/null; then
+    codesign --force --deep --sign - "$APP" 2> /dev/null \
+      || echo "[patch-electron-name] could not sign $APP: macOS may ask for its permissions at each launch" >&2
+  fi
 fi
