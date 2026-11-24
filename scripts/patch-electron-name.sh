@@ -38,3 +38,14 @@ if [ -f "$PLIST" ]; then
     cp build/icon.icns "node_modules/electron/dist/Electron.app/Contents/Resources/electron.icns"
   fi
 fi
+
+# Editing Info.plist breaks Electron.app's ad hoc signature, and macOS (TCC)
+# then forgets every permission grant at each launch. Re-sign after patching:
+# nested code first, then the outer app alone with a designated requirement on
+# the bundle id (not the cdhash), so grants survive later re-signs.
+if [ "$(uname)" = "Darwin" ] && [ -d "node_modules/electron/dist/Electron.app" ]; then
+  APP=node_modules/electron/dist/Electron.app
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 &&
+    codesign --force --sign - -r='designated => identifier "com.github.Electron"' "$APP" >/dev/null 2>&1 ||
+    echo "[patch-electron-name] re-sign failed: macOS may ask permissions again" >&2
+fi
