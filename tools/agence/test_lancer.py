@@ -239,6 +239,33 @@ class Suite(Lancer):
 		self.un_tour()
 		self.assertEqual(len(self.fiche_needs()), 1)  # revenue prête : un nouveau clic, jamais seule
 
+	def abandonne(self, etat_pr):
+		"""F1 lancée, PR 194 rattachée au besoin, besoin abandonné, puis un tour avec la PR dans `etat_pr` sur GitHub."""
+		self.fiches(('A', ['src/a.ts']))
+		self.clic('F1')
+		nid = self.backlog()['F1']['besoin']
+		with agence.tx() as st:
+			st['ghRepo'] = 'o/r'
+			agence.find(st, 'needs', nid)['doneWhen'] = 'pr-merged:194'
+			agence.close_need(st, nid, 'dropped')
+		self.run.reply(['gh', 'api', 'graphql'], {'data': {'repository': {'n194': {'__typename': 'PullRequest', 'state': etat_pr, 'url': 'u'}}}})
+		self.un_tour()
+		return nid, self.backlog()['F1']
+
+	def test_besoin_abandonne_travail_merge_fiche_faite(self):
+		"""Issue 213 : la preuve se revérifie à l'abandon ; PR mergée, la fiche est faite et ne se relance pas."""
+		nid, f = self.abandonne('MERGED')
+		self.assertEqual((f['etat'], f['besoin']), ('faite', nid))
+		self.assertIn('preuve vraie', f['journal'][-1]['text'])
+		self.clic('F1')
+		self.assertEqual(len(self.fiche_needs()), 1)
+
+	def test_besoin_abandonne_travail_non_merge_fiche_prete_avec_la_raison(self):
+		_, f = self.abandonne('OPEN')
+		self.assertEqual((f['etat'], f['besoin']), ('prête', None))
+		self.assertIn("abandon de l'exécution", f['journal'][-1]['text'])
+		self.assertIn('PR non mergée', f['journal'][-1]['text'])
+
 	def test_dependance_attend_sa_fiche_faite(self):
 		self.fiches(('A', ['src/a.ts']), ('B', ['src/b.ts']))
 		with agence.verrou():

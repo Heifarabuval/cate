@@ -626,6 +626,64 @@ class Brouillons(Base):
 		self.assertEqual(agence.click(f'/draft/{did}/send', self.shown(did))[0], 409)
 		self.assertEqual(len(self.run.ran('gh', 'issue', 'create')), 1)
 
+	def test_brouillon_de_pr_refuse_sans_branche_poussee_ou_sans_commit_d_avance(self):
+		"""Issue 200 : la branche se vérifie à la création du brouillon, pas au clic de l'humain."""
+		self.booted()
+		compare = ['gh', 'api', 'repos/o/r/compare/main...fix/x']
+		for reponse, raison in (({'code': 1, 'err': 'gh: Not Found (HTTP 404)'}, 'branche fix/x non poussée sur o/r'),
+		                        ({'out': '0\n'}, 'aucun commit de fix/x devant main')):
+			with self.subTest(raison=raison):
+				self.run.reply(compare, **reponse)
+				err = io.StringIO()
+				with contextlib.redirect_stderr(err):
+					code, _ = self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')
+				self.assertEqual(code, 1)
+				self.assertIn(raison, err.getvalue())
+				self.assertEqual(self.state()['drafts'], [])
+		self.run.reply(compare, '2\n')
+		self.assertEqual(self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[0], 0)
+
+	def test_brouillon_de_pr_gh_illisible_ne_bloque_pas_la_creation(self):
+		self.booted()
+		self.run.reply(['gh', 'api', 'repos/o/r/compare/main...fix/x'], code=1, err='gh: timeout')
+		self.assertEqual(self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[0], 0)
+
+	def test_clic_envoyer_pr_reverifie_la_branche_et_dit_la_raison(self):
+		self.booted()
+		did = self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[1].strip()
+		self.run.reply(['gh', 'api', 'repos/o/r/compare/main...fix/x'], code=1, err='gh: Not Found (HTTP 404)')
+		code, msg = agence.click(f'/draft/{did}/send', self.shown(did))
+		self.assertEqual(code, 409)
+		self.assertIn('branche fix/x non poussée sur o/r', msg)
+		self.assertEqual(self.run.ran('gh', 'pr', 'create'), [])
+		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
+
+	def test_brouillon_de_pr_perime_s_affiche_avec_sa_raison_sans_attendre_le_clic(self):
+		"""Issue 201 : la précondition d'un brouillon de PR se revérifie au tour ; fausse, la ligne dit « périmé : raison »
+		et l'orchestrateur est prévenu une fois ; redevenue vraie, la mention part."""
+		self.booted()
+		did = self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[1].strip()
+		compare = ['gh', 'api', 'repos/o/r/compare/main...fix/x']
+
+		def tour():
+			with agence.tx() as st:  # le relevé est borné à un par GH_PERIME : le test le rend dû
+				agence.find(st, 'drafts', did).pop('perimeTs', None)
+			self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'}, {'panelId': 'p1', 'title': 'B', 'type': 'browser'}])
+			self.run.reply(['cate', 'agent', 'list'], [])
+			agence.un_tour()
+			return agence.page_suivi(self.state())
+
+		self.assertNotIn('périmé', tour())
+		self.run.reply(compare, code=1, err='gh: Not Found (HTTP 404)')
+		avant = len(self.run.ran('cate', 'agent', 'send'))
+		self.assertIn('périmé : branche fix/x non poussée sur o/r', tour())
+		self.assertIn('périmé', tour())
+		envois = self.run.ran('cate', 'agent', 'send')[avant:]
+		self.assertEqual(len(envois), 1)  # prévenu une fois, pas à chaque tour
+		self.assertIn(did, envois[0][-2])
+		self.run.reply(compare, '1\n')
+		self.assertNotIn('périmé', tour())
+
 	def test_clic_envoyer_mail_fige_et_previent(self):
 		did = self.new_draft(cible='mail:dg@exemple.fr', texte='Salut')
 		agence.click(f'/draft/{did}/send', self.shown(did))
@@ -1633,9 +1691,15 @@ class Relance(Base):
 		self.assertEqual(code, 1)
 		self.assertEqual(lines, ['non : 2 agents en plein tour (#n12 implémenteur, #n12 vérificateur)'])
 
-	def test_agent_en_attente_seul_reste_oui_avec_info(self):
+	def test_agent_au_repos_et_agent_bloque_sur_une_saisie_sont_deux_lignes(self):
+		"""Issue 196 : waitingForInput seul = tour fini, rien à répondre ; bloqué = il ne peut pas recevoir de prompt
+		(permission ou question), le test de ecrans_a_lire."""
 		self.monde(agents=[self.agent('waitingForInput', '#n13 vérificateur')])
-		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent en attente de saisie (#n13 vérificateur)']))
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent au repos, tour fini (#n13 vérificateur)']))
+		bloque = dict(self.agent('waitingForInput', '#n14 implémenteur', 'a2'), canReceivePrompt=False)
+		self.monde(agents=[self.agent('waitingForInput', '#n13 vérificateur'), bloque])
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent bloqué sur une saisie, permission ou question (#n14 implémenteur)',
+		                                    'info : 1 agent au repos, tour fini (#n13 vérificateur)']))
 
 	def test_worktree_sale_non(self):
 		self.monde(worktrees=[{'name': 'n12-impl', 'dirty': True}])
@@ -1749,7 +1813,7 @@ class Relance(Base):
 		self.assertEqual((code, out), (2, ''))
 
 	def test_verdict_pur(self):
-		faits = {'running': ['#n12 a'], 'waiting': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
+		faits = {'running': ['#n12 a'], 'waiting': [], 'repos': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
 		self.assertEqual(agence.verdict_relance(faits), (False, ['non : 1 agent en plein tour (#n12 a)']))
 		faits['running'] = []
 		self.assertEqual(agence.verdict_relance(faits), (True, ['oui']))
@@ -2026,6 +2090,18 @@ class ModeleEffort(Base):
 
 	def agent(self, **kw):
 		return [dict({'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}, **kw)]
+
+	def test_need_add_human_refuse_sans_carte(self):
+		"""Issue 207 : un besoin human posé par la CLI n'a ni bouton ni réponse possible ; seule une carte (agence ask) en crée un."""
+		self.booted()
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err):
+			code, _ = self.cli('need', 'add', '--kind', 'human', 'Supprimer le worktree ?')
+		self.assertEqual(code, 1)
+		self.assertIn('agence ask', err.getvalue())
+		self.assertEqual(self.state()['needs'], [])
+		self.cli('ask', '--from', 'a1', '--option', 'Oui|x', '--option', 'Non|y', 'Supprimer le worktree ?')
+		self.assertEqual([n['kind'] for n in self.state()['needs']], ['human'])
 
 	def test_need_add_enregistre_modele_et_effort(self):
 		self.booted()

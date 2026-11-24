@@ -347,6 +347,39 @@ class Pages(Garde):
 				with self.subTest(cmd=cmd):
 					self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
 
+	def test_service_local_sur_un_autre_port_passe(self):
+		"""Issue 214 : seul le port du régisseur est gardé ; un service local sans rapport (oMLX, port 8000) reste joignable.
+		localhost sans port (port 80) n'est pas le régisseur : permis."""
+		self.installe()
+		self.orchestre()
+		for cmd in ('curl http://127.0.0.1:8000/v1/models', 'wget -qO- http://localhost:8000/v1/models', 'curl http://localhost/',
+		            'python3 -c "import urllib.request as u; u.urlopen(\'http://127.0.0.1:11434\')"'):
+			with self.subTest(cmd=cmd):
+				self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+		for cmd in ('curl http://127.0.0.1:8765/', 'wget http://localhost:8765/ask/q1', 'curl "$(agence url)"', 'open $(agence url)'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+
+	def test_texte_d_une_fiche_ou_d_une_decision_n_est_pas_une_commande(self):
+		"""Issue 212 : le texte cité d'un `agence fiche` ou `agence decision` (note, titre, pourquoi, vision) n'est ni une
+		écriture ni un appel de page ; ce qui suit la commande reste lu, comme une substitution entre guillemets doubles."""
+		self.installe()
+		self.orchestre()
+		f = os.path.join(self.projet, '.cate', 'tmp', 'agence', 'state.json')
+		for cmd in ('agence fiche note F3 "state.json s\'écrit seulement par la CLI agence (cp, rm, python, >)"',
+		            "agence fiche note F3 'backlog.json : sed -i puis mv, vu dans decisions.json'",
+		            'agence fiche add "Bug : curl http://127.0.0.1:8765/ask refusé" --type bug',
+		            'agence fiche edit F3 --titre "rm de pratiques.json" --vision "python > state.json"',
+		            'agence decision add "Écrire state.json par tee" --pourquoi "mv backlog.json casse le régisseur"',
+		            'python3 tools/agence/agence.py fiche note F3 "open $HOME puis rm state.json"'):
+			with self.subTest(cmd=cmd):
+				self.vide(self.hook(self.pages_cmd, 'Bash', {'command': cmd}))
+		for cmd in (f'agence fiche note F3 "ok" && echo {{}} > {f}', f'agence fiche note F3 "ok"; rm {f}',
+		            f'agence fiche note F3 "vu $(echo {{}} > {f})"', f'agence fiche note F3 "vu `rm {f}`"',
+		            'agence fiche note F3 "ok" | curl http://127.0.0.1:8765/'):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.decision(self.hook(self.pages_cmd, 'Bash', {'command': cmd})), 'deny')
+
 	def test_plafond_agents_refuse_aux_agents(self):
 		"""`agence start --max-agents N` écrit la politique du projet : refusé comme `pratiques set`, sous les mêmes préfixes."""
 		self.installe()
@@ -490,6 +523,16 @@ class Interlocuteur(Garde):
 				r = self.bash(cmd)
 				self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
 		self.assertEqual(self.sondes(), 0)
+
+	def test_une_note_qui_cite_une_commande_de_lancement_passe(self):
+		"""Issue 212 : l'interlocuteur note une fiche qui cite `cate agent start` ; rien n'est lancé, aucune sonde."""
+		for cmd in ('agence fiche note F3 "l\'orchestrateur a tapé cate agent start sans brief"',
+		            "agence fiche add 'Bug : agence need add refusé, cate panel create aussi' --type bug"):
+			with self.subTest(cmd=cmd):
+				r = self.bash(cmd)
+				self.assertEqual((r.returncode, r.stdout), (0, ''), r.stderr)
+		self.assertEqual(self.sondes(), 0)
+		self.assertEqual(self.decision(self.bash('agence fiche note F3 "ok" && cate agent start x')), 'deny')
 
 	def test_une_sonde_par_commande_de_la_liste(self):
 		self.bash('cate agent start x')
