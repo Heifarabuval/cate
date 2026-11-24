@@ -551,6 +551,18 @@ describe('AgenceSession', () => {
       expect(terminal.spawns).toHaveLength(1)
     })
 
+    it('answers the questions published after the orchestrator already started (workspace opened before the feature)', async () => {
+      const old = { preset: 'neutre', valeurs: {}, sources: {}, erreur: null }
+      const { session, terminal, regisseurs, files } = setup({ files: { state: state({ pratiques: old } as Partial<AgenceState>), readAt: 't' } })
+      await session.start()
+      expect(terminal.spawns).toHaveLength(1)
+      files.set({ state: state({ pratiques: policy({ projet: false }) } as unknown as Partial<AgenceState>), readAt: 't2' })
+      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: '/pratiques/preset', form: { nom: 'neutre' } }])
+      expect(terminal.spawns).toHaveLength(1)
+      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toMatchObject({ ok: false, error: 'conflict' })
+    })
+
     it('starts the orchestrator when another client answered (the file now exists)', async () => {
       const { session, terminal, files } = withPolicy({ projet: false })
       await session.start()

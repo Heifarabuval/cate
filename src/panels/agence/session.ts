@@ -86,6 +86,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   private launched = false
   /** start() ran and the orchestrator is not launched yet (the first questions may hold it). */
   private pending = false
+  /** The first questions got their write: a second answer is refused until the state says so too. */
+  private answered = false
   private resume = false
   private activity: TerminalActivity = { type: 'idle' }
 
@@ -234,7 +236,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
 
   /** The end of the first questions: one write (every answer, or the default preset), then the launch. */
   private async questions(reponses: Record<string, PratiqueValeur> | undefined, passer: boolean): Promise<AgenceOpResult> {
-    if (!this.pending || this.state.pratiques?.projet !== false) return { ok: false, error: 'conflict', message: 'Les premières questions ont déjà une réponse.' }
+    if (this.answered || this.state.pratiques?.projet !== false) return { ok: false, error: 'conflict', message: 'Les premières questions ont déjà une réponse.' }
     let result: AgenceOpResult
     if (passer) {
       result = await this.click('/pratiques/preset', { nom: PRESET_DEFAUT })
@@ -244,7 +246,9 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       if (entries.length === 0 || !entries.every(([cle]) => known.has(cle))) return { ok: false, error: 'invalid' }
       result = await this.click('/pratiques/set', { cle: entries.map(([cle]) => cle), valeur: entries.map(([, valeur]) => JSON.stringify(valeur ?? null)) })
     }
-    if (!result.ok || !this.pending) return result
+    if (!result.ok) return result
+    this.answered = true
+    if (!this.pending) return result
     this.pending = false
     await this.spawnOrchestrator(this.resume)
     return result
@@ -321,6 +325,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const state = read.state
     const now = Date.now()
     const pratiques = pratiquesView(state.pratiques)
+    if (pratiques?.projet !== false) this.answered = false
     this.publish({
       regisseur,
       suivi: {
