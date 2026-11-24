@@ -92,7 +92,8 @@ describe('main pipes', () => {
   // Issue #15, hypothesis 1: the relay (socket 'data' -> port.postMessage)
   // keeps no queue of its own; what a renderer that stops draining can make
   // it carry is bounded by the byte stream credit window, end to end.
-  it('relays at most the credit window to a renderer that stops acknowledging', async () => {
+  // Not on Windows: the fork ships for macOS only, and there the relay is fed over a named pipe this test does not set up.
+  it.skipIf(process.platform === 'win32')('relays at most the credit window to a renderer that stops acknowledging', async () => {
     const window = { high: 64 * 1024, low: 32 * 1024 }
     const chunk = 4096
     const cap = defineCapability('relayTest', {
