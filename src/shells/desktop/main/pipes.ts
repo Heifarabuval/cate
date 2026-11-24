@@ -25,7 +25,12 @@ export function bridgePipe(duplex: ByteDuplex, port: MainPort): void {
     }
     try { port.close() } catch { /* gone */ }
   }
-  duplex.onData((bytes) => { if (!closed) port.postMessage(bytes) })
+  // A view onto a larger pooled buffer would be structured-cloned with the whole
+  // backing buffer: post a tight copy.
+  duplex.onData((bytes) => {
+    if (closed) return
+    port.postMessage(bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice())
+  })
   duplex.onClose((reason) => finish(reason))
   port.on('message', ({ data }) => {
     if (closed) return

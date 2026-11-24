@@ -220,3 +220,14 @@ describe('renderer transports', () => {
     expect(pipes.close).toHaveBeenCalledWith('lp2', 'not connected to runtime other')
   })
 })
+
+describe('main pipes memory', () => {
+  it('posts a tight copy, not a view that drags its whole backing buffer along', () => {
+    const posted: Uint8Array[] = []
+    const port = Object.assign(new EventEmitter(), { start() {}, close() {}, postMessage: (m: unknown) => { posted.push(m as Uint8Array) } }) as unknown as MainPort
+    const duplex = fakeDuplex()
+    bridgePipe(duplex, port)
+    duplex.push(new Uint8Array(new ArrayBuffer(65536), 100, 4))
+    expect(posted[0].buffer.byteLength).toBe(4)
+  })
+})
