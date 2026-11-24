@@ -1633,9 +1633,15 @@ class Relance(Base):
 		self.assertEqual(code, 1)
 		self.assertEqual(lines, ['non : 2 agents en plein tour (#n12 implémenteur, #n12 vérificateur)'])
 
-	def test_agent_en_attente_seul_reste_oui_avec_info(self):
+	def test_agent_au_repos_et_agent_bloque_sur_une_saisie_sont_deux_lignes(self):
+		"""Issue 196 : waitingForInput seul = tour fini, rien à répondre ; bloqué = il ne peut pas recevoir de prompt
+		(permission ou question), le test de ecrans_a_lire."""
 		self.monde(agents=[self.agent('waitingForInput', '#n13 vérificateur')])
-		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent en attente de saisie (#n13 vérificateur)']))
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent au repos, tour fini (#n13 vérificateur)']))
+		bloque = dict(self.agent('waitingForInput', '#n14 implémenteur', 'a2'), canReceivePrompt=False)
+		self.monde(agents=[self.agent('waitingForInput', '#n13 vérificateur'), bloque])
+		self.assertEqual(self.doctor(), (0, ['oui', 'info : 1 agent bloqué sur une saisie, permission ou question (#n14 implémenteur)',
+		                                    'info : 1 agent au repos, tour fini (#n13 vérificateur)']))
 
 	def test_worktree_sale_non(self):
 		self.monde(worktrees=[{'name': 'n12-impl', 'dirty': True}])
@@ -1749,7 +1755,7 @@ class Relance(Base):
 		self.assertEqual((code, out), (2, ''))
 
 	def test_verdict_pur(self):
-		faits = {'running': ['#n12 a'], 'waiting': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
+		faits = {'running': ['#n12 a'], 'waiting': [], 'repos': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
 		self.assertEqual(agence.verdict_relance(faits), (False, ['non : 1 agent en plein tour (#n12 a)']))
 		faits['running'] = []
 		self.assertEqual(agence.verdict_relance(faits), (True, ['oui']))

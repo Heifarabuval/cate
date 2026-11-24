@@ -2667,7 +2667,10 @@ def verdict_relance(faits):
 			non.append(f"worktree {nom_wt} : {', '.join(raisons)}")
 	non += [f'{source} illisible ({err})' for source, err in faits['illisibles']]
 	if faits['waiting']:
-		info.append(f"{pluriel(len(faits['waiting']), 'agent')} en attente de saisie ({', '.join(faits['waiting'])})")
+		n = len(faits['waiting'])
+		info.append(f"{pluriel(n, 'agent')} bloqué{'s' * (n > 1)} sur une saisie, permission ou question ({', '.join(faits['waiting'])})")
+	if faits['repos']:
+		info.append(f"{pluriel(len(faits['repos']), 'agent')} au repos, tour fini ({', '.join(faits['repos'])})")
 	info += [f'PR ouverte #{num} {titre}' for num, titre in faits['prs']]  # une PR ne se perd pas au redémarrage
 	if faits['daemon'] and faits['daemon'][0] != faits['daemon'][1]:
 		info.append(f"daemon à redémarrer (build {faits['daemon'][0]}, app {faits['daemon'][1]}) : terminaux et agents arrêtés")
@@ -2687,7 +2690,7 @@ def repo_origin(base):
 def lire_faits_relance(st, base=None):
 	"""Lit, sans rien écrire, ce que verdict_relance juge. Une lecture en échec s'ajoute à « illisibles » (jamais un faux oui)."""
 	base = base or root()
-	faits = {'running': [], 'waiting': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
+	faits = {'running': [], 'waiting': [], 'repos': [], 'worktrees': [], 'prs': [], 'daemon': None, 'illisibles': []}
 
 	def illisible(source, err):
 		faits['illisibles'].append((source, ' '.join(str(err).split()) or 'sortie vide'))
@@ -2699,7 +2702,9 @@ def lire_faits_relance(st, base=None):
 		ignores = set(st['panels'].values()) | {r['panelId'] for r in rows if r.get('caller')}
 		for a in agents:
 			if a['panelId'] not in ignores:
-				cible = faits['running'] if a.get('state') == 'running' else faits['waiting'] if a.get('state') == 'waitingForInput' else None
+				# bloqué = il attend une saisie ET ne peut pas recevoir de prompt (test de ecrans_a_lire) ; sinon son tour est fini
+				cible = (faits['running'] if a.get('state') == 'running' else None if a.get('state') != 'waitingForInput'
+				         else faits['repos'] if a.get('canReceivePrompt', True) else faits['waiting'])
 				if cible is not None:
 					cible.append(a.get('title') or a['panelId'])
 	except (Refus, ValueError, TypeError, KeyError, AttributeError) as err:
