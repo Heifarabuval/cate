@@ -9,6 +9,8 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   prepare ISSUE BRAS  clone neuf sans remote au commit parent dans R/ISSUE-BRAS/, énoncé R/ISSUE-BRAS.md
   debut ISSUE BRAS    ouvre le rejeu (un seul à la fois, seuil commité d'abord), horodaté en UTC
   fini ISSUE BRAS     horodate et lance l'arbitre : vert, rouge, non lançable ; le 4e rouge donne échec
+  machine ISSUE BRAS  marque qu'un orchestrateur va envoyer un message ou lancer `fini` : à poser juste avant, pour que
+                      ce geste ne compte pas comme du temps actif de l'humain (30 s après la marque, au plus)
   controle ISSUE BRAS contamination : appels d'outil des journaux du clone qui citent la PR d'origine ou le dépôt D
   mesure ISSUE BRAS [--usage-json F]  résultat en nombres dans S/resultats/ISSUE-BRAS.json (F : `cate agent usage --json`)
   revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
@@ -280,6 +282,15 @@ def fini(a):
 	return 0 if res == 'vert' else 1
 
 
+def machine(a):
+	if ouvert(a) != nom(a):
+		raise Refus('rejeu %s non ouvert : debut d\'abord' % nom(a))
+	etat = lire(etat_path(a))
+	etat.setdefault('machine', []).append(maintenant())
+	ecrire(etat_path(a), etat)
+	return 0
+
+
 def motifs(depot, checkout, v):
 	"""depot : nom GitHub ; checkout : chemin local du dépôt d'origine, qui contient la solution."""
 	chemins = {os.path.abspath(checkout), os.path.realpath(checkout)}
@@ -367,6 +378,10 @@ def clics(clone):
 	return st, [attente_mesure.instant(j['ts']) for n in st.get('needs', []) for j in n.get('journal', []) if j.get('by') == 'clic']
 
 
+MARQUE_S = 30  # un geste annoncé par `machine` arrive dans les secondes qui suivent la marque
+# ponytail: une frappe humaine dans ces 30 s compte machine ; marques consommées une à une si cela arrive
+
+
 def temps_actif(evts, plafond):
 	"""Σ, sur les événements humains, du délai depuis l'événement précédent (quel qu'il soit), plafonné.
 
@@ -403,8 +418,10 @@ def mesure(a):
 	ta = mur = humains = None
 	if acheve:  # fenêtre [debut, dernier fini] : debut et chaque fini sont des gestes humains
 		bornes = [attente_mesure.instant(x) for x in [etat['debut']] + [f['instant'] for f in finis]]
-		evts = attente_mesure.interventions(chemins) + [(t, 'humain') for t in ts_clics]
-		evts = [e for e in evts if bornes[0] <= e[0] <= bornes[-1]] + [(t, 'humain') for t in bornes]
+		marques = [attente_mesure.instant(x) for x in etat.get('machine', [])]
+		evts = attente_mesure.interventions(chemins) + [(t, 'humain') for t in bornes]
+		evts = [(t, 'machine' if k == 'humain' and any(0 <= t - m <= MARQUE_S for m in marques) else k) for t, k in evts]
+		evts = [e for e in evts + [(t, 'humain') for t in ts_clics] if bornes[0] <= e[0] <= bornes[-1]]
 		ta, mur, humains = temps_actif(evts, s['plafond_s']), round(bornes[-1] - bornes[0]), sum(1 for _, k in evts if k == 'humain')
 	res = {
 		'issue': a.issue, 'bras': a.bras, 'outil': outil_sha(a.depot), 'seuil': empreinte, 'debut': etat['debut'], 'finis': finis,
@@ -642,7 +659,7 @@ def main(argv=None):
 	p = sub.add_parser('select')
 	p.add_argument('--graine', type=int, required=True)
 	p.add_argument('--remplacer', action='store_true')
-	for c in ('prepare', 'debut', 'fini', 'controle', 'mesure'):
+	for c in ('prepare', 'debut', 'fini', 'machine', 'controle', 'mesure'):
 		p = sub.add_parser(c)
 		p.add_argument('issue', type=int)
 		p.add_argument('bras', choices=BRAS)
@@ -654,7 +671,7 @@ def main(argv=None):
 	sub.add_parser('rapport')
 	a = ap.parse_args(argv)
 	try:
-		return {'select': select, 'prepare': prepare, 'debut': debut, 'fini': fini, 'controle': controle, 'mesure': mesure,
+		return {'select': select, 'prepare': prepare, 'debut': debut, 'fini': fini, 'machine': machine, 'controle': controle, 'mesure': mesure,
 			'revue': revue, 'rapport': rapport, 'comparer': comparer}[a.cmd](a)
 	except Refus as e:
 		print(e, file=sys.stderr)

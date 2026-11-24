@@ -41,7 +41,7 @@ Un seul rejeu ouvert à la fois (`ouvert.json`). Ordre de `selection.json` : pre
 3. #199, bras outil
 4. #26, bras outil
 
-Les issues de pilote ne comptent pas dans la campagne. Heifara note à la main un chronomètre de son temps actif par rejeu (SC-005 : écart ≤ 25 %).
+Les issues de pilote ne comptent pas dans la campagne. Heifara note à la main un chronomètre de son temps actif par rejeu (SC-005 : écart ≤ 25 %). Si un orchestrateur pilote le rejeu (messages par `cate terminal type`, `fini`), il pose `benchmark.py machine ISSUE BRAS` juste avant chaque geste : sans marque, ces gestes comptent comme du temps humain (#199 : 285 s mesurés pour un chronomètre à 0 s).
 
 Le harnais lit le seuil et la sélection dans le dépôt où vit `benchmark.py`, et exige `seuil.json` commité. Les commandes ci-dessous visent le worktree `n944-preparateur`, où les deux fichiers sont commités. Si ce worktree disparaît avant le rejeu, merger d'abord la branche puis remplacer le chemin par celui du checkout de `main`.
 
