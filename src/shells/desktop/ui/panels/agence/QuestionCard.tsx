@@ -29,6 +29,8 @@ export default function QuestionCard({ question, send, action: { run, active, er
   /** The merge method names the Merger buttons: the published one, else the one the CLI's own label carries (old CLI). */
   const methode = question.isMerge ? question.methode ?? /\(([^)]+)\)\s*$/.exec(question.options[0]?.label ?? '')?.[1] : undefined
   const method = methode ? ` (${methode})` : ''
+  /** The recommended option: the first one still possible, not always the first. */
+  const recommended = question.options.findIndex((option) => !option.fait)
 
   /** `key` names the button; `confirmation`: the question put to the person first; no answer, nothing sent. */
   const answer = async (key: string, fields: Omit<Answer, 'kind' | 'questionId'>, confirmation?: string) => {
@@ -51,6 +53,14 @@ export default function QuestionCard({ question, send, action: { run, active, er
         // Merger greyed: « Merger quand même » takes the option's place, same card, its reasons right above.
         const force = index === 0 && greyed
         const key = force ? 'force' : `option-${index}`
+        if (option.fait) {
+          return (
+            <div key={option.label} data-testid="option-faite" aria-disabled className="rounded-md border border-subtle px-2 py-1.5 text-[12px] text-secondary">
+              <b className="block break-words">{`${option.label} : déjà fait`}</b>
+              {option.detail && <span className="block break-words text-[11px]">{option.detail}</span>}
+            </div>
+          )
+        }
         return (
           <Fragment key={option.label}>
             {force && (
@@ -65,10 +75,10 @@ export default function QuestionCard({ question, send, action: { run, active, er
               busy={active === key}
               disabled={waiting(key)}
               onClick={() => void (force ? mergeAnyway() : answer(key, { choice: index }))}
-              className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] text-primary disabled:opacity-100 aria-busy:bg-hover ${force ? 'border-danger' : index === 0 ? 'border-agent' : 'border-subtle'} hover:bg-hover disabled:hover:bg-transparent`}
+              className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] text-primary disabled:opacity-100 aria-busy:bg-hover ${force ? 'border-danger' : index === recommended ? 'border-agent' : 'border-subtle'} hover:bg-hover disabled:hover:bg-transparent`}
             >
               <span className="min-w-0 flex-1">
-                <b className="block break-words text-primary">{force ? `Merger quand même${method}` : index === 0 ? `${question.isMerge && question.methode ? `Merger${method}` : option.label} (Recommandé)` : option.label}</b>
+                <b className="block break-words text-primary">{force ? `Merger quand même${method}` : index === recommended ? `${question.isMerge && question.methode ? `Merger${method}` : option.label} (Recommandé)` : option.label}</b>
                 {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
               </span>
             </ActionButton>

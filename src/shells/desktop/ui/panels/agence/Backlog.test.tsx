@@ -125,3 +125,23 @@ it('has no total without a lancée', () => {
   render({ ...published, fiches: published.fiches.filter((f) => f.etat !== 'lancée') })
   expect(host.querySelector('[data-testid="total"]')).toBeNull()
 })
+
+it('keeps the title readable next to a long wait reason: the reason takes its own line and never squeezes it (issue 195)', () => {
+  const chemin = 'src/shells/desktop/ui/panels/agence/une/branche/tres/profonde/Composant.tsx'
+  render({ ...published, attentes: { F2: `chevauche F1 sur ${chemin}` } })
+  const attend = row('F2').querySelector<HTMLElement>('[data-testid="attend"]')!
+  expect(attend.textContent).toBe(`attend : chevauche F1 sur ${chemin}`)
+  expect(attend.className).not.toContain('shrink-0')
+  expect(attend.className).toContain('basis-full')
+  expect(attend.className).toContain('break-all')
+  expect(row('F2').className).toContain('flex-wrap')
+})
+
+it('shows a prête already in the queue under « En file », no longer under « Prêtes » (issue 197)', () => {
+  render({ ...published, enFile: ['F2'], attentes: { F2: 'chevauche F1 sur src/a.ts' } })
+  expect(group('enFile')!.textContent).toContain('En file (1)')
+  expect(group('enFile')!.contains(row('F2'))).toBe(true)
+  expect(group('prête')!.textContent).toContain('Prêtes (2)')
+  expect(group('prête')!.contains(row('F2'))).toBe(false)
+  expect(row('F2').textContent).toContain('attend : chevauche F1 sur src/a.ts')
+})

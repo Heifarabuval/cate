@@ -11,7 +11,7 @@ vi.mock('@client/host', () => ({
 
 const ligne = (key: string, action: LigneAction, extra: Partial<Ligne> = {}): Ligne => ({
   key, workspaceId: 'w1', panelId: 'p1', root: key.split('#')[0], repo: 'cate', needId: key.split('#')[1], title: key,
-  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action, links: [], enabled: true, reason: null, ...extra,
+  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action, meta: [], links: [], enabled: true, reason: null, ...extra,
 })
 const question = (isMerge = false, extra: Partial<Extract<LigneAction, { type: 'question' }>> = {}): LigneAction => ({ type: 'question', questionId: 'q1', options: [{ label: 'Merger', detail: '' }, { label: 'Non', detail: '' }], isMerge, locks: [], ghUnknown: false, rebase: false, ...extra })
 const draft = (hash = 'h1', extra: Partial<Extract<LigneAction, { type: 'draft' }>> = {}): LigneAction => ({ type: 'draft', draftId: 'd1', kind: 'slack', hash, texte: 'Salut', inFlight: false, ...extra })
@@ -377,6 +377,23 @@ describe('restart', () => {
   it('never restarts by itself when a project turns unavailable', () => {
     start([], [project()])
     fake.set([])
+    expect(fake.sent).toEqual([])
+  })
+})
+
+describe('offer (issue 207)', () => {
+  it('relays Supprimer and Garder of a worktree, Fermer and Garder of a panel without an agent', async () => {
+    const actions = start([ligne('/a/cate#n3', { type: 'worktree' }), ligne('/a/cate#n4', { type: 'orphan' })])
+    await expect(actions.offer('/a/cate#n3', 'remove')).resolves.toEqual({ ok: true })
+    await expect(actions.offer('/a/cate#n4', 'close')).resolves.toEqual({ ok: true })
+    expect(fake.sent.map((sent) => sent.op)).toEqual([{ kind: 'worktree', needId: 'n3', choix: 'remove' }, { kind: 'orphan', needId: 'n4', choix: 'close' }])
+  })
+
+  it('refuses a choice the line does not offer, sending nothing', async () => {
+    const actions = start([ligne('/a/cate#n3', { type: 'worktree' }), ligne('/a/cate#n4', { type: 'orphan' }), ligne('/a/cate#n5', perm)])
+    await expect(actions.offer('/a/cate#n3', 'close')).resolves.toMatchObject({ ok: false, error: 'invalid' })
+    await expect(actions.offer('/a/cate#n4', 'remove')).resolves.toMatchObject({ ok: false, error: 'invalid' })
+    await expect(actions.offer('/a/cate#n5', 'keep')).resolves.toMatchObject({ ok: false, error: 'invalid' })
     expect(fake.sent).toEqual([])
   })
 })

@@ -17,6 +17,7 @@ const known = (titles: Record<string, string>) =>
 const actions = ({ action }: NeedRow): string[] => {
   if (!action) return []
   if (action.type === 'draft') return [`draft:${action.draftId}`]
+  if (action.type !== 'question') return [action.type]
   return [...(action.rebase ? [`rebase:${action.questionId}`] : []), `question:${action.questionId}`]
 }
 const shape = (rows: NeedRow[]) => rows.map((row) => ({ title: row.title, meta: row.meta, actions: actions(row) }))
@@ -117,5 +118,49 @@ describe('classify', () => {
 
   it('classifies an empty state into four empty sections', () => {
     expect(classify({ ...state, needs: [], drafts: [], questions: [] }, {}, now)).toEqual({ bloquant: [], aFaire: [], fait: [], reste: [] })
+  })
+})
+
+describe('offers of the regisseur (issue 207)', () => {
+  const need = (id: string, extra: object) => ({ ...state.needs[0], id, kind: 'human', ref: null, owner: 'heifara', status: 'open', title: id, panels: [], agentBlocked: false, perm: null, ...extra })
+  const sections = classify({ ...state, needs: [
+    need('n90', { worktree: { path: '/x/n9-impl', branch: 'feat/x' } }),
+    need('n91', { orphan: { panel: 'p9', title: 'T' } }),
+    need('n92', { worktree: { path: '/x/n8-impl', branch: 'feat/y' }, status: 'done' }),
+  ] } as AgenceState, {}, now)
+
+  it('gives the worktree and the orphan panel an action the views draw as buttons', () => {
+    expect(sections.aFaire.map((row) => [row.id, row.action])).toEqual([['n90', { type: 'worktree', branch: 'feat/x' }], ['n91', { type: 'orphan' }]])
+  })
+
+  it('offers nothing on a need that is closed', () => {
+    expect(sections.fait.find((row) => row.id === 'n92')!.action).toBeNull()
+  })
+})
+
+describe('a draft that can no longer leave (issue 201)', () => {
+  it('says « périmé » with the reason the regisseur read, on the draft line', () => {
+    const need = { ...state.needs[0], id: 'n95', kind: 'draft', ref: 'd95', owner: 'heifara', status: 'open', title: 'Valider le brouillon', panels: [], agentBlocked: false, perm: null }
+    const draft = { id: 'd95', needId: 'n95', cible: 'pr:o/r:main:fix/x', titre: 'T', statut: 'à valider', url: null }
+    const meta = (perime: string | null) => classify({ ...state, needs: [need], drafts: [{ ...draft, perime }] } as AgenceState, {}, now).aFaire[0].meta
+    expect(meta('branche fix/x non poussée sur o/r')).toContain('périmé : branche fix/x non poussée sur o/r')
+    expect(meta(null).some((item) => item.startsWith('périmé'))).toBe(false)
+  })
+})
+
+describe('why no merge card comes yet (issue 198)', () => {
+  const need = (extra: object) => ({ ...state.needs[0], id: 'n96', kind: 'task', ref: null, owner: 'agent', status: 'open', title: 'Corriger', panels: [], agentBlocked: false, perm: null, blocking: false, overBudget: false, closeFailed: false, ...extra })
+  const meta = (extra: object) => {
+    const sections = classify({ ...state, needs: [need(extra)] } as AgenceState, {}, now)
+    return [...sections.reste, ...sections.fait][0].meta
+  }
+
+  it('says what the end condition of an open need still waits for', () => {
+    expect(meta({ manques: ['PR non mergée', 'checks non verts'] })).toContain('manque : PR non mergée, checks non verts')
+  })
+
+  it('says nothing once the need is done, or when nothing is missing', () => {
+    expect(meta({ manques: ['PR non mergée'], status: 'done' }).some((item) => item.startsWith('manque'))).toBe(false)
+    expect(meta({ manques: [] }).some((item) => item.startsWith('manque'))).toBe(false)
   })
 })

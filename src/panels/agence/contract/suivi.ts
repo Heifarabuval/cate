@@ -72,10 +72,13 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
   }
   if (need.agentBlocked) meta.push('agent bloqué sur une permission ou une question')
   if (need.closeFailed) meta.push('fermeture refusée (travail non sauvegardé ou programme en cours) : à fermer à la main')
+  // Why no merge card comes yet: the line says what its end condition still waits for.
+  if (need.status === 'open' && need.manques?.length) meta.push(`manque : ${need.manques.join(', ')}`)
   const evidence = need.status === 'done' && need.evidence ? need.evidence : null
   if (evidence) meta.push(`preuve : ${evidence}`)
   if (need.kind === 'draft') {
     for (const draft of state.drafts) if (draft.id === need.ref && draft.modifie) meta.push(`modifié à ${draft.modifie}`)
+    for (const draft of state.drafts) if (draft.id === need.ref && draft.perime) meta.push(`périmé : ${draft.perime}`)
   }
   if (links.length) meta.push(`panneau : ${links.map((link) => link.title).join(', ')}`)
   let action: NeedRow['action'] = null
@@ -87,6 +90,10 @@ function row(state: AgenceState, need: StateNeed, titles: PanelTitles, now: numb
     if (question?.action && merge?.ghUnknown) meta.push('état GitHub inconnu')
     if (merge?.locks.length) meta.push(`Merger grisé : ${merge.locks.join(' ; ')}`)
     action = { type: 'question', questionId: need.ref, rebase: merge?.rebase ?? false }
+  } else if (need.status === 'open' && need.worktree) {
+    action = { type: 'worktree', branch: need.worktree.branch }
+  } else if (need.status === 'open' && need.orphan) {
+    action = { type: 'orphan' }
   }
   // As the regisseur's buttons: only a blocked agent's readable, unanswered request.
   const perm = need.status === 'open' && need.agentBlocked && need.perm ? need.perm : null

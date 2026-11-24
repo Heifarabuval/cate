@@ -44,6 +44,8 @@ export interface BoiteActions {
   send(key: string): Promise<ActionResult>
   /** Oui or Non to the permission an agent waits on. */
   perm(key: string, reponse: 'oui' | 'non'): Promise<ActionResult>
+  /** Supprimer or Garder the worktree, Fermer or Garder the panel without an agent, as the line offers. */
+  offer(key: string, choix: 'remove' | 'close' | 'keep'): Promise<ActionResult>
   /** Brings a linked panel of the line on screen and focuses it; without `panelId`, the project's agence panel. Always allowed, greyed line or not. */
   open(key: string, panelId?: string): Promise<ActionResult>
   /** Relaunches the project's own orchestrator and regisseur through its agence session. Busy when the project runs: no second regisseur. */
@@ -205,5 +207,9 @@ export function createBoiteActions(store: Pick<BoiteStore, 'getSnapshot' | 'subs
       }
     },
     perm: (key, reponse) => relay(key, (row) => (row.action.type === 'perm' ? { kind: 'perm', needId: row.needId, reponse } : null)),
+    offer: (key, choix) => relay(key, (row) =>
+      row.action.type === 'worktree' && choix !== 'close' ? { kind: 'worktree', needId: row.needId, choix }
+        : row.action.type === 'orphan' && choix !== 'remove' ? { kind: 'orphan', needId: row.needId, choix }
+          : null),
   }
 }

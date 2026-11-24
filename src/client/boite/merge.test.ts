@@ -206,3 +206,17 @@ describe('merge', () => {
     expect(result.rows[0]).toMatchObject({ enabled: true, reason: null })
   })
 })
+
+describe('an action or a reason on every row (issues 207 and 198)', () => {
+  it('carries the offers of the regisseur and the mentions that say why a row waits, without the panel list', () => {
+    const rows = merge([project('/a/cate', {
+      bloquant: [need('n1', { kind: 'task', meta: ['agent bloqué sur une permission ou une question', 'panneau : impl'] })],
+      aFaire: [need('n2', { action: { type: 'worktree', branch: 'fix/x' } }), need('n3', { action: { type: 'orphan' } })],
+    })]).rows
+    expect(rows.map((row) => [row.needId, row.action, row.meta])).toEqual([
+      ['n1', { type: 'link' }, ['agent bloqué sur une permission ou une question']],
+      ['n2', { type: 'worktree' }, []],
+      ['n3', { type: 'orphan' }, []],
+    ])
+  })
+})

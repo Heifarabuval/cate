@@ -22,7 +22,7 @@ const NOW = Date.parse('2026-11-19T12:00:00Z')
 
 const ligne = (key: string, extra: Partial<Ligne> = {}): Ligne => ({
   key, workspaceId: 'w', panelId: 'p', root: '/a/cate', repo: 'cate', needId: key.split('#')[1], title: `Besoin ${key}`,
-  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action: { type: 'link' }, links: [], enabled: true, reason: null, ...extra,
+  blocking: false, waitingSince: '2026-11-19T10:00:00Z', action: { type: 'link' }, meta: [], links: [], enabled: true, reason: null, ...extra,
 })
 const project = (repo: string) => ({ workspaceId: `w-${repo}`, panelId: 'p', root: `/a/${repo}`, repo, state: 'live' as const, error: null })
 

@@ -37,6 +37,8 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
   if (action.type !== 'question') return null
   const { questionId, locks } = action
   const greyed = action.isMerge && locks.length > 0
+  /** The recommended option: the first one still possible, not always the first. */
+  const recommended = action.options.findIndex((option) => !option.fait)
 
   /** Merging over the locks asks first, naming each one it passes over. */
   const mergeAnyway = async () => {
@@ -46,10 +48,20 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
 
   return (
     <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-subtle bg-surface-1 p-2">
+      {/* The line shows one truncated line of it: the whole question is read here before answering. */}
+      <div data-testid="question-texte" className="break-words font-medium text-primary">{ligne.title}</div>
       {action.ghUnknown && <div className="text-[11px] text-secondary">état GitHub inconnu</div>}
       {action.options.map((option, index) => {
         // Merger greyed: « Merger quand même » takes the option's place, its reasons right above.
         const force = index === 0 && greyed
+        if (option.fait) {
+          return (
+            <div key={option.label} data-testid="option-faite" aria-disabled className="rounded-md border border-subtle px-2 py-1.5 text-secondary">
+              <b className="block break-words">{`${option.label} : déjà fait`}</b>
+              {option.detail && <span className="block break-words text-[11px]">{option.detail}</span>}
+            </div>
+          )
+        }
         return (
           <Fragment key={option.label}>
             {force && (
@@ -63,10 +75,10 @@ function QuestionCard({ ligne, actions, busy }: { ligne: LigneData; actions: Boi
               data-testid="option"
               disabled={busy}
               onClick={() => void (force ? mergeAnyway() : action.isMerge && index === 0 ? actions.merge(ligne.key, { questionId }) : actions.answer(ligne.key, { questionId, choice: index }))}
-              className={`${OPTION} ${force ? 'border-danger' : index === 0 ? 'border-agent' : 'border-subtle'}`}
+              className={`${OPTION} ${force ? 'border-danger' : index === recommended ? 'border-agent' : 'border-subtle'}`}
             >
               <span className="min-w-0 flex-1">
-                <b className="block break-words">{force ? 'Merger quand même (rebase)' : index === 0 ? `${option.label} (Recommandé)` : option.label}</b>
+                <b className="block break-words">{force ? 'Merger quand même (rebase)' : index === recommended ? `${option.label} (Recommandé)` : option.label}</b>
                 {option.detail && <span className="block break-words text-[11px] text-secondary">{option.detail}</span>}
               </span>
             </button>
@@ -133,7 +145,15 @@ export default function Ligne({ ligne, now, actions, state, selected = false }: 
           <Button size="sm" className={ACTION} disabled={busy} onClick={() => actions.show(key)}>Lire et envoyer</Button>
         )}
         {live && action.type === 'draft' && action.inFlight && <span className="shrink-0 whitespace-nowrap text-secondary">En cours d&apos;envoi</span>}
+        {live && (action.type === 'worktree' || action.type === 'orphan') && (
+          <span className="flex shrink-0 items-center gap-1.5">
+            <Button size="sm" className={PLAIN} disabled={busy} onClick={() => void actions.offer(key, 'keep')}>Garder</Button>
+            <Button size="sm" className={ACTION} disabled={busy} onClick={() => void actions.offer(key, action.type === 'worktree' ? 'remove' : 'close')}>{action.type === 'worktree' ? 'Supprimer' : 'Fermer'}</Button>
+          </span>
+        )}
       </div>
+      {/* No button answers this line from here: it says why it waits. */}
+      {ligne.meta.length > 0 && <div data-testid="ligne-raison" className="min-w-0 break-words text-[11px] text-secondary">{ligne.meta.join(' · ')}</div>}
       {ligne.links.length > 0 && (
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] text-secondary">
           {ligne.links.map((link) => link.closed

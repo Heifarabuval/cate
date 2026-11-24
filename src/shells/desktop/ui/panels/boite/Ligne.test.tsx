@@ -16,7 +16,7 @@ const KEY = '/a/cate#n1'
 
 const ligne = (action: LigneAction): LigneData => ({
   key: KEY, workspaceId: 'w', panelId: 'p', root: '/a/cate', repo: 'cate', needId: 'n1', title: 'Besoin', blocking: false,
-  waitingSince: '2026-11-19T10:00:00Z', action, links: [], enabled: true, reason: null,
+  waitingSince: '2026-11-19T10:00:00Z', action, meta: [], links: [], enabled: true, reason: null,
 })
 const options = [{ label: 'Merger', detail: 'rebase' }, { label: 'Non', detail: '' }]
 const question = (isMerge = false, extra: Partial<Extract<LigneAction, { type: 'question' }>> = {}): LigneAction =>
@@ -42,7 +42,7 @@ beforeEach(() => {
     getState: vi.fn(), subscribe: vi.fn(),
     answer: vi.fn(async () => ({ ok: true })), merge: vi.fn(async () => ({ ok: true })),
     show: vi.fn(() => ({ ok: true, texte: '# Salut\n\n**gras**' })), send: vi.fn(async () => ({ ok: true })),
-    perm: vi.fn(async () => ({ ok: true })),
+    perm: vi.fn(async () => ({ ok: true })), offer: vi.fn(async () => ({ ok: true })),
     open: vi.fn(async () => ({ ok: true })), restart: vi.fn(async () => ({ ok: true })),
   }
   host = document.createElement('div')
@@ -270,4 +270,45 @@ it('says why a restart was refused', async () => {
 it('has no Relancer on a line that runs', () => {
   render(question())
   expect(button('Relancer')).toBeUndefined()
+})
+
+// ---- Issues 207, 202 and 198: an action or a reason on every line
+
+it('offers Supprimer and Garder on a merged worktree, Fermer and Garder on a panel without an agent', async () => {
+  render({ type: 'worktree' })
+  await click('Supprimer')
+  expect(actions.offer).toHaveBeenLastCalledWith(KEY, 'remove')
+  await click('Garder')
+  expect(actions.offer).toHaveBeenLastCalledWith(KEY, 'keep')
+  render({ type: 'orphan' })
+  expect(button('Supprimer')).toBeUndefined()
+  await click('Fermer')
+  expect(actions.offer).toHaveBeenLastCalledWith(KEY, 'close')
+})
+
+it('says why a line waits when no button answers it', () => {
+  render({ type: 'link' }, state(), { meta: ['agent bloqué sur une permission ou une question', 'budget de 10 min dépassé : continuer, réduire ou arrêter ?'] })
+  expect(host.querySelector('[data-testid="ligne-raison"]')!.textContent).toBe('agent bloqué sur une permission ou une question · budget de 10 min dépassé : continuer, réduire ou arrêter ?')
+})
+
+it('greys an option already taken and recommends the first one still possible', async () => {
+  const taken = [{ label: 'Éclairer F1', detail: 'a', fait: true as const }, { label: 'Éclairer F2', detail: 'b' }, { label: 'Vu', detail: '' }]
+  render(question(false, { options: taken }))
+  await click('Répondre')
+  expect(host.querySelector('[data-testid="option-faite"]')!.textContent).toContain('Éclairer F1 : déjà fait')
+  const live = [...host.querySelectorAll('[data-testid="option"]')].map((b) => b.querySelector('b')!.textContent)
+  expect(live).toEqual(['Éclairer F2 (Recommandé)', 'Vu'])
+  await click(/Éclairer F2/)
+  expect(actions.answer).toHaveBeenCalledWith(KEY, { questionId: 'q1', choice: 1 })
+})
+
+it('shows the whole question in its card: the line only has one truncated line of it (issue 198)', async () => {
+  const long = 'F33 (niveau d\'info des panneaux) : quel panneau montre moins que lequel, et quelle info manque (agents, questions, merges) ?'
+  render(question(), state(), { title: long })
+  expect(host.querySelector('[data-testid="question-texte"]')).toBeNull()
+  await click('Répondre')
+  const texte = host.querySelector<HTMLElement>('[data-testid="question-texte"]')!
+  expect(texte.textContent).toBe(long)
+  expect(texte.className).toContain('break-words')
+  expect(texte.className).not.toContain('truncate')
 })

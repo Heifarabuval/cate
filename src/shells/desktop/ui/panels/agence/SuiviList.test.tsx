@@ -342,3 +342,22 @@ it('has one lock per question: the line\'s rebase in flight blocks the card', as
   expect(send).not.toHaveBeenCalled()
   await act(async () => rebased(null))
 })
+
+it('draws the regisseur\'s offers as buttons: Supprimer or Garder a merged worktree, Fermer or Garder a panel without an agent (issue 207)', async () => {
+  const worktree = row('n48', { kind: 'human', title: 'Supprimer le worktree n46-impl ?', action: { type: 'worktree', branch: 'fix/x' } })
+  const orphan = row('n49', { kind: 'human', title: 'Fermer le panneau « T » ?', action: { type: 'orphan' } })
+  render(suivi({ aFaire: [worktree, orphan] }))
+  const named = (label: string) => [...host.querySelectorAll('button')].filter((b) => b.textContent === label)
+  await act(async () => { named('Supprimer')[0].click() })
+  expect(send).toHaveBeenLastCalledWith({ kind: 'worktree', needId: 'n48', choix: 'remove' })
+  await act(async () => { named('Fermer')[0].click() })
+  expect(send).toHaveBeenLastCalledWith({ kind: 'orphan', needId: 'n49', choix: 'close' })
+  expect(named('Garder')).toHaveLength(2)
+})
+
+it('shows the regisseur\'s refusal of an offer on its line', async () => {
+  send.mockResolvedValueOnce({ ok: false, error: 'conflict', message: 'Le worktree a changé : rien supprimé.' } as never)
+  render(suivi({ aFaire: [row('n48', { kind: 'human', action: { type: 'worktree', branch: 'fix/x' } })] }))
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Supprimer')!.click() })
+  expect(host.textContent).toContain('Le worktree a changé : rien supprimé.')
+})

@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { focusPanel, revealPanel } from '@client/host'
-import type { AgenceOp, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
+import type { AgenceOp, AgenceOpResult, NeedRow, QuestionView, SuiviView } from '@panels/agence/contract'
 import { Button, InlineNotice } from '../../kernel/interaction'
-import { ActionButton, ROW_ENTER, useAction } from './action'
+import { ActionButton, refusal, ROW_ENTER, useAction } from './action'
 import QuestionCard from './QuestionCard'
 import { ACTION, LINK } from './styles'
 
@@ -97,6 +97,16 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
   const questionId = action?.type === 'question' ? action.questionId : null
   const { clear } = act
   useEffect(() => clear(), [questionId]) // eslint-disable-line react-hooks/exhaustive-deps -- `clear` is new each render
+  /** An offer of the regisseur (worktree, panel without an agent): one click, its refusal shown on the line. */
+  const offer = (key: string, op: AgenceOp) => void act.run(key, async () => {
+    const result = await send(op) as AgenceOpResult
+    return result.ok ? null : refusal(result, 'Refusé.')
+  })
+  const offers = action?.type === 'worktree'
+    ? [{ key: 'keep', label: 'Garder', op: { kind: 'worktree', needId: row.id, choix: 'keep' } as AgenceOp }, { key: 'remove', label: 'Supprimer', op: { kind: 'worktree', needId: row.id, choix: 'remove' } as AgenceOp }]
+    : action?.type === 'orphan'
+      ? [{ key: 'keep', label: 'Garder', op: { kind: 'orphan', needId: row.id, choix: 'keep' } as AgenceOp }, { key: 'close', label: 'Fermer', op: { kind: 'orphan', needId: row.id, choix: 'close' } as AgenceOp }]
+      : []
   return (
     <li className={`px-3 py-2 border-t border-subtle first:border-t-0 ${enter ? ROW_ENTER : ''}`}>
       <div className="flex items-start gap-2">
@@ -106,6 +116,13 @@ function Row({ row, workspaceId, questions, send, compact, enter: arrived, onRea
             {action.inFlight
               ? <span className="whitespace-nowrap text-[11px] text-secondary">En cours d&apos;envoi</span>
               : <Button size="sm" className={ACTION} onClick={() => onRead(action.draftId)}>Lire et envoyer</Button>}
+          </span>
+        )}
+        {offers.length > 0 && (
+          <span data-testid="need-actions" className="flex shrink-0 items-center gap-1.5">
+            {offers.map(({ key, label, op }) => (
+              <ActionButton key={key} className={ACTION} busy={act.active === key} done={act.done === key} disabled={act.waiting(key)} onClick={() => offer(key, op)}>{label}</ActionButton>
+            ))}
           </span>
         )}
         {action?.type === 'question' && (action.rebase || question) && (

@@ -248,3 +248,11 @@ it('leaves the options of a question that is not a merge as they are, even with 
   render(question({ methode: 'squash' }))
   expect([...host.querySelectorAll('[data-testid="option"] b')].map((b) => b.textContent)).toEqual(['Agence (Recommandé)', 'Suivi'])
 })
+
+it('greys an option already taken and recommends the first one still possible (issue 202)', async () => {
+  render(question({ options: [{ label: 'Éclairer F1', detail: 'a', fait: true }, { label: 'Éclairer F2', detail: 'b' }, { label: 'Vu', detail: '' }] }))
+  expect(host.querySelector('[data-testid="option-faite"]')!.textContent).toContain('Éclairer F1 : déjà fait')
+  expect([...host.querySelectorAll('[data-testid="option"]')].map((b) => b.querySelector('b')!.textContent)).toEqual(['Éclairer F2 (Recommandé)', 'Vu'])
+  await click(/Éclairer F2/)
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q1', choice: 1 })
+})

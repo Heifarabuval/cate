@@ -37,6 +37,7 @@ import type {
   PratiquesView,
   PratiqueValeur,
   QuestionView,
+  StateNeed,
 } from './contract/types'
 import { draftHash } from './parts/runtime/draftHash'
 import type { RegisseurHandle, Regisseurs } from './parts/runtime/regisseur'
@@ -129,6 +130,8 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
         ? this.click('/pratiques/preset', { nom, ...(remplacer ? { remplacer: '1' } : {}) })
         : Promise.resolve({ ok: false, error: 'invalid' }),
       perm: ({ needId, reponse }) => this.perm(needId, reponse),
+      worktree: ({ needId, choix }) => this.offer(needId, 'wt', choix, ['remove', 'keep'], (need) => Boolean(need.worktree)),
+      orphan: ({ needId, choix }) => this.offer(needId, 'orphan', choix, ['close', 'keep'], (need) => Boolean(need.orphan)),
       // The regisseur decides which ids are still prêtes, under its lock: a second click gets its 409.
       'fiches.lancer': ({ ids }) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === 'string' && SAFE_ID.test(id))
         ? this.click('/fiches/lancer', { ids: ids.join(',') })
@@ -179,6 +182,14 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const ask = PERM_NEED.test(needId) && (reponse === 'oui' || reponse === 'non') && this.files?.read().state?.needs.some((need) => need.id === needId && need.status === 'open' && need.perm && need.perm.choix.length > 0)
     if (!ask) return Promise.resolve({ ok: false, error: 'invalid' })
     return this.click(`/perm/${needId}/${reponse}`, {})
+  }
+
+  /** Supprimer or Garder a merged worktree, Fermer or Garder a panel without an agent: the regisseur's
+   *  `/wt` and `/orphan` clicks, which re-check before they act and refuse (409) what changed. */
+  private offer(needId: string, route: 'wt' | 'orphan', choix: string, choices: readonly string[], offered: (need: StateNeed) => boolean): Promise<AgenceOpResult> {
+    const open = PERM_NEED.test(needId) && choices.includes(choix) && this.files?.read().state?.needs.some((need) => need.id === needId && need.status === 'open' && offered(need))
+    if (!open) return Promise.resolve({ ok: false, error: 'invalid' })
+    return this.click(`/${route}/${needId}/${choix}`, {})
   }
 
   /** One click on the regisseur's form. The session host runs this panel's
@@ -428,7 +439,8 @@ function questions(state: AgenceState, now: number, pratiques: PratiquesView | n
     out[question.id] = {
       id: question.id,
       question: question.question,
-      options: question.options,
+      // A regisseur card marks an option taken by a null click: it shows greyed, never clickable.
+      options: question.options.map((option, index) => question.clics?.[index] === null ? { ...option, fait: true as const } : option),
       isMerge: typeof question.action === 'string' && question.action.startsWith('merge:'),
       ...mergeState(state, question, now),
     }
