@@ -185,6 +185,19 @@ describe('AgenceSession', () => {
     expect(first.stored()).toEqual({ knownTitles: {} })
   })
 
+  it('lets the panel close during the first questions of a new workspace (no PTY yet), and asks once the orchestrator runs (F27)', async () => {
+    const firstQuestions = state({ pratiques: { preset: 'dev', valeurs: {}, sources: {}, erreur: null, projet: false } } as Partial<AgenceState>)
+    const fresh = setup({ files: { state: firstQuestions, readAt: 't' } })
+    await fresh.session.start()
+    expect(fresh.terminal.spawns).toEqual([])
+    expect(fresh.session.closeBlocker()).toBeNull()
+    // A workspace opened before the feature: the orchestrator already runs while the questions show.
+    const running = setup({ files: { state: state(), readAt: 't' } })
+    await running.session.start()
+    running.files.set({ state: firstQuestions })
+    expect(running.session.closeBlocker()).toMatchObject({ code: 'dirty' })
+  })
+
   itPosix('works in the record\'s root when it has one', async () => {
     const { session, terminal, regisseurs, files } = setup({ fields: { root: '/other' } })
     await session.start()
