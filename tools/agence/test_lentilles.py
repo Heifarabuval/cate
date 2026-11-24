@@ -135,6 +135,68 @@ class Eclairer(Carte):
 		self.assertEqual(self.eclairer(), [])
 		self.assertEqual(self.repond(q, 'Éclairer F1')[0], 409)  # double clic
 
+	def lentilles(self):
+		return [n for n in self.state()['needs'] if n['kind'] == 'lentille']
+
+	def test_clic_cree_le_besoin_jetable_qui_se_clot_a_la_note(self):
+		"""Issue 211 : le clic crée le besoin de la lentille (l'orchestrateur y rattache son agent, sans carte ni
+		question à l'humain) ; la proposition notée sur la fiche le clôt au tour suivant."""
+		self.cli('lentille', 'F1', '--carte')
+		self.assertEqual(agence.click('/lentille/F1/eclairer', {}), (303, '/'))
+		[n] = self.lentilles()
+		self.assertEqual((n['ref'], n['owner'], n['status'], n['blocking']), ('lentille:F1', 'agent', 'open', False))
+		[msg] = [c[c.index('--panel') + 2] for c in self.envois()]
+		self.assertIn(f"agence need panel {n['id']}", msg)
+		self.assertEqual([q for q in self.questions() if q['answer'] is None], [])
+		with agence.tx() as st:
+			agence.fiches_tour(st)
+		self.assertEqual(self.lentilles()[0]['status'], 'open')  # pas encore de proposition
+		self.cli('fiche', 'note', 'F1', 'lentille novice : le mot registre n\'est défini nulle part')
+		with agence.tx() as st:
+			agence.fiches_tour(st)
+		[n] = self.lentilles()
+		self.assertEqual(n['status'], 'done')
+		self.assertIn('lentille novice', n['evidence'])
+
+	def test_fiche_deja_eclairee_ou_en_cours_n_est_plus_proposee(self):
+		"""Issue 202 : deux décisions structurantes citent F1 ; éclairée par la première, elle n'est pas reproposée par la seconde."""
+		self.proposer('--structurante')
+		self.cli('decision', 'add', 'Registre versionné', '--pourquoi', 'audit', '--structurante')
+		with agence.verrou():
+			b = backlog.charger(self.tmp)['backlog']
+			b['fiches'][0]['decisions'] = ['D1', 'D2']
+			backlog.ecrire(self.tmp, 'backlog.json', b)
+		self.assertEqual(agence.click('/decision/D1/valider', {}), (303, '/'))
+		[q] = self.eclairer()
+		self.assertEqual(self.repond(q, 'Éclairer F1'), (303, '/'))
+		self.assertEqual(agence.click('/decision/D2/valider', {}), (303, '/'))
+		self.assertEqual(self.eclairer(), [])  # lentille en cours : aucune carte
+		self.cli('fiche', 'note', 'F1', 'lentille novice : rien à redire')
+		with agence.tx() as st:
+			agence.fiches_tour(st)
+		self.cli('decision', 'add', 'Registre signé', '--pourquoi', 'preuve', '--structurante')
+		with agence.verrou():
+			b = backlog.charger(self.tmp)['backlog']
+			b['fiches'][0]['decisions'] = ['D1', 'D2', 'D3']
+			backlog.ecrire(self.tmp, 'backlog.json', b)
+		self.assertEqual(agence.click('/decision/D3/valider', {}), (303, '/'))
+		self.assertEqual(self.eclairer(), [])  # déjà éclairée : aucune carte
+		code, _ = self.cli('lentille', 'F1', '--carte')  # à la demande de l'humain : toujours possible
+		self.assertEqual(code, 0)
+		self.assertEqual(len(self.eclairer()), 1)
+
+	def test_option_deja_faite_grisee_et_recommande_sur_la_premiere_possible(self):
+		"""Issue 202 : sur la page, une option dont le clic est None est grisée « déjà fait » ; « (Recommandé) » passe à la suivante."""
+		self.cli('fiche', 'add', 'Seconde fiche', '--decision', 'D1', '--vision', 'FR-007')
+		self.repond(self.proposer('--structurante'), 'Valider')
+		[q] = self.eclairer()
+		self.assertIn('Éclairer F1 (Recommandé)', agence.page_ask(self.state(), q['id']))
+		self.assertEqual(self.repond(q, 'Éclairer F1'), (303, '/'))
+		page = agence.page_ask(self.state(), q['id'])
+		self.assertIn('disabled><b>Éclairer F1 : déjà fait', page)
+		self.assertIn('Éclairer F2 (Recommandé)', page)
+		self.assertNotIn('Éclairer F1 (Recommandé)', page)
+
 	def test_post_sans_carte_ouverte_refuse(self):
 		code, msg = agence.click('/lentille/F1/eclairer', {})
 		self.assertEqual(code, 409)

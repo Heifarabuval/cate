@@ -658,6 +658,32 @@ class Brouillons(Base):
 		self.assertEqual(self.run.ran('gh', 'pr', 'create'), [])
 		self.assertEqual(agence.find(self.state(), 'drafts', did)['statut'], 'à valider')
 
+	def test_brouillon_de_pr_perime_s_affiche_avec_sa_raison_sans_attendre_le_clic(self):
+		"""Issue 201 : la précondition d'un brouillon de PR se revérifie au tour ; fausse, la ligne dit « périmé : raison »
+		et l'orchestrateur est prévenu une fois ; redevenue vraie, la mention part."""
+		self.booted()
+		did = self.cli('draft', 'new', '--cible', 'pr:o/r:main:fix/x', '--titre', 'T', '--from', 'a1', 'Corps')[1].strip()
+		compare = ['gh', 'api', 'repos/o/r/compare/main...fix/x']
+
+		def tour():
+			with agence.tx() as st:  # le relevé est borné à un par GH_PERIME : le test le rend dû
+				agence.find(st, 'drafts', did).pop('perimeTs', None)
+			self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'}, {'panelId': 'p1', 'title': 'B', 'type': 'browser'}])
+			self.run.reply(['cate', 'agent', 'list'], [])
+			agence.un_tour()
+			return agence.page_suivi(self.state())
+
+		self.assertNotIn('périmé', tour())
+		self.run.reply(compare, code=1, err='gh: Not Found (HTTP 404)')
+		avant = len(self.run.ran('cate', 'agent', 'send'))
+		self.assertIn('périmé : branche fix/x non poussée sur o/r', tour())
+		self.assertIn('périmé', tour())
+		envois = self.run.ran('cate', 'agent', 'send')[avant:]
+		self.assertEqual(len(envois), 1)  # prévenu une fois, pas à chaque tour
+		self.assertIn(did, envois[0][-2])
+		self.run.reply(compare, '1\n')
+		self.assertNotIn('périmé', tour())
+
 	def test_clic_envoyer_mail_fige_et_previent(self):
 		did = self.new_draft(cible='mail:dg@exemple.fr', texte='Salut')
 		agence.click(f'/draft/{did}/send', self.shown(did))
@@ -2064,6 +2090,18 @@ class ModeleEffort(Base):
 
 	def agent(self, **kw):
 		return [dict({'panelId': 'a1', 'state': 'running', 'canReceivePrompt': True}, **kw)]
+
+	def test_need_add_human_refuse_sans_carte(self):
+		"""Issue 207 : un besoin human posé par la CLI n'a ni bouton ni réponse possible ; seule une carte (agence ask) en crée un."""
+		self.booted()
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err):
+			code, _ = self.cli('need', 'add', '--kind', 'human', 'Supprimer le worktree ?')
+		self.assertEqual(code, 1)
+		self.assertIn('agence ask', err.getvalue())
+		self.assertEqual(self.state()['needs'], [])
+		self.cli('ask', '--from', 'a1', '--option', 'Oui|x', '--option', 'Non|y', 'Supprimer le worktree ?')
+		self.assertEqual([n['kind'] for n in self.state()['needs']], ['human'])
 
 	def test_need_add_enregistre_modele_et_effort(self):
 		self.booted()

@@ -59,7 +59,7 @@ EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')  # ceux que cate agent start
 JOURS_JOURNAL = 14  # rétention du journal d'observation (RETENTION_DAYS dans src/workspace/observation/contract/retention.ts)
 AVERTISSEMENT_REFS = ('agence : attention, un terminal Cate enregistre la sortie de ses commandes (terminal-logs/) : '
                       "les adresses et les identifiants affichés y restent, hors de la rétention de 14 jours et de « Tout effacer ».")
-KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human')
+KINDS = ('task', 'cmd', 'pr', 'issue', 'file', 'draft', 'human', 'lentille')  # lentille : besoin jetable né du clic « Éclairer »
 CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w.-]+'
                       r'|pr:[\w.-]+/[\w.-]+:[\w./-]+:[\w./-]+|comment:[\w.-]+/[\w.-]+#\d+|outil:[\w-]+:[\w.-]+)$')
 ORCH_PROMPT = '/orchestrateur'
@@ -744,6 +744,8 @@ def cmd_need(a):
 	if a.action == 'add':
 		if (a.ref or '').strip().lower().startswith('fiche:'):  # seul le clic « Lancer » crée le besoin d'une fiche, en toute casse
 			raise Refus('la référence fiche: est réservée au clic « Lancer » : agence fiche, puis le clic de l\'humain.')
+		if a.kind == 'human':  # sans carte, la ligne « À faire » n'a ni bouton ni réponse possible (issue 207)
+			raise Refus(f"un besoin human naît d'une carte : agence ask --option ... \"<question>\" ({nom()} répond d'un clic)")
 		panels = load()['panels']
 		me = caller_panel() if a.panel or panels.get('interlocuteur') else None  # une seule sonde pour les deux usages
 		if me is not None and me == panels.get('interlocuteur'):
@@ -981,7 +983,7 @@ def cmd_lentille(a):
 				raise Refus(str(err))
 			if f['etat'] in backlog.TERMINAUX:
 				raise Refus(f"{a.id} est {f['etat']}")
-			carte_eclairer(st, [f], f'{a.id} à la demande')
+			carte_eclairer(st, [f], f'{a.id} à la demande', demande=True)
 		return 0
 	try:
 		x = backlog.tirer(backlog.charger_lentilles(backlog.fichier_lentilles(root())), a.nom)
@@ -1156,6 +1158,30 @@ def branche_de_pr(cible):
 		raise Refus(f'branche {head} non poussée sur {repo} : pousse-la avant le brouillon de PR')
 	if code == 0 and out.strip() == '0':
 		raise Refus(f'aucun commit de {head} devant {base} sur {repo} : rien à proposer')
+
+
+def brouillons_perimes(snap, now):
+	"""{id: raison ou None} des brouillons de PR à valider dont la branche est à relire (un relevé par GH_PERIME au plus,
+	hors transaction). La carte affiche la raison sans attendre le clic de l'humain (issue 201)."""
+	vus = {}
+	for d in snap['drafts']:
+		if d['statut'] == 'à valider' and d['cible'].startswith('pr:') and now - d.get('perimeTs', 0) > GH_PERIME:
+			try:
+				branche_de_pr(d['cible'])
+				vus[d['id']] = None
+			except Refus as err:
+				vus[d['id']] = str(err).split(' : ')[0]
+	return vus
+
+
+def perimes_apply(st, vus, now):
+	"""Sous le verrou : note le relevé ; un brouillon qui devient périmé prévient une fois son auteur ou l'orchestrateur."""
+	for d in st['drafts']:
+		if d['id'] in vus and d['statut'] == 'à valider':
+			if vus[d['id']] and vus[d['id']] != d.get('perime'):
+				notify(d['agent'] or st['panels'].get('orchestrator'),
+				       f"Brouillon {d['id']} périmé : {vus[d['id']]}. Corrige la cause ou retire-le (agence draft drop {d['id']}).")
+			d.update(perime=vus[d['id']], perimeTs=now)
 
 
 def send_gh(d):
@@ -1550,8 +1576,17 @@ def carte_decision(st, d, x):
 	            [f"/decision/{x['id']}/valider", f"/decision/{x['id']}/rejeter"])
 
 
-def carte_eclairer(st, fiches, motif):
-	"""Carte « Éclairer » (lot 8) : une option par fiche ; son clic demande une lentille à l'orchestrateur. Aucune fiche : rien."""
+def lentilles_vues(st):
+	"""Ids des fiches déjà éclairées ou dont la lentille tourne : un besoin lentille ouvert ou fait les nomme."""
+	return {n['ref'].split(':', 1)[1] for n in st['needs'] if n['kind'] == 'lentille' and n['status'] in ('open', 'done')}
+
+
+def carte_eclairer(st, fiches, motif, demande=False):
+	"""Carte « Éclairer » (lot 8) : une option par fiche ; son clic demande une lentille à l'orchestrateur. Aucune fiche : rien.
+	Une fiche déjà éclairée ou en cours de lentille n'est pas reproposée (issue 202), sauf à la demande de l'humain."""
+	if not demande:
+		vues = lentilles_vues(st)
+		fiches = [f for f in fiches if f['id'] not in vues]
 	if fiches:
 		poser_carte(st, f"Éclairer : {motif} ; une lentille (angle imposé, agent à contexte vierge qui ne reçoit que la fiche) "
 		            'propose sans trancher', [{'label': f"Éclairer {f['id']}", 'detail': f['titre']} for f in fiches]
@@ -1733,10 +1768,13 @@ def click_registre(path):
 		if genre == 'decision' and st['panels'].get('interlocuteur'):
 			notify(st['panels']['interlocuteur'], f'Registre, clic de {nom()} : {fait}.')
 		if genre == 'lentille':  # le clic de l'humain est le seul déclencheur ; l'orchestrateur lance, le régisseur jamais
+			# le besoin jetable naît du clic : l'agent s'y rattache sans carte ni question à l'humain (issue 211)
+			n, _ = add_need(st, 'lentille', f'Lentille sur {oid}', ref=f'lentille:{oid}', source=st['panels'].get('orchestrator'))
 			notify(st['panels'].get('orchestrator'),
 			       f"{nom()} demande une lentille sur {oid} : agence lentille {oid} --hasard --json donne nom, modèle et brief ; "
-			       f"lance un agent à contexte vierge avec ce brief seul, attache sa proposition par agence fiche note {oid} "
-			       f"\"lentille <nom> : ...\", puis ferme son panneau. Elle propose, ne tranche rien.")
+			       f"lance un agent à contexte vierge avec ce brief seul, rattache-le au besoin déjà créé (agence need panel {n['id']} <panelId>), "
+			       f"attache sa proposition par agence fiche note {oid} \"lentille <nom> : ...\", puis ferme son panneau : "
+			       f"le besoin se clôt seul à la note. Elle propose, ne tranche rien.")
 			dump(st)
 			return 303, '/'
 		x = backlog.trouver(r['decisions']['decisions'], oid) if genre == 'decision' else None
@@ -1904,6 +1942,13 @@ def fiches_tour(st):
 				         else f"abandon de l'exécution (besoin {n['id']})" + (f" : {', '.join(manques)}" if manques else ''))
 			backlog.noter(b, f['id'], ligne, maintenant, par='regisseur')
 			f.update(etat='faite' if fait else 'prête', besoin=n['id'] if fait else None)
+	fiches = {f['id']: f for f in b['fiches']}
+	for n in st['needs']:  # besoin jetable d'une lentille : clos à sa proposition notée sur la fiche (issue 211)
+		if n['kind'] == 'lentille' and n['status'] == 'open':
+			journal = (fiches.get(n['ref'].split(':', 1)[1]) or {}).get('journal', [])
+			prop = next((j['text'] for j in reversed(journal) if j['ts'] >= n['created'] and j['text'].lower().startswith('lentille')), None)
+			if prop:
+				close_need(st, n['id'], 'done', prop)
 	etats = {f['id']: f['etat'] for f in b['fiches']}
 	st['lot'] = [i for i in st['lot'] if etats.get(i) == 'prête']
 	if st['lot']:
@@ -2069,6 +2114,7 @@ def need_line(st, n):
 		meta.append(f'preuve : <a href="{e(ev)}">{e(ev)}</a>' if ev.startswith('http') else f'preuve : {e(ev)}')
 	if n['kind'] == 'draft':
 		meta += [f"modifié à {e(d['modifie'])}" for d in st['drafts'] if d['id'] == n['ref'] and d.get('modifie')]
+		meta += [f"périmé : {e(d['perime'])}" for d in st['drafts'] if d['id'] == n['ref'] and d.get('perime')]
 		meta += [f"envoi Slack incertain : vérifie le canal avant de renvoyer, puis « Envoyer quand même » sur {e(url(st, '/draft/' + d['id']))}"
 		         for d in st['drafts'] if d['id'] == n['ref'] and d.get('incertain')]
 	titles = [st['titles'].get(p) for p in n['panels'] if st['titles'].get(p)]
@@ -2177,12 +2223,17 @@ def page_ask(st, qid):
 		inconnu = '<p class="meta">état GitHub inconnu</p>' if q['action'] and not gh_frais(q) else ''
 		FORCE = '<input type="hidden" name="force" value="1">'
 
+		faites = [c is None for c in q.get('clics') or [''] * len(q['options'])]  # option déjà faite : son clic vaut None (issue 202)
+		premiere = faites.index(False) if False in faites else None  # la recommandée : la première encore possible
+
 		def card(i, o):
+			if faites[i]:
+				return f'<button class="card" disabled><b>{e(o["label"])} : déjà fait</b><span class="meta">{e(o["detail"])}</span></button>'
 			# Merger verrouillé : le bouton « quand même » prend la place de l'option, mêmes dimensions, verrous au-dessus.
 			force = i == 0 and locks
 			confirm = ' onsubmit="return confirm(' + e(json.dumps('Merger quand même, malgré :\n' + '\n'.join(f'- {x}' for x in locks), ensure_ascii=False)) + ')"'
-			reco = '' if force else ' reco' if i == 0 else ''
-			label = f"Merger quand même ({valeurs(st)['livraison.methode']})" if force else o['label'] + (' (Recommandé)' if i == 0 else '')
+			reco = '' if force else ' reco' if i == premiere else ''
+			label = f"Merger quand même ({valeurs(st)['livraison.methode']})" if force else o['label'] + (' (Recommandé)' if i == premiere else '')
 			return ((('<p class="meta">Merger grisé :</p><ul>' + ''.join(f'<li>{e(x)}</li>' for x in locks) + '</ul>') if force else '')
 			        + f'<form method="post" action="/ask/{qid}" style="display:block"{confirm if force else ""}><input type="hidden" name="token" value="{TOKEN}">'
 			        f'<input type="hidden" name="choice" value="{i}">{FORCE if force else ""}'
@@ -2991,6 +3042,7 @@ def un_tour():
 	agents = agents if isinstance(agents, list) else agents.get('agents', [])
 	snap = load()
 	gh, merges = lire_github(snap)  # hors transaction : un gh lent ne bloque ni la boucle ni les clics
+	perimes = brouillons_perimes(snap, time.time())  # idem
 	# ponytail: lecture en série, 5 s au pire par agent bloqué (6 au plus) ; en parallèle si ça gêne
 	screens = {p: lire_ecran(p) for p in ecrans_a_lire(snap, agents)}  # hors transaction aussi
 	mesures = lire_mesures()  # idem : une lecture par tour, None si Cate la refuse
@@ -3002,6 +3054,7 @@ def un_tour():
 		st['ghRepo'] = snap['ghRepo'] or st['ghRepo']
 		st['humain'] = nom()  # le panneau titre « À faire par <nom> » avec
 		merge_apply(st, merges)
+		perimes_apply(st, perimes, time.time())
 		st['garde'] = garde
 		st['pratiques'] = publier(pol)
 		effects = tick(st, set(rows), agents, gh, time.time(), screens, rows, usage, mesures)
