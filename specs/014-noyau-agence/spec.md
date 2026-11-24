@@ -117,9 +117,11 @@ Lentilles, benchmark, journal d'observation, déclencheurs, catalogues de métie
 - L'interlocuteur et l'orchestrateur restent deux agents distincts.
 - Le panneau agence de Cate reste la seule interface.
 
-## Questions ouvertes
+## Clarifications
 
-1. Tâches et besoins en cours dans les projets ouverts : conversion unique à la main, ou on les termine sur l'ancien modèle avant la bascule ?
-2. Suppression d'un worktree après merge : case dans la carte Fin de tâche, ou ménage manuel ?
-3. Registre de décisions : gardé comme journal de la tâche, ou gelé avec le reste ?
-4. Vérificateur : un contrôle du « fini » (un second agent relit) ou un rôle lancé par l'orchestrateur ?
+### Session 2026-11-24
+
+- Q : que deviennent les fiches et besoins en cours à la bascule ? R : ils se terminent sur l'ancien modèle. Le nouveau démarre sur un backlog vide, sans code de conversion.
+- Q : qui supprime le worktree d'une tâche mergée ? R : une case dans la carte Fin de tâche, cochée par défaut si le worktree est propre et la PR mergée. La branche reste.
+- Q : le registre de décisions reste-t-il dans le noyau ? R : non. Chaque clic et chaque réponse s'écrit dans le journal de sa tâche. Le registre séparé et la revue de cap sont gelés.
+- Q : comment un second agent relit-il le travail ? R : c'est un contrôle de la liste « fini » du projet, au même titre que les tests. Il n'y a pas de règle de vérification à part.
