@@ -180,6 +180,8 @@ function DomainListInput({ value, onSave, placeholder }: { value: string[]; onSa
   )
 }
 
+const IMPORT_WARNING = 'An agent that drives a browser panel of the workspace acts with every imported session (bank, mail, admin). Exclude the sensitive domains in the exclusion list just above before you confirm.'
+
 export function BrowserPage(): JSX.Element {
   const proxyUrl = useClientSetting('browserProxyUrl')
   const linkTarget = useClientSetting('linkOpenTarget')
@@ -240,16 +242,20 @@ export function BrowserPage(): JSX.Element {
         <DomainListInput value={sharedDomains} onSave={(v) => setClientSetting('browserSharedSignInDomains', v)} placeholder="google.com, github.com" />
       </SettingRow>
       <SettingRow
-        label="Import cookies"
-        keywords="accounts cookies login session import default browser exclude excluded"
-        description={`Import copies every cookie of ${defaultBrowser} (sign-in sessions included, macOS) into Cate's browser, except the domains listed here and their subdomains. Nothing is read until you click, and cookie values stay in Cate's browser storage on this device.${importState.message ? ` ${importState.message}` : ''}`}
+        label="Import exclusions"
+        keywords="exclude excluded domains import cookies bank mail admin sensitive"
+        description="Domains (and their subdomains) the import never copies. Add the sensitive ones: bank, mail, admin."
       >
-        <div className="flex items-center gap-2">
-          <DomainListInput value={excludedDomains} onSave={(v) => setClientSetting('browserImportExcludedDomains', v)} placeholder="excluded domains" />
-          <SecondaryButton onClick={() => void importSignIns()} disabled={importState.busy || !desktop}>
-            {importState.busy ? 'Importing…' : importState.confirming ? `Copy from ${defaultBrowser}` : 'Import'}
-          </SecondaryButton>
-        </div>
+        <DomainListInput value={excludedDomains} onSave={(v) => setClientSetting('browserImportExcludedDomains', v)} placeholder="excluded domains" />
+      </SettingRow>
+      <SettingRow
+        label="Import cookies"
+        keywords="accounts cookies login session import default browser"
+        description={`Import copies every cookie of ${defaultBrowser} (sign-in sessions included, macOS) into Cate's browser, except the excluded domains above. Nothing is read until you click, and cookie values stay in Cate's browser storage on this device.${importState.confirming ? ` ${IMPORT_WARNING}` : ''}${importState.message ? ` ${importState.message}` : ''}`}
+      >
+        <SecondaryButton onClick={() => void importSignIns()} disabled={importState.busy || !desktop}>
+          {importState.busy ? 'Importing…' : importState.confirming ? `Copy from ${defaultBrowser}` : 'Import'}
+        </SecondaryButton>
       </SettingRow>
       <SettingRow
         label="Proxy"
