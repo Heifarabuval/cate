@@ -65,12 +65,40 @@ describe('shared sign-ins', () => {
     const hub = jar(), a = jar(), late = jar()
     const sync = createSharedSignIns({ hub, domains: () => ['google.com', 'github.com'] })
     await sync.attach(a)
-    expect(await sync.importCookies([sid('imported'), { ...sid('y'), domain: '.example.com' }])).toBe(1)
+    expect(await sync.importCookies([sid('imported'), { ...sid('y'), domain: '.example.com' }], ['example.com'])).toBe(1)
     late.userSets({ ...sid('gh'), name: 'user_session', domain: 'github.com', hostOnly: true })
     await sync.attach(late)
     await flush()
     expect(late.cookies.get('SID|.google.com|/')?.value).toBe('imported')
     expect(a.cookies.get('user_session|github.com|/')?.value).toBe('gh')
+  })
+})
+
+describe('import', () => {
+  const site = (domain: string, name = 'sess'): Cookie => ({ ...sid('v', domain), name })
+
+  it('imports every domain except the excluded ones and their subdomains', async () => {
+    const hub = jar(), a = jar()
+    const sync = createSharedSignIns({ hub, domains: () => ['google.com'] })
+    await sync.attach(a)
+    const imported = await sync.importCookies(
+      [site('.google.com'), site('.example.org'), site('.bank.example.net'), site('app.bank.example.net', 'b')],
+      ['bank.example.net'],
+    )
+    expect(imported).toBe(2)
+    expect([...a.cookies.values()].map((c) => c.domain).sort()).toEqual(['.example.org', '.google.com'])
+    expect([...hub.cookies.values()].map((c) => c.domain).sort()).toEqual(['.example.org', '.google.com'])
+  })
+
+  it('seeds a workspace opened later without overwriting what it already holds', async () => {
+    const hub = jar(), late = jar()
+    const sync = createSharedSignIns({ hub, domains: () => [] })
+    await sync.importCookies([site('.example.org'), site('.example.com', 'kept')], [])
+    late.userSets({ ...site('.example.com', 'kept'), value: 'newer' })
+    await sync.attach(late)
+    await flush()
+    expect(late.cookies.get('sess|.example.org|/')?.value).toBe('v')
+    expect(late.cookies.get('kept|.example.com|/')?.value).toBe('newer')
   })
 })
 
@@ -130,7 +158,7 @@ describe('sign-in grant', () => {
   it('copies only the hub cookies of the granted domain into one jar, and keeps no sync', async () => {
     const hub = jar(), agent = jar(), other = jar()
     const sync = createSharedSignIns({ hub, domains: () => ['google.com', 'github.com'] })
-    await sync.importCookies([sid('g'), { ...sid('gh'), name: 'user_session', domain: 'github.com' }, { ...sid('sub'), name: 'S', domain: '.accounts.google.com' }])
+    await sync.importCookies([sid('g'), { ...sid('gh'), name: 'user_session', domain: 'github.com' }, { ...sid('sub'), name: 'S', domain: '.accounts.google.com' }], [])
     expect(await sync.grant(agent, 'google.com')).toBe(2)
     expect([...agent.cookies.values()].map((c) => c.domain).sort()).toEqual(['.accounts.google.com', '.google.com'])
     // A later change in the agent jar or in the hub does not travel.
@@ -144,7 +172,7 @@ describe('sign-in grant', () => {
   it('refuses a domain outside the shared list and a lookalike', async () => {
     const hub = jar(), agent = jar()
     const sync = createSharedSignIns({ hub, domains: () => ['google.com'] })
-    await sync.importCookies([sid('g')])
+    await sync.importCookies([sid('g')], [])
     expect(await sync.grant(agent, 'example.com')).toBe(0)
     expect(await sync.grant(agent, 'evilgoogle.com')).toBe(0)
     expect(agent.cookies.size).toBe(0)

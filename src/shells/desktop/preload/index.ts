@@ -168,6 +168,7 @@ const api: DesktopApi = {
   os: {
     openExternal: (url) => invoke(C.osOpenExternal, url),
     openSettingsFile: () => invoke(C.osOpenSettingsFile),
+    defaultBrowserName: () => invoke(C.browserDefaultName),
     importBrowserSignIns: () => invoke(C.browserImportSignIns),
     writeClipboard: (text) => invoke(C.clipboardWrite, text),
     readClipboard: () => invoke(C.clipboardRead),

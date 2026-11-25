@@ -156,33 +156,56 @@ export function WorkspaceTerminalPage({ workspaceId }: SettingsPageProps): JSX.E
   )
 }
 
+/** A comma-separated list of domains, saved on blur or Enter; entries that
+ *  are not domain names are dropped. */
+function DomainListInput({ value, onSave, placeholder }: { value: string[]; onSave: (domains: string[]) => void; placeholder: string }): JSX.Element {
+  const [draft, setDraft] = useState(value.join(', '))
+  useEffect(() => { setDraft(value.join(', ')) }, [value])
+  const save = () => {
+    const entered = draft.split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^\./, '')).filter(Boolean)
+    const valid = [...new Set(entered.filter(isDomainName))]
+    setDraft(valid.join(', '))
+    if (valid.join() !== value.join()) onSave(valid)
+  }
+  return (
+    <TextInput
+      value={draft}
+      onChange={setDraft}
+      onBlur={save}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      placeholder={placeholder}
+      layoutClassName="w-56 px-2"
+      className="font-mono"
+    />
+  )
+}
+
 export function BrowserPage(): JSX.Element {
   const proxyUrl = useClientSetting('browserProxyUrl')
   const linkTarget = useClientSetting('linkOpenTarget')
   const [proxyDraft, setProxyDraft] = useState(proxyUrl)
   const sharedDomains = useClientSetting('browserSharedSignInDomains')
-  const [domainsDraft, setDomainsDraft] = useState(sharedDomains.join(', '))
-  const [importState, setImportState] = useState<{ busy: boolean; message: string }>({ busy: false, message: '' })
+  const excludedDomains = useClientSetting('browserImportExcludedDomains')
+  const [importState, setImportState] = useState<{ busy: boolean; confirming: boolean; message: string }>({ busy: false, confirming: false, message: '' })
+  const [defaultBrowser, setDefaultBrowser] = useState('your default browser')
   const desktop = useDesktopPort()
 
   useEffect(() => { setProxyDraft(proxyUrl) }, [proxyUrl])
-  useEffect(() => { setDomainsDraft(sharedDomains.join(', ')) }, [sharedDomains])
+  useEffect(() => { void desktop?.defaultBrowserName().then((name) => { if (name) setDefaultBrowser(name) }, () => {}) }, [desktop])
 
-  const saveDomains = () => {
-    const entered = domainsDraft.split(/[\s,]+/).map((d) => d.trim().toLowerCase().replace(/^\./, '')).filter(Boolean)
-    const valid = [...new Set(entered.filter(isDomainName))]
-    setDomainsDraft(valid.join(', '))
-    if (valid.join() !== sharedDomains.join()) setClientSetting('browserSharedSignInDomains', valid)
-  }
-
+  // Two clicks: the first one only asks, the second one reads the browser.
   const importSignIns = async () => {
     if (!desktop) return
-    setImportState({ busy: true, message: '' })
+    if (!importState.confirming) {
+      setImportState({ busy: false, confirming: true, message: '' })
+      return
+    }
+    setImportState({ busy: true, confirming: false, message: '' })
     try {
       const { browser, imported } = await desktop.importBrowserSignIns()
-      setImportState({ busy: false, message: `${imported} cookies imported from ${browser}.` })
+      setImportState({ busy: false, confirming: false, message: `${imported} cookies imported from ${browser}.` })
     } catch (error) {
-      setImportState({ busy: false, message: errorMessage(error) })
+      setImportState({ busy: false, confirming: false, message: errorMessage(error) })
     }
   }
 
@@ -211,21 +234,20 @@ export function BrowserPage(): JSX.Element {
       </SettingRow>
       <SettingRow
         label="Shared sign-ins"
-        keywords="accounts google github cookies login session import default browser"
-        description={`Every workspace's browser shares the sign-ins of these domains and their subdomains; other sites stay per workspace. Import copies them from your default browser (macOS).${importState.message ? ` ${importState.message}` : ''}`}
+        keywords="accounts google github cookies login session sync workspaces"
+        description="Every workspace's browser keeps the sign-ins of these domains and their subdomains in sync; other sites stay per workspace."
+      >
+        <DomainListInput value={sharedDomains} onSave={(v) => setClientSetting('browserSharedSignInDomains', v)} placeholder="google.com, github.com" />
+      </SettingRow>
+      <SettingRow
+        label="Import cookies"
+        keywords="accounts cookies login session import default browser exclude excluded"
+        description={`Import copies every cookie of ${defaultBrowser} (sign-in sessions included, macOS) into Cate's browser, except the domains listed here and their subdomains. Nothing is read until you click, and cookie values stay in Cate's browser storage on this device.${importState.message ? ` ${importState.message}` : ''}`}
       >
         <div className="flex items-center gap-2">
-          <TextInput
-            value={domainsDraft}
-            onChange={setDomainsDraft}
-            onBlur={saveDomains}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-            placeholder="google.com, github.com"
-            layoutClassName="w-56 px-2"
-            className="font-mono"
-          />
+          <DomainListInput value={excludedDomains} onSave={(v) => setClientSetting('browserImportExcludedDomains', v)} placeholder="excluded domains" />
           <SecondaryButton onClick={() => void importSignIns()} disabled={importState.busy || !desktop}>
-            {importState.busy ? 'Importing…' : 'Import'}
+            {importState.busy ? 'Importing…' : importState.confirming ? `Copy from ${defaultBrowser}` : 'Import'}
           </SecondaryButton>
         </div>
       </SettingRow>

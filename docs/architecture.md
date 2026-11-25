@@ -1232,7 +1232,7 @@ or that changes shared state, is a **workspace** setting.
 | Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
-| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace shares, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior`, `browserShowElementEnabled` (off: the panel's button that shows one element to the related agents) |
+| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3), `browserSharedSignInDomains` (domains whose sign-ins every workspace keeps in sync, section 12.3), `browserImportExcludedDomains` (domains the default-browser import skips, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior`, `browserShowElementEnabled` (off: the panel's button that shows one element to the related agents) |
 | Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
@@ -2719,8 +2719,17 @@ the runtime's machine on every client.
   hub partition (`persist:shared-sign-ins`) that keeps them while no
   workspace is open; a partition receives them before its first webview
   mounts. Other cookies stay per workspace. "Import" in the browser settings
-  reads those cookies from the system's default browser (macOS: Chromium
-  browsers, Firefox, Safari with Full Disk Access).
+  reads the system's default browser (macOS: Chromium browsers, Firefox,
+  Safari with Full Disk Access) and copies every cookie except those of
+  `browserImportExcludedDomains` (and their subdomains) into the hub and the
+  open partitions; a partition mounted later receives the imported cookies it
+  does not hold, never overwriting its own. Only domains in
+  `browserSharedSignInDomains` stay in sync afterwards. The import runs only
+  on two explicit clicks in the settings, which name the browser; main reads
+  the cookies and writes them to Cate's partitions, and only a count and the
+  browser's name go back to the view (no value crosses the runtime protocol,
+  the CLI or the logs). The reader copies the browser's database to a private
+  temporary directory (a running browser locks it) and deletes it at once.
   **Agent-driven panels have none of them.** The session sets `agentDriven`
   on a browser panel's first `cate.browser.*` call and persists it (a restart
   keeps the panel off the shared partition); every page request carries it,
