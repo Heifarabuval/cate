@@ -2,6 +2,7 @@
 // awake. A person can ask for it for a while or until turned off; the runtime
 // also holds it on its own while a `keepRunningWhile` trigger holds.
 
+import type { AgentCapacity } from './capacity'
 import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
 
 export const KEEP_AWAKE_DURATIONS = [30, 60, 300] as const
@@ -29,6 +30,8 @@ export const powerCapability = defineCapability('power', {
   methods: {
     get: method<void, PowerState>(),
     set: method<{ duration: KeepAwakeDuration }, PowerState>({ mutates: true }),
+    /** How many agents the machine's memory allows now, and whether one more may start. */
+    capacity: method<void, AgentCapacity>(),
   },
   streams: {
     subscribe: channelStream<void, PowerState>(),

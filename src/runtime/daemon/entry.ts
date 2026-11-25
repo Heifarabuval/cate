@@ -33,7 +33,7 @@ import { connectWebSocketFactory } from '@runtime/connect/node'
 import { pairingCapability } from '@runtime/pairing/contract'
 import { openDevicesFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
 import { powerCapability } from '@runtime/power/contract'
-import { createPowerService, machineSleeps, powerCapabilityImpl } from '@runtime/power/runtime'
+import { createCapacity, createPowerService, machineSleeps, powerCapabilityImpl, readMemory } from '@runtime/power/runtime'
 import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
@@ -324,7 +324,11 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   rpc.register(settingsCapability, settingsCapabilityImpl(createSettingsHandlers(settings)))
   rpc.register(pairingCapability, pairingCapabilityImpl(pairing))
   rpc.register(tunnelCapability, tunnelCapabilityImpl())
-  rpc.register(powerCapability, powerCapabilityImpl(power))
+  rpc.register(powerCapability, powerCapabilityImpl(power, createCapacity({
+    read: readMemory,
+    reserveMb: () => settings.get('agentMemoryReserveMb'),
+    maxAgents: () => settings.get('agentsMax'),
+  })))
   rpc.register(pushCapability, pushCapabilityImpl(push))
 
   const clients = () => rpc.connections().filter((c) => c.client !== null).length
