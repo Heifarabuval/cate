@@ -274,6 +274,36 @@ class Rejeu(DepotJetable):
 		self.assertIn('ouvert', r.stderr)
 		self.assertFalse(os.path.exists(os.path.join(self.racine, '50-outil')))
 
+	def test_rejeu_isole_harnais_hors_du_depot(self):
+		"""#258 : les commandes que l'orchestrateur du clone tape (debut, machine, fini) ne citent ni le dépôt, ni les
+		specs, ni le sha, ni la PR : `controle` rend valide, et la copie du harnais ne porte ni sha ni PR."""
+		r = self.run_('prepare', '50', 'nu')
+		self.assertEqual(r.returncode, 0, r.stderr)
+		m = re.search(r'^harnais : (.+)$', r.stdout, re.M)
+		self.assertIsNotNone(m, 'prepare ne donne pas le harnais à utiliser dans le clone : %s' % r.stdout)
+		cmd = m.group(1)
+		for interdit in (self.depot, self.specs, self.head[:7], '/pull/150'):
+			self.assertNotIn(interdit, cmd)
+		script = cmd.split()[-1]
+		self.assertFalse(os.path.realpath(script).startswith(self.depot + os.sep))
+		lancer = lambda *a: subprocess.run([sys.executable, '-I', script, *a], capture_output=True, text=True, env=self.env,
+			cwd=self.clone, timeout=60)
+		self.assertEqual(lancer('debut', '50', 'nu').returncode, 0)
+		self.assertEqual(lancer('machine', '50', 'nu').returncode, 0)
+		self.assertEqual(lancer('fini', '50', 'nu').returncode, 1)  # rouge : l'arbitre a bien tourné depuis la copie
+		for dossier, _, noms in os.walk(os.path.dirname(script)):
+			for n in noms:
+				with open(os.path.join(dossier, n), 'rb') as f:
+					self.assertNotIn(self.head.encode(), f.read(), n)
+		appels = ['%s debut 50 nu' % cmd, '%s machine 50 nu' % cmd, '%s fini 50 nu' % cmd]
+		lignes = [{'type': 'assistant', 'timestamp': '2026-11-20T10:00:0%dZ' % i, 'message': {'id': 'm%d' % i, 'role': 'assistant',
+			'content': [{'type': 'tool_use', 'id': 't%d' % i, 'name': 'Bash', 'input': {'command': c}}]}} for i, c in enumerate(appels)]
+		ecrire(os.path.join(self.home, '.claude', 'projects', encoder(self.clone), 's1.jsonl'),
+			''.join(json.dumps(x) + '\n' for x in lignes))
+		r = self.run_('controle', '50', 'nu')
+		self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+		self.assertIn('valide', r.stdout)
+
 	def test_dependances_clonees_si_lockfile_identique(self):
 		r = self.run_('prepare', '50', 'nu')
 		self.assertEqual(r.returncode, 0, r.stderr)

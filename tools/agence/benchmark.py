@@ -6,7 +6,8 @@ installation de dépendances : l'humain ouvre lui-même son terminal ou son work
 
 Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   select --graine N [--remplacer]  vivier éligible et tirage reproductible dans S/selection.json (jamais écrasé sans l'option)
-  prepare ISSUE BRAS  clone neuf sans remote au commit parent dans R/ISSUE-BRAS/, énoncé R/ISSUE-BRAS.md
+  prepare ISSUE BRAS  clone neuf sans remote au commit parent dans R/ISSUE-BRAS/, énoncé R/ISSUE-BRAS.md, et copie du
+                      harnais dans R/bin : seul chemin à donner à l'orchestrateur du clone pour debut, machine et fini
   debut ISSUE BRAS    ouvre le rejeu (un seul à la fois, seuil commité d'abord), horodaté en UTC
   fini ISSUE BRAS     horodate et lance l'arbitre : vert, rouge, non lançable ; le 4e rouge donne échec
   machine ISSUE BRAS  marque qu'un orchestrateur va envoyer un message ou lancer `fini` : à poser juste avant, pour que
@@ -179,6 +180,18 @@ def enonce_issue(depot, nom_depot, issue):
 	return '# %s\n\n%s\n' % (x['title'], x.get('body') or '')
 
 
+def poser_harnais(a):
+	"""Copie du harnais sous R/bin, avec le lien vers racine, specs et dépôt (#258). C'est le seul chemin que l'orchestrateur
+	du clone reçoit pour `debut`, `machine` et `fini` : le dépôt d'origine, la sélection (sha, PR) et le checkout ne figurent
+	dans aucune commande tapée, donc dans aucun appel d'outil que `controle` lit."""
+	bin_ = os.path.join(a.racine, 'bin')
+	os.makedirs(bin_, exist_ok=True)
+	for f in ('benchmark.py', 'attente_mesure.py'):
+		shutil.copy(os.path.join(HERE, f), os.path.join(bin_, f))
+	ecrire(os.path.join(bin_, 'lien.json'), {'racine': a.racine, 'specs': a.specs, 'depot': a.depot})
+	return os.path.join(bin_, 'benchmark.py')
+
+
 def prepare(a):
 	v, sel = rejeu(a)
 	if ouvert(a):
@@ -191,7 +204,8 @@ def prepare(a):
 	with open(enonce, 'w', encoding='utf-8') as f:
 		f.write(enonce_issue(a.depot, sel['depot'], a.issue))
 	ecrire(etat_path(a), {'issue': a.issue, 'bras': a.bras, 'dependances': deps, 'debut': None, 'finis': []})
-	print('clone : %s\nénoncé : %s\ndépendances : %s' % (clone, enonce, deps))
+	harnais = poser_harnais(a)
+	print('clone : %s\nénoncé : %s\ndépendances : %s\nharnais : python3 %s' % (clone, enonce, deps, harnais))
 	if deps == 'à installer':
 		print('lockfile différent de celui du dépôt : dépendances à installer par l\'humain dans le clone')
 	return 0
@@ -652,9 +666,11 @@ def comparer(a):
 
 def main(argv=None):
 	ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-	ap.add_argument('--racine', default=os.path.join(os.path.expanduser('~'), '.cache', 'agence-bench'))
-	ap.add_argument('--specs', default=os.path.join(ROOT, 'specs', '011-mesure-benchmark'))
-	ap.add_argument('--depot', default=ROOT)
+	lien = os.path.join(HERE, 'lien.json')  # présent seulement dans la copie de R/bin : ses chemins remplacent les défauts
+	lien = lire(lien) if os.path.isfile(lien) else {}
+	ap.add_argument('--racine', default=lien.get('racine') or os.path.join(os.path.expanduser('~'), '.cache', 'agence-bench'))
+	ap.add_argument('--specs', default=lien.get('specs') or os.path.join(ROOT, 'specs', '011-mesure-benchmark'))
+	ap.add_argument('--depot', default=lien.get('depot') or ROOT)
 	sub = ap.add_subparsers(dest='cmd', required=True)
 	p = sub.add_parser('select')
 	p.add_argument('--graine', type=int, required=True)
