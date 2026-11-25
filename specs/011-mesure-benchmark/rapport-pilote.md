@@ -1,6 +1,6 @@
 # Rapport de pilote (spec 011, lot 4, fiche F19, besoin n944)
 
-État (2026-11-25, n972) : **2 rejeux sur 4 mesurés (bras nu), les 2 bras outil préparés mais pas joués**. Le rejeu est joué par Heifara (T043 ; aucun agent ne joue un rejeu). Pas de recommandation tant que les 4 ne sont pas mesurés (T044, T045).
+État (2026-11-25, n972) : **3 rejeux sur 4 mesurés** (nu #199, nu #26, outil #199) ; **#26 outil ouvert** (rouge au 1er `fini`, reprise attendue). Le rejeu est joué par Heifara (T043 ; aucun agent ne joue un rejeu). Pas de recommandation tant que les 4 ne sont pas fermés (T044, T045).
 
 ## Résultats (`benchmark.py mesure`, outil `ab9013e12514`, seuil `2732c761...`, contamination 0)
 
@@ -8,10 +8,32 @@
 |---|---|---|---|---|---|
 | #199 nu | 285 s | 373 s | vert au 1er `fini` | 3 | 1 094 570 (1 027 203, 5 598) |
 | #26 nu | 805 s | 3035 s | rouge x4, 3 reprises | 9 | 3 338 834 (3 237 880, 16 535) |
-| #199 outil | à jouer | | | | |
-| #26 outil | à jouer | | | | |
+| #199 outil | 12 s | 125 s | vert au 1er `fini` | 3 | 1 974 118 (1 891 092, 10 255) |
+| #26 outil | **inachevé** | non calculé | rouge au 1er `fini`, rejeu ouvert (1 reprise sur 3) | non calculé | 2 025 617 (1 944 825, 8 437), session en cours |
 
-Source : `resultats/199-nu.json`, `resultats/26-nu.json`. Durée d'un rejeu : 6 min (#199), 51 min (#26). Jetons du régisseur non attribués (pas d'export `cate agent usage --json`). Le test d'acceptation n'est pas atteint : manquent les 2 bras outil, les 4 chronomètres de Heifara (écart SC-005 non calculable, aucun chronomètre noté) et la recommandation. Les clones `~/.cache/agence-bench/{199,26}-outil` sont préparés (aucun `debut`).
+Source : `resultats/199-nu.json`, `resultats/26-nu.json`, `resultats/199-outil.json` (`26-outil.json` : état inachevé, non commité). Durée d'un rejeu : 6 min (#199 nu), 51 min (#26 nu), 2 min (#199 outil). Jetons du régisseur : 0 sur les deux bras outil (`--usage-json`).
+
+## Vérifications du bras outil (2026-11-25)
+
+**#199 outil, 12 s actifs contre 125 s muraux : cohérent avec la règle, mais pas comparable au nu.**
+- Événements humains dans la fenêtre : `debut` (0 s), l'énoncé collé (+2 s), `fini` (125 s). `temps_actif` compte, pour chacun, le délai depuis l'événement précédent. Énoncé : 2 s. `fini` : 9 s après la dernière sortie du système (116 s). Total 11 à 12 s. Les ~113 s intermédiaires sont du temps d'agent (attente), exclu par construction (`benchmark.py:385`).
+- Le 12 s ne compte donc que la saisie et la lecture finale. Ce que l'humain a fait avant `debut` (un collage 13 s avant) est hors fenêtre.
+- Rapport outil / nu = 12 / 285 = 0,04, très sous le seuil 0,75. Ne pas le lire comme un gain : le nu à 285 s contient des gestes d'orchestrateur non marqués par `machine` (chronomètre à 0 s selon la section ci-dessous), donc le nu est surestimé. Sans chronomètre, l'écart SC-005 n'est pas calculable.
+
+**Jetons de #199 outil (1 974 118) : ce sont les jetons de la session du panneau « Agence : 199-outil », pas ceux de la seule fenêtre du rejeu.**
+- Preuve : le total égale 48 + 10 255 + 1 891 092 + 72 723 de ce seul journal (une session lue, `sessions.lues = 1`), qui court de 11:58:31 à 12:03:42. Le rejeu va de 11:58:45 à 12:00:50.
+- Sur la fenêtre `debut` à `fini` seule (calcul du journal, message par message) : 1 763 376, soit 89 % du total. L'écart (+12 %) est la session avant `debut` (14 s) et après `fini` (172 s). Le bras nu a la même construction (session entière), donc la comparaison reste de même nature, mais `mesure` ne borne pas les jetons à la fenêtre.
+- Même calcul sur #26 outil : 1 209 903 dans la fenêtre sur 2 025 617 au total (60 %), session en cours.
+- Un seul panneau est lu : le bras outil de ces rejeux est un orchestrateur seul, sans agent de travail séparé. `jetons_regisseur` à 0 le confirme. Ce que l'outil ajoute (agents reliés, tours de l'orchestrateur) n'est donc pas encore mis à l'épreuve.
+
+**#26 outil, inachevé : une reprise est attendue, ce n'est pas un résultat à rapporter.**
+- `mesure` calcule temps actif, mural et interventions seulement si `etat['debut'] and finis and ouvert(a) != nom(a)` (`benchmark.py:417`). `ouvert.json` vaut `26-outil` : le rejeu est encore ouvert, `inachevé` est l'état d'un rejeu non fermé.
+- Il se ferme au premier vert ou à la 4e rouge. Il en est à 1 rouge sur 3 reprises. Il faut reprendre, ou le clore à la main : question posée à Heifara (`agence ask`).
+- Point à lever en reprise : les dépendances du clone sont « à installer » (`npm ci` sorti 0, mais scripts `postinstall` de `node-pty` et `esbuild` non exécutés). Le bras nu de #26 avait le même état et est resté rouge 4 fois. Si le rouge vient de l'environnement et non du travail, #26 mesure le même défaut des deux côtés. Non vérifié : aucun test rejoué ici.
+
+Effet sur la recommandation : #26 outil étant ouvert, il n'y a pas de recommandation de seuil possible aujourd'hui. Sur #199 seul, la règle du temps actif donne un rapport de 0,04 qui ne départage rien (nu non calibré).
+
+Le test d'acceptation n'est pas atteint : manquent #26 outil fermé, les 4 chronomètres de Heifara (SC-005, questions posées) et la recommandation.
 
 ## Contrôlé en lecture seule (2026-11-24, base origin/main 452607b8)
 
