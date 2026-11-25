@@ -258,7 +258,7 @@ class Skill(unittest.TestCase):
 				self.assertIn(cmd, self.texte)
 
 	def test_ne_cite_aucune_ecriture_ni_lancement(self):
-		for cmd in ('pratiques set', 'pratiques unset', 'pratiques preset', 'agence start', 'agence need', 'agence fiche', 'agence draft'):
+		for cmd in ('pratiques set', 'pratiques unset', 'pratiques preset', 'agence start', 'agence need add', 'agence fiche add', 'agence fiche edit', 'agence draft'):
 			with self.subTest(cmd=cmd):
 				self.assertNotIn(cmd, self.texte)
 
@@ -554,6 +554,40 @@ class DiffOrga(unittest.TestCase):
 
 	def test_plafond_modifie(self):
 		self.assertEqual(setup.diff_orga(ORGA, self.avec(maxAgents=3)), ['- Orga, agents vivants au plus : 2 → 3'])
+
+
+def skill(nom):
+	with open(os.path.join(REPO, 'skills', nom, 'SKILL.md'), encoding='utf-8') as f:
+		return f.read()
+
+
+class Renvoi(unittest.TestCase):
+	"""FR-020, Q14, Q17 : une remarque qui touche le setup est renvoyée vers lui, jamais écrite ni proposée par l'orchestrateur
+	ou l'interlocuteur ; le setup lit ce contexte pour proposer un ajustement."""
+
+	def test_l_orchestrateur_et_l_interlocuteur_renvoient_au_setup_sans_rien_ecrire(self):
+		for nom in ('orchestrateur', 'interlocuteur'):
+			with self.subTest(nom=nom):
+				texte = skill(nom)
+				self.assertIn('agence setup "<la phrase>"', texte)
+				self.assertIn('ne change aucun réglage', texte)
+				self.assertIn('une ligne', texte)
+
+	def test_le_renvoi_ne_cite_aucune_commande_d_ecriture_de_politique(self):
+		for nom in ('orchestrateur', 'interlocuteur'):
+			with self.subTest(nom=nom):
+				texte = skill(nom)
+				self.assertNotIn('agence setup --fin', texte)
+
+	def test_le_setup_lit_les_prompts_les_besoins_ouverts_et_les_decisions(self):
+		texte = skill('setup')
+		for mot in ('agence need list --open', 'agence decision list --active', 'agence fiche list', 'phrase', 'prompts'):
+			with self.subTest(mot=mot):
+				self.assertIn(mot, texte)
+
+	def test_le_contexte_lu_n_ouvre_rien_au_setup(self):
+		texte = skill('setup')
+		self.assertIn('lecture seule', texte)
 
 
 class Garde(Base):

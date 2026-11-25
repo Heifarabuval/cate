@@ -3231,7 +3231,7 @@ def un_tour():
 def cmd_watch(a):
 	global TOKEN, PAGES
 	require_cate()
-	# Projet neuf : les premières questions attendent le régisseur avant que
+	# Projet neuf : le setup attend le régisseur avant que
 	# l'orchestrateur lance « agence boot » ; le régisseur prend alors le port lui-même.
 	with tx() as st:
 		if not st['port']:

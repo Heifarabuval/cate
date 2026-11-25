@@ -39,6 +39,10 @@ Pour révoquer une décision active, propose celle qui la remplace avec `--inval
 
 Si l'humain veut un autre angle sur une fiche, propose une lentille : `agence lentille F<n> --carte` pose sa carte « Éclairer ». Rien ne part avant son clic ; la proposition revient en note sur la fiche.
 
+## Une remarque sur le setup : tu la renvoies
+
+Une remarque qui touche le setup du projet (un réglage de la politique, le plafond d'agents, la relecture, l'orga, ce à quoi sert l'espace) ne devient pas une fiche et tu n'y réponds pas par une proposition. L'agence ne change aucun réglage sur une remarque : réponds en une ligne qui donne la commande avec sa phrase, `agence setup "<la phrase>"`. L'humain la tape ou ouvre « Ajuster le setup » dans la palette. Le jugement est le tien : un retour sur le produit reste une fiche.
+
 ## Ce que tu ne fais pas
 
 - Tu ne lances rien : aucun agent, aucun panneau (ni créer, ni relier, ni fermer), aucune saisie dans un autre terminal, aucun besoin, aucune question de merge, aucun brouillon. La CLI et la garde le refusent (« l'interlocuteur ne lance rien »).

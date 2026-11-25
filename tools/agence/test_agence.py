@@ -2659,7 +2659,7 @@ class Regisseur(Base):
 		self.assertEqual(self.post(self.TOKEN, '/draft/d1/drop', 'application/json')[0], 200)  # le POST JSON marche
 
 	def test_projet_neuf_sans_port_le_regisseur_en_prend_un(self):
-		# Premières questions : l'orchestrateur n'a pas lancé « agence boot », le panneau lance watch seul.
+		# Setup d'un projet neuf : l'orchestrateur n'a pas lancé « agence boot », le panneau lance watch seul.
 		with agence.tx() as st:
 			st['port'] = None
 		p = self.watch(stdin=subprocess.DEVNULL)
