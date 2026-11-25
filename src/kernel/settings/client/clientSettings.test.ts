@@ -32,3 +32,14 @@ it('follows outside edits of the device document', async () => {
   expect(cb.mock.calls[0][1]).toEqual({ snapToGrid: true })
   store.dispose()
 })
+
+it('keeps the same value reference when the device document is re-delivered unchanged', async () => {
+  const device = createMemoryDeviceStore()
+  const store = createClientSettingsStore(device, clientSettingsTable)
+  await store.load()
+  store.set('browserSharedSignInDomains', ['example.com'])
+  const before = store.get('browserSharedSignInDomains')
+  device.change(CLIENT_SETTINGS_DOCUMENT, { browserSharedSignInDomains: ['example.com'] })
+  expect(store.get('browserSharedSignInDomains')).toBe(before)
+  store.dispose()
+})
