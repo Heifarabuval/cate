@@ -363,6 +363,30 @@
    "origine": "défaut"
   },
   {
+   "cle": "worktrees.auto",
+   "nom": "Retrait automatique des copies de travail",
+   "explique": "Quand un besoin est fini, ses copies de travail sans modification sont retirées toutes seules (la branche reste). Sinon, vous décidez au clic.",
+   "groupe": "avance",
+   "portee": "workspace",
+   "question": null,
+   "forme": "valeurs",
+   "choix": [
+    {
+     "valeur": "oui",
+     "libelle": "Oui"
+    },
+    {
+     "valeur": "non",
+     "libelle": "Non, je décide au clic"
+    }
+   ],
+   "bornes": null,
+   "vide": null,
+   "defaut": "oui",
+   "valeur": "oui",
+   "origine": "défaut"
+  },
+  {
    "cle": "notifications.rappel",
    "nom": "Rappel",
    "explique": "Un seul rappel si vous n'avez pas répondu à ce qui vous attend.",

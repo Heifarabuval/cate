@@ -267,6 +267,7 @@ HORS_LISTE = {
 	'envoi.slack.fichier': 'jeton-secret-2', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously',
 	'modele.structurant': '', 'notifications.systeme': True,
 	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
+	'worktrees.auto': 'souvent',
 	'metier': 'jeton-secret-3', 'connecteurs.lecture': ['jeton-secret-4'], 'connecteurs.ecriture': 'jeton-secret-5',
 }
 

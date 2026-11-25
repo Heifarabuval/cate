@@ -47,6 +47,9 @@
   "notifications.systeme": {"valeurs": ["oui", "non"], "groupe": "avance", "portee": "workspace",
    "nom": "Notification du Mac", "explique": "Prévenir par une notification du Mac quand l'agence vous attend.",
    "choix": {"oui": "Oui", "non": "Non"}},
+  "worktrees.auto": {"valeurs": ["oui", "non"], "groupe": "avance", "portee": "workspace",
+   "nom": "Retrait automatique des copies de travail", "explique": "Quand un besoin est fini, ses copies de travail sans modification sont retirées toutes seules (la branche reste). Sinon, vous décidez au clic.",
+   "choix": {"oui": "Oui", "non": "Non, je décide au clic"}},
   "notifications.rappel": {"valeurs": [0, 300, 900], "groupe": "avance", "portee": "workspace",
    "nom": "Rappel", "explique": "Un seul rappel si vous n'avez pas répondu à ce qui vous attend.",
    "choix": {"0": "Jamais", "300": "Après 5 minutes", "900": "Après 15 minutes"}},
@@ -94,7 +97,7 @@
     "speckit": "non", "verification": "libre", "preuve": null, "agents.max": 4, "declencheurs.actifs": ["T1"],
     "envoi.slack.variable": "SLACK_USER_TOKEN", "envoi.slack.fichier": null,
     "notifications.systeme": "oui", "notifications.rappel": 300, "agents.modele": "auto", "agents.effort": "auto",
-    "plan.validation": "jamais"
+    "plan.validation": "jamais", "worktrees.auto": "oui"
    }
   },
   "pr-tdd": {
@@ -104,7 +107,7 @@
     "speckit": "au-dela-d-une-journee", "verification": "differente", "preuve": ["ci-verte", "pr-mergee"], "agents.max": 4,
     "declencheurs.actifs": ["T1", "T2", "T3"], "envoi.slack.variable": "SLACK_USER_TOKEN", "envoi.slack.fichier": null,
     "notifications.systeme": "oui", "notifications.rappel": 300, "agents.modele": "auto", "agents.effort": "auto",
-    "plan.validation": "jamais"
+    "plan.validation": "jamais", "worktrees.auto": "oui"
    }
   }
  }
