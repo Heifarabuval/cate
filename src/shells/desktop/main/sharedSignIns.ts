@@ -2,6 +2,8 @@
 // (google.com, github.com, ...) are the same in every workspace partition.
 // A hub partition keeps them while no workspace is open; a change in one
 // partition is written to the hub and to every other attached partition.
+// An import from the default browser is a one-off seed of every cookie but
+// the excluded domains': it is not synced afterwards.
 
 import type { Cookie, CookiesSetDetails } from 'electron'
 import { createLogger } from '@kernel/log/contract'
@@ -19,8 +21,10 @@ export interface CookieJar {
 export interface SharedSignIns {
   /** Copies the shared cookies into `jar` and keeps it in sync; idempotent. */
   attach(jar: CookieJar): Promise<void>
-  /** Writes `cookies` of shared domains to the hub and every attached jar; the count written. */
-  importCookies(cookies: Cookie[]): Promise<number>
+  /** Writes `cookies` but those of `excluded` domains (and their subdomains)
+   *  to the hub and every attached jar; the count written. A jar attached
+   *  later receives the ones it does not hold. */
+  importCookies(cookies: Cookie[], excluded: readonly string[]): Promise<number>
   /** One-off copy of the hub's cookies of `domain` into `jar` (an agent's
    *  partition): no sync in either direction; the count copied. A domain
    *  outside the shared list copies nothing. */
@@ -101,11 +105,13 @@ export function createSharedSignIns(deps: { hub: CookieJar; domains(): readonly 
       ready = (async () => {
         const [hub, own] = await Promise.all([deps.hub.get({}), jar.get({})])
         const hubIds = new Set(hub.filter(shared).map(idOf))
-        const ownValues = new Map(own.filter(shared).map((c) => [idOf(c), c.value]))
-        // Hub cookies win; this jar's other shared cookies (signed in before
-        // the setting existed) join the hub and the other jars.
+        const ownValues = new Map(own.map((c) => [idOf(c), c.value]))
+        // Hub cookies of shared domains win; imported ones only fill gaps, so
+        // a stale import never overwrites a newer sign-in. This jar's other
+        // shared cookies (signed in before the setting existed) join the hub
+        // and the other jars.
         await Promise.all([
-          ...hub.filter((c) => shared(c) && ownValues.get(idOf(c)) !== c.value).map((c) => write(jar, c, false)),
+          ...hub.filter((c) => (shared(c) ? ownValues.get(idOf(c)) !== c.value : !ownValues.has(idOf(c)))).map((c) => write(jar, c, false)),
           ...own.filter((c) => shared(c) && !hubIds.has(idOf(c))).map((c) => spread(jar, c, false)),
         ])
       })()
@@ -118,8 +124,8 @@ export function createSharedSignIns(deps: { hub: CookieJar; domains(): readonly 
       await Promise.all(granted.map((c) => write(jar, c, false)))
       return granted.length
     },
-    async importCookies(cookies) {
-      const kept = cookies.filter(shared)
+    async importCookies(cookies, excluded) {
+      const kept = cookies.filter((c) => !isSharedDomain(c.domain, excluded))
       await Promise.all(kept.map((c) => spread(null, c, false)))
       return kept.length
     },

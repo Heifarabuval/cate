@@ -392,9 +392,13 @@ app.whenReady().then(() => {
 
   registerDeviceIpc(device, registry)
   registerNatives({ registry, settingsFile, backgrounds, focusWindow })
+  handle(C.browserDefaultName, () => app.getApplicationNameForProtocol('https://'))
+  // Only this explicit call reads the browser's cookies; they stay in main and
+  // in Cate's browser partitions, and only a count goes back.
   handle(C.browserImportSignIns, async () => {
     const browser = app.getApplicationNameForProtocol('https://')
-    return { browser, imported: await sharedSignIns().importCookies(await readDefaultBrowserCookies(browser)) }
+    const cookies = await readDefaultBrowserCookies(browser)
+    return { browser, imported: await sharedSignIns().importCookies(cookies, settings().browserImportExcludedDomains) }
   })
   registerCapture(registry)
   registerTransportIpc({

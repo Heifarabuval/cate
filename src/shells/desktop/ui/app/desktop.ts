@@ -66,7 +66,9 @@ export interface DesktopPort {
   showOverlayInMainWindow?(request: { view: string; section?: string }): boolean
   /** Opens the device's client settings file in the OS. */
   openClientSettingsFile(): Promise<void>
-  /** Imports the shared sign-ins of the system's default browser. */
+  /** The system's default browser. */
+  defaultBrowserName(): Promise<string>
+  /** Imports the cookies of the system's default browser but the excluded domains'. */
   importBrowserSignIns(): Promise<{ browser: string; imported: number }>
   /** Asks for a folder to open as a workspace. */
   pickFolder(): Promise<string | null>

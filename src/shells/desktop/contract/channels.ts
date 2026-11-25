@@ -39,6 +39,7 @@ export const DESKTOP_CHANNELS = {
 
   osOpenExternal: 'cate-desktop:os:open-external',
   osOpenSettingsFile: 'cate-desktop:os:open-settings-file',
+  browserDefaultName: 'cate-desktop:browser:default-name',
   browserImportSignIns: 'cate-desktop:browser:import-sign-ins',
   clipboardWrite: 'cate-desktop:clipboard:write',
   clipboardRead: 'cate-desktop:clipboard:read',

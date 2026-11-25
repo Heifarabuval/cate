@@ -19,9 +19,12 @@ export const browserClientSettings = defineSettings({
     /** A loopback URL always opens in Cate; Cmd/Ctrl+Shift+click in a
      *  terminal always opens outside. */
     linkOpenTarget: setting<LinkOpenTarget>('ask', oneOf('ask', 'cate', 'external')),
-    /** Domains whose cookies (sign-ins) every workspace's browser shares;
-     *  other sites stay per workspace. */
+    /** Domains whose cookies (sign-ins) every workspace's browser keeps in
+     *  sync; other sites stay per workspace. */
     browserSharedSignInDomains: setting<string[]>(['google.com', 'github.com'], everyItem(isDomainName)),
+    /** Domains (and their subdomains) the default browser's cookies are never
+     *  imported for; the import takes every other cookie. */
+    browserImportExcludedDomains: setting<string[]>([], everyItem(isDomainName)),
   },
 })
 

@@ -100,6 +100,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
     os: {
       openExternal: vi.fn(async () => {}),
       openSettingsFile: vi.fn(async () => {}),
+      defaultBrowserName: vi.fn(async () => 'Arc'),
       importBrowserSignIns: vi.fn(async () => ({ browser: 'Arc', imported: 0 })),
       writeClipboard: async () => {},
       readClipboard: async () => '',
