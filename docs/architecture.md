@@ -1620,6 +1620,14 @@ Pure contract, no runtime side.
   implementer and verifier. The agent cap is the smaller of `maxAgents` and the
   `agents.max` practice. The agence panel's `agence boot` still opens the
   interlocutor; it is not part of the org.
+- **Written from a description.** The `orga` skill has an agent write the
+  file from the person's words. `agence org propose <file>` validates the
+  candidate with the same `org.cjs` (`--stdin`; no new module), refuses it with
+  its errors for the agent to fix, and, when valid, prints the preview
+  (`previewOrg`) and poses an `agence ask` card (Enregistrer or Refuser)
+  that carries the candidate text. `agence org save <card>` writes
+  `.cate/org.json` only when the person answered Enregistrer, after validating
+  again; no agent writes the file otherwise.
 
 ## 10. Services
 

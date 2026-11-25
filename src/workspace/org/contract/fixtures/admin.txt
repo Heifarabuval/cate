@@ -1,0 +1,1 @@
+Je prépare un dossier administratif : un rédacteur écrit le dossier, un vérificateur relit les pièces, un agent mise en forme exporte le PDF. Je valide le dossier avant l'export.
