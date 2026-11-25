@@ -456,6 +456,9 @@ class Demarrage(Base):
 
 class BootSousPanneauAgence(Base):
 	def test_orchestrateur_agence_ni_regisseur_ni_suivi_port_pose(self):
+		patch = unittest.mock.patch.object(agence, 'org_lire', return_value={'ok': True, 'org': {'roles': {'interlocuteur': {}}}})
+		patch.start()
+		self.addCleanup(patch.stop)
 		with agence.tx() as st:
 			st['panels'] = {'orchestrator': 'o1'}
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}, {'panelId': 'b1', 'type': 'boite'},

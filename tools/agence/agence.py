@@ -671,6 +671,15 @@ def adopt(live, title_, kind):
 	return next((p for p, r in live.items() if r.get('title') == title_ and r.get('type', kind) == kind), None)
 
 
+def poste_interlocuteur():
+	"""L'orga du workspace déclare-t-elle le poste `interlocuteur` ? Sans fichier (solo) ou fichier invalide : non, rien ne s'ouvre."""
+	try:
+		r = org_lire()
+	except Env:
+		return False
+	return bool(r.get('ok')) and 'interlocuteur' in r['org']['roles']
+
+
 def cmd_boot(a):
 	"""Chaque panneau est enregistré dès sa création : un boot interrompu se reprend sans doublon."""
 	require_cate()
@@ -693,11 +702,11 @@ def cmd_boot(a):
 		if not st['port']:
 			st['port'] = free_port()
 		if orch in live and live[orch].get('type') == 'agence':  # le panneau tient lui-même régisseur et suivi
-			# Un clic sur « Start Agence » suffit : l'interlocuteur et la boîte de validation viennent avec.
-			inter = interlocuteur(live, p)
+			# Un clic sur « Start Agence » suffit : la boîte de validation vient avec, et l'interlocuteur si l'orga a ce poste.
+			inter = interlocuteur(live, p) if poste_interlocuteur() else None
 			if not any(r.get('type') == 'boite' for r in live.values()):
 				cate('panel', 'create', 'boite')
-			print(f'régisseur tenu par le panneau agence, interlocuteur {inter}')
+			print('régisseur tenu par le panneau agence' + (f', interlocuteur {inter}' if inter else ', pas de poste interlocuteur'))
 			return 0
 		reg = p.get('regisseur') if p.get('regisseur') in live else adopt(live, 'Régisseur', 'terminal')
 		fresh = reg is None

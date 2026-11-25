@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import agence  # noqa: E402
@@ -73,8 +74,35 @@ class Demarrage(Base):
 		links = [c[3:7] for c in self.run.ran('cate', 'panel', 'link')]
 		self.assertIn(['p2', 'p1', '--kind', 'context'], links)
 
+	def orga(self, roles):
+		"""L'orga lue par `agence boot` (org.cjs simulé) : sans poste interlocuteur, c'est le profil solo."""
+		patch = unittest.mock.patch.object(agence, 'org_lire', return_value={'ok': True, 'org': {'roles': {r: {} for r in roles}}})
+		patch.start()
+		self.addCleanup(patch.stop)
+
+	def test_boot_sans_poste_interlocuteur_n_ouvre_que_la_boite(self):
+		self.orga(['dev'])  # profil solo : aucun interlocuteur
+		with agence.tx() as st:
+			st['panels'] = {'orchestrator': 'o1'}
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}])
+		code, out = self.cli('boot')
+		self.assertEqual(code, 0)
+		self.assertEqual(self.inter_starts(), [])
+		self.assertEqual([c[3] for c in self.run.ran('cate', 'panel', 'create')], ['boite'])
+		self.assertNotIn('interlocuteur', self.state()['panels'])
+		self.assertNotIn('interlocuteur p', out)
+
+	def test_boot_orga_invalide_n_ouvre_pas_d_interlocuteur(self):
+		with unittest.mock.patch.object(agence, 'org_lire', return_value={'ok': False, 'errors': ['x']}):
+			with agence.tx() as st:
+				st['panels'] = {'orchestrator': 'o1'}
+			self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}])
+			self.assertEqual(self.cli('boot')[0], 0)
+		self.assertEqual(self.inter_starts(), [])
+
 	def test_boot_du_panneau_agence_cree_interlocuteur_et_boite_une_fois(self):
 		# Clic droit > Start Agence : le panneau lance l'orchestrateur, dont « agence boot » complète l'équipe.
+		self.orga(['interlocuteur', 'dev'])
 		with agence.tx() as st:
 			st['panels'] = {'orchestrator': 'o1'}
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'type': 'agence'}])

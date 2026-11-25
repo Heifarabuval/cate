@@ -1021,6 +1021,18 @@ Capabilities not owned by a feature module, in `runtime/`:
   through a platform helper process (`caffeinate -i -w <pid>` on macOS,
   `systemd-inhibit` on Linux, `SetThreadExecutionState` through PowerShell on
   Windows).
+  `capacity` answers how many agents the machine's memory allows now
+  (`agentCapacity`, pure, in `power/contract/capacity.ts`): the memory the system
+  can give (`memory_pressure` free percentage of total RAM, 0 when unreadable)
+  minus the reserve, divided by the average resident size of the live agents
+  (a `claude` process and its children, read from `ps`; 1500 MB while none is
+  alive), plus the agents already alive, capped by `agentsMax`. It returns the
+  `ceiling`, the `live` count, `canStart` and, when false, the `reason` (cap
+  reached or memory). Nothing is stopped above the ceiling: a new agent only
+  waits. Two workspace settings of the `power` slice drive it:
+  `agentMemoryReserveMb` (memory left to the rest of the machine, default 4096)
+  and `agentsMax` (default 4). The daemon wires it in `entry.ts`
+  (`createCapacity`).
 - `push` (`runtime/push`): a paired device registers where its pushes go
   (`target`, opaque to the runtime) and a 32-byte key (`register`,
   `unregister`, `status`; the device is the caller's key fingerprint). Every
@@ -1607,6 +1619,13 @@ Pure contract, no runtime side.
   the person's click.
 - **Examples**: `ORG_SOLO` (one agent does everything, the default), `ORG_DUO`
   (one builds, one checks), `ORG_AGENCY` (PO, front, back, QA, GCP rights).
+- **Preview** (`previewOrg`, pure, no agent runs): the path of a typical task
+  (`waves` of roles that work at the same time, with the person's clicks between
+  them), the defects to fix before use (a role without `done`, a link without
+  `verifiedBy`, roles on the same files, more roles at once than `maxAgents`,
+  more memory than a given cap) and an estimated cost (peak agents, memory at
+  2 GB per agent unless told, tokens per effort for each role of the path).
+  Estimates, not measures. `agence org propose` prints it; `agence org --json` returns it.
 - **Loading** (`loadOrg(text)`): no file is the solo profile; a file that is
   not JSON or not valid is an error, never solo.
 - **Who reads it.** The orchestrator, through `agence org`: the CLI runs
@@ -1618,8 +1637,11 @@ Pure contract, no runtime side.
   asks `verifiedBy` roles to check and the person's click where `click` says
   so. Nothing is hard-coded in the skill: no default interlocutor, no fixed
   implementer and verifier. The agent cap is the smaller of `maxAgents` and the
-  `agents.max` practice. The agence panel's `agence boot` still opens the
-  interlocutor; it is not part of the org.
+  `agents.max` practice; the memory ceiling (`power.capacity`, 7.9) is not read
+  by the CLI. The
+  agence panel's `agence boot` opens the interlocutor only when the org has a
+  role with the id `interlocuteur`; with no org file (solo) or an invalid one it
+  opens none. The validation inbox and the regisseur do not depend on the org.
 - **Written from a description.** The `orga` skill has an agent write the
   file from the person's words. `agence org propose <file>` validates the
   candidate with the same `org.cjs` (`--stdin`; no new module), refuses it with
@@ -2239,7 +2261,7 @@ Every panel type meets the same contract.
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
 | review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay; a panel opened on a pull request (`pr` field) reads it through `gh` instead (description, commits, checks, mergeability, files with bounded diff pages), read only: no comment, approval or merge; a visible view sends `prTick` and the session decides whether to re-read the checks |
-| agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("Start Agence") or by `cate panel create agence`; the orchestrator's `agence boot` adds the interlocuteur and the validation inbox when missing; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
+| agence | services/terminal, services/agents (through the terminal's launch intent), the `agence` CLI's files and regisseur | orchestrator PTY id and status, regisseur state (`starting`, `running`, `external`, `missing`, `stopped`) with its error and settings hint, the follow-up classified in sections, the open drafts with their hash, the open questions, the send guard (`actif`, `inactif`, `partiel`, `inconnu` before the regisseur's first turn) | orchestrator terminal next to the follow-up (tabs under 640 px) | one panel per project; created from the creation menus ("Start Agence") or by `cate panel create agence`; the orchestrator's `agence boot` adds the validation inbox when missing, and the interlocuteur only when the workspace's org (9.9) declares an `interlocuteur` role; the orchestrator is a Claude Code in a PTY of the session, so `cate agent send --panel` reaches it like a terminal's agent (`relation: { execution: true }`); no `cate` API, so no agent reaches its ops (send, drop, edit, answer, restart orchestrator), only a client's view does |
 | boite | none: a definition alone, no session of its own (the daemon serves it a stateless one) and no `cate` API | none; the client core's store (`client/boite`) reads the agence panels of every workspace the client has open | the inbox (`shells/desktop/ui/panels/boite`) | the human's validation inbox, `unique`: one per workspace (any workspace of the client shows every project); cannot be driven by an agent |
 | app | workspace/files (its page server), workspace lifecycle (trust) | `needs-grant`, `running` (page URL), `missing`, `error` or `blocked`, the card's sentence and fingerprint, the files changed of an installed panel, a reload counter | webview | one type for every custom panel (a folder of `~/.cate/panneaux/`), no `creation` |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
