@@ -81,9 +81,9 @@ Max crée un workspace sur un dossier vide et répond « un petit outil interne 
 
 **Independent Test**: sur un dossier vide, l'agent ne lit que la racine, ne propose aucune orga, et pose au plus 4 questions.
 
-### User Story 4 - Refaire le setup plus tard (Priority: P2)
+### User Story 4 - Relancer le setup en bloc, à tout moment (Priority: P2)
 
-Six semaines plus tard, l'équipe passe de 2 à 5 personnes. Camille clique « Refaire le setup » dans les réglages. L'agent part de l'état courant (`agence pratiques show`, `agence org --json`), relit le dépôt, demande ce qui a changé et ne propose que les écarts, chaque ligne avec « avant » et « après ». Rien n'est écrit sans clic ; un refus laisse l'existant intact.
+Six semaines plus tard, l'équipe passe de 2 à 5 personnes. Camille ouvre le setup (« Ajuster le setup », la palette, ou `agence setup` dans le terminal de l'orchestrateur : FR-012) et dit « revois tout ». C'est le mode en bloc ; l'ajustement ponctuel est l'US7. L'agent part de l'état courant (`agence pratiques show`, `agence org --json`), relit le dépôt, demande ce qui a changé et ne propose que les écarts, chaque ligne avec « avant » et « après ». Rien n'est écrit sans clic ; un refus laisse l'existant intact.
 
 **Independent Test**: avec `projet: true`, la proposition ne contient que les clés qui diffèrent de la valeur effective.
 
@@ -91,19 +91,28 @@ Six semaines plus tard, l'équipe passe de 2 à 5 personnes. Camille clique « R
 
 ### User Story 5 - Le projet évolue en cours de route (Priority: P1)
 
-Trois semaines après l'US2, le dépôt de Nadia change de nature : l'équipe ajoute à la refonte SvelteKit un flux de newsletters (12 fichiers Markdown dans `contenu/`), et le Mac rame. Nadia clique « Ajuster le setup » et écrit : « on ajoute les newsletters, un rédacteur arrive, et je passe à 2 agents, le Mac rame ».
+Trois semaines après l'US2, le dépôt de Nadia change de nature : l'équipe ajoute à la refonte SvelteKit un chantier SEO (8 fichiers Markdown d'audit dans `seo/`), et le Mac rame. Nadia tape dans le terminal de l'orchestrateur `agence setup "ce projet sert aussi au SEO, un relecteur SEO arrive, et je passe à 2 agents, le Mac rame"` : l'agent s'ouvre avec cette phrase déjà posée, sans repasser par le parcours d'ouverture.
 
-1. L'agent ne repart pas de zéro. Il lit la mémoire du setup (objet : « refonte espace donateur » ; 6 décisions datées, chacune avec sa source), `agence pratiques show`, `agence org --json`, puis seulement ce qui a changé dans le dépôt depuis la date de la dernière écriture (`git log --since`, `contenu/` : environ 10 000 jetons lus, contre 40 000 au premier setup).
+1. L'agent ne repart pas de zéro. Il lit la mémoire du setup (objet : « refonte espace donateur » ; 6 décisions datées, chacune avec sa source), `agence pratiques show`, `agence org --json`, puis seulement ce qui a changé dans le dépôt depuis la date de la dernière écriture (`git log --since`, `seo/` : environ 10 000 jetons lus, contre 40 000 au premier setup).
 2. Il traite les trois points en une conversation :
    - **plafond** : `agents.max` 3 vers 2. Pas de question, c'est dit.
-   - **métier qui s'ajoute** : le contenu éditorial n'est pas au catalogue (`metiers.json` ne porte que `dev`, et la clé `metier` n'accepte qu'un choix, Q10). Il le dit, ne propose rien pour cette clé, et note le besoin dans la mémoire (« métier contenu à ajouter au catalogue, PR »). Si le catalogue porte un métier qui convient, il le propose.
-   - **orga** : un poste « rédacteur » s'ajoute au duo, `maxAgents` reste 2.
-3. Il ne pose qu'une question : « Le rédacteur est-il relu par un second agent ou par toi ? » (réponse : par moi, `click: after`).
-4. Deux cartes. La carte de pratiques montre 2 lignes de diff (plafond 3 vers 2 ; mémoire : +1 précision, +1 besoin de catalogue). La carte d'orga montre le diff des postes (+1 poste, +1 lien) et l'aperçu habituel, dont l'alerte « plus de rôles à la fois que `maxAgents` » (3 postes, 2 agents). Nadia clique Appliquer sur la première, Enregistrer sur la seconde.
+   - **métier qui s'ajoute** : le SEO n'est pas au catalogue (`metiers.json` ne porte que `dev`, et la clé `metier` n'accepte qu'un choix, Q10). Il le dit, ne propose rien pour cette clé, et note le besoin dans la mémoire (« métier SEO à ajouter au catalogue, PR »). Si le catalogue porte un métier qui convient, il le propose.
+   - **orga** : un poste « relecteur SEO » s'ajoute au duo, `maxAgents` reste 2.
+   - **objet** : « refonte espace donateur » devient « refonte espace donateur et SEO » (diff de la mémoire, avant et après).
+3. Il ne pose qu'une question : « Le relecteur SEO est-il relu par un second agent ou par toi ? » (réponse : par moi, `click: after`).
+4. Deux cartes. La carte de pratiques montre 2 lignes de diff (plafond 3 vers 2 ; mémoire : objet modifié, +1 besoin de catalogue). La carte d'orga montre le diff des postes (+1 poste, +1 lien) et l'aperçu habituel, dont l'alerte « plus de rôles à la fois que `maxAgents` » (3 postes, 2 agents). Nadia clique Appliquer sur la première, Enregistrer sur la seconde.
 
-Bilan chiffré : 1 question, 2 cartes, 3 fichiers écrits (réglages, mémoire, orga) par 2 clics, environ 2 minutes. Rien d'autre n'a bougé : les 4 réglages non cités sont absents du diff.
+Semaine 3 en chiffres : 1 phrase tapée, 1 question, 2 cartes, 4 lignes de diff (plafond, objet, besoin de catalogue, +1 poste), 3 fichiers écrits (réglages, mémoire, orga) par 2 clics, environ 2 minutes, 10 000 jetons lus. Rien d'autre n'a bougé : les 4 réglages non cités sont absents du diff.
 
 **Independent Test**: sur un état `projet: true` avec mémoire, la proposition ne contient que les lignes qui diffèrent ; refusée, elle laisse les trois fichiers identiques.
+
+---
+
+### User Story 7 - Un ajustement ponctuel en une phrase (Priority: P1)
+
+En plein travail, Nadia dit à l'orchestrateur « mets le plafond à 2 ». L'orchestrateur ne change rien (FR-020) et lui répond en une ligne : `agence setup "mets le plafond à 2"`. Elle le tape (ou ouvre la palette, « Ajuster le setup », et colle la phrase). L'agent saute le parcours : il lit la mémoire et la valeur effective de `agents.max` (3), ne pose aucune question, propose une carte à une ligne de diff (`agents.max`  3 vers 2, source : « réponse »), 1 clic. Même chose pour « ajoute un relecteur » (diff d'orga : +1 poste, +1 lien) ou « ce projet sert aussi au SEO » (diff de la mémoire : objet avant et après). Une phrase = au plus une question, une carte par type d'écriture touché.
+
+**Independent Test**: une phrase qui nomme une clé produit exactement une ligne de diff ; une phrase sans clé produit une carte qui n'écrit que `setup.json` ; aucune clé non citée n'apparaît.
 
 ---
 
@@ -148,7 +157,7 @@ Camille voit « Agents en même temps : 4 » dans le formulaire et veut le baiss
 - **FR-009**: L'agent MUST NOT lancer `agence pratiques set|unset|preset`, ni `agence start`, ni écrire `pratiques.json`, `.cate/org.json` ou `state.json`. La CLI MUST refuser `agence need|fiche|draft|ask` hors celles du setup à l'appelant enregistré comme agent de setup (même seconde barrière que `refuse_interlocuteur`, `agence.py:481`).
 - **FR-010**: Au clic sur une carte de pratiques lors du premier setup (`projet` passe à `true`), la session lance l'orchestrateur, comme `questions()` aujourd'hui (`session.ts:253`). L'agent de setup se ferme à la fin de chaque conversation (plafond de 4 agents) ; « la même conversation » veut dire le même point d'entrée et la même mémoire, pas le même processus.
 - **FR-011**: « Passer » MUST rester présent et écrire `{"preset": "neutre"}` (comportement de `session.ts:239`) ; l'agent est fermé.
-- **FR-012**: Un bouton « Ajuster le setup » (panneau agence, disponible à tout moment, `projet: true`) MUST ouvrir l'agent de setup, ou rouvrir celui qui tourne (un par projet). Un bouton « En parler à l'agent » sur chaque ligne du formulaire de réglages MUST l'ouvrir centré sur cette clé. L'agent MUST partir de l'état lu (mémoire, `agence pratiques show`, `agence org --json`) et de ce qui a changé dans le dépôt depuis la date de la dernière écriture ; sa proposition MUST ne contenir que les écarts avec la valeur effective.
+- **FR-012**: Le setup MUST s'ouvrir à tout moment (`projet: true`) par quatre entrées qui mènent à la même conversation : un bouton « Ajuster le setup » du panneau agence, l'action `agence.setup` (palette et raccourci, déclarée par `defineActions`), la commande `agence setup ["<phrase>"]` tapée dans le terminal de l'orchestrateur ou d'un autre terminal, et « En parler à l'agent » sur une ligne du formulaire. Chacune ouvre l'agent de setup, ou rouvre celui qui tourne (un par projet), avec la phrase éventuelle déjà posée. La commande n'écrit rien : elle ouvre le panneau. Un bouton « En parler à l'agent » sur chaque ligne du formulaire de réglages MUST l'ouvrir centré sur cette clé. Avec une phrase qui nomme un ou plusieurs points (« mets le plafond à 2 », « ajoute un relecteur », « ce projet sert aussi au SEO »), l'agent MUST traiter ces seuls points, sans repasser par le parcours d'ouverture ni poser une question dont la phrase donne la réponse ; sans phrase, il demande ce qui change. Il MUST partir de l'état lu (mémoire, `agence pratiques show`, `agence org --json`) et de ce qui a changé dans le dépôt depuis la date de la dernière écriture ; sa proposition MUST ne contenir que les écarts avec la valeur effective.
 - **FR-013**: Les premières questions figées MUST disparaître (coupe nette, constitution III) : `PremieresQuestions.tsx` et son test, `premieresQuestions` et `MAX_QUESTIONS` (`contract/types.ts:153-159`), le champ `question` du schéma (`pratiques.json:5,13,36,44`), l'op `pratique.questions` (remplacée par une op `setup.passer`), les références de la spec 008 (US3, FR-013, Q7, Q9) marquées remplacées. Le formulaire de réglages (008) reste.
 - **FR-014**: Le modèle et l'effort de l'agent de setup MUST se régler comme ceux de l'interlocuteur : clé `modele.interlocuteur` réutilisée (`agence.py:658`), null voulant dire le défaut de la CLI. Aucune clé nouvelle en v1.
 - **FR-015**: Chaque lot MUST commencer par ses tests rouges (constitution VI). Aucun test e2e, aucun Electron (constitution X).
@@ -156,7 +165,8 @@ Camille voit « Agents en même temps : 4 » dans le formulaire et veut le baiss
 - **FR-017**: La mémoire du setup MUST vivre dans `<racine>/.cate/tmp/agence/setup.json` (hors dépôt versionné, comme `pratiques.json`, partagée par les worktrees), JSON écrit atomiquement par le même code que les fichiers de politique (`pratiques.py`), un seul écrivain : le régisseur, au clic, dans la même écriture que la carte de pratiques ou par une carte « Noter ce contexte ». L'agent ne l'écrit jamais ; il la lit.
 - **FR-018**: Le régisseur MUST refuser l'écriture d'une carte de pratiques quand une clé qu'elle change a une valeur effective différente de l'« avant » de la carte (proposition périmée). Il écrit sinon par `regler_plusieurs`, le même chemin que le formulaire (FR-004 de 008).
 - **FR-019**: Le formulaire de réglages MUST rester la voie directe et continuer d'écrire sans agent. Aucune des deux voies n'a priorité : le dernier clic gagne (008, cas limites), la valeur effective est la seule vérité, la mémoire n'en est que l'historique et la raison.
-- **FR-020**: Quand une remarque faite en cours de travail à l'orchestrateur ou à l'interlocuteur touche une clé du setup, l'agent qui la reçoit MUST répondre en une ligne qui renvoie à « Ajuster le setup » ; il ne propose et n'écrit rien lui-même.
+- **FR-020**: Quand une remarque faite en cours de travail à l'orchestrateur ou à l'interlocuteur touche une clé du setup, l'agent qui la reçoit MUST répondre en une ligne qui donne la commande `agence setup "<la phrase>"` et ne propose ni n'écrit rien lui-même ; l'humain tape la commande ou ouvre la palette.
+- **FR-021**: La mémoire MUST être lue par l'agent à chaque ouverture du setup (relance en bloc, phrase ponctuelle ou premier setup si elle existe), porter à chaque décision et précision sa date, n'être jamais la source d'un secret (aucune valeur de secret n'y entre, FR de la section Mémoire), et ne jamais être écrite sans le clic d'une carte.
 
 ### Key Entities
 
@@ -250,10 +260,14 @@ Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la répo
 - **Q2** : l'agent de setup est-il une skill nouvelle (`skills/setup/`) ou un mode de la skill `interlocuteur` ? Hypothèse : **skill nouvelle**, courte, qui renvoie à `orga` et `metier` pour leurs étapes ; l'interlocuteur écrit des fiches et ne doit pas apprendre à proposer de la politique.
 - **Q3** : modèle et effort de l'agent. Hypothèse : réutiliser `modele.interlocuteur` (null, défaut de la CLI). La clé n'existe pas encore pour un projet neuf (`projet: false`) : le défaut de la CLI s'applique, donc le modèle choisi par Heifara pour le défaut. Alternative : une clé `modele.setup`, rejetée en v1 (une clé de plus pour un usage unique).
 - **Q4** : garder le questionnaire figé en secours quand Claude est absent ? Hypothèse : **non** (coupe nette) ; « Passer » et le formulaire de réglages suffisent, et un poste sans Claude n'orchestre rien de toute façon.
-- **Q5** : reprendre le texte d'une conversation interrompue ? Hypothèse : **non en v1** ; seule la mémoire écrite par un clic survit. Une conversation de 3 à 6 tours coûte moins cher à refaire qu'un journal à maintenir, et un journal brut risquerait de garder un secret collé en réponse.
+- **Q5** : mémoire entre deux conversations. Hypothèse : **oui**, un fichier du projet `setup.json` (section « Mémoire du setup »), lisible et éditable à la main, lu à chaque ouverture, écrit seulement par un clic. Le texte brut des conversations n'est pas conservé : il pourrait garder un secret collé en réponse, et ce que la personne veut garder passe par une carte « Noter ce contexte ».
+- **Q16** : la mémoire grossit sans fin ? Hypothèse : 200 lignes de contexte au plus, puis l'agent propose un résumé en un clic ; les décisions ne gardent que leur état courant.
 - **Q6** : l'agent peut-il créer la PR d'ajout d'un métier au catalogue ? Hypothèse : **non**, il écrit seulement la ligne « à ajouter au catalogue » sur la carte ; la PR relève du flux normal (skill `metier`).
 - **Q7** : la proposition de pratiques peut-elle poser `agents.max` au-dessus du plafond mémoire du Mac (4 agents sur 24 Go, mémoire projet) ? Hypothèse : **oui, mais la carte affiche l'avertissement de mémoire** que `previewOrg` calcule déjà ; la décision reste celle de l'humain.
-- **Q8** : où vit l'entrée vers le setup ? Hypothèse : « Ajuster le setup » dans l'en-tête du panneau agence et « En parler à l'agent » sur chaque ligne du formulaire (FR-012). Pas de commande de palette en v1.
+- **Q8** : les entrées vers le setup. Hypothèse : quatre, une seule conversation derrière (FR-012) : bouton du panneau, palette, `agence setup "<phrase>"` dans un terminal, ligne du formulaire. La palette et le bouton passent par `defineActions` (rien listé à la main).
+- **Q17** : l'orchestrateur peut-il ouvrir le setup lui-même à la demande de l'humain ? Hypothèse : **non** : l'ouverture n'écrit rien, mais l'interlocuteur et l'orchestrateur ne lancent pas d'agent de politique (spec 010) ; ils donnent la commande, l'humain la tape. Si cela pèse, une carte « Ouvrir le setup » (un clic) la remplace.
+- **Q18** : une phrase qui touche plusieurs types d'écriture (plafond + orga + objet) donne-t-elle une ou trois cartes ? Hypothèse : au plus deux (pratiques avec mémoire, orga), comme pour le premier setup (Q1).
+- **Q19** : l'agent interprète « ajoute un relecteur » en poste d'orga ou en réglage `verification` ? Hypothèse : en poste d'orga seulement si une orga existe ; sinon il propose `verification: differente` et dit pourquoi. Il le montre dans le diff, l'humain tranche.
 - **Q9** : la mémoire est-elle versionnée avec le dépôt ? Hypothèse : **non**, elle reste dans `.cate/tmp/agence/` (hors dépôt, comme `pratiques.json`) parce qu'elle peut citer des noms d'outils et des raisons internes. Une équipe qui veut la partager la copie à la main.
 - **Q10** : la clé `metier` n'accepte qu'un choix (`"un": true`, `pratiques.json:3`). Un projet qui ajoute un métier (US5) en veut deux. Hypothèse : **le setup ne change pas ce schéma** ; il propose le seul métier qui convient le mieux et note l'autre dans la mémoire. Passer `metier` en liste est une décision de la spec 012, pas de celle-ci.
 - **Q11** : quand l'agent est-il relancé tout seul ? Hypothèse : **jamais** ; seul l'humain clique « Ajuster le setup ». Un déclencheur automatique (dépôt qui change de nature, plafond dépassé) serait une proposition de la spec 004 (déclencheurs), pas de ce setup.
