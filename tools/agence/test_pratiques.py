@@ -27,13 +27,14 @@ NEUTRE = {
 	'envoi.slack.variable': 'SLACK_USER_TOKEN', 'envoi.slack.fichier': None,
 	'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto',  # spec 008
 	'plan.validation': 'jamais',  # spec 013, lot 6 (Q7)
+	'worktrees.auto': 'oui',
 }
 PR_TDD = {
 	'livraison.mode': 'pr', 'livraison.merge': 'clic', 'livraison.methode': 'rebase', 'issue': 'obligatoire', 'tests': 'tdd',
 	'speckit': 'au-dela-d-une-journee', 'verification': 'differente', 'preuve': ['ci-verte', 'pr-mergee'], 'agents.max': 4,
 	'declencheurs.actifs': ['T1', 'T2', 'T3'], 'envoi.slack.variable': 'SLACK_USER_TOKEN', 'envoi.slack.fichier': None,
 	'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto',
-	'plan.validation': 'jamais',
+	'plan.validation': 'jamais', 'worktrees.auto': 'oui',
 }
 # Une valeur hors liste (ou hors type) par clé du schéma : SC-003, 100 % des clés.
 HORS_LISTE = {
@@ -43,6 +44,7 @@ HORS_LISTE = {
 	'envoi.slack.fichier': 'xoxp-123-secret', 'modele.tri': 42, 'modele.interlocuteur': 'opus --dangerously-skip-permissions',
 	'modele.structurant': '', 'notifications.systeme': True,
 	'notifications.rappel': 60, 'agents.modele': 'gpt', 'agents.effort': 'extreme', 'plan.validation': 'parfois',
+	'worktrees.auto': 'souvent',
 	'metier': 'boulanger', 'connecteurs.lecture': ['inconnu'], 'connecteurs.ecriture': 'factice',
 }
 # Spec 010, lot 7 (FR-010, SC-003) : modèle par rôle, proposé, jamais choisi par le code ; null hors des presets.
@@ -156,7 +158,7 @@ class Priorite(Base):
 				v = {'livraison.mode': 'main', 'livraison.merge': 'dehors', 'agents.max': 6,
 				     'envoi.slack.variable': 'MON_JETON', 'envoi.slack.fichier': '~/.env', 'notifications.systeme': 'non',
 				     'notifications.rappel': 900, 'agents.modele': 'sonnet', 'agents.effort': 'high',
-				     'plan.validation': 'toujours'}[cle]
+				     'plan.validation': 'toujours', 'worktrees.auto': 'non'}[cle]
 			with self.subTest(cle=cle):
 				for f in (self.dev, self.projet):
 					with contextlib.suppress(FileNotFoundError):
@@ -383,7 +385,7 @@ class Presets(unittest.TestCase):
 
 	def test_cles_des_presets_dans_le_schema(self):
 		schema = pratiques.schema()
-		self.assertEqual(len(schema['cles']), 23)  # 12 de 005, 3 modele.* de 010 (corr-008 b), 4 de 008, 1 de 013, 3 de 012
+		self.assertEqual(len(schema['cles']), 24)  # 12 de 005, 3 modele.* de 010 (corr-008 b), 4 de 008, 1 de 013, 3 de 012, 1 de worktrees
 		for nom, p in schema['presets'].items():
 			with self.subTest(preset=nom):
 				self.assertLessEqual(set(p['valeurs']), set(schema['cles']))
