@@ -562,18 +562,18 @@ def skill(nom):
 
 
 class Renvoi(unittest.TestCase):
-	"""FR-020, Q14, Q17 : une remarque qui touche le setup est renvoyée vers lui, jamais écrite ni proposée par l'orchestrateur
-	ou l'interlocuteur ; le setup lit ce contexte pour proposer un ajustement."""
+	"""FR-020, Q14, Q17 : une remarque qui touche le setup passe par la détection (carte au clic), jamais écrite ni proposée par
+	l'orchestrateur ou l'interlocuteur ; le setup lit ce contexte pour proposer un ajustement."""
 
-	def test_l_orchestrateur_et_l_interlocuteur_renvoient_au_setup_sans_rien_ecrire(self):
+	def test_l_orchestrateur_et_l_interlocuteur_detectent_sans_rien_ecrire(self):
 		for nom in ('orchestrateur', 'interlocuteur'):
 			with self.subTest(nom=nom):
 				texte = skill(nom)
-				self.assertIn('agence setup "<la phrase>"', texte)
+				self.assertIn('agence setup --detecte', texte)
 				self.assertIn('ne change aucun réglage', texte)
-				self.assertIn('une ligne', texte)
+				self.assertIn('Ajuster le setup ?', texte)
 
-	def test_le_renvoi_ne_cite_aucune_commande_d_ecriture_de_politique(self):
+	def test_la_detection_ne_cite_aucune_commande_d_ecriture_de_politique(self):
 		for nom in ('orchestrateur', 'interlocuteur'):
 			with self.subTest(nom=nom):
 				texte = skill(nom)

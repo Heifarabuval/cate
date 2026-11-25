@@ -268,5 +268,29 @@ class Evenements(Base):
 		self.assertEqual(len(self.cartes()), 1)
 
 
+class Skills(unittest.TestCase):
+	"""FR-020 : les skills appellent la détection au lieu de renvoyer à la main ; le plafond de taille tient."""
+
+	def texte(self, nom):
+		with open(os.path.join(REPO, 'skills', nom, 'SKILL.md'), encoding='utf-8') as f:
+			return f.read()
+
+	def test_orchestrateur_et_interlocuteur_appellent_la_detection(self):
+		for nom in ('orchestrateur', 'interlocuteur'):
+			with self.subTest(nom):
+				t = self.texte(nom)
+				self.assertIn('agence setup --detecte', t)
+				self.assertNotIn('réponds en une ligne', t)
+				self.assertNotIn('agence setup "<la phrase>"', t)
+
+	def test_la_detection_n_ecrit_rien_dans_les_skills(self):
+		for nom in ('orchestrateur', 'interlocuteur'):
+			t = self.texte(nom)
+			self.assertIn('ne change aucun réglage', t)
+
+	def test_orchestrateur_sous_son_plafond(self):
+		self.assertLessEqual(len(self.texte('orchestrateur').encode('utf-8')), 17736)
+
+
 if __name__ == '__main__':
 	unittest.main()
