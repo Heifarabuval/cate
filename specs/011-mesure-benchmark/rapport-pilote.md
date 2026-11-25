@@ -1,6 +1,17 @@
 # Rapport de pilote (spec 011, lot 4, fiche F19, besoin n944)
 
-État : **préparé, rien rejoué**. Le rejeu est joué par Heifara à l'écran (constitution : aucun agent ne joue une recette ni une gate). `resultats/` reste vide. Les sections « Résultats » et « Recommandation » du lot 4 (T044, T045) s'écrivent après le rejeu.
+État (2026-11-25, n972) : **2 rejeux sur 4 mesurés (bras nu), les 2 bras outil préparés mais pas joués**. Le rejeu est joué par Heifara (T043 ; aucun agent ne joue un rejeu). Pas de recommandation tant que les 4 ne sont pas mesurés (T044, T045).
+
+## Résultats (`benchmark.py mesure`, outil `ab9013e12514`, seuil `2732c761...`, contamination 0)
+
+| Rejeu | Temps actif | Temps mural | Arbitre | Interventions | Jetons total (lus, sortie) |
+|---|---|---|---|---|---|
+| #199 nu | 285 s | 373 s | vert au 1er `fini` | 3 | 1 094 570 (1 027 203, 5 598) |
+| #26 nu | 805 s | 3035 s | rouge x4, 3 reprises | 9 | 3 338 834 (3 237 880, 16 535) |
+| #199 outil | à jouer | | | | |
+| #26 outil | à jouer | | | | |
+
+Source : `resultats/199-nu.json`, `resultats/26-nu.json`. Durée d'un rejeu : 6 min (#199), 51 min (#26). Jetons du régisseur non attribués (pas d'export `cate agent usage --json`). Le test d'acceptation n'est pas atteint : manquent les 2 bras outil, les 4 chronomètres de Heifara (écart SC-005 non calculable, aucun chronomètre noté) et la recommandation. Les clones `~/.cache/agence-bench/{199,26}-outil` sont préparés (aucun `debut`).
 
 ## Contrôlé en lecture seule (2026-11-24, base origin/main 452607b8)
 
