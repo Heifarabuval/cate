@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act, useEffect } from 'react'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { createClientSettingsStore } from '@kernel/settings/client'
 import { installClientSettings } from '../../../kernel/settings'
+import { installDesktopPort, type DesktopPort } from '../../desktop'
 import { clientSettingsTable } from '../../../../settings'
 import { BrowserPage } from './clientPages'
 
@@ -22,6 +23,7 @@ afterEach(() => {
   act(() => root.unmount())
   host.remove()
   installClientSettings(null)
+  installDesktopPort(null)
 })
 
 function type(input: HTMLInputElement, value: string): void {
@@ -70,5 +72,26 @@ describe('shared sign-in domains field', () => {
     await act(async () => { device.change('settings', store.getAll()) })
     type(sharedField(), 'google.com, github.com, sftp-admin.adfinitas.io')
     expect(sharedField().value).toBe('google.com, github.com, sftp-admin.adfinitas.io')
+  })
+})
+
+describe('import warning', () => {
+  it('shows the agent warning before the confirmation button, and reads nothing until it is clicked', async () => {
+    const importBrowserSignIns = vi.fn(async () => ({ browser: 'Arc', imported: 3 }))
+    installDesktopPort({ defaultBrowserName: async () => 'Arc', importBrowserSignIns } as unknown as DesktopPort)
+    await mountPage()
+    const button = () => [...host.querySelectorAll('button')].find((b) => /^(Import|Copy from)/.test(b.textContent ?? ''))!
+    const warning = () => [...host.querySelectorAll('*')].find((e) => e.children.length === 0 && /acts with every imported session/.test(e.textContent ?? ''))
+    expect(warning()).toBeUndefined()
+
+    await act(async () => { button().click() })
+    expect(importBrowserSignIns).not.toHaveBeenCalled()
+    expect(button().textContent).toBe('Copy from Arc')
+    expect(warning()).toBeDefined()
+    expect(warning()!.textContent).toMatch(/bank, mail, admin/)
+    expect(warning()!.compareDocumentPosition(button()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await act(async () => { button().click() })
+    expect(importBrowserSignIns).toHaveBeenCalledTimes(1)
   })
 })
