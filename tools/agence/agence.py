@@ -68,6 +68,8 @@ INTER_DENY = "l'interlocuteur ne lance rien : il écrit des fiches (agence fiche
 SONDE = 5  # secondes par appel cate de la sonde dans la garde : un hook ne bloque pas l'agent
 CSS = 'https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css'
 PAGES = True  # faux sous --token-stdin : le panneau agence de Cate tient l'interface, plus aucune page ni jeton dans un corps
+ICI = os.path.dirname(os.path.realpath(__file__))
+CLICS = {'never': 'jamais', 'before': 'avant le travail', 'after': 'après le travail'}
 TOKEN = secrets.token_urlsafe(18)  # jeton des formulaires, en mémoire du régisseur seulement
 
 
@@ -3958,6 +3960,33 @@ def cmd_hooks(a):
 	return 0
 
 
+def cmd_org(a):
+	"""Orga du workspace : `.cate/org.json` validé par le contrat src/workspace/org (org.cjs), solo sans fichier. Invalide : refus, rien ne se lance."""
+	ici = ICI
+	bundle = os.path.join(ici, 'org.cjs')
+	if not os.path.isfile(bundle):
+		raise Env('org.cjs absent (runtime installé ou npm run runtime:tarball)')
+	node = os.path.join(ici, '..', 'runtime', 'bin', 'node')
+	code, out, err = RUN([node if os.path.isfile(node) else 'node', bundle, root()])
+	try:
+		r = json.loads(out)
+	except ValueError:
+		raise Env(f'org.cjs illisible : {(err or out).strip()}')
+	if not r.get('ok'):
+		raise Refus('fichier d\'orga invalide, rien ne se lance :\n' + '\n'.join(f'  - {e}' for e in r['errors']))
+	if a.json:
+		return print(json.dumps(r, ensure_ascii=False, indent=1))
+	org = r['org']
+	print(f"orga : {'solo, aucun .cate/org.json' if r['source'] == 'solo' else r['source']} ; {r['agents']} agent(s) vivants au plus")
+	print('postes :')
+	for pid, p in org['roles'].items():
+		print(f"  {pid} : {p['name']} ({p['model']}, {p['effort']}) ; outils {', '.join(p['tools'])} ; fini = {p['done']}")
+	print('liens :' + ('' if org['links'] else ' aucun'))
+	for l in org['links']:
+		verif = f", vérifié par {l['verifiedBy']}" if l.get('verifiedBy') else ''
+		print(f"  {l['from']} -> {l['to']}{verif} ; clic {CLICS[l['click']]}")
+
+
 def cmd_url(a):
 	st = load()
 	if not st['port']:
@@ -4235,6 +4264,9 @@ def parser():
 			x.add_argument('--remplacer', action='store_true', help='le fichier ne garde que le preset')
 	pr.set_defaults(fn=cmd_pratiques)
 	sub.add_parser('url').set_defaults(fn=cmd_url)
+	org = sub.add_parser('org', help="orga du workspace (.cate/org.json, solo sans fichier) : postes, liens, « fini »")
+	org.add_argument('--json', action='store_true')
+	org.set_defaults(fn=cmd_org)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
 

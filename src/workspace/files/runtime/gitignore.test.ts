@@ -14,6 +14,7 @@ it('writes the ignore-all-but-skills .cate/.gitignore once', async () => {
   const file = path.join(dir, '.cate', '.gitignore')
   expect(await fs.readFile(file, 'utf8')).toBe(CATE_GITIGNORE)
   expect(CATE_GITIGNORE).toContain('!skills.json')
+    expect(CATE_GITIGNORE).toContain('!org.json')
   await fs.writeFile(file, 'custom\n')
   await ensureCateGitignore(dir)
   expect(await fs.readFile(file, 'utf8')).toBe('custom\n')
