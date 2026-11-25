@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import { PRESET_DEFAUT, type AgenceOp, type AgenceOpResult, type PratiqueChamp, type PratiquesView, type PratiqueValeur } from '@panels/agence/contract'
 import { InlineNotice } from '../../kernel/interaction'
@@ -26,6 +26,25 @@ export function enMots(champ: PratiqueChamp, value: PratiqueValeur): string {
 /** A text field's value: trimmed, null when empty. */
 const texte = (raw: string): PratiqueValeur => raw.trim() || null
 
+/** A native list. React rewrites `option.selected` on every render of a controlled
+ *  select, which closes its open menu; the session pushes a snapshot each second, so
+ *  it re-renders only when what it shows changes (`labels` is its options in words). */
+const Liste = memo(function Liste({ nom, selected, labels, placeholder, disabled, onPick }: {
+  nom: string
+  selected: number
+  labels: string
+  placeholder: string
+  disabled: boolean
+  onPick(index: number): void
+}) {
+  return (
+    <select aria-label={nom} className={CONTROL} disabled={disabled} value={selected < 0 ? '' : String(selected)} onChange={(event) => onPick(Number(event.target.value))}>
+      {selected < 0 && <option value="" disabled>{placeholder}</option>}
+      {labels.split('\n').map((label, index) => <option key={index} value={String(index)}>{label}</option>)}
+    </select>
+  )
+})
+
 const CONTROL = 'rounded border border-subtle bg-surface-2 px-1.5 py-0.5 text-[12px] text-primary disabled:opacity-60'
 
 /** The control of a field after its form: a list of named values, a bounded picker,
@@ -38,6 +57,9 @@ export function ChampControl({ champ, value, disabled, onChange, onDraft }: {
   /** A text field's value as typed, before « Enregistrer ». */
   onDraft?(value: PratiqueValeur): void
 }) {
+  // `onPick` keeps one identity so the list's memo holds; it calls the latest pick.
+  const pick = useRef<(index: number) => void>(() => {})
+  const onPick = useCallback((index: number) => pick.current(index), [])
   if (champ.forme === 'liste') {
     const list = Array.isArray(value) ? value : []
     return (
@@ -76,12 +98,8 @@ export function ChampControl({ champ, value, disabled, onChange, onDraft }: {
     ? Array.from({ length: champ.bornes[1] - champ.bornes[0] + 1 }, (_, index) => champ.bornes![0] + index)
     : (champ.choix ?? []).map((choix) => choix.valeur)
   const selected = options.findIndex((one) => same(one, value))
-  return (
-    <select aria-label={champ.nom} className={CONTROL} disabled={disabled} value={selected < 0 ? '' : String(selected)} onChange={(event) => onChange(options[Number(event.target.value)])}>
-      {selected < 0 && <option value="" disabled>{enMots(champ, value)}</option>}
-      {options.map((one, index) => <option key={index} value={String(index)}>{enMots(champ, one)}</option>)}
-    </select>
-  )
+  pick.current = (index) => onChange(options[index])
+  return <Liste nom={champ.nom} selected={selected} labels={options.map((one) => enMots(champ, one)).join('\n')} placeholder={enMots(champ, value)} disabled={disabled} onPick={onPick} />
 }
 
 export interface ReglagesProps {

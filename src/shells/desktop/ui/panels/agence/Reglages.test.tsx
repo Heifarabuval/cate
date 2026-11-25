@@ -186,3 +186,20 @@ it('makes an invalid policy read-only, with « Repartir des réglages par défau
   await act(async () => { button('Repartir des réglages par défaut')!.click() })
   expect(send).toHaveBeenCalledWith({ kind: 'pratique.preset', nom: PRESET_DEFAUT, remplacer: true })
 })
+
+it('keeps an open list open when a new snapshot arrives: same node, options untouched (#856)', () => {
+  render(pratiques())
+  const select = control<HTMLSelectElement>('Couleur du toit', 'select')
+  const writes = vi.fn()
+  const real = Object.getOwnPropertyDescriptor(HTMLOptionElement.prototype, 'selected')!
+  Object.defineProperty(HTMLOptionElement.prototype, 'selected', { ...real, set(this: HTMLOptionElement, v: boolean) { writes(); real.set!.call(this, v) } })
+  try {
+    // The session pushes a new snapshot each second: equal values, new objects.
+    render(pratiques({ champs: champs.map((one) => ({ ...one })) }))
+  } finally {
+    Object.defineProperty(HTMLOptionElement.prototype, 'selected', real)
+  }
+  expect(control<HTMLSelectElement>('Couleur du toit', 'select')).toBe(select)
+  // A native menu closes when React rewrites `option.selected`.
+  expect(writes).not.toHaveBeenCalled()
+})
