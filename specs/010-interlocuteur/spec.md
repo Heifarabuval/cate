@@ -41,7 +41,7 @@ Celui de 009, plus :
 
 ### User Story 1 - Je parle, l'interlocuteur fait des fiches, rien ne part sans moi (Priority: P1)
 
-Le dev ouvre le projet ; `agence start` crée (une seule fois) le panneau Interlocuteur à côté du panneau agence. Il y dicte idées, bugs, retours. L'interlocuteur lit le registre et le backlog (`agence decision list`, `agence fiche list`), signale une contradiction avec une décision active ou un doublon probable, puis écrit des fiches par la CLI. Le brainstorm reste en `discussion`. Une fiche passe `prête` seulement quand tous ses champs sont remplis.
+Le dev ouvre le projet ; `agence start` crée (une seule fois) le panneau Interlocuteur à côté du panneau agence, si l'orga du workspace déclare ce poste (sans fichier d'orga, profil solo : aucun interlocuteur). Il y dicte idées, bugs, retours. L'interlocuteur lit le registre et le backlog (`agence decision list`, `agence fiche list`), signale une contradiction avec une décision active ou un doublon probable, puis écrit des fiches par la CLI. Le brainstorm reste en `discussion`. Une fiche passe `prête` seulement quand tous ses champs sont remplis.
 
 **Why this priority**: c'est le problème de départ de 009 (US1).
 
@@ -136,7 +136,7 @@ Sur demande (tirage au hasard) ou sur une décision marquée structurante, une l
 
 ### Functional Requirements
 
-- **FR-001** (009 FR-001) : `agence start` MUST créer au plus un panneau Interlocuteur par projet, enregistré dans l'état (`panels.interlocuteur`) et relié au panneau agence ; relancé, il adopte le vivant.
+- **FR-001** (009 FR-001) : `agence start` MUST créer au plus un panneau Interlocuteur par projet, et seulement si l'orga du workspace a le poste `interlocuteur`, enregistré dans l'état (`panels.interlocuteur`) et relié au panneau agence ; relancé, il adopte le vivant.
 - **FR-002** (009 FR-002) : l'interlocuteur MUST NOT créer, relier ni fermer un agent ou un panneau, créer un besoin, poser une question `--merge` ou un brouillon. La CLI et la garde le refusent.
 - **FR-003** (009 FR-003) : une fiche MUST passer `lancée` uniquement par le clic « Lancer » du régisseur (`click()`), qui crée un besoin par fiche et envoie à l'orchestrateur un message unique : briefs et plan de vagues. Aucune autre commande ne fait passer une fiche `lancée`.
 - **FR-004** (009 FR-004) : backlog et registre MUST être `backlog.json` et `decisions.json` dans `.cate/tmp/agence/`, validés à chaque lecture, écrits par la CLI `agence` sous le verrou de l'état ; la garde refuse `Write`, `Edit` et l'écriture shell sur ces deux fichiers à tout agent.
