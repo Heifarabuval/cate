@@ -1,0 +1,122 @@
+{
+	"version": 1,
+	"maxAgents": 5,
+	"roles": {
+		"po": {
+			"name": "PO",
+			"mission": "Turn the request into tasks with an acceptance test.",
+			"model": "sonnet",
+			"effort": "medium",
+			"tools": [
+				"read"
+			],
+			"done": "Tasks written"
+		},
+		"front": {
+			"name": "Dev front",
+			"mission": "Build the UI part of a task.",
+			"model": "sonnet",
+			"effort": "medium",
+			"tools": [
+				"read",
+				"edit",
+				"bash"
+			],
+			"done": "PR opened"
+		},
+		"back": {
+			"name": "Dev back",
+			"mission": "Build the server part of a task.",
+			"model": "sonnet",
+			"effort": "medium",
+			"tools": [
+				"read",
+				"edit",
+				"bash"
+			],
+			"done": "PR opened"
+		},
+		"ux": {
+			"name": "UI/UX",
+			"mission": "Design the screens and check the interface follows them.",
+			"model": "sonnet",
+			"effort": "medium",
+			"tools": [
+				"read"
+			],
+			"done": "Screens described"
+		},
+		"devops": {
+			"name": "Devops",
+			"mission": "Prepare the CI and deployment change.",
+			"model": "sonnet",
+			"effort": "high",
+			"tools": [
+				"read",
+				"edit",
+				"bash"
+			],
+			"done": "Pipeline green"
+		},
+		"qa": {
+			"name": "QA",
+			"mission": "Run the checks and the user path, report failures.",
+			"model": "sonnet",
+			"effort": "high",
+			"tools": [
+				"read",
+				"bash"
+			],
+			"done": "Checks green or failures listed"
+		},
+		"gcp": {
+			"name": "GCP rights",
+			"mission": "Prepare the IAM change for the user to run.",
+			"model": "sonnet",
+			"effort": "high",
+			"tools": [
+				"read"
+			],
+			"done": "Role verified"
+		}
+	},
+	"links": [
+		{
+			"from": "po",
+			"to": "ux",
+			"click": "never"
+		},
+		{
+			"from": "po",
+			"to": "front",
+			"click": "before"
+		},
+		{
+			"from": "po",
+			"to": "back",
+			"click": "before"
+		},
+		{
+			"from": "po",
+			"to": "devops",
+			"click": "before"
+		},
+		{
+			"from": "po",
+			"to": "gcp",
+			"click": "before"
+		},
+		{
+			"from": "front",
+			"to": "qa",
+			"verifiedBy": "qa",
+			"click": "after"
+		},
+		{
+			"from": "back",
+			"to": "qa",
+			"verifiedBy": "qa",
+			"click": "after"
+		}
+	]
+}

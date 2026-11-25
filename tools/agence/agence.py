@@ -35,6 +35,7 @@ import hashlib
 import html
 import http.client
 import http.server
+import io
 import json
 import math
 import os
@@ -3960,18 +3961,45 @@ def cmd_hooks(a):
 	return 0
 
 
-def cmd_org(a):
-	"""Orga du workspace : `.cate/org.json` validé par le contrat src/workspace/org (org.cjs), solo sans fichier. Invalide : refus, rien ne se lance."""
-	ici = ICI
-	bundle = os.path.join(ici, 'org.cjs')
+def org_lire(texte=None):
+	"""org.cjs sur la racine (texte None) ou sur un fichier candidat donné sur stdin : {ok, org, errors, preview...}."""
+	bundle = os.path.join(ICI, 'org.cjs')
 	if not os.path.isfile(bundle):
 		raise Env('org.cjs absent (runtime installé ou npm run runtime:tarball)')
-	node = os.path.join(ici, '..', 'runtime', 'bin', 'node')
-	code, out, err = RUN([node if os.path.isfile(node) else 'node', bundle, root()])
+	node = os.path.join(ICI, '..', 'runtime', 'bin', 'node')
+	code, out, err = RUN([node if os.path.isfile(node) else 'node', bundle, root()] + (['--stdin'] if texte is not None else []),
+	                     input=texte)
 	try:
-		r = json.loads(out)
+		return json.loads(out)
 	except ValueError:
 		raise Env(f'org.cjs illisible : {(err or out).strip()}')
+
+
+def org_apercu(r):
+	"""Aperçu d'une orga valide : postes, liens, parcours d'une tâche type, coût estimé, défauts."""
+	org, pv = r['org'], r['preview']
+	lignes = [f"{len(org['roles'])} poste(s), {r['agents']} agent(s) vivants au plus"]
+	for pid, p in org['roles'].items():
+		lignes.append(f"  {pid} : {p['name']} ({p['model']}, {p['effort']}) ; outils {', '.join(p['tools'])} ; fini = {p['done']}")
+	lignes.append('liens :' + ('' if org['links'] else ' aucun'))
+	for l in org['links']:
+		verif = f", vérifié par {l['verifiedBy']}" if l.get('verifiedBy') else ''
+		lignes.append(f"  {l['from']} -> {l['to']}{verif} ; clic {CLICS[l['click']]}")
+	lignes.append('parcours d\'une tâche : ' + ' > '.join('+'.join(w) for w in pv['path']['waves']))
+	c = pv['cost']
+	lignes.append(f"coût estimé : ~{c['tokens']} jetons, {c['peakAgents']} agent(s) en même temps, ~{c['memoryGb']} Go")
+	lignes += [f"défaut : {d['message']}" for d in pv['defects']]
+	return lignes
+
+
+def cmd_org(a):
+	"""Orga du workspace : `.cate/org.json` validé par le contrat src/workspace/org (org.cjs), solo sans fichier. Invalide : refus, rien ne se lance.
+	propose : valide un fichier écrit par un agent, montre l'aperçu et pose la carte ; save : écrit après le clic Enregistrer."""
+	if a.sub == 'propose':
+		return org_proposer(a)
+	if a.sub == 'save':
+		return org_enregistrer(a)
+	r = org_lire()
 	if not r.get('ok'):
 		raise Refus('fichier d\'orga invalide, rien ne se lance :\n' + '\n'.join(f'  - {e}' for e in r['errors']))
 	if a.json:
@@ -3985,6 +4013,53 @@ def cmd_org(a):
 	for l in org['links']:
 		verif = f", vérifié par {l['verifiedBy']}" if l.get('verifiedBy') else ''
 		print(f"  {l['from']} -> {l['to']}{verif} ; clic {CLICS[l['click']]}")
+
+
+ORG_OUI, ORG_NON = 'Enregistrer', 'Refuser'
+
+
+def org_proposer(a):
+	"""Fichier d'orga écrit par un agent depuis la description de l'humain : jamais enregistré s'il échoue au contrat ;
+	valide, il part sur une carte avec son aperçu, et seul le clic Enregistrer permet `agence org save`."""
+	require_cate()
+	refuse_interlocuteur()
+	texte = sys.stdin.read() if a.fichier == '-' else open(a.fichier).read()
+	r = org_lire(texte)
+	if not r.get('ok'):
+		raise Refus('orga proposée invalide, rien n\'est enregistré ; corrige ces points puis relance « agence org propose » :\n'
+		            + '\n'.join(f'  - {e}' for e in r['errors']))
+	apercu = org_apercu(r)
+	ask = argparse.Namespace(merge=None, frm=a.frm, unblocks=None, option=[f'{ORG_OUI}|écrit .cate/org.json', f'{ORG_NON}|rien n\'est écrit'],
+	                         question='Enregistrer cette orga ?\n' + '\n'.join(apercu))
+	with io.StringIO() as buf, contextlib.redirect_stdout(buf):
+		cmd_ask(ask)
+		qid = buf.getvalue().strip()
+	with tx() as st:
+		find(st, 'questions', qid)['org'] = texte
+	print('aperçu :')
+	print('\n'.join(apercu))
+	print(qid)
+	return 0
+
+
+def org_enregistrer(a):
+	"""Écrit .cate/org.json depuis la carte, seulement si l'humain a cliqué Enregistrer ; revalide avant d'écrire."""
+	q = find(load(), 'questions', a.question)
+	if not q.get('org'):
+		raise Refus(f'{a.question} n\'est pas une carte d\'orga')
+	if q['answer'] != ORG_OUI:
+		raise Refus(f"{a.question} : réponse « {q['answer'] or 'aucune'} », il faut le clic « {ORG_OUI} » de l'humain ; rien n'est écrit")
+	r = org_lire(q['org'])
+	if not r.get('ok'):
+		raise Refus('orga invalide, rien n\'est enregistré :\n' + '\n'.join(f'  - {e}' for e in r['errors']))
+	chemin = os.path.join(root(), '.cate', 'org.json')
+	os.makedirs(os.path.dirname(chemin), exist_ok=True)
+	fd, tmp = tempfile.mkstemp(dir=os.path.dirname(chemin), prefix='tmp-org-')
+	with os.fdopen(fd, 'w') as f:
+		f.write(q['org'] if q['org'].endswith('\n') else q['org'] + '\n')
+	os.replace(tmp, chemin)
+	print(f'orga enregistrée : {chemin}')
+	return 0
 
 
 def cmd_url(a):
@@ -4266,6 +4341,11 @@ def parser():
 	sub.add_parser('url').set_defaults(fn=cmd_url)
 	org = sub.add_parser('org', help="orga du workspace (.cate/org.json, solo sans fichier) : postes, liens, « fini »")
 	org.add_argument('--json', action='store_true')
+	orgs = org.add_subparsers(dest='sub')
+	op = orgs.add_parser('propose', help="valide l'orga qu'un agent a écrite depuis la description (fichier ou -), montre l'aperçu, pose la carte")
+	op.add_argument('fichier')
+	op.add_argument('--from', dest='frm')
+	orgs.add_parser('save', help="écrit .cate/org.json après le clic Enregistrer de la carte").add_argument('question')
 	org.set_defaults(fn=cmd_org)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p

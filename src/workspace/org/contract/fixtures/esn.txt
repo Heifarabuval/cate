@@ -1,0 +1,1 @@
+Une petite ESN, 7 postes : un PO qui écrit les tâches avec un test d'acceptation, un dev front, un dev back, un UI/UX, un devops, un QA qui vérifie le front et le back, et un responsable droits GCP qui prépare le changement IAM. Je valide avant que le PO passe la main, et après la QA.

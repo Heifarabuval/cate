@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"maxAgents": 1,
+	"roles": {
+		"dev": {
+			"name": "Dev",
+			"mission": "Implement the task on a branch and open a PR.",
+			"model": "sonnet",
+			"effort": "medium",
+			"tools": ["read", "edit", "bash"],
+			"done": "PR opened"
+		}
+	},
+	"links": []
+}

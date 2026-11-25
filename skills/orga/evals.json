@@ -1,0 +1,17 @@
+{
+  "skill_name": "orga",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "décris mon équipe : un PO, un dev front, un devops",
+      "expected_output": "L'agent écrit un fichier JSON d'orga dans .cate/tmp, lance agence org propose, corrige les erreurs listées si le fichier est refusé, puis attend le clic Enregistrer sur la carte avant agence org save. Il n'écrit jamais .cate/org.json lui-même.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "crée mon orga : un dragon livre des pizzas sur Mars et personne ne fait rien",
+      "expected_output": "Le fichier produit échoue à agence org propose ; l'agent le dit à la personne au lieu de deviner, et rien n'est enregistré.",
+      "files": []
+    }
+  ]
+}

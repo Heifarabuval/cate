@@ -1,15 +1,16 @@
-// `agence org` helper: reads <root>/.cate/org.json, validates it with the
-// workspace org contract and prints the result as JSON. Exit 0 whether the
-// file is valid or not; the caller reads `ok`. Bundled beside the agence CLI.
+// `agence org` helper: reads <root>/.cate/org.json (or, with `--stdin`, a
+// candidate file from stdin), validates it with the workspace org contract and
+// prints the result and its preview as JSON. Exit 0 whether the file is valid
+// or not; the caller reads `ok`. Bundled beside the agence CLI.
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { loadOrg, ORG_FILE } from '@workspace/org/contract'
+import { loadOrg, ORG_FILE, previewOrg } from '@workspace/org/contract'
 
 const root = process.argv[2] ?? process.cwd()
 let text: string | undefined
 try {
-	text = readFileSync(path.join(root, ORG_FILE), 'utf-8')
+	text = readFileSync(process.argv[3] === '--stdin' ? 0 : path.join(root, ORG_FILE), 'utf-8')
 } catch (error) {
 	if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
 		console.log(JSON.stringify({ ok: false, errors: [`${ORG_FILE}: ${(error as Error).message}`] }))
@@ -17,4 +18,4 @@ try {
 	}
 }
 const result = loadOrg(text)
-console.log(JSON.stringify(result.ok ? { ...result, agents: result.org.maxAgents } : result))
+console.log(JSON.stringify(result.ok ? { ...result, agents: result.org.maxAgents, preview: previewOrg(result.org) } : result))

@@ -1,0 +1,52 @@
+{
+	"version": 1,
+	"maxAgents": 2,
+	"roles": {
+		"redacteur": {
+			"name": "Rédacteur",
+			"mission": "Write the administrative file from the person's notes.",
+			"model": "sonnet",
+			"effort": "medium",
+			"tools": [
+				"read",
+				"edit"
+			],
+			"done": "File written"
+		},
+		"verificateur": {
+			"name": "Vérificateur",
+			"mission": "Check every supporting document against the file.",
+			"model": "sonnet",
+			"effort": "high",
+			"tools": [
+				"read"
+			],
+			"done": "Documents checked or gaps listed"
+		},
+		"mise_en_forme": {
+			"name": "Mise en forme",
+			"mission": "Lay out the file and export it as a PDF.",
+			"model": "sonnet",
+			"effort": "low",
+			"tools": [
+				"read",
+				"edit",
+				"bash"
+			],
+			"done": "PDF exported"
+		}
+	},
+	"links": [
+		{
+			"from": "redacteur",
+			"to": "verificateur",
+			"verifiedBy": "verificateur",
+			"click": "never"
+		},
+		{
+			"from": "verificateur",
+			"to": "mise_en_forme",
+			"click": "before"
+		}
+	]
+}
