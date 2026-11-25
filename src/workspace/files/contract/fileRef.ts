@@ -7,12 +7,13 @@
  *  files copied in from another workspace or the OS. */
 export const CATE_TEMP_DIR = '.cate/tmp'
 
-/** `.cate/.gitignore`: only skills.json is meant to be committed. */
-export const CATE_GITIGNORE = `# Cate project-local state. Only skills.json is shared; everything else
+/** `.cate/.gitignore`: only skills.json and org.json are meant to be committed. */
+export const CATE_GITIGNORE = `# Cate project-local state. Only skills.json and org.json are shared; everything else
 # (drafts, worktrees and scratch files) stays local.
 *
 !.gitignore
 !skills.json
+!org.json
 `
 
 /** The separator a path is written with (a native Windows path uses `\`). */

@@ -140,7 +140,18 @@ await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 await stageCateCli(path.join(stageDir, 'cate'))
 cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
 // The agence CLI is POSIX shell and Python: not shipped on Windows.
-if (targetPlatform !== 'win32') stageAgence(path.join(repoRoot, 'tools', 'agence'), stageDir)
+if (targetPlatform !== 'win32') {
+  stageAgence(path.join(repoRoot, 'tools', 'agence'), stageDir)
+  // `agence org` validates the org file with the workspace org contract, bundled beside the CLI.
+  await build({
+    entryPoints: [path.join(repoRoot, 'src', 'cli', 'org.ts')],
+    outfile: path.join(stageDir, 'agence', 'org.cjs'),
+    platform: 'node',
+    format: 'cjs',
+    bundle: true,
+    target: `node${NODE_VERSION.split('.')[0]}`,
+  })
+}
 await writeFile(path.join(stageDir, 'BUILD'), `${buildId}\n`)
 signMacNatives(stageDir)
 
@@ -159,7 +170,7 @@ const required = [
   path.join('cate', 'bin', 'cate.cmd'),
   path.join('skills', 'cate-cli', 'SKILL.md'),
   path.join('skills', 'orchestrateur', 'SKILL.md'),
-  ...(targetPlatform === 'win32' ? [] : AGENCE_REQUIRED),
+  ...(targetPlatform === 'win32' ? [] : [...AGENCE_REQUIRED, path.join('agence', 'org.cjs')]),
   'BUILD',
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))

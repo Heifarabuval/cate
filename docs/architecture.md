@@ -128,7 +128,7 @@ its session.
  │ services   terminal · browser · agents                                   │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ workspace  document · lifecycle · canvas · files · repository ·          │
- │            skills · relations · notifications · observation              │
+ │            skills · relations · notifications · observation · org        │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ runtime    daemon · data · transports · security · pairing · connect ·   │
  │            push · host capabilities                                      │
@@ -605,7 +605,7 @@ persisted session and document file. It is created with mode `0700`.
 - **Outside the repository.** A repository controls everything it commits: a
   cloned repo could otherwise ship trust, layout that auto-runs commands, or
   credentials, and `git clean -xdf` would delete logins and passwords.
-- `<project>/.cate/` holds only what belongs in the tree: `skills.json`,
+- `<project>/.cate/` holds only what belongs in the tree: `skills.json`, `org.json` (9.9),
   `tmp/` (temporary files: connected-editor drafts and files copied in from
   another workspace or the OS, section 9.4), `worktrees/` (checkouts) and
   its `.gitignore`.
@@ -1590,6 +1590,37 @@ output of a terminal.
   its card, the accord screen, `erase`, and the line of a terminal command
   (the shell hook is not clean, `specs/003-apprentissage-observation/rapport-lot-0.md`).
 
+### 9.9 Org
+
+**`workspace/org`** (epic 242): who works in a workspace and how work flows,
+in one hand-written file, `<root>/.cate/org.json`, shared with the repository.
+Pure contract, no runtime side.
+
+- **Schema** (`parseOrg`): `version` 1, `maxAgents` (agents alive at once, at
+  most), `roles` (a role is a name, a mission, a model, an effort, the tools it
+  may use and `done`, what proves it is finished) and `links` (`from` hands
+  work to `to`, `verifiedBy` names the role that checks the result, `click`
+  says when the person's click is asked: `before`, `after` or `never`). Every
+  problem is reported together: a role without `done`, a link to an unknown
+  role, a loop between roles. The file never sets rights: any key or tool that
+  names merge, push, send or permissions is refused, because those stay with
+  the person's click.
+- **Examples**: `ORG_SOLO` (one agent does everything, the default), `ORG_DUO`
+  (one builds, one checks), `ORG_AGENCY` (PO, front, back, QA, GCP rights).
+- **Loading** (`loadOrg(text)`): no file is the solo profile; a file that is
+  not JSON or not valid is an error, never solo.
+- **Who reads it.** The orchestrator, through `agence org`: the CLI runs
+  `agence/org.cjs` (the `src/cli/org.ts` entry bundled into the runtime tarball
+  beside the CLI, run with the install's Node) on the workspace root and prints
+  the roles, their links and each role's `done`, or, for an invalid file, its
+  errors and a refusal. The orchestrator skill reads it at start and for each
+  task: it launches a role only when a task needs it, closes it at its report,
+  asks `verifiedBy` roles to check and the person's click where `click` says
+  so. Nothing is hard-coded in the skill: no default interlocutor, no fixed
+  implementer and verifier. The agent cap is the smaller of `maxAgents` and the
+  `agents.max` practice. The agence panel's `agence boot` still opens the
+  interlocutor; it is not part of the org.
+
 ## 10. Services
 
 Panel infrastructure used by panels, by the `cate` API and by other services.
@@ -2266,7 +2297,7 @@ repository content: the project's `<root>/.cate/tmp/agence/pratiques.json`
 and the developer's `~/.config/agence/pratiques.json`. Hand-editable JSON,
 written only by `agence pratiques set|unset|preset` (lock, atomic replace,
 the whole policy validated before writing), never committed (`.cate/.gitignore`
-ignores everything but `skills.json`), so a cloned repository imposes nothing.
+ignores everything but `skills.json` and `org.json`), so a cloned repository imposes nothing.
 The schema, the allowed values and the presets are declared once in
 `tools/agence/pratiques.json`, shipped next to the CLI; the policy is the
 `neutre` preset, then the developer's file, then the project's, key by key.
@@ -3080,7 +3111,7 @@ and ignored, and the dialog stays until the user chooses.
 | Where | Files |
 |---|---|
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
-| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes nothing there |
+| Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json` and `org.json`); `skills-mirror.json` inside each worktree checkout's `.cate/`. `tmp/agence/` (`state.json`, `drafts/*.md`) belongs to the `agence` CLI, the only writer: the agence panel's session reads it and writes nothing there |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
 | Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `workspace-views.json` (per-workspace canvas pan and zoom), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
@@ -3129,6 +3160,7 @@ src/
     relations/              contract runtime/ client/
     notifications/          contract runtime/ client/   events, the gate
     observation/            contract runtime/           the journal of gestures
+    org/                    contract                    the org file: roles, links, examples
   services/
     terminal/               contract runtime/ client/
     browser/                contract runtime/ client/ desktop/
