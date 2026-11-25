@@ -1,6 +1,6 @@
 # Rapport de pilote (spec 011, lot 4, fiche F19, besoin n944)
 
-État (2026-11-25, n972) : **3 rejeux exploitables sur 4** (nu #199, nu #26 rouge x4, outil #199) ; **#26 outil invalide deux fois** (défaut d'isolation du harnais, issue d1068), pas de 3e rejeu. Pas de SC-005 (aucun chronomètre). Recommandation en fin de rapport : règle à revoir avant la campagne. Les rejeux sont joués par Heifara (T043 ; aucun agent ne joue un rejeu). La recommandation est une proposition, la décision (T045) est à Heifara.
+État (2026-11-25, n972) : **3 rejeux exploitables sur 4** (nu #199, nu #26 rouge x4, outil #199) ; **#26 outil invalide deux fois** (défaut d'isolation du harnais, issue #258), pas de 3e rejeu. Pas de SC-005 (aucun chronomètre). Recommandation en fin de rapport : règle à revoir avant la campagne. Les rejeux sont joués par Heifara (T043 ; aucun agent ne joue un rejeu). La recommandation est une proposition, la décision (T045) est à Heifara.
 
 ## Résultats (`benchmark.py mesure`, outil `ab9013e12514`, seuil `2732c761...`, contamination 0)
 
@@ -45,7 +45,7 @@ Règle (`benchmark.py`) :
 - Jetons 6 912 721 : deux sessions (orchestrateur 08f7aa8c, dev d94fcdb9), toutes deux du second essai : ce n'est pas le cumul de l'essai précédent. C'est la session entière de chaque panneau, non bornée à la fenêtre du rejeu.
 - Rouge : `npm ci` s'est fait sous node v24.21.0 alors que `package.json` exige `>=22.16 <23` (`engines`, ligne 21 ; node de cette machine : v24.21.0 ; l'avertissement EBADENGINE est rapporté par l'orchestrateur, le log d'`npm ci` n'est plus sur disque). Les 3 rouges, comme les 4 du bras nu, peuvent venir de cet environnement : non vérifié, aucun test rejoué ici.
 
-**Ce qui est rapportable pour #26 outil** : rien en indicateurs (temps actif, mural, interventions, durée, qualité) ; la seule chose établie est que le harnais invalide le rejeu deux fois, pour des raisons de dispositif (isolation, motif « nom du dépôt », journaux partagés entre clones de même chemin), tracées dans l'issue d1068 (isolation du harnais, ouverte à part par Heifara). Le pilote n'a donc que 3 rejeux exploitables : #199 nu, #26 nu (rouge x4, jamais vert), #199 outil (vert).
+**Ce qui est rapportable pour #26 outil** : rien en indicateurs (temps actif, mural, interventions, durée, qualité) ; la seule chose établie est que le harnais invalide le rejeu deux fois, pour des raisons de dispositif (isolation, motif « nom du dépôt », journaux partagés entre clones de même chemin), tracées dans l'issue #258 (isolation du harnais, ouverte à part par Heifara). Le pilote n'a donc que 3 rejeux exploitables : #199 nu, #26 nu (rouge x4, jamais vert), #199 outil (vert).
 
 **Chronomètres (q1062, 2026-11-25)** : aucun noté. Réponse de Heifara : « je n'ai rien eu a faire sur les deux » (lue comme : sur les deux rejeux outil). Aucune valeur pour #199 nu ni #26 nu. L'écart SC-005 (25 % max) n'est pas calculable : un chronomètre à 0 s contre 12 s mesurés sur #199 outil n'a pas de rapport défini. SC-005 : **non vérifié**, la mesure du temps actif reste non calibrée.
 
@@ -197,7 +197,7 @@ python3 /Users/ADFINITAS/Documents/cate/.cate/worktrees/n944-preparateur/tools/a
 ## Recommandation (proposition, pas une décision : T045 reste à Heifara)
 
 Ne pas lancer la campagne telle quelle. La règle est à revoir avant, dans cet ordre :
-1. **Isoler le rejeu** (issue d1068) : harnais et `selection.json` hors de portée de la session ; un clone refait à un chemin neuf (ou ses journaux archivés avec lui) pour que `controle` ne relise pas l'essai précédent.
+1. **Isoler le rejeu** (issue #258) : harnais et `selection.json` hors de portée de la session ; un clone refait à un chemin neuf (ou ses journaux archivés avec lui) pour que `controle` ne relise pas l'essai précédent.
 2. **Revoir le motif « nom du dépôt »** : il invalide le bras outil quand l'issue vient du dépôt où l'agence tourne (4 des 7 appels du second essai). Ne garder que le sha, `/pull/<PR>` et le checkout, ou accepter que le flux de PR cite le dépôt.
 3. **Imposer node 22** au clone avant `npm ci` (`engines` `>=22.16 <23`), puis vérifier si le rouge de #26 disparaît. Tant que ce n'est pas fait, #26 (nu comme outil) ne départage rien.
 4. **Calibrer le temps actif** : un chronomètre réel sur au moins un rejeu (SC-005 non vérifié ; #199 outil 12 s contre 285 s au nu non marqué).
@@ -207,7 +207,8 @@ Seuil : aucune donnée valide ne justifie un nouveau `seuil.json`. À noter pour
 
 ## Reste à faire
 
-- Heifara : trancher T045 (campagne après correctifs, ou arrêt) ; issue d1068 (isolation).
+- Décision de Heifara (q1070, 2026-11-25) : clore le pilote à 3 rejeux, pas de 3e essai de #26 outil.
+- Heifara : trancher T045 (campagne après correctifs, ou arrêt) ; issue #258 (isolation).
 - Preuve de la fiche F19 : issue #154, à fermer par la PR de ce rapport seulement si Heifara juge le pilote réglé, sinon `Réf. #154`.
 - Correction du test `test_debut_refuse_tant_que_le_seuil_est_une_hypothese` et alignement de `spec.md`, `plan.md`, `tasks.md` sur 0,75 (fiche à ouvrir).
 
