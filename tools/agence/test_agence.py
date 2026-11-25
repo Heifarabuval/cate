@@ -398,6 +398,7 @@ class Demarrage(Base):
 		self.assertFalse(self.run.ran('cate', 'panel', 'create', 'canvas'))
 
 	def test_start_type_agence_un_seul_panneau_sans_canvas(self):
+		patch = unittest.mock.patch.object(agence, 'org_lire', return_value={'ok': True, 'org': {'roles': {'interlocuteur': {}}}}); patch.start(); self.addCleanup(patch.stop)
 		self.assertEqual(self.cli('start')[0], 0)
 		st = self.state()
 		self.assertEqual(st['panels'], {'orchestrator': 'p1', 'interlocuteur': 'p2'})

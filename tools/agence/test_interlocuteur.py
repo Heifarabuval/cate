@@ -62,7 +62,14 @@ class Demarrage(Base):
 	def inter_starts(self):
 		return [c for c in self.run.ran('cate', 'agent', 'start') if '/interlocuteur' in c]
 
+	def test_start_sans_poste_interlocuteur_n_en_cree_pas(self):
+		self.orga(['dev'])  # profil solo
+		self.assertEqual(self.cli('start')[0], 0)
+		self.assertEqual(self.inter_starts(), [])
+		self.assertEqual(self.state()['panels'], {'orchestrator': 'p1'})
+
 	def test_start_cree_et_enregistre_l_interlocuteur(self):
+		self.orga(['interlocuteur'])
 		self.assertEqual(self.cli('start')[0], 0)
 		st = self.state()
 		self.assertEqual(st['panels'], {'orchestrator': 'p1', 'interlocuteur': 'p2'})
@@ -119,6 +126,7 @@ class Demarrage(Base):
 		self.assertEqual(len(self.run.ran('cate', 'panel', 'create')), 1)
 
 	def test_start_deux_fois_un_seul_interlocuteur(self):
+		self.orga(['interlocuteur'])
 		self.assertEqual(self.cli('start')[0], 0)
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'},
 		                                           {'panelId': 'p2', 'type': 'terminal', 'title': 'Interlocuteur'}])
@@ -127,6 +135,7 @@ class Demarrage(Base):
 		self.assertEqual(self.state()['panels']['interlocuteur'], 'p2')
 
 	def test_interlocuteur_mort_recree(self):
+		self.orga(['interlocuteur'])
 		self.assertEqual(self.cli('start')[0], 0)
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'}])
 		self.assertEqual(self.cli('start')[0], 0)
@@ -134,6 +143,7 @@ class Demarrage(Base):
 		self.assertEqual(self.state()['panels']['interlocuteur'], 'p3')
 
 	def test_vivant_du_meme_titre_non_enregistre_adopte(self):
+		self.orga(['interlocuteur'])
 		with agence.tx() as st:
 			st['panels'] = {'orchestrator': 'p1'}
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'type': 'agence'},
@@ -144,6 +154,7 @@ class Demarrage(Base):
 		self.assertIn(['i9', 'p1', '--kind', 'context'], [c[3:7] for c in self.run.ran('cate', 'panel', 'link')])
 
 	def test_chemin_canvas_interlocuteur_sur_le_canvas(self):
+		self.orga(['interlocuteur'])
 		self.run.reply(['cate', 'panel', 'create', 'agence'], '', code=1, err="cate: unknown panel type 'agence'")
 		self.assertEqual(self.cli('start')[0], 0)
 		st = self.state()

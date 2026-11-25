@@ -619,6 +619,7 @@ class ModeleAuLancement(test_lancer.Lancer):
 		return [c for c in self.run.ran('cate', 'agent', 'start') if agence.INTER_PROMPT in c]
 
 	def test_start_sans_reglage_aucun_model(self):
+		patch = unittest.mock.patch.object(agence, 'org_lire', return_value={'ok': True, 'org': {'roles': {'interlocuteur': {}}}}); patch.start(); self.addCleanup(patch.stop)
 		with agence.tx() as st:
 			st['panels'] = {}
 		self.assertEqual(self.cli('start')[0], 0)
@@ -626,6 +627,7 @@ class ModeleAuLancement(test_lancer.Lancer):
 		self.assertNotIn('--model', self.starts()[0])
 
 	def test_start_passe_modele_interlocuteur(self):
+		patch = unittest.mock.patch.object(agence, 'org_lire', return_value={'ok': True, 'org': {'roles': {'interlocuteur': {}}}}); patch.start(); self.addCleanup(patch.stop)
 		import pratiques
 		pratiques.regler(self.tmp, os.environ['HOME'], 'modele.interlocuteur', 'haiku')
 		pratiques.regler(self.tmp, os.environ['HOME'], 'agents.modele', 'opus')  # un autre rôle n'y va pas
