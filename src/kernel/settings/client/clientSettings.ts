@@ -32,7 +32,10 @@ export function createClientSettingsStore<S extends object>(
   const apply = (next: S): void => {
     const patch: Record<string, unknown> = {}
     for (const key of table.keys) {
-      if (!jsonEqual(next[key], values[key])) patch[key] = next[key]
+      // An equal value keeps its reference: views key effects on it, and a
+      // re-delivered document (an echo, another window) must not reset them.
+      if (jsonEqual(next[key], values[key])) next[key] = values[key]
+      else patch[key] = next[key]
     }
     values = next
     if (Object.keys(patch).length === 0) return
