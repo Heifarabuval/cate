@@ -1,6 +1,6 @@
 # Rapport de pilote (spec 011, lot 4, fiche F19, besoin n944)
 
-État (2026-11-25, n972) : **3 rejeux sur 4 mesurés** (nu #199, nu #26, outil #199) ; **#26 outil ouvert** (rouge au 1er `fini`, reprise attendue). Le rejeu est joué par Heifara (T043 ; aucun agent ne joue un rejeu). Pas de recommandation tant que les 4 ne sont pas fermés (T044, T045).
+État (2026-11-25, n972) : **3 rejeux valides sur 4** (nu #199, nu #26, outil #199) ; **#26 outil invalide** (contamination) et encore ouvert, à refaire ou à écarter. Le rejeu est joué par Heifara (T043 ; aucun agent ne joue un rejeu). Pas de recommandation tant que les 4 ne sont pas fermés (T044, T045).
 
 ## Résultats (`benchmark.py mesure`, outil `ab9013e12514`, seuil `2732c761...`, contamination 0)
 
@@ -9,9 +9,9 @@
 | #199 nu | 285 s | 373 s | vert au 1er `fini` | 3 | 1 094 570 (1 027 203, 5 598) |
 | #26 nu | 805 s | 3035 s | rouge x4, 3 reprises | 9 | 3 338 834 (3 237 880, 16 535) |
 | #199 outil | 12 s | 125 s | vert au 1er `fini` | 3 | 1 974 118 (1 891 092, 10 255) |
-| #26 outil | **inachevé** | non calculé | rouge au 1er `fini`, rejeu ouvert (1 reprise sur 3) | non calculé | 2 025 617 (1 944 825, 8 437), session en cours |
+| #26 outil | **invalide** (contamination, 9 appels) | `None` (rejeu ouvert) | rouge x3 (12:06, 12:11, 12:17), ouvert | `None` | 832 153, session de la reprise seule |
 
-Source : `resultats/199-nu.json`, `resultats/26-nu.json`, `resultats/199-outil.json` (`26-outil.json` : état inachevé, non commité). Durée d'un rejeu : 6 min (#199 nu), 51 min (#26 nu), 2 min (#199 outil). Jetons du régisseur : 0 sur les deux bras outil (`--usage-json`).
+Source : `resultats/199-nu.json`, `resultats/26-nu.json`, `resultats/199-outil.json`, `resultats/26-outil.json` (état `invalide`). Durée d'un rejeu : 6 min (#199 nu), 51 min (#26 nu), 2 min (#199 outil). Jetons du régisseur : 0 sur les deux bras outil (`--usage-json`).
 
 ## Vérifications du bras outil (2026-11-25)
 
@@ -26,14 +26,32 @@ Source : `resultats/199-nu.json`, `resultats/26-nu.json`, `resultats/199-outil.j
 - Même calcul sur #26 outil : 1 209 903 dans la fenêtre sur 2 025 617 au total (60 %), session en cours.
 - Un seul panneau est lu : le bras outil de ces rejeux est un orchestrateur seul, sans agent de travail séparé. `jetons_regisseur` à 0 le confirme. Ce que l'outil ajoute (agents reliés, tours de l'orchestrateur) n'est donc pas encore mis à l'épreuve.
 
-**#26 outil, inachevé : une reprise est attendue, ce n'est pas un résultat à rapporter.**
-- `mesure` calcule temps actif, mural et interventions seulement si `etat['debut'] and finis and ouvert(a) != nom(a)` (`benchmark.py:417`). `ouvert.json` vaut `26-outil` : le rejeu est encore ouvert, `inachevé` est l'état d'un rejeu non fermé.
-- Il se ferme au premier vert ou à la 4e rouge. Il en est à 1 rouge sur 3 reprises. Il faut reprendre, ou le clore à la main : question posée à Heifara (`agence ask`).
-- Point à lever en reprise : les dépendances du clone sont « à installer » (`npm ci` sorti 0, mais scripts `postinstall` de `node-pty` et `esbuild` non exécutés). Le bras nu de #26 avait le même état et est resté rouge 4 fois. Si le rouge vient de l'environnement et non du travail, #26 mesure le même défaut des deux côtés. Non vérifié : aucun test rejoué ici.
+**#26 outil, après la reprise : rejeu invalide (contamination), non rapportable comme mesure du bras outil. Il reste ouvert.**
 
-Effet sur la recommandation : #26 outil étant ouvert, il n'y a pas de recommandation de seuil possible aujourd'hui. Sur #199 seul, la règle du temps actif donne un rapport de 0,04 qui ne départage rien (nu non calibré).
+Ce que le code fait (`benchmark.py`) :
+- `controle` rend « invalide » dès qu'un appel d'outil du journal du clone cite le dépôt d'origine, son checkout local, `/pull/<PR>` ou les 7 premiers caractères du sha de tête de la PR (`motifs`, lignes 294 à 312 ; FR-008). Le contrôle compte, ici, 9 appels.
+- `mesure` met `etat: invalide` dès que ce compte est non nul (ligne 432), avant tout autre état.
+- `temps_actif_s` et `temps_mural_s` sont `None` parce que le rejeu est **encore ouvert** (`ouvert.json` = `26-outil`), pas à cause de l'invalidité : le rejeu ne se ferme qu'au vert ou à la 4e rouge (`rouges > REPRISES`, `REPRISES = 3`, ligne 273) ; il en est à 3 rouges (12:06:10, 12:11:51, 12:17:32).
+- Un rejeu invalide est refait dans un clone neuf (T052, spec.md) et le rapport compte les invalidés (FR-009). Rien dans le code ne décide à ta place de le fermer, de le garder ou de le refaire.
 
-Le test d'acceptation n'est pas atteint : manquent #26 outil fermé, les 4 chronomètres de Heifara (SC-005, questions posées) et la recommandation.
+Ce que disent les journaux (lecture seule, 3 sessions du clone) :
+- 9 appels d'outil cités, tous après le 2e `fini` (12:11:51), entre 12:12:01 et 12:13:21. 5 d'entre eux (12:12:01 à 12:12:52) ne matchent que le chemin du checkout du harnais (`n972-dev`) : lecture de `benchmark.py` et recherche de `selection.json`. Les 4 autres citent le sha de tête de la PR (`0f76b2e`) ou `/pull/27` : deux commandes dans le clone avec le sha (12:12:57, 12:13:02), une commande à 12:13:13 qui mêle un `git checkout --` d'un fichier de test et un `git ls-remote origin refs/pull/27/head`, et un `git cat-file` dans le checkout du dépôt d'origine à 12:13:21.
+- Le sha et le numéro de PR viennent de `selection.json`, que la session a trouvé en lisant le harnais. Je n'ai pas lu ce que la session a fait ensuite du fichier de test ni si elle a recopié la solution d'origine : non vérifié.
+- Avant 12:12:01, aucun appel ne matche : le 1er `fini` (rouge, 94 s après `debut`) et le 2e (rouge, 12:11:51) précèdent la contamination. Le 3e `fini` (12:17:32) la suit.
+
+Ce qui est rapportable pour #26 outil :
+- Rapportable : l'arbitre est rouge aux 2 premiers `fini`, avant toute contamination relevée par le harnais ; la contamination est détectée (9 appels) et datée ; la règle d'invalidité a joué comme prévu.
+- Non rapportable : temps actif, temps mural, interventions (`None`), arbitre du 3e `fini`, durée, qualité. Les 832 153 jetons ne couvrent que la session de la reprise (le `--usage-json` réexporté ne liste que cette session, 1 lue ; la 1re session, 2 025 617, n'y est pas) : pas un coût du rejeu.
+- Conséquence sur le pilote : la ligne #26 outil ne compte pas dans une comparaison avec #26 nu tant qu'il n'est pas refait dans un clone neuf. À décider par Heifara (question posée) : refaire (`prepare 26 outil` dans un clone neuf, après avoir fermé ou écarté l'actuel) ou arrêter le pilote sur 3 rejeux.
+
+Défaut du dispositif relevé, à traiter hors de cette fiche : le chemin du harnais (`--depot`, ici ce worktree) est compté comme « dépôt d'origine qui contient la solution », et il est visible depuis le clone parce que les commandes `debut`, `fini` et `machine` donnent son chemin à la session. Le harnais contient aussi `selection.json` (sha et PR de la solution). Il n'est pas isolé de l'agent du rejeu. Un harnais lancé hors de tout dossier lisible par la session, ou une sélection sans sha en clair, supprimerait cette voie.
+- Dépendances du clone : « à installer » (`npm ci` sorti 0, scripts `postinstall` de `node-pty` et `esbuild` non exécutés), comme au bras nu de #26 (rouge x4). Rouge d'environnement possible, non vérifié.
+
+Effet sur la recommandation : il n'y a pas de recommandation de seuil possible sur ces données (3 rejeux valides sur 4, #26 outil invalide, aucun chronomètre). Sur #199 seul, le rapport de 0,04 ne départage rien (nu non calibré).
+
+**Chronomètres (q1062, 2026-11-25)** : aucun noté. Réponse de Heifara : « je n'ai rien eu a faire sur les deux » (lue comme : sur les deux rejeux outil). Aucune valeur pour #199 nu ni #26 nu. L'écart SC-005 (25 % max) n'est donc pas calculable : un chronomètre à 0 s contre 12 s mesurés sur #199 outil n'a pas de rapport défini. SC-005 : **non vérifié**, la mesure du temps actif reste non calibrée.
+
+Le test d'acceptation n'est pas atteint : manquent un #26 outil valide et la recommandation.
 
 ## Contrôlé en lecture seule (2026-11-24, base origin/main 452607b8)
 

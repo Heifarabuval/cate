@@ -1,0 +1,43 @@
+{
+ "bras": "outil",
+ "contamination": 9,
+ "debut": "2026-11-25T12:04:36Z",
+ "etat": "invalide",
+ "finis": [
+  {
+   "arbitre": "rouge",
+   "instant": "2026-11-25T12:06:10Z"
+  },
+  {
+   "arbitre": "rouge",
+   "instant": "2026-11-25T12:11:51Z"
+  },
+  {
+   "arbitre": "rouge",
+   "instant": "2026-11-25T12:17:32Z"
+  }
+ ],
+ "interventions": null,
+ "issue": 26,
+ "jetons": {
+  "cache_cree": 47750,
+  "entree": 20,
+  "lus": 781155,
+  "partiel": false,
+  "sortie": 3228,
+  "total": 832153
+ },
+ "jetons_regisseur": 0,
+ "outil": "76280ba7ad41",
+ "remarques": null,
+ "reprises": 2,
+ "rouge_interface": null,
+ "sessions": {
+  "lues": 1,
+  "non_lues": 0,
+  "non_mesurees": 0
+ },
+ "seuil": "2732c7611685aa56680a8233a90774b71cf8d4b79cb3434f6af78d25013cea6e",
+ "temps_actif_s": null,
+ "temps_mural_s": null
+}
