@@ -23,6 +23,8 @@ export default definePanel({
   defaultTitle: 'Agence',
   channel: channel<AgenceSnapshot, Partial<AgenceSnapshot>, AgenceOp>(),
   fields,
+  // « Ajuster le setup » (palette, Panel menu): opens the setup agent, nothing is written by it (spec 015, FR-012).
+  commands: [{ id: 'setup', title: 'Ajuster le setup', op: { kind: 'setup.ouvrir' }, menu: true }],
   // The orchestrator takes prompts (`cate agent send`) like a terminal's agent.
   relation: { execution: true },
 })

@@ -205,6 +205,37 @@ class Ouvrir(Base):
 		cmd = self.demarrages()[0]
 		self.assertEqual(cmd[cmd.index('--model') + 1], 'sonnet')
 
+	def test_la_phrase_part_avec_le_prompt_de_l_agent(self):
+		agence.click('/setup/ouvrir', {'panneau': ['o1'], 'phrase': ['mets le plafond à 2']})
+		self.assertEqual(self.demarrages()[0][-2], '/setup mets le plafond à 2')
+
+	def test_la_phrase_va_a_l_agent_qui_tourne_sans_en_lancer_un_second(self):
+		agence.click('/setup/ouvrir', {'panneau': ['o1']})
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'o1', 'title': 'Agence', 'type': 'agence'},
+		                                          {'panelId': 'p1', 'title': 'Setup', 'type': 'terminal'}])
+		agence.click('/setup/ouvrir', {'panneau': ['o1'], 'phrase': ['ajoute un relecteur']})
+		self.assertEqual(len(self.demarrages()), 1)
+		(envoi,) = self.run.ran('cate', 'agent', 'send')
+		self.assertEqual(envoi[:5], ['cate', 'agent', 'send', '--panel', 'p1'])
+		self.assertIn('ajoute un relecteur', envoi[5])
+
+	def test_la_commande_agence_setup_ouvre_sans_rien_ecrire(self):
+		avant = agence.load()['pratiques']
+		code, out = self.cli('setup', 'ce projet sert aussi au SEO')
+		self.assertEqual(code, 0)
+		self.assertIn('p1', out)
+		self.assertEqual(self.demarrages()[0][-2], '/setup ce projet sert aussi au SEO')
+		self.assertFalse(os.path.exists(pratiques.fichier_projet(self.tmp)))
+		self.assertFalse(os.path.exists(os.path.join(self.tmp, '.cate', 'tmp', 'agence', 'setup.json')))
+		self.assertEqual(agence.load()['pratiques'], avant)
+
+	def test_la_commande_sans_phrase_ouvre_et_fin_ferme(self):
+		self.assertEqual(self.cli('setup')[0], 0)
+		self.assertEqual(self.demarrages()[0][-2], '/setup')
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'title': 'Setup', 'type': 'terminal'}])
+		self.assertEqual(self.cli('setup', '--fin')[0], 0)
+		self.assertNotIn('setup', agence.load()['panels'])
+
 	def test_fermer_ferme_le_panneau_et_l_oublie(self):
 		agence.click('/setup/ouvrir', {'panneau': ['o1']})
 		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 'p1', 'title': 'Setup', 'type': 'terminal'}])
@@ -236,6 +267,16 @@ class Skill(unittest.TestCase):
 		self.assertIn('40 fichiers', self.texte)
 		self.assertIn('200 Ko', self.texte)
 		self.assertIn('6 questions', self.texte)
+
+	def test_lit_la_memoire_a_chaque_ouverture_et_ne_l_ecrit_jamais(self):
+		for mot in ('.cate/tmp/agence/setup.json', 'dernierSetup', 'Noter ce contexte', 'resume', '200 lignes', 'illisible'):
+			with self.subTest(mot=mot):
+				self.assertIn(mot, self.texte)
+
+	def test_distingue_l_ajustement_ponctuel_la_relance_en_bloc_et_le_premier_setup(self):
+		for mot in ('Ajustement ponctuel', 'Relance en bloc', 'Premier setup', 'seulement', 'ne propose que les écarts', 'au plus une question par phrase'):
+			with self.subTest(mot=mot):
+				self.assertIn(mot, self.texte)
 
 	def test_aucune_liste_de_cles_recopiee(self):
 		for cle in ('livraison.mode', 'agents.max', 'verification'):

@@ -233,6 +233,9 @@ export type AgenceOp =
   | { kind: 'pratique.unset'; cle: string }
   /** A preset; `remplacer`: the file keeps the preset alone. */
   | { kind: 'pratique.preset'; nom: string; remplacer?: boolean }
+  /** The setup agent opens (spec 015, FR-012), or the one that runs gets the phrase: `phrase` is what changes, in the
+   *  person's words; `cle` centres the conversation on one setting of the form. Writes nothing. */
+  | { kind: 'setup.ouvrir'; phrase?: string; cle?: string }
   /** « Passer » (spec 015, FR-011): the default preset is written, the setup agent closes and the
    *  orchestrator starts. Without effect once the project has its settings file. */
   | { kind: 'setup.passer' }

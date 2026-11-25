@@ -145,16 +145,19 @@ export default function Reglages({ pratiques, disponible, send, onClose }: Regla
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <ChampControl champ={champ} value={champ.valeur} disabled={disabled} onChange={(valeur) => run(champ.cle, { kind: 'pratique.set', cle: champ.cle, valeur })} />
         <span className="text-secondary">{`(${ORIGINES[champ.origine] ?? champ.origine}) · Par défaut : ${enMots(champ, champ.defaut)}`}</span>
+        <ActionButton className={ACTION_PLAIN} disabled={disabled} busy={action.active === `parler:${champ.cle}`} onClick={() => run(`parler:${champ.cle}`, { kind: 'setup.ouvrir', cle: champ.cle })}>
+          En parler à l&apos;agent
+        </ActionButton>
         {champ.origine !== 'défaut' && (
           <ActionButton className={ACTION_PLAIN} disabled={disabled} busy={action.active === `unset:${champ.cle}`} onClick={() => run(`unset:${champ.cle}`, { kind: 'pratique.unset', cle: champ.cle })}>
             {`Revenir au défaut (${enMots(champ, champ.defaut)})`}
           </ActionButton>
         )}
       </div>
+      {pratiques.raisons?.[champ.cle] && <div className="mt-0.5 text-secondary">{`Raison : ${pratiques.raisons[champ.cle]}`}</div>}
       {action.error && (refusee === champ.cle || refusee === `unset:${champ.cle}`) && <InlineNotice tone="error" className="mt-1 !text-primary">{action.error}</InlineNotice>}
     </li>
   )
-      {pratiques.raisons?.[champ.cle] && <div className="mt-0.5 text-secondary">{`Raison : ${pratiques.raisons[champ.cle]}`}</div>}
 
   const essentiels = champs.filter((champ) => champ.groupe === 'essentiel')
   const avances = champs.filter((champ) => champ.groupe !== 'essentiel')

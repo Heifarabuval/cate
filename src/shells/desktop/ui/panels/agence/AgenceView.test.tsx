@@ -489,6 +489,19 @@ it('says to restart a regisseur that stopped during the setup, with one restart 
   }
 })
 
+it('opens the setup agent from « Ajuster le setup » once the project has its file, through the session', async () => {
+  render(snapshot({ pratiques: reglages({ projet: true }) }))
+  await act(async () => { button('Ajuster le setup')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'setup.ouvrir' })
+})
+
+it('offers « Ajuster le setup » only with the form, and not while the regisseur is stopped', () => {
+  render(snapshot({ pratiques: null }))
+  expect(button('Ajuster le setup')).toBeUndefined()
+  render(snapshot({ pratiques: reglages({ projet: true }), regisseur: { state: 'stopped', error: null, settingsHint: null } }))
+  expect(button('Ajuster le setup')!.disabled).toBe(true)
+})
+
 it('keeps « Accès des agents à Cate » usable when the regisseur is stopped and the policy unreadable (FR-016)', () => {
   const ui = installMockClientUi()
   render(snapshot({ pratiques: reglages({ erreur: 'illisible' }), regisseur: { state: 'stopped', error: null, settingsHint: null } }))

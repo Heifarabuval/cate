@@ -48,7 +48,7 @@ const showValue = (value: PratiqueValeur): string => Array.isArray(value) ? valu
 /** The workflow policy the CLI published: its preset and origin on one line, a
  *  banner when the file is invalid, and « Réglages » when the CLI publishes the form
  *  (an older CLI: the value and source of each key when the line is opened). */
-function Pratiques({ pratiques, onReglages }: { pratiques: NonNullable<AgenceSnapshot['pratiques']>; onReglages(): void }) {
+function Pratiques({ pratiques, onReglages, onSetup, disponible }: { pratiques: NonNullable<AgenceSnapshot['pratiques']>; onReglages(): void; onSetup(): void; disponible: boolean }) {
   const [open, setOpen] = useState(false)
   const label = `Pratiques : ${pratiques.preset} (${pratiques.sources.preset ?? 'défaut'})`
   const form = pratiques.champs !== undefined
@@ -59,6 +59,7 @@ function Pratiques({ pratiques, onReglages }: { pratiques: NonNullable<AgenceSna
         {form
           ? <span className="min-w-0 flex-1 truncate text-secondary">{label}</span>
           : <button type="button" aria-expanded={open} className="min-w-0 flex-1 truncate text-left text-secondary hover:text-primary" onClick={() => setOpen(!open)}>{label}</button>}
+        {form && <ActionButton className={ACTION} disabled={!disponible} onClick={onSetup}>Ajuster le setup</ActionButton>}
         {form && <ActionButton className={ACTION} onClick={onReglages}>Réglages</ActionButton>}
       </div>
       {open && !form && (
@@ -199,7 +200,7 @@ export default function AgenceView(props: PanelViewProps<AgenceSnapshot, AgenceO
           className={`min-h-0 min-w-0 overflow-auto ${showSuivi ? 'flex-1' : 'hidden'}`}
         >
           <RegisseurBanner regisseur={snapshot.regisseur} garde={snapshot.garde} onRestart={() => run({ kind: 'orchestrator.restart' })} />
-          {snapshot.pratiques && !reglages && <Pratiques pratiques={snapshot.pratiques} onReglages={() => setReglages(true)} />}
+          {snapshot.pratiques && !reglages && <Pratiques pratiques={snapshot.pratiques} onReglages={() => setReglages(true)} onSetup={() => void run({ kind: 'setup.ouvrir' })} disponible={snapshot.regisseur.state === 'running'} />}
           {snapshot.pratiques?.champs && reglages
             ? <Reglages pratiques={snapshot.pratiques} disponible={snapshot.regisseur.state === 'running'} send={send} onClose={() => setReglages(false)} />
             : <>

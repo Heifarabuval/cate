@@ -210,3 +210,14 @@ it('says why a setting has its value when the setup memory kept a reason, read o
   expect(field('Fenêtres').querySelectorAll('input[type="text"], textarea')).toHaveLength(0)
   expect(field('Couleur du toit').textContent).not.toContain('Raison')
 })
+
+it('opens the setup agent on one setting from « En parler à l\'agent », with its key', async () => {
+  render(pratiques())
+  await act(async () => { [...field('Fenêtres').querySelectorAll('button')].find((b) => b.textContent === 'En parler à l\'agent')!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'setup.ouvrir', cle: 'baz' })
+})
+
+it('cannot talk to the agent while the regisseur is stopped', () => {
+  render(pratiques(), false)
+  expect([...field('Fenêtres').querySelectorAll('button')].find((b) => b.textContent === 'En parler à l\'agent')!.disabled).toBe(true)
+})

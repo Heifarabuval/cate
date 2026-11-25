@@ -63,6 +63,8 @@ const INITIAL_COLS = 80
 const INITIAL_ROWS = 24
 const OPEN_DRAFT: ReadonlySet<string> = new Set(['à valider', 'envoyer'])
 const SAFE_ID = /^[\w-]+$/
+/** The longest phrase handed to the setup agent. */
+const MAX_PHRASE = 500
 const PERM_NEED = /^n\d+$/
 const DRAFT_KINDS: ReadonlySet<string> = new Set(['issue', 'pr', 'comment', 'slack', 'mail'])
 const GARDES: ReadonlySet<string> = new Set(['actif', 'inactif', 'partiel'])
@@ -144,6 +146,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
         ? this.click('/fiches/lancer', { ids: ids.join(',') })
         : Promise.resolve({ ok: false, error: 'invalid' }),
       'setup.passer': () => this.passer(),
+      'setup.ouvrir': ({ phrase, cle }) => this.ouvrirSetup(phrase, cle),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
         ? { libre }
@@ -250,6 +253,16 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     this.pending = false
     await this.spawnOrchestrator(this.resume)
     return result
+  }
+
+  /** The setup agent opens, or the one that runs gets the phrase (the regisseur's `/setup/ouvrir`, one agent per project).
+   *  `cle` names a setting the form published; the conversation is centred on it. */
+  private ouvrirSetup(phrase: string | undefined, cle: string | undefined): Promise<AgenceOpResult> {
+    const champ = cle === undefined ? undefined : this.state.pratiques?.champs?.find((one) => one.cle === cle)
+    if (cle !== undefined && !champ) return Promise.resolve({ ok: false, error: 'invalid' })
+    const text = [champ && `Ajuster le réglage « ${champ.nom} » (${champ.cle}) seulement.`, phrase?.trim()].filter(Boolean).join(' ')
+    if (text.length > MAX_PHRASE) return Promise.resolve({ ok: false, error: 'invalid' })
+    return this.click('/setup/ouvrir', { panneau: this.panelId, ...(text ? { phrase: text } : {}) })
   }
 
   /** While the project has no settings file, asks the regisseur once to open the setup agent, linked to this panel
@@ -414,6 +427,7 @@ function pratiquesView(raw: unknown): PratiquesView | null {
   if (typeof raw.projet === 'boolean') view.projet = raw.projet
   if (typeof raw.nbProjet === 'number') view.nbProjet = raw.nbProjet
   if (Array.isArray(raw.invariants)) view.invariants = raw.invariants.filter(isString)
+  if (isRecord(raw.raisons)) view.raisons = Object.fromEntries(Object.entries(raw.raisons).filter((entry): entry is [string, string] => isString(entry[1])))
   return view
 }
 
@@ -427,7 +441,6 @@ function isChamp(x: unknown): x is PratiqueChamp {
 const numberOrNull = (x: unknown): number | null => typeof x === 'number' && Number.isFinite(x) ? x : null
 
 /** The backlog the regisseur published (contract: `contract/fixtures/vue-backlog.json`), or
-  if (isRecord(raw.raisons)) view.raisons = Object.fromEntries(Object.entries(raw.raisons).filter((entry): entry is [string, string] => isString(entry[1])))
  *  null when absent or not shaped like one. A fiche of the wrong shape is dropped; an
  *  unreadable consumption stays null, never 0. */
 function backlogView(raw: unknown): BacklogView | null {

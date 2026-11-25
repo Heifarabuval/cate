@@ -2407,7 +2407,17 @@ the card's text and writes the project file through the function the form uses.
 The orga goes through `agence org propose` (spec 011). The view gives the panel to
 the setup (`SetupEnCours`: the cards and « Passer »); the `setup.passer` op writes
 the `neutre` preset, closes the agent (`/setup/fermer`) and starts the orchestrator.
-The agent can be reopened at any time with `agence setup` (nothing is written by it).
+The setup stays open to change at any time (`projet: true`) through four entries
+that lead to one conversation, the `setup.ouvrir` op: the « Ajuster le setup »
+button of the panel, the `panel.agence.setup` action (declared by the panel
+type's `commands`, so in the palette and the Panel menu), `agence setup
+["<phrase>"]` typed in a terminal, and « En parler à l'agent » on a line of the
+form (centred on that key). Each opens the setup agent, or hands the phrase to
+the one that runs (one per project); none writes anything. With a phrase the agent
+treats those points only, and proposes only the differences with the effective
+values. The orchestrator and the interlocutor never open it nor write the policy:
+they answer a remark that touches the setup with the `agence setup "<phrase>"`
+line and the person types it.
 Every card shows its diff before the click: settings (current value, proposed value,
 source), the memory and, on the orga card, the posts and links added, removed or
 changed. The **setup memory** is `<root>/.cate/tmp/agence/setup.json` (outside the

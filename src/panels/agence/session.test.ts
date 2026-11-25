@@ -631,6 +631,48 @@ describe('AgenceSession', () => {
     })
   })
 
+  describe('setup.ouvrir (spec 015, lot 4)', () => {
+    const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
+    const running = () => setup({ files: { state: state({ pratiques: { ...vueReglages, valeurs: {}, sources: { preset: 'défaut' }, projet: true } } as unknown as Partial<AgenceState>), readAt: 't' } })
+    const champ = vueReglages.champs[0]
+
+    it('asks the regisseur to open the setup agent, linked to this panel, with no phrase', async () => {
+      const { session, regisseurs } = running()
+      await session.start()
+      await expect(op(session, { kind: 'setup.ouvrir' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts).toEqual([{ path: '/setup/ouvrir', form: { panneau: 'ag1' } }])
+    })
+
+    it('carries the phrase the person typed', async () => {
+      const { session, regisseurs } = running()
+      await session.start()
+      await op(session, { kind: 'setup.ouvrir', phrase: ' mets le plafond à 2 ' })
+      expect(regisseurs.posts).toEqual([{ path: '/setup/ouvrir', form: { panneau: 'ag1', phrase: 'mets le plafond à 2' } }])
+    })
+
+    it('centres the conversation on one setting of the form, by its name and key', async () => {
+      const { session, regisseurs } = running()
+      await session.start()
+      await expect(op(session, { kind: 'setup.ouvrir', cle: champ.cle })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts[0].form).toEqual({ panneau: 'ag1', phrase: `Ajuster le réglage « ${champ.nom} » (${champ.cle}) seulement.` })
+    })
+
+    it('refuses a key the regisseur did not publish, and a phrase that is too long, without posting', async () => {
+      const { session, regisseurs } = running()
+      await session.start()
+      await expect(op(session, { kind: 'setup.ouvrir', cle: 'inconnue' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await expect(op(session, { kind: 'setup.ouvrir', phrase: 'x'.repeat(501) })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      expect(regisseurs.posts).toEqual([])
+    })
+
+    it('is unavailable while the regisseur does not run', async () => {
+      const { session, regisseurs } = running()
+      await session.start()
+      regisseurs.set({ state: 'stopped', error: null })
+      await expect(op(session, { kind: 'setup.ouvrir' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+    })
+  })
+
   describe('orchestrator.restart', () => {
     const restart = (session: AgenceSession) => session.handleOp({ kind: 'orchestrator.restart' }, { clientId: 'c1', connectionId: 1 })
 

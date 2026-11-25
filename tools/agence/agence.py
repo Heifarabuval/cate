@@ -1741,6 +1741,8 @@ def ouvrir_setup(panneau=None, phrase=None):
 	with tx() as st:
 		p = st['panels']
 		if p.get('setup') in live:
+			if phrase:  # il tourne : la phrase lui est remise, pas de second agent
+				notify(p['setup'], f"{nom()} demande : {phrase}")
 			return p['setup']
 		p['setup'] = adopt(live, SETUP, 'terminal')
 		if not p['setup']:
