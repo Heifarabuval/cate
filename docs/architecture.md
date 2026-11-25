@@ -2416,8 +2416,16 @@ form (centred on that key). Each opens the setup agent, or hands the phrase to
 the one that runs (one per project); none writes anything. With a phrase the agent
 treats those points only, and proposes only the differences with the effective
 values. The orchestrator and the interlocutor never open it nor write the policy:
-they answer a remark that touches the setup with the `agence setup "<phrase>"`
-line and the person types it.
+a remark that touches the setup goes to the **detection** (`agence setup --detecte
+"<phrase>"`, `tools/agence/detection.py`), automatic and without a click only up to a
+card. A deterministic rule decides first (a word of change and a word of setting, or
+a schema key; the local model only breaks a tie, never a paid one); the regisseur
+feeds it too (a second abandoned need, refused merge or reached cap within 24 h, an
+answered `agence ask` that changes a practice). It puts a card « Ajuster le setup ? »
+(« Ouvrir avec la phrase », « Ignorer ») in the validation box: one open at a time,
+never twice the same phrase, three an hour at most. Only the « Ouvrir avec la phrase »
+click (`/setup/<card>/ouvrir`) opens the agent; nothing is written without a click.
+There is no `UserPromptSubmit` hook: `agence hooks` writes `PreToolUse` guards only.
 Every card shows its diff before the click: settings (current value, proposed value,
 source), the memory and, on the orga card, the posts and links added, removed or
 changed. The **setup memory** is `<root>/.cate/tmp/agence/setup.json` (outside the

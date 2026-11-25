@@ -1515,6 +1515,9 @@ def click(path, form):
 	m = re.match(r'^/setup/(q\d+)/appliquer$', path)
 	if m:
 		return click_setup(m.group(1))
+	m = re.match(r'^/setup/(q\d+)/ouvrir$', path)
+	if m:
+		return click_ajuster(m.group(1))
 	if path == '/setup/ouvrir':
 		ouvrir_setup((form.get('panneau') or [''])[0] or None, (form.get('phrase') or [''])[0].strip() or None)
 		return 303, '/'
@@ -1548,6 +1551,10 @@ def click(path, form):
 				return 400, 'Écris une réponse ou choisis une option.'
 			evidence = f'réponse : {answer}'
 			forced = None
+			if q['action'] and (choice != '0' or libre):  # un merge refusé (spec 015, FR-020)
+				evenement(st, 'merge', 'un second merge est refusé en 24 h : revoir la relecture ou la livraison ?')
+			elif not q['action'] and verdict_detection(answer) == 'oui':
+				carte_ajuster(st, answer)
 			if q['action'] and choice == '0' and not libre:
 				locks = merge_locks(st, q)
 				if locks and (form.get('force') or [''])[0] != '1':
@@ -1798,6 +1805,76 @@ def click_setup(qid):
 		note(find(st, 'needs', q['needId']), f'{label} cliqué : ' + ('réglages et mémoire écrits' if reglages else 'mémoire écrite'), 'clic')
 		fermer_carte(st, q, label)
 		notify(q.get('agent'), f"{nom()} a cliqué « {label} » : c'est écrit.")
+	return 303, '/'
+
+
+def departager(phrase):
+	"""Texte ambigu (FR-022) : Qwen local (skill local-llm, 0 €, rien ne sort du Mac) répond OUI ou NON sur la seule phrase.
+	Binaire absent, erreur ou autre sortie : NON, aucune carte."""
+	code, out, _ = RUN(['local-llm', "Réponds par OUI ou NON seulement : cette phrase demande-t-elle de changer un réglage de travail "
+	                    "d'une équipe d'agents (plafond d'agents, relecture, livraison, orga, objet du projet) ?"], input=phrase, timeout=30)
+	return code == 0 and out.strip() == 'OUI'
+
+
+def carte_ajuster(st, texte):
+	"""Carte « Ajuster le setup ? » (FR-020, FR-023, FR-024) sous le verrou : Ouvrir avec la phrase ouvre l'agent de setup au clic,
+	Ignorer la ferme. Rend son id, ou None (anti-spam, secret). N'écrit ni réglage ni mémoire, n'ouvre rien."""
+	import detection
+	import setup
+	phrase = ' '.join((texte or '').split())[:300]
+	maintenant = time.time()
+	cartes = [q for q in st['questions'] if q.get('setup') == 'ajuster']
+	if not phrase or setup.secret_apparent(phrase) or detection.refus_anti_spam(cartes, phrase, maintenant):
+		return None
+	return poser_carte(st, f'Ajuster le setup ? « {phrase} »',
+	                   [{'label': 'Ouvrir avec la phrase', 'detail': "ouvre l'agent de setup avec cette phrase ; il propose, rien n'est écrit sans ton clic"},
+	                    {'label': 'Ignorer', 'detail': "rien ne s'ouvre"}],
+	                   lambda q: [f'/setup/{q}/ouvrir', ''], setup='ajuster', phrase=phrase, ts=maintenant)
+
+
+def evenement(st, genre, texte):
+	"""Signal du régisseur (FR-022) : un événement d'un genre compte à sa deuxième occurrence en 24 h, puis pose la carte (une par jour et par phrase)."""
+	import detection
+	vus = st.setdefault('detection', {}).setdefault(genre, [])
+	maintenant = time.time()
+	vus.append(maintenant)
+	assez, vus[:] = detection.occurrence_suffisante(vus, maintenant)
+	return carte_ajuster(st, f'{texte} (le {jour()})') if assez else None
+
+
+def verdict_detection(texte):
+	"""La règle déterministe sur le texte : oui, ambigu ou non, d'après les mots de réglage et les clés du schéma."""
+	import detection
+	import pratiques
+	return detection.decider(texte, {cle: spec['nom'] for cle, spec in pratiques.schema()['cles'].items()})
+
+
+def detecter(texte):
+	"""`agence setup --detecte "<texte>"` : règle déterministe, Qwen local seulement pour départager, puis la carte. Rien ne s'ouvre."""
+	verdict = verdict_detection(texte)
+	if verdict == 'ambigu' and departager(' '.join(texte.split())[:300]):
+		verdict = 'oui'
+	with tx() as st:
+		qid = carte_ajuster(st, texte) if verdict == 'oui' else None
+	print(f'carte {qid} posée : « Ajuster le setup ? », rien ne s\'ouvre sans ton clic' if qid else 'aucune carte')
+	return 0
+
+
+def click_ajuster(qid):
+	"""Ouvrir avec la phrase (FR-020) : le clic de l'humain ouvre l'agent de setup avec la phrase de la carte, puis la ferme.
+	Une carte déjà répondue ou inconnue n'ouvre rien."""
+	st = load()
+	q = next((q for q in st['questions'] if q['id'] == qid and q.get('setup') == 'ajuster'), None)
+	if q is None:
+		return 404, 'Action inconnue.'
+	if q['answer'] is not None or not carte_ouverte(st, f'/setup/{qid}/ouvrir'):
+		return 409, 'Question déjà répondue.'
+	ouvrir_setup(None, q['phrase'])
+	with tx() as st:
+		q = find(st, 'questions', qid)
+		if q['answer'] is None:
+			note(find(st, 'needs', q['needId']), 'Ouvrir avec la phrase cliqué : agent de setup ouvert', 'clic')
+			fermer_carte(st, q, 'Ouvrir avec la phrase')
 	return 303, '/'
 
 
@@ -2608,6 +2685,7 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 			close_need(st, n['id'], 'dropped')
 			effects += [('close', p, n['id']) for p in n['panels'] if p in live]
 			effects.append(('notify', orch, f"PR #{n['ref']} fermée sans merge : {n['title']} abandonné."))
+			evenement(st, 'abandon', 'un second besoin est abandonné (PR fermée sans merge) en 24 h : revoir la relecture ou la livraison ?')
 			continue
 		if ref_state and ref_state['state'] in ('MERGED', 'CLOSED'):
 			done_by = ref_state
@@ -2701,6 +2779,8 @@ def tick(st, live, agents, gh, now, screens=None, panneaux=None, usage=None, mes
 	vivants = active + waiting
 	if st['agentsActive'] + st['agentsWaiting'] >= plafond(st) > vivants:
 		effects.append(('notify', orch, f'Une place est libre : {vivants} en cours sur {plafond(st)}.'))
+	elif vivants >= plafond(st) > st['agentsActive'] + st['agentsWaiting']:  # le plafond vient d'être atteint (spec 015, FR-020)
+		evenement(st, 'plafond', f"le plafond d'agents ({plafond(st)}) est atteint pour la deuxième fois en 24 h : à relever ?")
 	st['agentsActive'] = active
 	st['agentsWaiting'] = waiting
 	st['notified'] = sorted(notified)
@@ -4196,9 +4276,12 @@ def org_apercu(r):
 
 
 def cmd_setup(a):
-	"""Spec 015, FR-012 : ouvre l'agent de setup (un par projet), avec la phrase s'il y en a une ; --fin le ferme.
+	"""Spec 015, FR-012 : ouvre l'agent de setup (un par projet), avec la phrase s'il y en a une ; --fin le ferme ;
+	--detecte pose une carte « Ajuster le setup ? » si le texte touche un réglage (FR-020), sans rien ouvrir.
 	N'écrit aucune politique : l'agent propose, l'humain clique."""
 	require_cate()
+	if a.detecte is not None:
+		return detecter(a.detecte)
 	if a.fin:
 		fermer_setup()
 		print('setup fermé')
@@ -4575,6 +4658,7 @@ def parser():
 	st_ = sub.add_parser('setup', help="ouvre l'agent de setup (spec 015) : un par projet, avec la phrase éventuelle ; --fin ferme sa conversation. N'écrit rien")
 	st_.add_argument('phrase', nargs='?', help="ce qui change, en une phrase (« mets le plafond à 2 »)")
 	st_.add_argument('--fin', action='store_true', help="ferme l'agent de setup (fin de la conversation)")
+	st_.add_argument('--detecte', metavar='TEXTE', help="une remarque qui touche un réglage, l'orga ou l'usage de l'espace : pose une carte « Ajuster le setup ? » (rien ne s'ouvre sans clic)")
 	st_.set_defaults(fn=cmd_setup)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
