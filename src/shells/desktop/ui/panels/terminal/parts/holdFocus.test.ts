@@ -52,4 +52,16 @@ describe('holdFocus', () => {
     vi.advanceTimersByTime(100)
     expect(document.activeElement).toBe(field)
   })
+
+  it('leaves focus to a list the person opened after it took focus (a native menu closes when its list loses focus)', () => {
+    vi.useFakeTimers()
+    const target = document.createElement('textarea')
+    const list = document.createElement('select')
+    document.body.append(target, list)
+    holdFocus(() => target, () => true)
+    expect(document.activeElement).toBe(target)
+    list.focus()
+    vi.advanceTimersByTime(100)
+    expect(document.activeElement).toBe(list)
+  })
 })

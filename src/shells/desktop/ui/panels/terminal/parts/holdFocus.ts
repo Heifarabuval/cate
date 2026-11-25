@@ -3,7 +3,7 @@
 // can move DOM focus to the element it landed on, and a freshly shown xterm
 // may not be attached yet; so focus is re-asserted for a short while, as long
 // as the terminal still owns focus. A text field the person clicked into after
-// that (a panel's own input next to its terminal) keeps focus: only a button
+// that (a panel's own input or list next to its terminal) keeps focus: only a button
 // or the page body gets it taken back.
 
 export interface HoldFocusOptions {
@@ -34,7 +34,7 @@ export function holdFocus(
       return
     }
     const active = el.ownerDocument.activeElement
-    if (focused && active !== el && active?.matches('input, textarea, [contenteditable="true"]')) return
+    if (focused && active !== el && active?.matches('input, textarea, select, [contenteditable="true"]')) return
     if (active !== el) el.focus({ preventScroll: true })
     focused = true
     if (held++ < holdTicks) timer = setTimeout(tick, intervalMs)
