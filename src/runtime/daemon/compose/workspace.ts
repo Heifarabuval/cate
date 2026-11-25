@@ -61,6 +61,8 @@ import { notificationsCapability } from '@workspace/notifications/contract'
 import { createNotifications, notificationsCapabilityImpl } from '@workspace/notifications/runtime'
 import { observationCapability, observeApi } from '@workspace/observation/contract'
 import { createObservationRuntime, observationApiHandlers, observationCapabilityImpl } from '@workspace/observation/runtime'
+import { orgCapability } from '@workspace/org/contract'
+import { orgCapabilityImpl } from '@workspace/org/runtime'
 import { CATE_API } from '@panels/api'
 import {
   createAgentsRuntime,
@@ -408,6 +410,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(agentsCapability, agentsRuntime.capability())
   rpc.register(notificationsCapability, notificationsCapabilityImpl(notifications))
   rpc.register(observationCapability, observationCapabilityImpl(observation))
+  rpc.register(orgCapability, orgCapabilityImpl({ root }))
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
   rpc.register(surfaceCapability, broker.capability())
   rpc.register(apiCapability, apiCapabilityImpl(router))

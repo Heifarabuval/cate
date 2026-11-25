@@ -133,3 +133,9 @@ export function orgDefects(org: OrgFile, options: OrgPreviewOptions = {}): OrgDe
 export function previewOrg(org: OrgFile, options: OrgPreviewOptions = {}): OrgPreview {
 	return { path: orgPath(org), defects: orgDefects(org, options), cost: orgCost(org, options) }
 }
+
+/** Preview options from the machine's real agent ceiling (the `power` capacity): the cap is what the ceiling's agents weigh. */
+export function capacityOptions(capacity: { ceiling: number; avgAgentMb: number }): Pick<OrgPreviewOptions, 'memoryCapGb' | 'agentMemoryGb'> {
+	const agentMemoryGb = capacity.avgAgentMb / 1024
+	return { memoryCapGb: capacity.ceiling * agentMemoryGb, agentMemoryGb }
+}

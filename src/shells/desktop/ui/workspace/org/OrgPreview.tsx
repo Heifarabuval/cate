@@ -3,7 +3,9 @@
 // the computing is in @workspace/org/contract; this file only draws it.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ORG_AGENCY, ORG_DUO, ORG_SOLO, previewOrg, type OrgFile, type OrgPreview as Preview } from '@workspace/org/contract'
+import { ORG_AGENCY, ORG_DUO, ORG_SOLO, capacityOptions, previewOrg, type LoadedOrg, type OrgFile, type OrgPreview as Preview, type OrgPreviewOptions } from '@workspace/org/contract'
+import type { AgentCapacity } from '@runtime/power/contract'
+import { useRuntime } from '../../kernel/rpc'
 
 export interface OrgChoice {
   id: string
@@ -39,9 +41,9 @@ function highlight(preview: Preview, step: number) {
   }
 }
 
-function OrgPane({ choice, memoryCapGb, step }: { choice: OrgChoice; memoryCapGb?: number; step: number }) {
+function OrgPane({ choice, options, step }: { choice: OrgChoice; options: OrgPreviewOptions; step: number }) {
   const { org } = choice
-  const preview = useMemo(() => previewOrg(org, { memoryCapGb }), [org, memoryCapGb])
+  const preview = useMemo(() => previewOrg(org, options), [org, options])
   const { at, width, height } = layout(preview)
   const active = highlight(preview, step)
   const clickOf = (i: number) => org.links[i].click
@@ -103,13 +105,32 @@ function OrgPane({ choice, memoryCapGb, step }: { choice: OrgChoice; memoryCapGb
 }
 
 export interface OrgPreviewViewProps {
-  orgs?: OrgChoice[]
-  /** The machine's memory budget for agents, in GB. */
-  memoryCapGb?: number
+  workspaceId?: string | null
 }
 
-export function OrgPreviewView({ orgs = SHIPPED_ORGS, memoryCapGb }: OrgPreviewViewProps) {
-  const [left, setLeft] = useState(orgs[0].id)
+/** The workspace's org (read by the runtime) and the machine's agent ceiling. */
+function useRuntimeOrg(workspaceId?: string | null) {
+  const runtime = useRuntime(workspaceId)
+  const [loaded, setLoaded] = useState<LoadedOrg | null>(null)
+  const [capacity, setCapacity] = useState<AgentCapacity | null>(null)
+  useEffect(() => {
+    if (!runtime) return
+    let live = true
+    runtime.org.load().then((r) => live && setLoaded(r), (e: Error) => live && setLoaded({ ok: false, errors: [e.message] }))
+    runtime.power.capacity().then((c) => live && setCapacity(c), () => {})
+    return () => { live = false }
+  }, [runtime])
+  return { loaded, capacity }
+}
+
+export function OrgPreviewView({ workspaceId }: OrgPreviewViewProps) {
+  const { loaded, capacity } = useRuntimeOrg(workspaceId)
+  const options = useMemo(() => (capacity ? capacityOptions(capacity) : {}), [capacity])
+  const orgs = useMemo<OrgChoice[]>(
+    () => [...(loaded?.ok ? [{ id: 'workspace', label: loaded.source === 'solo' ? 'This workspace (no org file, solo)' : 'This workspace', org: loaded.org }] : []), ...SHIPPED_ORGS],
+    [loaded],
+  )
+  const [left, setLeft] = useState('workspace')
   const [right, setRight] = useState<string | null>(null)
   const [step, setStep] = useState(-1)
   const [playing, setPlaying] = useState(false)
@@ -150,8 +171,13 @@ export function OrgPreviewView({ orgs = SHIPPED_ORGS, memoryCapGb }: OrgPreviewV
         </button>
         <span className="text-[12px] text-muted" data-testid="step">{step >= 0 ? `Step ${step + 1} / ${length}` : ''}</span>
       </div>
+      {loaded && !loaded.ok && (
+        <ul className="flex flex-col gap-1 text-[12px]" aria-label="Org file errors">
+          {loaded.errors.map((e, i) => <li key={i} data-org-error className="text-secondary">{e}</li>)}
+        </ul>
+      )}
       <div className="flex gap-6">
-        {choices.map((c) => <OrgPane key={c.id} choice={c} memoryCapGb={memoryCapGb} step={step} />)}
+        {choices.map((c) => <OrgPane key={c.id} choice={c} options={options} step={step} />)}
       </div>
     </div>
   )
