@@ -2671,12 +2671,19 @@ def run_after(effects, base=None):
 		if arg not in closed:
 			closed.append(arg)
 	live = live_rows() or {}
-	offers = [o for nid in closed for o in worktree_offers(snap, nid, live, base)]
-	if failed or offers:
+	retires, offers = [], []
+	for nid in closed:
+		r, o = fermer_worktrees(snap, nid, live, base)
+		retires += r
+		offers += o
+	if failed or retires or offers:
 		with tx(base) as st:
 			for nid in failed:
 				with contextlib.suppress(Refus):
 					find(st, 'needs', nid)['closeFailed'] = True
+			for nid, path, branch in retires:
+				note(find(st, 'needs', nid), f'worktree {os.path.basename(path)} retiré (propre, '
+				     + ('branche gardée)' if branch else 'aucun commit perdu)'), 'régisseur')
 			for nid, path, branch in offers:
 				n, _ = add_need(st, 'human', f'Supprimer le worktree {os.path.basename(path)} (branche {branch} mergée) ?',
 				                ref=f'wt:{path}', owner=OWNER_HUMAIN, source=nid)
@@ -2691,20 +2698,40 @@ def worktree_ok(repo, path, branch):
 	return bool(repo and code == 0 and code2 == 0 and not dirty.strip() and pr_mergee(repo, branch, tip.strip()))
 
 
-def worktree_offers(snap, nid, live, base=None):
-	"""Worktrees du besoin (nom « <besoin>-<rôle> », voir le skill) à proposer à l'humain : [(besoin, chemin, branche)].
-	Jamais tant qu'un panneau vivant du besoin existe, jamais supprimés ici."""
+def fermer_worktrees(snap, nid, live, base=None):
+	"""Worktrees du besoin (nom « <besoin>-<rôle> », voir le skill) : ([retirés], [à proposer à l'humain]), listes de
+	(besoin, chemin, branche). Jamais tant qu'un panneau vivant du besoin existe. Avec worktrees.auto (défaut oui), un
+	worktree sans rien de modifié ni de non suivi est retiré par git sans --force (sa branche reste ; un détaché seulement
+	si une branche locale ou origin/main porte son commit). Les autres : carte seulement si une PR mergée le prouve."""
 	need = next((n for n in snap['needs'] if n['id'] == nid), None)
 	if not need or any(p in live for p in need['panels']):
-		return []
-	found = worktrees_du_besoin(nid, base)
-	repo = gh_repo(snap) if found else None
-	return [(nid, p, b) for p, b in found if worktree_ok(repo, p, b)]
+		return [], []
+	found = worktrees_du_besoin(nid, base, detaches=True)
+	if not found:
+		return [], []
+	auto = valeurs(snap)['worktrees.auto'] == 'oui'
+	repo = gh_repo(snap)
+	retires, offers = [], []
+	for p, b in found:
+		if auto and not worktree_sale(p) and (b or worktree_porte(p)) \
+				and RUN(['git', '-C', base or root(), 'worktree', 'remove', p])[0] == 0:
+			retires.append((nid, p, b))
+		elif b and worktree_ok(repo, p, b):
+			offers.append((nid, p, b))
+	return retires, offers
 
 
-def worktrees_du_besoin(nid, base=None):
+def worktree_porte(path):
+	"""Le commit d'un worktree détaché est porté par une branche locale ou origin/main : le retirer ne perd rien."""
+	code, out, _ = RUN(['git', '-C', path, 'for-each-ref', '--contains', 'HEAD', '--count=1', '--format=%(refname)',
+	                    'refs/heads', 'refs/remotes/origin/main'])
+	return code == 0 and bool(out.strip())
+
+
+def worktrees_du_besoin(nid, base=None, detaches=False):
 	"""[(chemin, branche)] des worktrees du besoin : dans <racine>/.cate/worktrees/, nommés « <besoin>-<rôle> » (voir le
-	skill) ; un worktree d'un autre dossier ou d'un autre besoin (n12-… pour n1) n'en est jamais."""
+	skill) ; un worktree d'un autre dossier ou d'un autre besoin (n12-… pour n1) n'en est jamais. detaches : ceux sans
+	branche en font partie, avec la branche vide."""
 	base = base or root()
 	code, out, _ = RUN(['git', '-C', base, 'worktree', 'list', '--porcelain'])
 	if code != 0:
@@ -2714,7 +2741,7 @@ def worktrees_du_besoin(nid, base=None):
 	for block in out.strip().split('\n\n')[1:]:  # le premier est le dépôt principal
 		f = dict(line.split(' ', 1) for line in block.splitlines() if ' ' in line)
 		path, branch = f.get('worktree'), (f.get('branch') or '').removeprefix('refs/heads/')
-		if (path and branch and re.fullmatch(rf'{re.escape(nid)}-[\w.-]+', os.path.basename(path))
+		if (path and (branch or detaches) and re.fullmatch(rf'{re.escape(nid)}-[\w.-]+', os.path.basename(path))
 				and os.path.realpath(os.path.dirname(path)) == dossier):
 			found.append((path, branch))
 	return found

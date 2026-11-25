@@ -3340,12 +3340,18 @@ class Menage(Base):
 		self.assertFalse(self.run.ran('cate', 'panel', 'close'))
 
 	# C
-	def worktrees(self, merged=True, clean=True, name='n1-impl', branch='feat/x', oid='b'):
-		"""Preuve positive = une PR mergée dont la tête est le SHA de la branche (b) ; « git branch --merged » ne prouve rien."""
+	def worktrees(self, merged=True, clean=True, name='n1-impl', branch='feat/x', oid='b', auto=False, reachable=True):
+		"""Preuve positive = une PR mergée dont la tête est le SHA de la branche (b) ; « git branch --merged » ne prouve rien.
+		auto=False coupe worktrees.auto : seules les cartes Supprimer ou Garder sont alors proposées. branch=None : détaché."""
 		self.wt = os.path.join(self.tmp, '.cate', 'worktrees', name)
 		r = self.tmp
+		tete = f'branch refs/heads/{branch}' if branch else 'detached'
 		self.run.reply(['git', '-C', r, 'worktree', 'list'],
-		               f'worktree {r}\nHEAD a\nbranch refs/heads/main\n\nworktree {self.wt}\nHEAD b\nbranch refs/heads/{branch}\n')
+		               f'worktree {r}\nHEAD a\nbranch refs/heads/main\n\nworktree {self.wt}\nHEAD b\n{tete}\n')
+		self.run.reply(['git', '-C', self.wt, 'for-each-ref'], 'refs/heads/main\n' if reachable else '')  # branches qui portent HEAD
+		if not auto:
+			with agence.tx() as st:
+				st['ponctuel']['worktrees.auto'] = 'non'
 		self.run.reply(['git', '-C', r, 'branch', '--merged'], f"main\n{branch}\n")  # branche neuve : tip = base
 		self.run.reply(['git', '-C', self.wt, 'rev-parse'], 'b\n')
 		self.run.reply(['git', '-C', self.wt, 'status'], '' if clean else ' M a.py\n')
@@ -3379,6 +3385,60 @@ class Menage(Base):
 	def test_worktree_modifie_sans_proposition(self):
 		self.worktrees(clean=False)
 		self.assertEqual(self.close_n1(), [])
+
+	# fermeture automatique : worktrees.auto (défaut oui)
+	def retires(self):
+		return [c for c, _ in self.run.calls if 'worktree' in c and 'remove' in c]
+
+	def test_auto_retire_un_worktree_propre_sans_force_et_le_dit(self):
+		self.worktrees(auto=True)
+		self.assertEqual(self.close_n1(), [])  # plus de carte : c'est fait
+		self.assertEqual(self.retires(), [['git', '-C', self.tmp, 'worktree', 'remove', self.wt]])
+		self.assertFalse([c for c, _ in self.run.calls if c[:4] == ['git', '-C', self.tmp, 'branch']])  # branche gardée
+		textes = [j['text'] for j in agence.find(self.state(), 'needs', 'n1')['journal']]
+		self.assertIn('worktree n1-impl retiré (propre, branche gardée)', textes)
+
+	def test_auto_retire_aussi_sans_pr(self):
+		self.worktrees(auto=True, merged=False)
+		self.close_n1()
+		self.assertEqual(len(self.retires()), 1)
+
+	def test_auto_garde_un_worktree_modifie(self):
+		self.worktrees(auto=True, clean=False)
+		self.close_n1()
+		self.assertEqual(self.retires(), [])
+
+	def test_auto_garde_si_git_refuse(self):
+		self.worktrees(auto=True)
+		self.run.reply(['git', '-C', self.tmp, 'worktree', 'remove'], '', code=1, err='contains untracked files')
+		self.close_n1()
+		self.assertNotIn('retiré', ' '.join(j['text'] for j in agence.find(self.state(), 'needs', 'n1').get('journal', [])))
+
+	def test_auto_detache_retire_si_son_commit_est_porte_par_une_branche(self):
+		self.worktrees(auto=True, branch=None)
+		self.close_n1()
+		self.assertEqual(len(self.retires()), 1)
+
+	def test_auto_detache_garde_si_commit_orphelin(self):
+		self.worktrees(auto=True, branch=None, reachable=False)
+		self.close_n1()
+		self.assertEqual(self.retires(), [])
+
+	def test_auto_coupe_garde_la_carte_et_ne_retire_rien(self):
+		self.worktrees(auto=False)
+		self.assertEqual(len(self.close_n1()), 1)
+		self.assertEqual(self.retires(), [])
+
+	def test_auto_attend_la_fin_des_panneaux_du_besoin(self):
+		self.worktrees(auto=True)
+		self.run.reply(['cate', 'panel', 'list'], [{'panelId': 't1', 'type': 'terminal', 'title': '#n1 impl'}])
+		self.close_n1()
+		self.assertEqual(self.retires(), [])
+
+	def test_auto_ignore_le_worktree_d_un_autre_besoin(self):
+		self.worktrees(auto=True, name='n2-impl')
+		self.close_n1()
+		self.assertEqual(self.retires(), [])
 
 	def test_worktree_d_un_autre_besoin_sans_proposition(self):
 		self.worktrees(name='n2-impl')
