@@ -268,6 +268,54 @@ class Evenements(Base):
 		self.assertEqual(len(self.cartes()), 1)
 
 
+class EchecDeFermeture(Base):
+	"""FR-022 : un même besoin qui échoue à se fermer une 2e fois en 24 h pose la carte, qui le nomme ; deux besoins ne s'additionnent pas."""
+	REFUS = 'cate: cate.panel.close: claude is running in #n3 implémenteur; pass --discard to close it anyway'
+
+	def setUp(self):
+		super().setUp()
+		self.booted()
+		self.run.reply(['cate', 'agent', 'list'], [{'panelId': p, 'state': 'running', 'canReceivePrompt': False} for p in ('p1', 'p2')])
+		self.run.reply(['cate', 'panel', 'close'], '', code=1, err=self.REFUS)
+
+	def besoin(self, titre, panel):
+		with agence.tx() as st:
+			return agence.add_need(st, 'task', titre, panels=[panel])[0]['id']
+
+	def echec(self, nid, panel):
+		agence.run_after([('close', panel, nid)])
+
+	def cartes(self):
+		return [q for q in self.state()['questions'] if q.get('setup') == 'ajuster']
+
+	def test_un_seul_echec_ne_pose_rien(self):
+		nid = self.besoin('Migrer la base', 'p1')
+		self.echec(nid, 'p1')
+		self.assertTrue(self.state()['needs'][0]['closeFailed'])
+		self.assertEqual(self.cartes(), [])
+
+	def test_le_deuxieme_echec_du_meme_besoin_pose_la_carte_qui_le_nomme(self):
+		nid = self.besoin('Migrer la base', 'p1')
+		self.echec(nid, 'p1')
+		self.echec(nid, 'p1')
+		(q,) = self.cartes()
+		self.assertIn('Migrer la base', q['phrase'])
+		self.assertEqual([o['label'] for o in q['options']], ['Ouvrir avec la phrase', 'Ignorer'])
+
+	def test_deux_besoins_distincts_ne_s_additionnent_pas(self):
+		a, b = self.besoin('Migrer la base', 'p1'), self.besoin('Refaire le menu', 'p2')
+		self.echec(a, 'p1')
+		self.echec(b, 'p2')
+		self.assertEqual(self.cartes(), [])
+
+	def test_anti_spam_inchange_et_aucune_politique_ecrite(self):
+		a, b = self.besoin('Migrer la base', 'p1'), self.besoin('Refaire le menu', 'p2')
+		for nid, panel in ((a, 'p1'), (a, 'p1'), (b, 'p2'), (b, 'p2')):
+			self.echec(nid, panel)
+		self.assertEqual(len(self.cartes()), 1)  # une carte ouverte à la fois
+		self.assertFalse(os.path.exists(pratiques.fichier_projet(self.tmp)))
+
+
 class Skills(unittest.TestCase):
 	"""FR-020 : les skills appellent la détection au lieu de renvoyer à la main ; le plafond de taille tient."""
 

@@ -2858,7 +2858,9 @@ def run_after(effects, base=None):
 		with tx(base) as st:
 			for nid in failed:
 				with contextlib.suppress(Refus):
-					find(st, 'needs', nid)['closeFailed'] = True
+					n = find(st, 'needs', nid)
+					n['closeFailed'] = True
+					evenement(st, f'closeFailed:{nid}', f"le besoin « {n['title']} » échoue une deuxième fois à se fermer en 24 h : revoir la fermeture ou la livraison ?")
 			for nid, path, branch in retires:
 				note(find(st, 'needs', nid), f'worktree {os.path.basename(path)} retiré (propre, '
 				     + ('branche gardée)' if branch else 'aucun commit perdu)'), 'régisseur')

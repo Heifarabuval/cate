@@ -2420,7 +2420,7 @@ a remark that touches the setup goes to the **detection** (`agence setup --detec
 "<phrase>"`, `tools/agence/detection.py`), automatic and without a click only up to a
 card. A deterministic rule decides first (a word of change and a word of setting, or
 a schema key; the local model only breaks a tie, never a paid one); the regisseur
-feeds it too (a second abandoned need, refused merge or reached cap within 24 h, an
+feeds it too (a second abandoned need, refused merge, reached cap or failed close of the same need within 24 h, an
 answered `agence ask` that changes a practice). It puts a card « Ajuster le setup ? »
 (« Ouvrir avec la phrase », « Ignorer ») in the validation box: one open at a time,
 never twice the same phrase, three an hour at most. Only the « Ouvrir avec la phrase »
