@@ -7,6 +7,7 @@ import { composeSettings, type ComposedSettings, type SettingsTable } from '@ker
 import { appearanceSettings, shortcutSettings } from '@kernel/interaction/contract/settings'
 import { cateApiSettings } from '@kernel/api/contract/settings'
 import { runtimeSettings } from '@runtime/daemon/contract/settings'
+import { powerSettings } from '@runtime/power/contract/settings'
 import { relationLabelSettings, relationSettings } from '@workspace/relations/contract/settings'
 import { repositorySettings } from '@workspace/repository/contract/settings'
 import { notificationSettings } from '@workspace/notifications/contract/settings'
@@ -21,6 +22,7 @@ export const SHARED_SETTINGS_SLICES = [
   shortcutSettings,
   cateApiSettings,
   runtimeSettings,
+  powerSettings,
   relationLabelSettings,
   relationSettings,
   repositorySettings,

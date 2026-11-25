@@ -5,6 +5,7 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { RpcError, type ChannelEvent } from '@kernel/rpc/contract'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
+import type { AgentCapacity } from '../contract/capacity'
 import { isKeepAwakeDuration, type KeepAwakeDuration, type PowerState, type powerCapability } from '../contract'
 
 export interface HelperCommand {
@@ -171,8 +172,9 @@ export function createPowerService(deps: PowerDeps): PowerService {
   }
 }
 
-export function powerCapabilityImpl(service: PowerService): CapabilityImpl<typeof powerCapability> {
+export function powerCapabilityImpl(service: PowerService, capacity: () => Promise<AgentCapacity>): CapabilityImpl<typeof powerCapability> {
   return {
+    capacity: () => capacity(),
     get: () => service.state(),
     set: ({ duration }) => service.set(duration),
     subscribe(_params, sink) {
