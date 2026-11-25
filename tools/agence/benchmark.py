@@ -12,7 +12,7 @@ Usage : python3 benchmark.py [--racine R] [--specs S] [--depot D] COMMANDE
   fini ISSUE BRAS     horodate et lance l'arbitre : vert, rouge, non lançable ; le 4e rouge donne échec
   machine ISSUE BRAS  marque qu'un orchestrateur va envoyer un message ou lancer `fini` : à poser juste avant, pour que
                       ce geste ne compte pas comme du temps actif de l'humain (30 s après la marque, au plus)
-  controle ISSUE BRAS contamination : appels d'outil des journaux du clone qui citent la PR d'origine ou le dépôt D
+  controle ISSUE BRAS contamination : appels d'outil des journaux du clone (écrits depuis prepare) qui citent la PR, son sha ou le checkout D
   mesure ISSUE BRAS [--usage-json F]  résultat en nombres dans S/resultats/ISSUE-BRAS.json (F : `cate agent usage --json`)
   revue               revue à l'aveugle des diffs (ordre tiré par la graine), remarques saisies au clavier
   rapport             verdict de couche 1 contre S/seuil.json commité, écrit dans S/rapport-benchmark.md ;
@@ -203,7 +203,7 @@ def prepare(a):
 	enonce = os.path.join(a.racine, nom(a) + '.md')
 	with open(enonce, 'w', encoding='utf-8') as f:
 		f.write(enonce_issue(a.depot, sel['depot'], a.issue))
-	ecrire(etat_path(a), {'issue': a.issue, 'bras': a.bras, 'dependances': deps, 'debut': None, 'finis': []})
+	ecrire(etat_path(a), {'issue': a.issue, 'bras': a.bras, 'dependances': deps, 'prepare': maintenant(), 'debut': None, 'finis': []})
 	harnais = poser_harnais(a)
 	print('clone : %s\nénoncé : %s\ndépendances : %s\nharnais : python3 %s' % (clone, enonce, deps, harnais))
 	if deps == 'à installer':
@@ -306,15 +306,16 @@ def machine(a):
 
 
 def motifs(depot, checkout, v):
-	"""depot : nom GitHub ; checkout : chemin local du dépôt d'origine, qui contient la solution."""
+	"""checkout : chemin local du dépôt d'origine, qui contient la solution. Le nom GitHub n'est pas un motif : le flux normal
+	(brief, `agence draft pr:`, `cate agent send`) le cite (#258)."""
 	chemins = {os.path.abspath(checkout), os.path.realpath(checkout)}
-	return [re.compile(re.escape(depot), re.I), re.compile(r'/pull/%d\b' % v['pr']),
+	return [re.compile(r'/pull/%d\b' % v['pr']),
 		re.compile(r'\bgh\s+pr\b.*\b%d\b' % v['pr'], re.S), re.compile(r'\b' + re.escape(v['head'][:7]))] + [
 		re.compile(re.escape(c) + r'(?![\w.-])') for c in chemins]
 
 
 def contamination(chemins, depot, checkout, v):
-	"""Nombre d'appels d'outil (dédoublonnés par id) qui citent le dépôt d'origine, son checkout, la PR ou son sha (FR-008)."""
+	"""Nombre d'appels d'outil (dédoublonnés par id) qui citent le checkout d'origine, la PR ou son sha (FR-008)."""
 	res, vus = motifs(depot, checkout, v), set()
 	for p in chemins:
 		for _, m, _ in attente_mesure.evenements(p):
@@ -330,6 +331,11 @@ def dossiers_du_clone(a):
 	return dossiers_de(os.path.join(a.racine, nom(a)))
 
 
+def depuis_prepare(a):
+	"""Instant de `prepare` : un clone refait au même chemin partage son dossier de journaux avec l'essai d'avant (#258)."""
+	return attente_mesure.instant(lire(etat_path(a)).get('prepare')) if os.path.isfile(etat_path(a)) else None
+
+
 def dossiers_de(clone):
 	"""Dossiers de journaux Claude Code du clone et de ses worktrees."""
 	base = os.path.join(os.path.expanduser('~'), '.claude', 'projects')
@@ -339,7 +345,7 @@ def dossiers_de(clone):
 
 def controle(a):
 	v, sel = rejeu(a)
-	chemins = attente_mesure.journaux(dossiers_du_clone(a))
+	chemins = attente_mesure.journaux(dossiers_du_clone(a), depuis=depuis_prepare(a))
 	n = contamination(chemins, sel['depot'], a.depot, v)
 	print('invalide : %d appel(s) d\'outil citent la PR d\'origine' % n if n else
 		'valide : aucun appel d\'outil ne cite la PR d\'origine (%d journaux lus)' % len(chemins))
@@ -420,13 +426,13 @@ def mesure(a):
 	if a.usage_json:
 		with open(a.usage_json, encoding='utf-8') as f:
 			panneaux = json.load(f)
-	m = attente_mesure.mesurer(dossiers, panneaux)
+	m = attente_mesure.mesurer(dossiers, panneaux, depuis=depuis_prepare(a))
 	st, ts_clics = clics(clone)
 	regisseur = None
 	if panneaux is not None:
 		reg = st.get('panels', {}).get('regisseur')
 		regisseur = attente_mesure.mesurer(dossiers, [p for p in panneaux if p.get('panelId') == reg])['jetons_total']
-	finis, chemins = etat['finis'], attente_mesure.journaux(dossiers)
+	finis, chemins = etat['finis'], attente_mesure.journaux(dossiers, depuis=depuis_prepare(a))
 	n = contamination(chemins, sel['depot'], a.depot, v)
 	acheve = bool(etat['debut'] and finis and ouvert(a) != nom(a))
 	ta = mur = humains = None

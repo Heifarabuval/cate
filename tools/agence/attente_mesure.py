@@ -139,14 +139,15 @@ def resume(acc, sessions):
 	}
 
 
-def journaux(dossiers, days=None):
+def journaux(dossiers, days=None, depuis=None):
 	"""Chemins des journaux de chaque dossier, triés ; Refus si l'un sort de son dossier."""
 	chemins = []
 	for dossier in dossiers:
 		for nom in sorted(os.listdir(dossier)):
 			if nom.endswith('.jsonl'):
 				p = journal(dossier, nom[:-6])
-				if p and (days is None or os.stat(p).st_mtime >= time.time() - days * 86400):
+				if p and (days is None or os.stat(p).st_mtime >= time.time() - days * 86400) \
+						and (depuis is None or os.stat(p).st_mtime >= depuis):
 					chemins.append(p)
 	return chemins
 
@@ -157,10 +158,10 @@ def dossiers_du_prefixe(base, prefixe):
 		if (n == prefixe or n.startswith(prefixe + '-')) and os.path.isdir(os.path.join(base, n))]
 
 
-def mesurer(dossiers, panneaux=None, days=None):
+def mesurer(dossiers, panneaux=None, days=None, depuis=None):
 	sessions = {'lues': 0, 'non_lues': 0, 'non_mesurees': 0}
 	if panneaux is None:
-		chemins = journaux(dossiers, days)
+		chemins = journaux(dossiers, days, depuis)
 	else:
 		chemins = []
 		for pan in panneaux:

@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 
@@ -304,6 +305,21 @@ class Rejeu(DepotJetable):
 		self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 		self.assertIn('valide', r.stdout)
 
+	def test_journaux_d_un_essai_precedent_ignores(self):
+		"""#258 : un clone refait au même chemin partage son dossier de journaux avec l'essai d'avant : seuls les journaux
+		écrits depuis `prepare` comptent, pour `controle` comme pour `mesure`."""
+		self.assertEqual(self.run_('prepare', '50', 'nu').returncode, 0)
+		ligne = {'type': 'assistant', 'timestamp': '2026-11-20T10:00:05Z', 'message': {'id': 'm1', 'role': 'assistant',
+			'content': [{'type': 'tool_use', 'id': 't1', 'name': 'Bash', 'input': {'command': 'gh pr view 150'}}]}}
+		vieux = os.path.join(self.home, '.claude', 'projects', encoder(self.clone), 'ancien.jsonl')
+		ecrire(vieux, json.dumps(ligne) + '\n')
+		os.utime(vieux, (time.time() - 3600, time.time() - 3600))
+		r = self.run_('controle', '50', 'nu')
+		self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+		self.assertIn('0 journaux lus', r.stdout)
+		ecrire(os.path.join(os.path.dirname(vieux), 'neuf.jsonl'), json.dumps(ligne) + '\n')
+		self.assertEqual(self.run_('controle', '50', 'nu').returncode, 1)
+
 	def test_dependances_clonees_si_lockfile_identique(self):
 		r = self.run_('prepare', '50', 'nu')
 		self.assertEqual(r.returncode, 0, r.stderr)
@@ -506,7 +522,7 @@ class Contamination(Banc):
 		return self.run_('controle', '2', 'outil')
 
 	def test_appels_fautifs_invalident(self):
-		for cmd in ('gh repo view exemple/depot', 'curl https://github.com/x/y/pull/102',
+		for cmd in ('curl https://github.com/x/y/pull/102',
 				'gh pr view 102', 'git show %s' % self.v['head'][:7], 'git show %s' % self.v['head']):
 			with self.subTest(cmd=cmd):
 				shutil.rmtree(self.projets, ignore_errors=True)
@@ -516,6 +532,13 @@ class Contamination(Banc):
 				self.assertIn('invalide', r.stdout)
 				self.assertIn('1 appel', r.stdout)
 				self.assertNotIn(cmd, r.stdout + r.stderr)
+
+	def test_nom_du_depot_seul_ne_contamine_pas(self):
+		"""#258 : le flux normal du bras outil cite le dépôt (brief, `agence draft pr:`, `cate agent send`) : pas la PR."""
+		self.journal('agence draft new --cible pr:exemple/depot:main:fix/x - && gh repo view exemple/depot')
+		r = self.controle()
+		self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+		self.assertIn('valide', r.stdout)
 
 	def test_chemin_du_depot_cite_invalide(self):
 		self.journal('git -C %s log --all' % self.depot)
