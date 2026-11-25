@@ -185,16 +185,16 @@ describe('AgenceSession', () => {
     expect(first.stored()).toEqual({ knownTitles: {} })
   })
 
-  it('lets the panel close during the first questions of a new workspace (no PTY yet), and asks once the orchestrator runs (F27)', async () => {
-    const firstQuestions = state({ pratiques: { preset: 'dev', valeurs: {}, sources: {}, erreur: null, projet: false } } as Partial<AgenceState>)
-    const fresh = setup({ files: { state: firstQuestions, readAt: 't' } })
+  it('lets the panel close during the setup of a new workspace (no PTY yet), and asks once the orchestrator runs (F27)', async () => {
+    const heldBySetup = state({ pratiques: { preset: 'dev', valeurs: {}, sources: {}, erreur: null, projet: false } } as Partial<AgenceState>)
+    const fresh = setup({ files: { state: heldBySetup, readAt: 't' } })
     await fresh.session.start()
     expect(fresh.terminal.spawns).toEqual([])
     expect(fresh.session.closeBlocker()).toBeNull()
     // A workspace opened before the feature: the orchestrator already runs while the questions show.
     const running = setup({ files: { state: state(), readAt: 't' } })
     await running.session.start()
-    running.files.set({ state: firstQuestions })
+    running.files.set({ state: heldBySetup })
     expect(running.session.closeBlocker()).toMatchObject({ code: 'dirty' })
   })
 
@@ -501,82 +501,85 @@ describe('AgenceSession', () => {
     })
   })
 
-  describe('first questions (spec 008, lot 4)', () => {
+  describe('setup agent (spec 015, lot 1)', () => {
     const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
     const policy = (patch: Record<string, unknown> = {}) => ({ ...vueReglages, valeurs: {}, sources: { preset: 'défaut' }, ...patch })
     const withPolicy = (patch: Record<string, unknown>, options: Parameters<typeof setup>[0] = {}) =>
       setup({ ...options, files: { state: state({ pratiques: policy(patch) } as unknown as Partial<AgenceState>), readAt: 't' } })
+    const opened = { path: '/setup/ouvrir', form: { panneau: 'ag1' } }
 
-    it('starts the regisseur but not the orchestrator while the project has no settings file', async () => {
-      const { session, terminal, regisseurs } = withPolicy({ projet: false })
+    it('starts the regisseur but not the orchestrator while the project has no settings file, and asks for the setup agent once', async () => {
+      const { session, terminal, regisseurs, files } = withPolicy({ projet: false })
       await session.start()
       expect(regisseurs.acquired).toHaveLength(1)
       expect(terminal.spawns).toEqual([])
       expect(snap(session).pratiques?.projet).toBe(false)
+      await vi.waitFor(() => expect(regisseurs.posts).toEqual([opened]))
+      // A new snapshot each second does not open a second agent.
+      files.set({ readAt: 't2' })
+      files.set({ readAt: 't3' })
+      expect(regisseurs.posts).toEqual([opened])
     })
 
-    it('writes every answer in one POST, then starts the orchestrator', async () => {
-      const { session, terminal, regisseurs } = withPolicy({ projet: false })
-      await session.start()
-      await expect(op(session, { kind: 'pratique.questions', reponses: { 'livraison.mode': 'main', 'agents.max': 2 } })).resolves.toEqual({ ok: true })
-      expect(regisseurs.posts).toEqual([{ path: '/pratiques/set', form: { cle: ['livraison.mode', 'agents.max'], valeur: ['"main"', '2'] } }])
-      expect(terminal.spawns).toEqual([expect.objectContaining({ launch: { kind: 'agents.start', params: { agentId: 'claude-code', prompt: '/orchestrateur' } } })])
+    it('asks for no setup agent when the project has its file, or when the CLI says nothing of it', async () => {
+      const done = withPolicy({ projet: true })
+      await done.session.start()
+      const old = setup({ files: { state: state({ pratiques: { preset: 'neutre', valeurs: {}, sources: {}, erreur: null } } as Partial<AgenceState>), readAt: 't' } })
+      await old.session.start()
+      expect(done.regisseurs.posts).toEqual([])
+      expect(old.regisseurs.posts).toEqual([])
     })
 
-    it('« Passer » writes the default preset, then starts the orchestrator', async () => {
+    it('asks again when the regisseur came back from a stop', async () => {
+      const { session, regisseurs } = withPolicy({ projet: false })
+      await session.start()
+      await vi.waitFor(() => expect(regisseurs.posts).toHaveLength(1))
+      regisseurs.set({ state: 'stopped', error: null })
+      regisseurs.set({ state: 'running' })
+      await vi.waitFor(() => expect(regisseurs.posts).toEqual([opened, opened]))
+    })
+
+    it('« Passer » writes the default preset, closes the setup agent, then starts the orchestrator', async () => {
       const { session, terminal, regisseurs } = withPolicy({ projet: false })
       await session.start()
-      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toEqual({ ok: true })
-      expect(regisseurs.posts).toEqual([{ path: '/pratiques/preset', form: { nom: 'neutre' } }])
+      await vi.waitFor(() => expect(regisseurs.posts).toHaveLength(1))
+      await expect(op(session, { kind: 'setup.passer' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts.slice(1)).toEqual([{ path: '/pratiques/preset', form: { nom: 'neutre' } }, { path: '/setup/fermer', form: {} }])
       expect(terminal.spawns).toHaveLength(1)
     })
 
-    it('starts nothing when the regisseur refuses the answers', async () => {
+    it('« Passer » starts nothing when the regisseur refuses', async () => {
       const { session, terminal, regisseurs } = withPolicy({ projet: false })
       await session.start()
-      regisseurs.answer(async () => ({ code: 400, message: 'Agents en même temps : entre 1 et 16.' }))
-      await expect(op(session, { kind: 'pratique.questions', reponses: { 'agents.max': 40 } })).resolves.toMatchObject({ ok: false, error: 'invalid' })
+      await vi.waitFor(() => expect(regisseurs.posts).toHaveLength(1))
+      regisseurs.answer(async () => ({ code: 400, message: 'Refusé.' }))
+      await expect(op(session, { kind: 'setup.passer' })).resolves.toMatchObject({ ok: false, error: 'invalid' })
       expect(terminal.spawns).toEqual([])
     })
 
-    it('refuses an answer to a key the regisseur did not publish, without posting', async () => {
-      const { session, regisseurs } = withPolicy({ projet: false })
-      await session.start()
-      await expect(op(session, { kind: 'pratique.questions', reponses: { inconnue: 1 } })).resolves.toMatchObject({ ok: false, error: 'invalid' })
-      expect(regisseurs.posts).toEqual([])
-    })
-
-    it('launches at once when the project has its file, or when the CLI says nothing of it', async () => {
-      const done = withPolicy({ projet: true })
-      await done.session.start()
-      expect(done.terminal.spawns).toHaveLength(1)
-      const old = setup({ files: { state: state({ pratiques: { preset: 'neutre', valeurs: {}, sources: {}, erreur: null } } as Partial<AgenceState>), readAt: 't' } })
-      await old.session.start()
-      expect(old.terminal.spawns).toHaveLength(1)
-    })
-
-    it('a second answer after the end has no effect: no POST, no second orchestrator', async () => {
+    it('a second « Passer » after the end has no effect: no POST, no second orchestrator', async () => {
       const { session, terminal, regisseurs } = withPolicy({ projet: false })
       await session.start()
-      await op(session, { kind: 'pratique.questions', passer: true })
-      await expect(op(session, { kind: 'pratique.questions', reponses: { 'agents.max': 3 } })).resolves.toMatchObject({ ok: false, error: 'conflict' })
-      expect(regisseurs.posts).toHaveLength(1)
+      await op(session, { kind: 'setup.passer' })
+      const posts = regisseurs.posts.length
+      await expect(op(session, { kind: 'setup.passer' })).resolves.toMatchObject({ ok: false, error: 'conflict' })
+      expect(regisseurs.posts).toHaveLength(posts)
       expect(terminal.spawns).toHaveLength(1)
     })
 
-    it('answers the questions published after the orchestrator already started (workspace opened before the feature)', async () => {
+    it('« Passer » of a workspace opened before the feature (the orchestrator already runs) writes the preset only', async () => {
       const old = { preset: 'neutre', valeurs: {}, sources: {}, erreur: null }
       const { session, terminal, regisseurs, files } = setup({ files: { state: state({ pratiques: old } as Partial<AgenceState>), readAt: 't' } })
       await session.start()
       expect(terminal.spawns).toHaveLength(1)
       files.set({ state: state({ pratiques: policy({ projet: false }) } as unknown as Partial<AgenceState>), readAt: 't2' })
-      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toEqual({ ok: true })
-      expect(regisseurs.posts).toEqual([{ path: '/pratiques/preset', form: { nom: 'neutre' } }])
+      await expect(op(session, { kind: 'setup.passer' })).resolves.toEqual({ ok: true })
+      expect(regisseurs.posts.map((post) => post.path)).toContain('/pratiques/preset')
       expect(terminal.spawns).toHaveLength(1)
-      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toMatchObject({ ok: false, error: 'conflict' })
+      await expect(op(session, { kind: 'setup.passer' })).resolves.toMatchObject({ ok: false, error: 'conflict' })
     })
 
-    it('starts the orchestrator when another client answered (the file now exists)', async () => {
+    it('starts the orchestrator when the card was applied (the file now exists)', async () => {
       const { session, terminal, files } = withPolicy({ projet: false })
       await session.start()
       files.set({ state: state({ pratiques: policy({ projet: true }) } as unknown as Partial<AgenceState>) })
@@ -585,12 +588,13 @@ describe('AgenceSession', () => {
       expect(terminal.spawns).toHaveLength(1)
     })
 
-    it('waits for the regisseur\'s first state before deciding, then asks', async () => {
-      const { session, terminal, files } = setup({ files: { state: null } })
+    it('waits for the regisseur\'s first state before deciding', async () => {
+      const { session, terminal, files, regisseurs } = setup({ files: { state: null } })
       await session.start()
       expect(terminal.spawns).toEqual([])
       files.set({ state: state({ pratiques: policy({ projet: false }) } as unknown as Partial<AgenceState>), readAt: 't' })
       expect(terminal.spawns).toEqual([])
+      await vi.waitFor(() => expect(regisseurs.posts).toEqual([opened]))
       files.set({ state: state({ pratiques: policy({ projet: true }) } as unknown as Partial<AgenceState>) })
       await vi.waitFor(() => expect(terminal.spawns).toHaveLength(1))
     })
@@ -598,11 +602,12 @@ describe('AgenceSession', () => {
     it('writes nothing without the regisseur, and the restart op brings it back with the orchestrator still held', async () => {
       const { session, terminal, regisseurs } = withPolicy({ projet: false })
       await session.start()
+      await vi.waitFor(() => expect(regisseurs.posts).toHaveLength(1))
       regisseurs.set({ state: 'stopped', error: null })
-      await expect(op(session, { kind: 'pratique.questions', passer: true })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
+      await expect(op(session, { kind: 'setup.passer' })).resolves.toMatchObject({ ok: false, error: 'unavailable' })
       await expect(op(session, { kind: 'orchestrator.restart' })).resolves.toEqual({ ok: true })
       expect(regisseurs.restarts()).toBe(1)
-      expect(regisseurs.posts).toEqual([])
+      expect(regisseurs.posts).toHaveLength(1)
       expect(terminal.spawns).toEqual([])
     })
 
@@ -610,6 +615,12 @@ describe('AgenceSession', () => {
       const { session, terminal } = setup({ regisseur: 'missing' })
       await session.start()
       expect(terminal.spawns).toHaveLength(1)
+    })
+
+    it('has no pratique.questions op any more', async () => {
+      const { session } = withPolicy({ projet: false })
+      await session.start()
+      await expect(op(session, { kind: 'pratique.questions', passer: true } as unknown as AgenceOp)).rejects.toThrow()
     })
   })
 

@@ -2394,9 +2394,20 @@ form generated from those fields, knowing no key; each change is a
 answers a refusal in plain words. The view and the session write no file.
 While the state says the project has no settings file (`projet: false`), or
 before the regisseur's first state, the session does not start the
-orchestrator: the view gives the panel to the first questions (the essential
-fields that carry a `question`), and the `pratique.questions` op writes every
-answer in one POST, or the `neutre` preset for « Passer », then starts it.
+orchestrator and asks the regisseur once (`/setup/ouvrir`) to open the **setup
+agent** (spec 015): a Claude agent in a terminal panel of its own (`panels.setup`
+of the CLI's state, one per project, linked to the agence panel, the model of
+`modele.interlocuteur`) that reads the repository, asks only what the reading
+left open and proposes. It writes nothing: `agence pratiques propose` validates
+its proposal (same validation as `pratiques set`, a source for every value, no
+secret) and puts a card « Appliquer ces réglages ? » in the validation box, with
+the diff in plain words (current value, proposed value, source). Only the
+« Appliquer » click writes: the regisseur's `/setup/<card>/appliquer` revalidates
+the card's text and writes the project file through the function the form uses.
+The orga goes through `agence org propose` (spec 011). The view gives the panel to
+the setup (`SetupEnCours`: the cards and « Passer »); the `setup.passer` op writes
+the `neutre` preset, closes the agent (`/setup/fermer`) and starts the orchestrator.
+The agent can be reopened at any time with `agence setup` (nothing is written by it).
 
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a

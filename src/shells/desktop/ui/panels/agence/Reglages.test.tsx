@@ -10,7 +10,7 @@ import Reglages from './Reglages'
 // An invented schema (SC-004): no key, value or label of the real one, so the view
 // can only render what it receives.
 const champ = (patch: Partial<PratiqueChamp>): PratiqueChamp => ({
-  cle: 'foo.bar', nom: 'Couleur du toit', explique: 'La teinte des tuiles.', groupe: 'essentiel', portee: 'workspace', question: null,
+  cle: 'foo.bar', nom: 'Couleur du toit', explique: 'La teinte des tuiles.', groupe: 'essentiel', portee: 'workspace',
   forme: 'valeurs', choix: [{ valeur: 'r', libelle: 'Rouge' }, { valeur: 'b', libelle: 'Bleu' }], bornes: null, vide: null,
   defaut: 'r', valeur: 'r', origine: 'défaut', ...patch,
 })

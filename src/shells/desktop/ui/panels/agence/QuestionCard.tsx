@@ -47,7 +47,7 @@ export default function QuestionCard({ question, send, action: { run, active, er
 
   return (
     <div className="mt-2 flex flex-col gap-2 rounded-lg border border-subtle bg-surface-1 p-2">
-      <div className="break-words text-[12px] font-medium text-primary">{question.question}</div>
+      <div className="whitespace-pre-line break-words text-[12px] font-medium text-primary">{question.question}</div>
       {question.ghUnknown && <div className="text-[11px] text-secondary">état GitHub inconnu</div>}
       {question.options.map((option, index) => {
         // Merger greyed: « Merger quand même » takes the option's place, same card, its reasons right above.

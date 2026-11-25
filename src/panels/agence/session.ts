@@ -5,7 +5,9 @@
 //
 // The orchestrator waits for the regisseur's first state, and while the state
 // says the project has no settings file (`pratiques.projet: false`), for the
-// first questions to end (`pratique.questions`, or a file written elsewhere).
+// setup to end: the session asks the regisseur to open the setup agent (spec 015),
+// which proposes settings on a card; the file written by its « Appliquer » click, or
+// `setup.passer`, ends the wait.
 // At first start the PTY launches Claude Code on `/orchestrateur`; once the
 // panel ran, a start resumes it with the terminal restore launch (the agents
 // service types the stamped session's resume command), so a daemon restart
@@ -37,6 +39,7 @@ import type {
   PratiquesView,
   PratiqueValeur,
   QuestionView,
+  RegisseurView,
   StateNeed,
 } from './contract/types'
 import { draftHash } from './parts/runtime/draftHash'
@@ -84,10 +87,12 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
   /** The orchestrator ran once: titles may now be saved (the saved file is
    *  what makes the next start a resume). */
   private launched = false
-  /** start() ran and the orchestrator is not launched yet (the first questions may hold it). */
+  /** start() ran and the orchestrator is not launched yet (the setup may hold it). */
   private pending = false
-  /** The first questions got their write: a second answer is refused until the state says so too. */
+  /** « Passer » got its write: a second one is refused until the state says so too. */
   private answered = false
+  /** The regisseur was asked to open the setup agent for this wait. */
+  private setupAsked = false
   private resume = false
   private activity: TerminalActivity = { type: 'idle' }
 
@@ -138,7 +143,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
       'fiches.lancer': ({ ids }) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === 'string' && SAFE_ID.test(id))
         ? this.click('/fiches/lancer', { ids: ids.join(',') })
         : Promise.resolve({ ok: false, error: 'invalid' }),
-      'pratique.questions': ({ reponses, passer }) => this.questions(reponses, passer === true),
+      'setup.passer': () => this.passer(),
       // A free answer wins over a choice (as in the regisseur's click()): only the text goes.
       answer: ({ questionId, choice, libre, force }) => this.answer(questionId, libre
         ? { libre }
@@ -219,7 +224,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     return known ? this.click(path, form) : Promise.resolve({ ok: false, error: 'invalid' })
   }
 
-  /** The first questions hold the orchestrator: agence runs and its state says the
+  /** The setup holds the orchestrator: agence runs and its state says the
    *  project has no settings file, or no state was read yet from a regisseur that runs. */
   private held(): boolean {
     const regisseur = this.regisseur?.view().state
@@ -234,24 +239,31 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     await this.spawnOrchestrator(this.resume)
   }
 
-  /** The end of the first questions: one write (every answer, or the default preset), then the launch. */
-  private async questions(reponses: Record<string, PratiqueValeur> | undefined, passer: boolean): Promise<AgenceOpResult> {
-    if (this.answered || this.state.pratiques?.projet !== false) return { ok: false, error: 'conflict', message: 'Les premières questions ont déjà une réponse.' }
-    let result: AgenceOpResult
-    if (passer) {
-      result = await this.click('/pratiques/preset', { nom: PRESET_DEFAUT })
-    } else {
-      const entries = Object.entries(reponses ?? {})
-      const known = new Set(this.state.pratiques.champs?.map((champ) => champ.cle))
-      if (entries.length === 0 || !entries.every(([cle]) => known.has(cle))) return { ok: false, error: 'invalid' }
-      result = await this.click('/pratiques/set', { cle: entries.map(([cle]) => cle), valeur: entries.map(([, valeur]) => JSON.stringify(valeur ?? null)) })
-    }
+  /** « Passer »: the default preset is written (the regisseur's `/pratiques/preset`), the setup agent closes, then the launch. */
+  private async passer(): Promise<AgenceOpResult> {
+    if (this.answered || this.state.pratiques?.projet !== false) return { ok: false, error: 'conflict', message: 'Le setup est déjà terminé.' }
+    const result = await this.click('/pratiques/preset', { nom: PRESET_DEFAUT })
     if (!result.ok) return result
     this.answered = true
+    await this.click('/setup/fermer', {})
     if (!this.pending) return result
     this.pending = false
     await this.spawnOrchestrator(this.resume)
     return result
+  }
+
+  /** While the project has no settings file, asks the regisseur once to open the setup agent, linked to this panel
+   *  (it opens it or reuses the one that runs: a second ask is harmless). Asked again after the regisseur stopped. */
+  private askSetup(regisseur: RegisseurView, projet: boolean | undefined): void {
+    if (regisseur.state !== 'running' || projet !== false) {
+      this.setupAsked = false
+      return
+    }
+    if (this.setupAsked) return
+    this.setupAsked = true
+    void this.click('/setup/ouvrir', { panneau: this.panelId }).then((result) => {
+      if (!result.ok) this.kit.log.warn('opening the setup agent of %s failed: %O', this.panelId, result)
+    })
   }
 
   /** Starts what died: the orchestrator (resumed in a new PTY) and the
@@ -326,6 +338,7 @@ export class AgenceSession extends PanelSession<AgenceSnapshot, AgenceOp> {
     const now = Date.now()
     const pratiques = pratiquesView(state.pratiques)
     if (pratiques?.projet !== false) this.answered = false
+    this.askSetup(regisseur, pratiques?.projet)
     this.publish({
       regisseur,
       suivi: {

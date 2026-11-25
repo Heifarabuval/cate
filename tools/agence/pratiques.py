@@ -312,7 +312,16 @@ def regler_plusieurs(racine, home, paires, dev=None, ponctuel=None):
 	if len(portees) > 1:
 		raise Invalide('réglages de deux fichiers en un envoi', 'Ces réglages ne se changent pas ensemble : un à la fois.')
 
+	reglees = {cle for cle, _ in paires}
+	reste = {k: v for k, v in (ponctuel or {}).items() if k not in reglees}
+	return _modifier(racine, home, portees.pop(), _poser(None, paires), ponctuel=reste)
+
+
+def _poser(preset, paires):
+	"""change(contenu) d'une écriture : le preset d'abord s'il y en a un, puis chaque clé."""
 	def change(contenu):
+		if preset:
+			contenu['preset'] = preset
 		for cle, valeur in paires:
 			tete, fin = _chemin(cle)
 			d = contenu
@@ -321,9 +330,56 @@ def regler_plusieurs(racine, home, paires, dev=None, ponctuel=None):
 					d[t] = {}
 				d = d[t]
 			d[fin] = valeur
-	reglees = {cle for cle, _ in paires}
-	reste = {k: v for k, v in (ponctuel or {}).items() if k not in reglees}
-	return _modifier(racine, home, portees.pop(), change, ponctuel=reste)
+	return change
+
+
+def appliquer(racine, home, preset, paires, ecrire=False, ponctuel=None):
+	"""Spec 015 : une proposition du setup (preset puis clés, fichier du projet). Rend la politique effective qui en
+	résulte ; ecrire=False ne touche à rien (aperçu et diff d'une carte), ecrire=True l'écrit comme le formulaire
+	(`regler_plusieurs` : même verrou, même écriture, même validation). Une clé personnelle est refusée : elle se règle au formulaire."""
+	if not preset and not paires:
+		raise Invalide('aucun réglage reçu', 'Aucun réglage reçu.')
+	sch = schema()
+	for cle, _ in paires:
+		if cle not in sch['cles']:
+			raise Invalide(f'clé inconnue « {cle} »', INCONNU)
+		if sch['cles'][cle]['portee'] != 'workspace':
+			raise Invalide(f'clé « {cle} » personnelle : elle se règle au formulaire, pas par le setup',
+			               f"« {sch['cles'][cle]['nom']} » est personnel : il se change dans les réglages.")
+	if preset and preset not in sch['presets']:
+		raise Invalide(f"preset {preset!r} inconnu ; permis : {', '.join(sch['presets'])}", "Ce modèle de réglages n'existe pas.")
+	reste = {k: v for k, v in (ponctuel or {}).items() if k not in {c for c, _ in paires} | posees_par_preset(preset)}
+	change = _poser(preset, paires)
+	if ecrire:
+		_modifier(racine, home, False, change, ponctuel=reste)
+		return verifier(racine, home, reste)
+	contenu = _lire(fichier_projet(racine)) or {}
+	if not isinstance(contenu, dict):
+		raise Invalide(f'{fichier_projet(racine)} : la racine doit être un objet JSON', ILLISIBLE)
+	change(contenu)
+	return fusionner(sch, _couches(racine, home, (fichier_projet(racine), contenu), reste))
+
+
+def en_mots(spec, v):
+	"""Une valeur en mots simples : le libellé de son choix, la phrase `vide` pour aucune."""
+	if v is None or v == []:
+		return spec.get('vide', 'Aucun')
+	libelles = {cle_choix(x): lib for x, lib in (_choix(spec) or [])}
+	un = lambda x: libelles.get(cle_choix(x), str(x))  # noqa: E731
+	return ', '.join(map(un, v)) if isinstance(v, list) else un(v)
+
+
+def ecarts(avant, apres):
+	"""[(cle, nom, avant en mots, après en mots)] : les clés dont la valeur effective change, le preset en tête."""
+	sch = schema()
+	out = []
+	if avant['preset'] != apres['preset']:
+		noms = {k: p['nom'] for k, p in sch['presets'].items()}
+		out.append(('preset', 'Modèle de réglages', noms[avant['preset']], noms[apres['preset']]))
+	for cle, spec in sch['cles'].items():
+		if avant['valeurs'][cle] != apres['valeurs'][cle]:
+			out.append((cle, spec['nom'], en_mots(spec, avant['valeurs'][cle]), en_mots(spec, apres['valeurs'][cle])))
+	return out
 
 
 def retirer(racine, home, cle, dev=False, ponctuel=None):
@@ -376,7 +432,7 @@ def champs(sch, pol):
 			du_metier = metiers.metier(metiers.charger(), pol['valeurs']['metier'])['connecteurs']
 			choix = [(v, lib) for v, lib in choix if v in du_metier]
 		out.append({'cle': cle, 'nom': spec['nom'], 'explique': spec['explique'], 'groupe': spec['groupe'],
-		            'portee': spec['portee'], 'question': spec.get('question'),
+		            'portee': spec['portee'],
 		            'forme': ('valeurs' if spec.get('un') else 'liste') if forme == 'parmi' else forme,
 		            'choix': None if choix is None else [{'valeur': v, 'libelle': lib} for v, lib in choix],
 		            'bornes': spec.get('entier'), 'vide': spec.get('vide'), 'defaut': defauts.get(cle),

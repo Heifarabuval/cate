@@ -24,11 +24,10 @@ import pratiques  # noqa: E402
 from test_agence import FakeRun  # noqa: E402
 
 NOUVELLES = {'notifications.systeme': 'oui', 'notifications.rappel': 300, 'agents.modele': 'auto', 'agents.effort': 'auto'}
-# Q7 de 008, ordre du schéma ; Q4 de 012 : la question du métier remplace celle de tests, qui reste essentiel.
-QUESTIONS = ['metier', 'livraison.mode', 'verification', 'agents.max']
+# Ordre du schéma. Plus de questions figées (spec 015, FR-013) : l'agent de setup pose les siennes.
 ESSENTIELS = ['metier', 'livraison.mode', 'tests', 'verification', 'agents.max']
 CATALOGUES = os.path.join(HERE, 'fixtures', 'metiers')
-CHAMP = {'cle', 'nom', 'explique', 'groupe', 'portee', 'question', 'forme', 'choix', 'bornes', 'vide', 'defaut', 'valeur',
+CHAMP = {'cle', 'nom', 'explique', 'groupe', 'portee', 'forme', 'choix', 'bornes', 'vide', 'defaut', 'valeur',
          'origine'}
 FIXTURE = os.path.join(HERE, 'fixtures', 'vue-reglages.json')
 
@@ -82,9 +81,9 @@ class Base(unittest.TestCase):
 
 
 def textes(sch):
-	"""Tous les textes montrés à une personne : noms, phrases, libellés, questions, presets, phrases des cohérences."""
+	"""Tous les textes montrés à une personne : noms, phrases, libellés, presets, phrases des cohérences."""
 	for spec in sch['cles'].values():
-		yield from (spec[k] for k in ('nom', 'explique', 'question', 'vide') if k in spec)
+		yield from (spec[k] for k in ('nom', 'explique', 'vide') if k in spec)
 		yield from spec.get('choix', {}).values()
 	for p in sch['presets'].values():
 		yield p['explique']
@@ -103,8 +102,7 @@ class Schema(Base):
 				self.assertIn(spec['groupe'], ('essentiel', 'avance'))
 				self.assertIn(spec['portee'], ('workspace', 'dev'))
 				self.assertNotIn('dit', spec)  # coupe nette : explique remplace dit
-				if spec['groupe'] == 'essentiel' and cle != 'tests':  # Q4 de 012 : tests sans question
-					self.assertTrue(spec.get('question'))
+				self.assertNotIn('question', spec)  # coupe nette (spec 015, FR-013) : l'agent de setup pose les questions
 				if spec.get('nul'):
 					self.assertTrue(spec.get('vide'), 'une valeur vide permise a son libellé')
 
@@ -115,13 +113,9 @@ class Schema(Base):
 				self.assertEqual(sorted(spec.get('choix', {})), sorted(pratiques.cle_choix(v) for v in permis))
 				self.assertTrue(all(spec['choix'].values()) if permis else True)
 
-	def test_trois_a_cinq_questions_dans_l_ordre(self):
-		qs = [k for k, s in self.sch['cles'].items() if s.get('question')]
-		self.assertEqual(qs, QUESTIONS)
-		self.assertTrue(3 <= len(qs) <= 5)
-		self.assertEqual(len(qs), 4)  # 008 SC-006 tenu
+	def test_les_essentiels_dans_l_ordre_et_aucune_question_figee(self):
 		self.assertEqual([k for k, s in self.sch['cles'].items() if s['groupe'] == 'essentiel'], ESSENTIELS)
-		self.assertNotIn('question', self.sch['cles']['tests'])
+		self.assertEqual([k for k, s in self.sch['cles'].items() if 'question' in s], [])
 
 	def test_presets_nommes_valeurs_dessous(self):
 		for nom, p in self.sch['presets'].items():
@@ -205,8 +199,7 @@ class Champs(Base):
 		self.assertEqual((champs['modele.tri']['forme'], champs['modele.tri']['choix']), ('motif', None))
 		self.assertTrue(champs['preuve']['vide'])
 		self.assertIsNone(champs['tests']['vide'])
-		self.assertEqual(champs['verification']['question'], self.sch['cles']['verification']['question'])
-		self.assertIsNone(champs['tests']['question'])  # Q4 de 012 : la question du métier la remplace
+		self.assertNotIn('question', champs['verification'])
 
 	def test_projet_et_nb_projet(self):
 		pub = self.tour()
@@ -285,12 +278,10 @@ class ChampsDuMetier(Base):
 	def champs(self):
 		return {c['cle']: c for c in self.tour()['champs']}
 
-	def test_metier_premiere_question_choix_des_noms(self):
+	def test_metier_choix_des_noms(self):
 		c = self.champs()['metier']
 		self.assertEqual((c['groupe'], c['forme'], c['valeur']), ('essentiel', 'valeurs', 'dev'))
-		self.assertTrue(c['question'])
 		self.assertEqual([x['libelle'] for x in c['choix']], ['Développement', 'Data manager', 'Chef de projet', 'Rédacteur'])
-		self.assertEqual([k for k, x in self.champs().items() if x['question']][0], 'metier')
 
 	def test_connecteurs_du_metier_seulement_par_leur_nom(self):
 		pratiques.regler(self.racine, self.home, 'metier', 'data-manager')

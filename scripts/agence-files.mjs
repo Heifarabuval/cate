@@ -15,6 +15,7 @@ export const AGENCE_REQUIRED = [
   'pratiques.py',
   'pratiques.json',
   'metiers.py',
+  'setup.py',
   'metiers.json',
   'connecteurs.json'
 ].map((file) => path.join('agence', file))

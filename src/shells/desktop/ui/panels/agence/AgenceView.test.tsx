@@ -374,7 +374,7 @@ it('shows nothing about the policy when the state has none (old CLI)', () => {
 })
 
 const champ: NonNullable<NonNullable<AgenceSnapshot['pratiques']>['champs']>[number] = {
-  cle: 'foo.bar', nom: 'Couleur du toit', explique: 'La teinte des tuiles.', groupe: 'essentiel', portee: 'workspace', question: null,
+  cle: 'foo.bar', nom: 'Couleur du toit', explique: 'La teinte des tuiles.', groupe: 'essentiel', portee: 'workspace',
   forme: 'valeurs', choix: [{ valeur: 'r', libelle: 'Rouge' }, { valeur: 'b', libelle: 'Bleu' }], bornes: null, vide: null,
   defaut: 'r', valeur: 'r', origine: 'défaut',
 }
@@ -446,26 +446,40 @@ it('shows no backlog when the state has none (old CLI)', () => {
   expect(host.textContent).not.toContain('Backlog')
 })
 
-it('gives the whole panel to the first questions while the project has no settings file', async () => {
-  render(snapshot({ pratiques: reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
-  expect(host.querySelector('h2')!.textContent).toBe('De quelle couleur, le toit ?')
+const setupCard = {
+  id: 'q3', question: 'Appliquer ces réglages ?\n- Agents en même temps : 4 → 2 (source : réponse de la personne)',
+  options: [{ label: 'Appliquer', detail: 'écrit les réglages de ce workspace' }, { label: 'Refuser', detail: "rien n'est écrit" }],
+  isMerge: false, locks: [], rebase: false, ghUnknown: false,
+} as unknown as AgenceSnapshot['questions'][string]
+
+it('holds the panel for the setup while the project has no settings file: the agent is elsewhere, « Passer » stays', async () => {
+  render(snapshot({ pratiques: reglages({ projet: false, champs: [champ] }) }))
+  expect(host.querySelector('h2')!.textContent).toBe('Setup du projet')
+  expect(host.textContent).toContain('Un agent prépare les réglages de ce workspace avec vous')
   expect(host.querySelector('[data-testid="terminal"]')).toBeNull()
   expect(host.textContent).not.toContain('À toi')
   await act(async () => { button('Passer')!.click() })
-  expect(send).toHaveBeenCalledWith({ kind: 'pratique.questions', passer: true })
+  expect(send).toHaveBeenCalledWith({ kind: 'setup.passer' })
+})
+
+it('shows the setup card with its diff, and answers it through the session', async () => {
+  render(snapshot({ pratiques: reglages({ projet: false, champs: [champ] }), questions: { q3: setupCard } }))
+  expect(host.textContent).toContain('Agents en même temps : 4 → 2 (source : réponse de la personne)')
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent?.startsWith('Appliquer (Recommandé)'))!.click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q3', choice: 0 })
 })
 
 it('asks nothing once the project has its file', () => {
-  render(snapshot({ pratiques: reglages({ projet: true, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] }) }))
+  render(snapshot({ pratiques: reglages({ projet: true, champs: [champ] }) }))
   expect(button('Passer')).toBeUndefined()
   expect(host.querySelector('[data-testid="terminal"]')).not.toBeNull()
 })
 
-it('says to restart a regisseur that stopped during the first questions, with one restart button', async () => {
-  const questions = reglages({ projet: false, champs: [{ ...champ, question: 'De quelle couleur, le toit ?' }] })
+it('says to restart a regisseur that stopped during the setup, with one restart button', async () => {
+  const held = reglages({ projet: false, champs: [champ] })
   for (const error of ["agence watch s'est arrêté (SIGKILL)", null]) {
     send.mockClear()
-    render(snapshot({ pratiques: questions, orchestrator: 'starting', regisseur: { state: 'stopped', error, settingsHint: null } }))
+    render(snapshot({ pratiques: held, orchestrator: 'starting', regisseur: { state: 'stopped', error, settingsHint: null } }))
     expect(host.textContent).toContain('relancez-le avec « Relancer le régisseur »')
     await act(async () => { button('Passer')!.click() })
     expect(send).not.toHaveBeenCalled()

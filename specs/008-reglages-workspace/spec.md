@@ -68,7 +68,7 @@ Max ouvre le formulaire et voit deux modèles : « Simple » (preset `neutre`) e
 
 ---
 
-### User Story 3 - Les premières questions (Priority: P2)
+### User Story 3 - Les premières questions (Priority: P2) *(remplacée par la spec 015)*
 
 Nadia ouvre pour la première fois l'agence sur un dépôt. Avant que l'orchestrateur ne démarre, le panneau pose quatre questions, une par écran, avec des réponses nommées et la réponse par défaut présélectionnée : « Comment voulez-vous recevoir le travail des agents ? », « Les agents écrivent-ils un test avant le code ? », « Un second agent relit-il chaque travail ? », « Combien d'agents au plus en même temps ? ». Elle répond, clique « Terminer », et l'orchestrateur démarre avec ces réglages. « Passer » garde les défauts et ne repose plus les questions.
 
@@ -128,7 +128,7 @@ Heifara lance `agence start --max-agents 6` pour une vague exceptionnelle. Le fo
 - **FR-010**: Un réglage écrit par le formulaire ou par `agence pratiques set` MUST retirer la valeur ponctuelle de la même clé, pour que la valeur choisie soit celle qui s'applique.
 - **FR-011**: `notifications.systeme` MUST remplacer `st['notify']` (`agence.py:1616`) ; `notifications.rappel` MUST remplacer `RAPPEL` (`:367`, `:1619`), 0 voulant dire aucun rappel.
 - **FR-012**: `agence need add` sans `--model` (sans `--effort`) MUST stocker `agents.modele` (`agents.effort`) sauf s'il vaut `auto` ; `--model` et `--effort` l'emportent. `need show` dit l'origine (« besoin » ou « workspace »).
-- **FR-013**: Quand l'état publie `projet: false`, le panneau MUST afficher les premières questions (les clés `groupe: essentiel` qui portent `question`, dans l'ordre du schéma, 3 à 5) avant tout, et la session MUST attendre leur fin ou « Passer » pour lancer l'orchestrateur. « Terminer » écrit toutes les réponses en un POST (`/pratiques/set` multiple) ; « Passer » écrit `{"preset": "neutre"}`.
+- **FR-013**: *(remplacé par la spec 015, setup conversationnel)* Quand l'état publie `projet: false`, le panneau MUST afficher les premières questions (les clés `groupe: essentiel` qui portent `question`, dans l'ordre du schéma, 3 à 5) avant tout, et la session MUST attendre leur fin ou « Passer » pour lancer l'orchestrateur. « Terminer » écrit toutes les réponses en un POST (`/pratiques/set` multiple) ; « Passer » écrit `{"preset": "neutre"}`.
 - **FR-014**: Le skill `orchestrateur` MUST cesser de recopier le plafond, le rappel et la coupure des notifications (`SKILL.md:20`, `:42`) : il renvoie à `agence pratiques show` et cite les options comme ponctuelles.
 - **FR-015**: `declencheurs.json` MUST gagner un champ `nom` par ligne (libellé simple), ajouté à `CHAMPS_TABLE` (`agence.py:2047`) ; le choix `declencheurs.actifs` du formulaire l'affiche à la place de `commande`.
 - **FR-016**: Les réglages natifs `cli*Enabled` MUST rester dans l'écran Réglages de Cate (aucune copie) ; le formulaire affiche une ligne « Accès des agents à Cate » qui ouvre la page `cli` (`openSettings('cli')`).
@@ -168,6 +168,6 @@ Chacune a une hypothèse de travail, écrite dans la spec, qui tombe si la répo
 - **Q4** : `seuil`, `repos` et `plafond` des déclencheurs (spec 004) restent hors formulaire. Hypothèse : oui, ils se révisent sur mesure (spec 004, `declencheurs bilan`), pas au goût de la personne.
 - **Q5** : un budget par défaut par tâche (`--budget-usd`) ? Hypothèse : non en v1 ; une clé `agents.budget` se rajoute comme les autres (une entrée de schéma et un test).
 - **Q6** : le nom de l'humain (`AGENCE_NOM`, gitconfig `agence.nom`, spec 002) dans le formulaire ? Hypothèse : affiché avec sa source, non éditable en v1 : la propriété en est à la spec 002, et le gitconfig est commun aux worktrees.
-- **Q7** : choix des essentiels posés aux premières questions. Hypothèse : `livraison.mode`, `tests`, `verification`, `agents.max` (quatre questions, les plus lourdes de conséquence pour une personne non technique). Le modèle à appliquer n'est pas une question : les réponses en sont une version personnalisée de `neutre`.
+- **Q7** : *(remplacé par la spec 015, setup conversationnel)* choix des essentiels posés aux premières questions. Hypothèse : `livraison.mode`, `tests`, `verification`, `agents.max` (quatre questions, les plus lourdes de conséquence pour une personne non technique). Le modèle à appliquer n'est pas une question : les réponses en sont une version personnalisée de `neutre`.
 - **Q8** : un troisième preset `main-direct` (POC, projet perso) ? Hypothèse : non, la demande dit « au minimum `neutre`, `pr-tdd` » et la Q3 de 005 (mode `main`) est ouverte.
-- **Q9** : la session attend les premières questions avant de lancer l'orchestrateur. Hypothèse : oui (« avant tout ») ; un panneau ouvert en attente n'a pas de coût. Alternative : lancer l'orchestrateur tout de suite et lui faire attendre `projet: true`, ce qui coûte des tours de modèle.
+- **Q9** : *(remplacé par la spec 015, setup conversationnel)* la session attend les premières questions avant de lancer l'orchestrateur. Hypothèse : oui (« avant tout ») ; un panneau ouvert en attente n'a pas de coût. Alternative : lancer l'orchestrateur tout de suite et lui faire attendre `projet: true`, ce qui coûte des tours de modèle.

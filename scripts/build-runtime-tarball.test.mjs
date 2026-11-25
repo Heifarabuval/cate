@@ -28,6 +28,7 @@ function checkout() {
   write('tools/agence/pratiques.py', 'print(1)\n')
   write('tools/agence/pratiques.json', '{}')
   write('tools/agence/metiers.py', 'print(1)\n')
+  write('tools/agence/setup.py', 'print(1)\n')
   write('tools/agence/metiers.json', '[]')
   write('tools/agence/connecteurs.json', '[]')
   write('tools/agence/test_agence.py', 'assert 1\n')
@@ -41,7 +42,7 @@ it('lists the launchers, the CLI, its backlog module, its lenses, its practices 
   expect(AGENCE_REQUIRED).toEqual(
     [
       'agence', 'agence-hook', 'agence.py', 'backlog.py', 'lentilles.json', 'pratiques.py', 'pratiques.json',
-      'metiers.py', 'metiers.json', 'connecteurs.json'
+      'metiers.py', 'setup.py', 'metiers.json', 'connecteurs.json'
     ].map((f) => path.join('agence', f))
   )
 })
@@ -49,7 +50,7 @@ it('lists the launchers, the CLI, its backlog module, its lenses, its practices 
 it('ships the launchers and the CLI, not tests, fixtures or bytecode', () => {
   expect(agenceFiles(checkout())).toEqual([
     'agence', 'agence-hook', 'agence.py', 'backlog.py', 'connecteurs.json', 'lentilles.json', 'metiers.json', 'metiers.py',
-    'pratiques.json', 'pratiques.py'
+    'pratiques.json', 'pratiques.py', 'setup.py'
   ])
 })
 

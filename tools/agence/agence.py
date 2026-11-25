@@ -66,6 +66,9 @@ CIBLE_RE = re.compile(r'^(slack:[A-Z0-9]+|mail:[^@\s]+@[^@\s]+|issue:[\w.-]+/[\w
 ORCH_PROMPT = '/orchestrateur'
 INTERLOCUTEUR, INTER_PROMPT = 'Interlocuteur', '/interlocuteur'  # spec 010 : un par projet, il écrit des fiches
 INTER_DENY = "l'interlocuteur ne lance rien : il écrit des fiches (agence fiche add), l'humain lance au clic."
+SETUP, SETUP_PROMPT = 'Setup', '/setup'  # spec 015 : un par projet, il propose des réglages et une orga, l'humain clique
+SETUP_DENY = ("l'agent de setup ne passe ni par les besoins, les fiches, les brouillons ni les questions : il propose "
+              "(agence pratiques propose, agence org propose) et l'humain valide au clic.")
 SONDE = 5  # secondes par appel cate de la sonde dans la garde : un hook ne bloque pas l'agent
 CSS = 'https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css'
 PAGES = True  # faux sous --token-stdin : le panneau agence de Cate tient l'interface, plus aucune page ni jeton dans un corps
@@ -486,6 +489,13 @@ def refuse_interlocuteur():
 		raise Refus(INTER_DENY)
 
 
+def refuse_setup():
+	"""FR-009 (spec 015), même seconde barrière que refuse_interlocuteur : refus si l'appelant est l'agent de setup enregistré."""
+	setup = load()['panels'].get('setup')
+	if setup and caller_panel() == setup:
+		raise Refus(SETUP_DENY)
+
+
 def caller_is_orchestrator():
 	me = caller_panel()  # None (sonde en échec) ou orchestrateur absent ne prouvent rien
 	return me is not None and me == load()['panels'].get('orchestrator')
@@ -760,9 +770,11 @@ def cmd_need(a):
 		if a.kind == 'human':  # sans carte, la ligne « À faire » n'a ni bouton ni réponse possible (issue 207)
 			raise Refus(f"un besoin human naît d'une carte : agence ask --option ... \"<question>\" ({nom()} répond d'un clic)")
 		panels = load()['panels']
-		me = caller_panel() if a.panel or panels.get('interlocuteur') else None  # une seule sonde pour les deux usages
+		me = caller_panel() if a.panel or panels.get('interlocuteur') or panels.get('setup') else None  # une seule sonde pour les usages
 		if me is not None and me == panels.get('interlocuteur'):
 			raise Refus(INTER_DENY)
+		if me is not None and me == panels.get('setup'):
+			raise Refus(SETUP_DENY)
 		import pratiques  # voir politique()
 		done_when = a.done_when
 		if done_when is not None:
@@ -891,6 +903,8 @@ def sortie(objet, json_, texte):
 def cmd_fiche(a):
 	"""Fiches du backlog : add, edit, etat et note écrivent ; list et show lisent. Lancée, faite, abandonnée : au clic."""
 	import backlog  # voir registres()
+	if a.action in ('add', 'edit', 'etat', 'note'):
+		refuse_setup()
 	champs = {'titre': getattr(a, 'titre_opt', None), 'type': a.type, 'preuve': a.preuve, 'priorite': a.priorite,
 	          'fichiers': a.fichier, 'dependances': a.dependance, 'remplace': a.remplace, 'doublonDe': a.doublon_de, 'vision': a.vision,
 	          'modele': a.modele, 'decisions': a.decision} if a.action in ('add', 'edit') else {}
@@ -1015,6 +1029,7 @@ def cmd_draft(a):
 	if a.action == 'new':
 		require_cate()
 		refuse_interlocuteur()
+		refuse_setup()
 		if not CIBLE_RE.match(a.cible or ''):
 			raise Refus('cible invalide : slack:<canal>, mail:<adresse>, issue:<owner/repo>, '
 			            'pr:<owner/repo>:<base>:<head>, comment:<owner/repo>#<N>, outil:<connecteur>:<outil>')
@@ -1330,6 +1345,8 @@ def lire_github(st):
 
 def cmd_ask(a):
 	require_cate()
+	if not getattr(a, 'interne', False):  # org propose pose sa carte par ici : ce n'est pas l'agent de setup qui pose une question libre
+		refuse_setup()
 	if a.merge:
 		refuse_interlocuteur()
 		if not re.match(r'^[\w.-]+/[\w.-]+#\d+$', a.merge):
@@ -1495,6 +1512,15 @@ def click(path, form):
 	m = re.match(r'^/pratiques/(set|unset|preset)$', path)
 	if m:
 		return click_pratiques(m.group(1), form)
+	m = re.match(r'^/setup/(q\d+)/appliquer$', path)
+	if m:
+		return click_setup(m.group(1))
+	if path == '/setup/ouvrir':
+		ouvrir_setup((form.get('panneau') or [''])[0] or None, (form.get('phrase') or [''])[0].strip() or None)
+		return 303, '/'
+	if path == '/setup/fermer':
+		fermer_setup()
+		return 303, '/'
 	m = re.match(r'^/ask/(q\d+)$', path)
 	if m:
 		qid = m.group(1)
@@ -1564,12 +1590,13 @@ def click(path, form):
 
 # ---------- registre au clic et revue de cap (spec 010, lot 6) ----------
 
-def poser_carte(st, question, options, clics):
-	"""Question du régisseur à l'humain (QuestionCard) dont l'option i mène au clic clics[i] ('' : fermer la carte)."""
+def poser_carte(st, question, options, clics, **champs):
+	"""Question du régisseur à l'humain (QuestionCard) dont l'option i mène au clic clics[i] ('' : fermer la carte).
+	clics peut être une fonction de l'id de la carte ; champs s'ajoutent à la question (agent, setup...)."""
 	qid = new_id(st, 'q')
 	n, _ = add_need(st, 'human', question, ref=qid, owner=OWNER_HUMAIN)
 	st['questions'].append({'id': qid, 'needId': n['id'], 'agent': None, 'question': question, 'options': options,
-	                        'action': None, 'answer': None, 'clics': clics})
+	                        'action': None, 'answer': None, 'clics': clics(qid) if callable(clics) else clics, **champs})
 	return qid
 
 
@@ -1705,6 +1732,59 @@ def retirer_reglage(pratiques, st, racine, home, cle, dev):
 	return pratiques.retirer(racine, home, cle, dev, st['ponctuel'])
 
 
+def ouvrir_setup(panneau=None, phrase=None):
+	"""Un seul agent de setup par projet (spec 015, FR-012) : l'enregistré vivant, sinon le vivant de son titre, sinon un
+	neuf (skill setup, modèle de l'interlocuteur), enregistré dès sa création et relié au panneau agence. Rend son panneau."""
+	live = live_rows()
+	if live is None:
+		raise Refus('cate panel list illisible')
+	with tx() as st:
+		p = st['panels']
+		if p.get('setup') in live:
+			return p['setup']
+		p['setup'] = adopt(live, SETUP, 'terminal')
+		if not p['setup']:
+			modele = politique(st=st)['valeurs']['modele.interlocuteur']  # null : défaut de la CLI (FR-014)
+			p['setup'] = cate('agent', 'start', '--agent', 'claude-code', '--title', SETUP, *(['--model', modele] if modele else []),
+			                  SETUP_PROMPT + (f' {phrase}' if phrase else ''))['panelId']
+		link(p['setup'], panneau or p.get('orchestrator'), 'context', 'Setup')
+		return p['setup']
+
+
+def fermer_setup():
+	"""Fin d'une conversation de setup (FR-010, FR-011) : le panneau de l'agent se ferme, il n'est plus enregistré."""
+	with tx() as st:
+		setup = st['panels'].pop('setup', None)
+	if setup:
+		with contextlib.suppress(Refus):  # déjà fermé : rien à faire
+			cate('panel', 'close', setup, '--discard')
+
+
+def click_setup(qid):
+	"""Appliquer sur une carte de pratiques du setup (FR-006) : le régisseur revalide la proposition de la carte et l'écrit
+	par la même fonction que le formulaire ; la carte se ferme, l'agent l'apprend."""
+	import pratiques  # voir politique()
+	import setup
+	with tx() as st:
+		q = find(st, 'questions', qid)
+		if q.get('setup') != 'pratiques':
+			return 404, 'Action inconnue.'
+		if q['answer'] is not None:
+			return 409, 'Question déjà répondue.'
+		try:
+			prop = setup.lire_proposition(q['proposition'])
+			paires = list(prop['valeurs'].items())
+			pratiques.appliquer(root(), os.environ.get('HOME'), prop['preset'], paires, ecrire=True, ponctuel=st['ponctuel'])
+		except (setup.Invalide, pratiques.Invalide) as err:
+			return 400, getattr(err, 'phrase', None) or str(err)
+		quitter_ponctuel(st, [cle for cle, _ in paires] + list(pratiques.posees_par_preset(prop['preset'])))
+		st['pratiques'] = publier(politique(st=st))
+		note(find(st, 'needs', q['needId']), 'Appliquer cliqué : réglages écrits', 'clic')
+		fermer_carte(st, q, 'Appliquer')
+		notify(q.get('agent'), f"{nom()} a cliqué « Appliquer » : les réglages sont écrits.")
+	return 303, '/'
+
+
 def click_pratiques(action, form):
 	"""Formulaire du panneau (spec 008 FR-004) : mêmes fonctions, même verrou que `agence pratiques` ; le fichier visé suit
 	la portée de la clé. Refus : 400 et la phrase simple. La vue est republiée aussitôt, sans attendre le tour."""
@@ -1744,6 +1824,8 @@ def click_carte(qid, form):
 		if not cible:
 			note(find(st, 'needs', q['needId']), f'{label} cliqué', 'clic')
 			fermer_carte(st, q, label)
+			if q.get('agent'):  # une carte d'agent (setup) : il apprend le refus, rien n'a été écrit
+				notify(q['agent'], f"{nom()} a cliqué « {label} » sur « {q['question'].splitlines()[0]} » : rien n'est écrit.")
 			return 303, '/'
 	return click(cible, {})  # la route du clic proposé, comme un POST direct
 
@@ -3560,6 +3642,7 @@ REGISTRES = ('.cate/tmp/agence/backlog.json', '.cate/tmp/agence/decisions.json')
 LANCE_RE = re.compile(r'\bcate\s+(agent\s+(start|send|interrupt)|panel\s+(create|link|unlink|close|group)'
                       r'|terminal\s+(type|press|send|create))\b'
                       r'|\bagence(\.py)?\s+(need\s+add|ask\b.*--merge|draft\s+new)\b', re.S)
+SETUP_RE = re.compile(r'\bagence(\.py)?\s+(start|boot)\b')  # ce que l'agent de setup ne lance pas non plus (spec 015, FR-009)
 GLOBAUX_RE = re.compile(r'(?<=\s)(--json|--help|-h|--version)(?=\s|$)')
 
 
@@ -3750,9 +3833,13 @@ def guard(payload, mode):
 		if (ecrit(cmd, r'\b(backlog|decisions)\.json')
 				and ('agence' in cmd or '.cate/tmp/agence' in (payload.get('cwd') or ''))):
 			return decision('deny', BACKLOG_DENY)
-		inter = st['panels'].get('interlocuteur')
-		if inter and lance(cmd) and caller_panel(SONDE) == inter:
-			return decision('deny', INTER_DENY)
+		inter, setup = st['panels'].get('interlocuteur'), st['panels'].get('setup')
+		if (inter and lance(cmd)) or (setup and (lance(cmd) or SETUP_RE.search(cmd))):
+			me = caller_panel(SONDE)
+			if inter and lance(cmd) and me == inter:
+				return decision('deny', INTER_DENY)
+			if setup and me == setup:
+				return decision('deny', SETUP_DENY)
 		return garde_plafond(st) if demarre(cmd) else None
 	if tool == 'WebFetch' and local and local.search(ti.get('url') or ''):
 		return decision('deny', PAGE_DENY)
@@ -3765,10 +3852,49 @@ def guard(payload, mode):
 	return None
 
 
+def diff_texte(ecarts, sources):
+	"""Une ligne par écart, en mots simples : nom, valeur actuelle, valeur proposée, origine de la déduction (FR-005)."""
+	return [f"- {nom} : {avant} → {apres} (source : {sources.get(cle, 'effet des autres réglages')})" for cle, nom, avant, apres in ecarts]
+
+
+def pratiques_proposer(a):
+	"""Spec 015, FR-005 : valide la proposition de l'agent de setup comme `pratiques set` valide une valeur, montre le diff
+	et pose la carte « Appliquer ces réglages ? ». Rien n'est écrit : seul le clic Appliquer écrit, par le régisseur."""
+	import pratiques  # voir politique()
+	import setup
+	require_cate()
+	refuse_interlocuteur()
+	texte = sys.stdin.read() if a.fichier == '-' else open(a.fichier).read()
+	racine, home = root(), os.environ.get('HOME')
+	ponctuel = load()['ponctuel']
+	try:
+		prop = setup.lire_proposition(texte)
+		avant = pratiques.verifier(racine, home, ponctuel)
+		apres = pratiques.appliquer(racine, home, prop['preset'], list(prop['valeurs'].items()), ponctuel=ponctuel)
+	except setup.Invalide as err:
+		raise Refus(f'proposition refusée, rien n\'est posé : {err}')
+	except pratiques.Invalide as err:
+		raise Refus(f'proposition refusée, rien n\'est posé : {err} ({err.phrase})')
+	ecarts = pratiques.ecarts(avant, apres)
+	if not ecarts:
+		raise Refus('aucun écart avec les réglages effectifs : rien à proposer')
+	lignes = diff_texte(ecarts, prop['sources'])
+	question = '\n'.join(['Appliquer ces réglages ?'] + lignes + [f'À noter : {n}' for n in prop['notes']])
+	with tx() as st:
+		qid = poser_carte(st, question, [{'label': 'Appliquer', 'detail': 'écrit les réglages de ce workspace'},
+		                                  {'label': 'Refuser', 'detail': "rien n'est écrit"}],
+		                  lambda q: [f'/setup/{q}/appliquer', ''], agent=a.frm, setup='pratiques', proposition=texte)
+	print('\n'.join(lignes))
+	print(qid)
+	return 0
+
+
 def cmd_pratiques(a):
 	"""Politique de flux (spec 005). set, unset et preset écrivent le fichier du projet (--dev : celui du dev) après
 	validation de la politique entière ; show, check et brief lisent. Politique refusée : code 2, rien d'écrit."""
 	import pratiques  # voir politique()
+	if a.action == 'propose':
+		return pratiques_proposer(a)
 	racine, home = root(), os.environ.get('HOME')
 	try:
 		if a.action == 'set':
@@ -4034,6 +4160,18 @@ def org_apercu(r):
 	return lignes
 
 
+def cmd_setup(a):
+	"""Spec 015, FR-012 : ouvre l'agent de setup (un par projet), avec la phrase s'il y en a une ; --fin le ferme.
+	N'écrit aucune politique : l'agent propose, l'humain clique."""
+	require_cate()
+	if a.fin:
+		fermer_setup()
+		print('setup fermé')
+		return 0
+	print(f"agent de setup {ouvrir_setup(None, a.phrase)}")
+	return 0
+
+
 def cmd_org(a):
 	"""Orga du workspace : `.cate/org.json` validé par le contrat src/workspace/org (org.cjs), solo sans fichier. Invalide : refus, rien ne se lance.
 	propose : valide un fichier écrit par un agent, montre l'aperçu et pose la carte ; save : écrit après le clic Enregistrer."""
@@ -4071,7 +4209,7 @@ def org_proposer(a):
 		raise Refus('orga proposée invalide, rien n\'est enregistré ; corrige ces points puis relance « agence org propose » :\n'
 		            + '\n'.join(f'  - {e}' for e in r['errors']))
 	apercu = org_apercu(r)
-	ask = argparse.Namespace(merge=None, frm=a.frm, unblocks=None, option=[f'{ORG_OUI}|écrit .cate/org.json', f'{ORG_NON}|rien n\'est écrit'],
+	ask = argparse.Namespace(interne=True, merge=None, frm=a.frm, unblocks=None, option=[f'{ORG_OUI}|écrit .cate/org.json', f'{ORG_NON}|rien n\'est écrit'],
 	                         question='Enregistrer cette orga ?\n' + '\n'.join(apercu))
 	with io.StringIO() as buf, contextlib.redirect_stdout(buf):
 		cmd_ask(ask)
@@ -4372,6 +4510,9 @@ def parser():
 	prs.add_parser('show', help='valeurs effectives et leur source (défaut, dev, projet)').add_argument('--json', action='store_true')
 	prs.add_parser('check', help='valide les deux fichiers, sans rien écrire')
 	prs.add_parser('brief', help='bloc de pratiques à coller dans un brief : invariants, puis les exigences actives')
+	x = prs.add_parser('propose', help="valide la proposition de l'agent de setup (fichier ou -), montre le diff, pose la carte Appliquer ou Refuser (spec 015)")
+	x.add_argument('fichier')
+	x.add_argument('--from', dest='frm')
 	for action, args in (('set', ('cle', 'valeur')), ('unset', ('cle',)), ('preset', ('nom',))):
 		x = prs.add_parser(action, help=f'{action} dans le fichier du projet (--dev : ~/.config/agence/pratiques.json)')
 		for arg in args:
@@ -4389,6 +4530,10 @@ def parser():
 	op.add_argument('--from', dest='frm')
 	orgs.add_parser('save', help="écrit .cate/org.json après le clic Enregistrer de la carte").add_argument('question')
 	org.set_defaults(fn=cmd_org)
+	st_ = sub.add_parser('setup', help="ouvre l'agent de setup (spec 015) : un par projet, avec la phrase éventuelle ; --fin ferme sa conversation. N'écrit rien")
+	st_.add_argument('phrase', nargs='?', help="ce qui change, en une phrase (« mets le plafond à 2 »)")
+	st_.add_argument('--fin', action='store_true', help="ferme l'agent de setup (fin de la conversation)")
+	st_.set_defaults(fn=cmd_setup)
 	sub.add_parser('nom', help="nom de l'humain et sa source").set_defaults(fn=lambda a: print('%s (%s)' % nom_source()))
 	return p
 

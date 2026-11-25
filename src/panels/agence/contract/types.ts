@@ -113,7 +113,7 @@ export type PratiquesView = {
    *  Absent from an older CLI. */
   champs?: PratiqueChamp[]
   presets?: PratiquePreset[]
-  /** The project's file exists; false asks the first questions before the orchestrator starts. */
+  /** The project's file exists; false holds the orchestrator until the setup agent's card is applied, or « Passer ». */
   projet?: boolean
   /** How many keys this workspace's file sets (its preset not counted). */
   nbProjet?: number
@@ -133,8 +133,6 @@ export type PratiqueChamp = {
   groupe: 'essentiel' | 'avance'
   /** `dev`: the person's file for all their projects, on the runtime's machine. */
   portee: 'workspace' | 'dev'
-  /** The first questions' wording; null for a setting they do not ask. */
-  question: string | null
   forme: PratiqueForme
   /** One label per allowed value (`valeurs`, `liste`); null otherwise. */
   choix: Array<{ valeur: PratiqueValeur; libelle: string }> | null
@@ -147,15 +145,6 @@ export type PratiqueChamp = {
   valeur: PratiqueValeur
   /** `défaut`, `dev`, `projet` or `ponctuel`. */
   origine: string
-}
-
-/** At most this many questions before the orchestrator first starts (spec 008, SC-006). */
-export const MAX_QUESTIONS = 4
-
-/** The first questions (spec 008, US3): the essential fields that carry a question,
- *  in the order published, at most `MAX_QUESTIONS`. */
-export function premieresQuestions(champs: PratiqueChamp[]): PratiqueChamp[] {
-  return champs.filter((champ) => champ.groupe === 'essentiel' && champ.question).slice(0, MAX_QUESTIONS)
 }
 
 export type PratiquePreset = { id: string; nom: string; explique: string; actif: boolean }
@@ -242,9 +231,9 @@ export type AgenceOp =
   | { kind: 'pratique.unset'; cle: string }
   /** A preset; `remplacer`: the file keeps the preset alone. */
   | { kind: 'pratique.preset'; nom: string; remplacer?: boolean }
-  /** The end of the first questions: every answer in one write, or `passer` (the default
-   *  preset); then the orchestrator starts. Without effect once they are over. */
-  | { kind: 'pratique.questions'; reponses?: Record<string, PratiqueValeur>; passer?: boolean }
+  /** « Passer » (spec 015, FR-011): the default preset is written, the setup agent closes and the
+   *  orchestrator starts. Without effect once the project has its settings file. */
+  | { kind: 'setup.passer' }
   /** « Lancer » on the checked prêtes: the regisseur plans the waves and creates the needs. */
   | { kind: 'fiches.lancer'; ids: string[] }
 
