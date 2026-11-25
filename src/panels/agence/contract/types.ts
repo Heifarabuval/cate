@@ -119,6 +119,8 @@ export type PratiquesView = {
   nbProjet?: number
   /** The rules no setting changes, in words, without a control. */
   invariants?: string[]
+  /** Why a setting has its value, from the setup memory (spec 015, `setup.json`); read only, by key. */
+  raisons?: Record<string, string>
 }
 
 /** How a setting is chosen: one named value, an integer within bounds, free text, several named values. */

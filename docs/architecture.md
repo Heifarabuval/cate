@@ -2408,6 +2408,17 @@ The orga goes through `agence org propose` (spec 011). The view gives the panel 
 the setup (`SetupEnCours`: the cards and « Passer »); the `setup.passer` op writes
 the `neutre` preset, closes the agent (`/setup/fermer`) and starts the orchestrator.
 The agent can be reopened at any time with `agence setup` (nothing is written by it).
+Every card shows its diff before the click: settings (current value, proposed value,
+source), the memory and, on the orga card, the posts and links added, removed or
+changed. The **setup memory** is `<root>/.cate/tmp/agence/setup.json` (outside the
+versioned tree, hand-editable): what the space is for, dated context, and for each
+setting the setup set its value, reason, source and date. Only the regisseur writes it,
+in the same click as the settings (or on a « Noter ce contexte » card); the agent
+reads it at each opening, an unreadable file is set aside as `setup.json.illisible`,
+never deleted, and the form shows a setting's reason read only (`raisons` of the
+published view). At the click the regisseur compares each key the card changes with
+its effective value: a key that moved since the proposal (form, another client)
+refuses the write, closes the card and tells the agent to propose again.
 
 The regisseur is a child process of the daemon, with no PTY and no panel:
 one per repository root, shared by the panels of that root through a

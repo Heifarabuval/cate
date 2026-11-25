@@ -427,6 +427,7 @@ function isChamp(x: unknown): x is PratiqueChamp {
 const numberOrNull = (x: unknown): number | null => typeof x === 'number' && Number.isFinite(x) ? x : null
 
 /** The backlog the regisseur published (contract: `contract/fixtures/vue-backlog.json`), or
+  if (isRecord(raw.raisons)) view.raisons = Object.fromEntries(Object.entries(raw.raisons).filter((entry): entry is [string, string] => isString(entry[1])))
  *  null when absent or not shaped like one. A fiche of the wrong shape is dropped; an
  *  unreadable consumption stays null, never 0. */
 function backlogView(raw: unknown): BacklogView | null {

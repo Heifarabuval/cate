@@ -84,6 +84,19 @@ class OrgParole(test_agence.Base):
 					self.assertEqual(f.read(), self.fixture(f'{nom}.json'))
 				self.assertEqual(self.cli('org', '--json')[0], 0)
 
+	def test_la_carte_montre_le_diff_de_l_orga_avant_le_clic(self):
+		self.propose('admin.json')
+		q = self.question()['question']
+		self.assertIn('- Orga, poste ajouté : redacteur (Rédacteur)', q)
+		self.assertIn('- Orga, poste retiré : dev', q, "l'avant est l'orga effective, solo sans fichier")
+		self.assertIn('- Orga, lien ajouté : redacteur -> verificateur, vérifié par verificateur ; clic jamais', q)
+		self.assertLess(q.index('- Orga, poste ajouté'), q.index('3 poste(s)'), 'le diff précède l\'aperçu')
+		self.assertFalse(os.path.exists(self.org_json()))
+		agence.click(f"/ask/{self.question()['id']}", {'choice': ['0']})
+		self.save(self.question()['id'])
+		self.propose('admin.json')
+		self.assertIn("aucun écart avec l'orga actuelle", self.question()['question'], 'une orga déjà enregistrée : le diff le dit')
+
 	def test_description_absurde_ne_produit_aucun_fichier(self):
 		code, out, err = self.propose('absurde.json')
 		self.assertEqual((code, out), (1, ''))

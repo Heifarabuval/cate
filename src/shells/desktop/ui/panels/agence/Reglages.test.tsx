@@ -203,3 +203,10 @@ it('keeps an open list open when a new snapshot arrives: same node, options unto
   // A native menu closes when React rewrites `option.selected`.
   expect(writes).not.toHaveBeenCalled()
 })
+
+it('says why a setting has its value when the setup memory kept a reason, read only (spec 015, Q12)', () => {
+  render(pratiques({ raisons: { baz: 'Le Mac a 16 Go' } }))
+  expect(field('Fenêtres').textContent).toContain('Raison : Le Mac a 16 Go')
+  expect(field('Fenêtres').querySelectorAll('input[type="text"], textarea')).toHaveLength(0)
+  expect(field('Couleur du toit').textContent).not.toContain('Raison')
+})

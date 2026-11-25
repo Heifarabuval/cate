@@ -449,7 +449,10 @@ def vue(racine, home, pol, humain):
 		nb = len([k for k in aplatir(sch, contenu, '') if k != 'preset']) if contenu is not None else 0
 	except Invalide:
 		nb = 0
-	return {'champs': champs(sch, pol),
+	import setup  # la mémoire du setup (spec 015) : la raison de chaque réglage, en lecture seule
+	memoire, _ = setup.lire(racine)
+	raisons = {cle: d['raison'] for cle, d in (memoire or {}).get('decisions', {}).items() if d['raison'] and cle in sch['cles']}
+	return {'champs': champs(sch, pol), 'raisons': raisons,
 	        'presets': [{'id': k, 'nom': p['nom'], 'explique': p['explique'], 'actif': k == pol['preset']}
 	                    for k, p in sch['presets'].items()],
 	        'projet': os.path.isfile(fichier_projet(racine)), 'nbProjet': nb,

@@ -1761,10 +1761,11 @@ def fermer_setup():
 
 
 def click_setup(qid):
-	"""Appliquer sur une carte de pratiques du setup (FR-006) : le régisseur revalide la proposition de la carte et l'écrit
-	par la même fonction que le formulaire ; la carte se ferme, l'agent l'apprend."""
+	"""Appliquer (ou Noter) sur une carte de setup (FR-006, FR-017, FR-018) : le régisseur revalide la proposition de la carte,
+	refuse qu'elle soit périmée, puis écrit les réglages par la même fonction que le formulaire et la mémoire dans le même clic."""
 	import pratiques  # voir politique()
 	import setup
+	racine, home = root(), os.environ.get('HOME')
 	with tx() as st:
 		q = find(st, 'questions', qid)
 		if q.get('setup') != 'pratiques':
@@ -1774,14 +1775,27 @@ def click_setup(qid):
 		try:
 			prop = setup.lire_proposition(q['proposition'])
 			paires = list(prop['valeurs'].items())
-			pratiques.appliquer(root(), os.environ.get('HOME'), prop['preset'], paires, ecrire=True, ponctuel=st['ponctuel'])
+			reglages = bool(prop['preset'] or paires)
+			actuel = pratiques.verifier(racine, home, st['ponctuel'])
+			perimee = [cle for cle, avant in (q.get('base') or {}).items() if (actuel['preset'] if cle == 'preset' else actuel['valeurs'][cle]) != avant]
+			if perimee:  # la carte se ferme : l'agent reproposera sur l'état courant, rien n'est écrasé
+				fermer_carte(st, q, 'Périmée', 'dropped')
+				notify(q.get('agent'), 'La carte est périmée : les réglages ont changé depuis la proposition. Relis agence pratiques show --json et reproposes-en une.')
+				return 409, 'Refusé : les réglages ont changé depuis la proposition. Rien n\'est écrit ; l\'agent la reprend sur l\'état courant.'
+			memoire, _ = setup.lire(racine)
+			neuve = setup.fusionner(memoire, prop, jour())  # avant toute écriture : un refus ne laisse rien à moitié fait
+			if reglages:
+				pratiques.appliquer(racine, home, prop['preset'], paires, ecrire=True, ponctuel=st['ponctuel'])
 		except (setup.Invalide, pratiques.Invalide) as err:
 			return 400, getattr(err, 'phrase', None) or str(err)
-		quitter_ponctuel(st, [cle for cle, _ in paires] + list(pratiques.posees_par_preset(prop['preset'])))
+		setup.ecrire(racine, neuve)
+		if reglages:
+			quitter_ponctuel(st, [cle for cle, _ in paires] + list(pratiques.posees_par_preset(prop['preset'])))
 		st['pratiques'] = publier(politique(st=st))
-		note(find(st, 'needs', q['needId']), 'Appliquer cliqué : réglages écrits', 'clic')
-		fermer_carte(st, q, 'Appliquer')
-		notify(q.get('agent'), f"{nom()} a cliqué « Appliquer » : les réglages sont écrits.")
+		label = q['options'][0]['label']
+		note(find(st, 'needs', q['needId']), f'{label} cliqué : ' + ('réglages et mémoire écrits' if reglages else 'mémoire écrite'), 'clic')
+		fermer_carte(st, q, label)
+		notify(q.get('agent'), f"{nom()} a cliqué « {label} » : c'est écrit.")
 	return 303, '/'
 
 
@@ -3857,9 +3871,19 @@ def diff_texte(ecarts, sources):
 	return [f"- {nom} : {avant} → {apres} (source : {sources.get(cle, 'effet des autres réglages')})" for cle, nom, avant, apres in ecarts]
 
 
+def jour():
+	return datetime.now().date().isoformat()  # le jour local : la date de chaque ligne de la mémoire du setup
+
+
+def base_de_carte(avant, ecarts):
+	"""Valeurs « avant » que la proposition a lues (FR-018) : le preset et chaque clé qu'elle change."""
+	return {cle: (avant['preset'] if cle == 'preset' else avant['valeurs'][cle]) for cle, *_ in ecarts}
+
+
 def pratiques_proposer(a):
-	"""Spec 015, FR-005 : valide la proposition de l'agent de setup comme `pratiques set` valide une valeur, montre le diff
-	et pose la carte « Appliquer ces réglages ? ». Rien n'est écrit : seul le clic Appliquer écrit, par le régisseur."""
+	"""Spec 015, FR-005 et FR-016 : valide la proposition de l'agent de setup comme `pratiques set` valide une valeur, montre le diff
+	(réglages et mémoire) et pose la carte « Appliquer ces réglages ? » (« Noter ce contexte ? » sans réglage). Rien n'est écrit :
+	seul le clic écrit, par le régisseur."""
 	import pratiques  # voir politique()
 	import setup
 	require_cate()
@@ -3869,22 +3893,31 @@ def pratiques_proposer(a):
 	ponctuel = load()['ponctuel']
 	try:
 		prop = setup.lire_proposition(texte)
+		reglages = bool(prop['preset'] or prop['valeurs'])
 		avant = pratiques.verifier(racine, home, ponctuel)
-		apres = pratiques.appliquer(racine, home, prop['preset'], list(prop['valeurs'].items()), ponctuel=ponctuel)
+		apres = pratiques.appliquer(racine, home, prop['preset'], list(prop['valeurs'].items()), ponctuel=ponctuel) if reglages else avant
+		memoire, illisible = setup.lire(racine)
+		neuve = setup.fusionner(memoire, prop, jour())
 	except setup.Invalide as err:
 		raise Refus(f'proposition refusée, rien n\'est posé : {err}')
 	except pratiques.Invalide as err:
 		raise Refus(f'proposition refusée, rien n\'est posé : {err} ({err.phrase})')
 	ecarts = pratiques.ecarts(avant, apres)
-	if not ecarts:
-		raise Refus('aucun écart avec les réglages effectifs : rien à proposer')
-	lignes = diff_texte(ecarts, prop['sources'])
-	question = '\n'.join(['Appliquer ces réglages ?'] + lignes + [f'À noter : {n}' for n in prop['notes']])
+	noms = {cle: spec['nom'] for cle, spec in pratiques.schema()['cles'].items()}
+	lignes = diff_texte(ecarts, prop['sources']) + setup.diff(memoire, neuve, noms)
+	if not lignes:
+		raise Refus('aucun écart avec les réglages effectifs ni avec la mémoire du setup : rien à proposer')
+	entete = 'Appliquer ces réglages ?' if reglages else 'Noter ce contexte ?'
+	avis = [f'À noter : {n}' for n in prop['notes']]
+	if illisible:
+		avis.append(f'la mémoire du setup illisible ({illisible}) sera mise de côté (setup.json.illisible), puis réécrite')
 	with tx() as st:
-		qid = poser_carte(st, question, [{'label': 'Appliquer', 'detail': 'écrit les réglages de ce workspace'},
-		                                  {'label': 'Refuser', 'detail': "rien n'est écrit"}],
-		                  lambda q: [f'/setup/{q}/appliquer', ''], agent=a.frm, setup='pratiques', proposition=texte)
-	print('\n'.join(lignes))
+		qid = poser_carte(st, '\n'.join([entete] + lignes + avis),
+		                  [{'label': 'Appliquer' if reglages else 'Noter', 'detail': 'écrit les réglages de ce workspace' if reglages else 'écrit la mémoire du setup'},
+		                   {'label': 'Refuser', 'detail': "rien n'est écrit"}],
+		                  lambda q: [f'/setup/{q}/appliquer', ''], agent=a.frm, setup='pratiques', proposition=texte,
+		                  base=base_de_carte(avant, ecarts))
+	print('\n'.join(lignes + avis))
 	print(qid)
 	return 0
 
@@ -4208,14 +4241,21 @@ def org_proposer(a):
 	if not r.get('ok'):
 		raise Refus('orga proposée invalide, rien n\'est enregistré ; corrige ces points puis relance « agence org propose » :\n'
 		            + '\n'.join(f'  - {e}' for e in r['errors']))
+	import setup  # voir politique()
 	apercu = org_apercu(r)
+	try:  # l'avant : l'orga effective (solo sans fichier) ; invalide, rien à comparer
+		actuelle = org_lire()
+	except Env:
+		actuelle = {}
+	ecarts = setup.diff_orga(actuelle['org'] if actuelle.get('ok') else {}, r['org']) or ["- Orga : aucun écart avec l'orga actuelle"]
 	ask = argparse.Namespace(interne=True, merge=None, frm=a.frm, unblocks=None, option=[f'{ORG_OUI}|écrit .cate/org.json', f'{ORG_NON}|rien n\'est écrit'],
-	                         question='Enregistrer cette orga ?\n' + '\n'.join(apercu))
+	                         question='Enregistrer cette orga ?\n' + '\n'.join(ecarts + apercu))
 	with io.StringIO() as buf, contextlib.redirect_stdout(buf):
 		cmd_ask(ask)
 		qid = buf.getvalue().strip()
 	with tx() as st:
 		find(st, 'questions', qid)['org'] = texte
+	print('\n'.join(ecarts))
 	print('aperçu :')
 	print('\n'.join(apercu))
 	print(qid)

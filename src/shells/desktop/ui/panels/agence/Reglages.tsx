@@ -154,6 +154,7 @@ export default function Reglages({ pratiques, disponible, send, onClose }: Regla
       {action.error && (refusee === champ.cle || refusee === `unset:${champ.cle}`) && <InlineNotice tone="error" className="mt-1 !text-primary">{action.error}</InlineNotice>}
     </li>
   )
+      {pratiques.raisons?.[champ.cle] && <div className="mt-0.5 text-secondary">{`Raison : ${pratiques.raisons[champ.cle]}`}</div>}
 
   const essentiels = champs.filter((champ) => champ.groupe === 'essentiel')
   const avances = champs.filter((champ) => champ.groupe !== 'essentiel')

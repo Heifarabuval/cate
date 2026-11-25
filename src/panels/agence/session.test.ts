@@ -501,6 +501,13 @@ describe('AgenceSession', () => {
     })
   })
 
+  it('publishes the reasons the setup memory kept, dropping what is not text', async () => {
+    const pratiques = { ...vueReglages, valeurs: {}, sources: { preset: 'défaut' }, projet: true, raisons: { 'agents.max': 'Le Mac a 16 Go', mauvais: 3 } }
+    const { session } = setup({ files: { state: state({ pratiques } as unknown as Partial<AgenceState>), readAt: 't' } })
+    await session.start()
+    expect(snap(session).pratiques?.raisons).toEqual({ 'agents.max': 'Le Mac a 16 Go' })
+  })
+
   describe('setup agent (spec 015, lot 1)', () => {
     const op = (session: AgenceSession, value: AgenceOp) => session.handleOp(value, { clientId: 'c1', connectionId: 1 })
     const policy = (patch: Record<string, unknown> = {}) => ({ ...vueReglages, valeurs: {}, sources: { preset: 'défaut' }, ...patch })

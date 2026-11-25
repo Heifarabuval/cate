@@ -49,8 +49,8 @@ class Proposition(unittest.TestCase):
 			setup.lire_proposition('{ nope')
 
 
-class Setup(Base):
-	"""Carte de pratiques posée par `agence pratiques propose`, écrite au clic Appliquer."""
+class Aide(Base):
+	"""Projet démarré, `propose`, la carte et le clic : ce que partagent les tests des cartes de setup."""
 
 	def setUp(self):
 		super().setUp()
@@ -76,6 +76,10 @@ class Setup(Base):
 
 	def clic(self, qid, choix):
 		return agence.click(f'/ask/{qid}', {'choice': [str(choix)]})
+
+
+class Setup(Aide):
+	"""Carte de pratiques posée par `agence pratiques propose`, écrite au clic Appliquer."""
 
 	def test_la_proposition_pose_une_carte_avec_son_diff_et_n_ecrit_rien(self):
 		code, out, _ = self.propose()
@@ -237,6 +241,278 @@ class Skill(unittest.TestCase):
 		for cle in ('livraison.mode', 'agents.max', 'verification'):
 			with self.subTest(cle=cle):
 				self.assertNotIn(cle, self.texte)
+
+
+JOUR = '2026-12-16'
+MEMOIRE = {'version': 1, 'objet': 'Refonte de l\'espace donateur', 'contexte': [{'date': '2026-11-25', 'texte': 'Les relectures se font le jeudi'}],
+           'decisions': {'tests': {'valeur': 'tdd', 'raison': 'CLAUDE.md impose les tests d\'abord', 'source': 'CLAUDE.md:12', 'date': '2026-11-25'}},
+           'dernierSetup': '2026-11-25'}
+
+
+class Memoire(unittest.TestCase):
+	"""setup.json (FR-017, FR-021) : lisible, éditable à la main, jamais un secret, jamais plus de 200 lignes de contexte."""
+
+	def setUp(self):
+		import tempfile
+		self.racine = tempfile.mkdtemp(prefix='setup-mem-')
+		self.addCleanup(__import__('shutil').rmtree, self.racine, True)
+
+	def poser(self, contenu):
+		os.makedirs(os.path.dirname(setup.fichier(self.racine)), exist_ok=True)
+		with open(setup.fichier(self.racine), 'w') as f:
+			f.write(contenu if isinstance(contenu, str) else json.dumps(contenu, indent=2, ensure_ascii=False))
+
+	def test_absente_n_est_pas_une_erreur(self):
+		self.assertEqual(setup.lire(self.racine), (None, None))
+
+	def test_lue_telle_quelle_meme_editee_a_la_main(self):
+		editee = json.loads(json.dumps(MEMOIRE))
+		editee['decisions']['tests']['raison'] = 'Je l\'ai corrigée à la main'
+		editee['contexte'] = []
+		self.poser(editee)
+		self.assertEqual(setup.lire(self.racine), (editee, None))
+
+	def test_illisible_ou_mal_formee_dit_pourquoi_sans_empecher_le_setup(self):
+		for nom, contenu, mot in (('json cassé', '{ nope', 'illisible'), ('liste', '[]', 'objet'),
+		                          ('clé inconnue', {'version': 1, 'autre': 1}, 'clé inconnue'),
+		                          ('version', {'version': 2}, 'version'),
+		                          ('décision sans raison', {'version': 1, 'decisions': {'tests': {'valeur': 'tdd'}}}, 'décision'),
+		                          ('secret', {'version': 1, 'objet': FAUX_GITHUB}, 'secret')):
+			with self.subTest(nom):
+				self.poser(contenu)
+				memoire, erreur = setup.lire(self.racine)
+				self.assertIsNone(memoire)
+				self.assertIn(mot, erreur)
+
+	def prop(self, **memoire):
+		return setup.lire_proposition(json.dumps({'valeurs': {'agents.max': 2}, 'sources': {'agents.max': 'réponse de la personne'},
+		                                          'memoire': memoire}))
+
+	def test_fusion_date_chaque_ligne_et_garde_la_source_de_chaque_decision(self):
+		neuve = setup.fusionner(None, self.prop(objet='Un outil de devis', contexte=['Deux personnes relisent'], raisons={'agents.max': 'Le Mac a 16 Go'}), JOUR)
+		self.assertEqual(neuve, {'version': 1, 'objet': 'Un outil de devis', 'contexte': [{'date': JOUR, 'texte': 'Deux personnes relisent'}],
+		                         'decisions': {'agents.max': {'valeur': 2, 'raison': 'Le Mac a 16 Go', 'source': 'réponse de la personne', 'date': JOUR}},
+		                         'dernierSetup': JOUR})
+
+	def test_fusion_garde_l_existant_et_ne_change_que_ce_qui_est_dit(self):
+		neuve = setup.fusionner(MEMOIRE, self.prop(contexte=['Un relecteur SEO arrive']), JOUR)
+		self.assertEqual(neuve['objet'], MEMOIRE['objet'])
+		self.assertEqual([c['texte'] for c in neuve['contexte']], ['Les relectures se font le jeudi', 'Un relecteur SEO arrive'])
+		self.assertEqual(neuve['decisions']['tests'], MEMOIRE['decisions']['tests'])
+		self.assertEqual(neuve['decisions']['agents.max']['valeur'], 2)
+		self.assertEqual(neuve['dernierSetup'], JOUR)
+
+	def test_au_dela_de_200_lignes_il_faut_un_resume(self):
+		pleine = json.loads(json.dumps(MEMOIRE))
+		pleine['contexte'] = [{'date': '2026-11-25', 'texte': f'ligne {n}'} for n in range(200)]
+		with self.assertRaises(setup.Invalide) as ctx:
+			setup.fusionner(pleine, self.prop(contexte=['une de trop']), JOUR)
+		self.assertIn('résumé', str(ctx.exception))
+		resume = setup.fusionner(pleine, self.prop(resume=['Tout tient en une ligne']), JOUR)
+		self.assertEqual([c['texte'] for c in resume['contexte']], ['Tout tient en une ligne'])
+
+	def test_secret_refuse_dans_la_proposition(self):
+		with self.assertRaises(setup.Invalide):
+			self.prop(contexte=[FAUX_SLACK])
+		with self.assertRaises(setup.Invalide):
+			self.prop(raisons={'agents.max': FAUX_GITHUB})
+
+	def test_ecrire_atomiquement_et_mettre_de_cote_l_illisible_sans_la_supprimer(self):
+		self.poser('{ nope')
+		setup.ecrire(self.racine, MEMOIRE)
+		self.assertEqual(setup.lire(self.racine), (MEMOIRE, None))
+		with open(setup.fichier(self.racine) + '.illisible') as f:
+			self.assertEqual(f.read(), '{ nope')
+
+	def test_diff_des_lignes_ajoutees_et_retirees(self):
+		noms = {'agents.max': 'Agents en même temps'}
+		neuve = setup.fusionner(MEMOIRE, self.prop(objet='Refonte et SEO', contexte=['Un relecteur SEO arrive'], raisons={'agents.max': 'Le Mac rame'}), JOUR)
+		lignes = setup.diff(MEMOIRE, neuve, noms)
+		self.assertIn('- Mémoire, objet : Refonte de l\'espace donateur → Refonte et SEO', lignes)
+		self.assertIn('- Mémoire, contexte ajouté : Un relecteur SEO arrive', lignes)
+		self.assertIn('- Mémoire, raison de « Agents en même temps » : Le Mac rame', lignes)
+		resume = setup.fusionner(MEMOIRE, self.prop(resume=['Résumé']), JOUR)
+		self.assertIn('- Mémoire, contexte retiré : Les relectures se font le jeudi', setup.diff(MEMOIRE, resume, noms))
+
+	def test_rien_de_nouveau_pas_de_diff(self):
+		meme = setup.fusionner(MEMOIRE, setup.lire_proposition(json.dumps({'memoire': {'objet': MEMOIRE['objet']}})), '2026-11-25')
+		self.assertEqual(setup.diff(MEMOIRE, meme, {}), [])
+
+
+class SetupMemoire(Aide):
+	"""La carte de pratiques porte la mémoire : diff avant le clic, écriture dans le même clic (FR-016, FR-017)."""
+
+	def setUp(self):
+		super().setUp()
+		patch = unittest_patch(agence, 'jour', lambda: JOUR)
+		patch.__enter__()
+		self.addCleanup(patch.__exit__, None, None, None)
+
+	def memoire(self):
+		return setup.lire(self.tmp)
+
+	def avec_memoire(self, **memoire):
+		return {**PROPOSITION, 'memoire': memoire}
+
+	def test_la_carte_montre_le_diff_de_la_memoire_et_n_ecrit_rien(self):
+		self.propose(self.avec_memoire(objet='Un outil de devis', contexte=['Deux personnes relisent'], raisons={'agents.max': 'Le Mac a 16 Go'}))
+		q = self.carte()['question']
+		self.assertIn('- Mémoire, objet : aucun → Un outil de devis', q)
+		self.assertIn('- Mémoire, contexte ajouté : Deux personnes relisent', q)
+		self.assertIn('- Mémoire, raison de « Agents en même temps » : Le Mac a 16 Go', q)
+		self.assertFalse(os.path.exists(setup.fichier(self.tmp)))
+
+	def test_appliquer_ecrit_la_memoire_dans_le_meme_clic(self):
+		self.propose(self.avec_memoire(objet='Un outil de devis', raisons={'agents.max': 'Le Mac a 16 Go'}))
+		self.clic(self.carte()['id'], 0)
+		memoire, erreur = self.memoire()
+		self.assertIsNone(erreur)
+		self.assertEqual(memoire['objet'], 'Un outil de devis')
+		self.assertEqual(memoire['decisions']['agents.max'], {'valeur': 2, 'raison': 'Le Mac a 16 Go', 'source': 'réponse de la personne', 'date': JOUR})
+		self.assertEqual(memoire['decisions']['verification']['source'], 'CLAUDE.md:12')
+		self.assertEqual(memoire['dernierSetup'], JOUR)
+
+	def test_sans_clic_ou_refuse_rien_n_est_ecrit(self):
+		self.propose(self.avec_memoire(objet='Un outil de devis'))
+		self.assertFalse(os.path.exists(setup.fichier(self.tmp)))
+		self.clic(self.carte()['id'], 1)
+		self.assertFalse(os.path.exists(setup.fichier(self.tmp)))
+		self.assertFalse(os.path.exists(self.projet()))
+
+	def test_un_contexte_seul_pose_la_carte_noter_et_n_ecrit_que_la_memoire(self):
+		self.propose({'memoire': {'contexte': ['Les relectures se font toujours le jeudi']}})
+		q = self.carte()
+		self.assertTrue(q['question'].startswith('Noter ce contexte ?'))
+		self.assertEqual([o['label'] for o in q['options']], ['Noter', 'Refuser'])
+		self.clic(q['id'], 0)
+		self.assertFalse(os.path.exists(self.projet()), 'aucune clé : le fichier de réglages n\'est pas touché')
+		self.assertEqual([c['texte'] for c in self.memoire()[0]['contexte']], ['Les relectures se font toujours le jeudi'])
+
+	def test_rien_a_changer_ni_reglage_ni_memoire_est_refuse(self):
+		self.propose(self.avec_memoire(objet='Un outil de devis'))
+		self.clic(self.carte()['id'], 0)
+		avant = self.state()['questions']
+		code, out, err = self.propose({'memoire': {'objet': 'Un outil de devis'}})
+		self.assertEqual((code, out), (1, ''))
+		self.assertIn('aucun écart', err)
+		self.assertEqual(self.state()['questions'], avant)
+
+	def test_une_memoire_illisible_n_empeche_pas_le_setup_elle_est_mise_de_cote(self):
+		os.makedirs(os.path.dirname(setup.fichier(self.tmp)), exist_ok=True)
+		with open(setup.fichier(self.tmp), 'w') as f:
+			f.write('{ nope')
+		code, out, _ = self.propose(self.avec_memoire(objet='Un outil de devis'))
+		self.assertEqual(code, 0)
+		self.assertIn('mémoire du setup illisible', self.carte()['question'])
+		self.clic(self.carte()['id'], 0)
+		self.assertEqual(self.memoire()[0]['objet'], 'Un outil de devis')
+		with open(setup.fichier(self.tmp) + '.illisible') as f:
+			self.assertEqual(f.read(), '{ nope')
+
+	def test_la_memoire_editee_a_la_main_est_relue_telle_quelle(self):
+		self.propose(self.avec_memoire(objet='Un outil de devis', contexte=['A', 'B']))
+		self.clic(self.carte()['id'], 0)
+		editee = self.memoire()[0]
+		editee['contexte'] = editee['contexte'][:1]
+		with open(setup.fichier(self.tmp), 'w') as f:
+			json.dump(editee, f)
+		self.propose({'valeurs': {'agents.max': 3}, 'sources': {'agents.max': 'x'}, 'memoire': {'contexte': ['C']}})
+		self.clic(self.carte()['id'], 0)
+		self.assertEqual([c['texte'] for c in self.memoire()[0]['contexte']], ['A', 'C'])
+
+	def test_secret_dans_la_memoire_refuse(self):
+		code, out, err = self.propose(self.avec_memoire(contexte=[FAUX_SLACK]))
+		self.assertEqual((code, out), (1, ''))
+		self.assertIn('secret', err)
+
+
+class Perimee(Aide):
+	"""FR-018 : une clé que la carte change a bougé depuis la proposition (formulaire, autre client) : refus, rien d'écrit."""
+
+	def test_un_reglage_change_au_formulaire_rend_la_carte_perimee(self):
+		self.propose()
+		q = self.carte()
+		pratiques.regler(self.tmp, os.environ['HOME'], 'agents.max', 3)  # le formulaire passe avant le clic
+		with open(self.projet()) as f:
+			ecrit = f.read()
+		code, message = self.clic(q['id'], 0)
+		self.assertEqual(code, 409)
+		self.assertIn('les réglages ont changé depuis la proposition', message)
+		with open(self.projet()) as f:
+			self.assertEqual(f.read(), ecrit, 'le dernier clic du formulaire gagne, la carte n\'écrase rien')
+		self.assertFalse(os.path.exists(setup.fichier(self.tmp)), 'ni la mémoire')
+		self.assertEqual(self.carte()['answer'], 'Périmée', 'la carte est fermée, l\'agent reproposera')
+		self.assertTrue(self.run.ran('cate', 'agent', 'send', '--panel', 'a1'), 'l\'agent l\'apprend')
+
+	def test_une_cle_que_la_carte_ne_touche_pas_ne_la_perime_pas(self):
+		self.propose()
+		pratiques.regler(self.tmp, os.environ['HOME'], 'issue', 'obligatoire')
+		self.assertEqual(self.clic(self.carte()['id'], 0)[0], 303)
+		with open(self.projet()) as f:
+			self.assertEqual(json.load(f)['issue'], 'obligatoire')
+
+	def test_le_formulaire_et_la_carte_ecrivent_le_meme_fichier_et_rendent_la_meme_valeur(self):
+		pratiques.regler(self.tmp, os.environ['HOME'], 'agents.max', 2)
+		formulaire = agence.politique()['valeurs']['agents.max']
+		os.remove(self.projet())
+		self.propose({'valeurs': {'agents.max': 2}, 'sources': {'agents.max': 'x'}})
+		self.clic(self.carte()['id'], 0)
+		self.assertEqual(agence.politique()['valeurs']['agents.max'], formulaire)
+
+
+class Raisons(Base):
+	"""Q12 : la raison d'un réglage se lit sous sa ligne du formulaire, depuis setup.json, en lecture seule."""
+
+	def test_la_vue_publiee_porte_les_raisons(self):
+		os.makedirs(os.path.dirname(setup.fichier(self.tmp)))
+		with open(setup.fichier(self.tmp), 'w') as f:
+			json.dump(MEMOIRE, f)
+		vue = pratiques.vue(self.tmp, os.environ['HOME'], pratiques.charger(self.tmp, os.environ['HOME']), 'Max')
+		self.assertEqual(vue['raisons'], {'tests': 'CLAUDE.md impose les tests d\'abord'})
+
+	def test_sans_memoire_ou_illisible_aucune_raison(self):
+		vue = lambda: pratiques.vue(self.tmp, os.environ['HOME'], pratiques.charger(self.tmp, os.environ['HOME']), 'Max')  # noqa: E731
+		self.assertEqual(vue()['raisons'], {})
+		os.makedirs(os.path.dirname(setup.fichier(self.tmp)))
+		with open(setup.fichier(self.tmp), 'w') as f:
+			f.write('{ nope')
+		self.assertEqual(vue()['raisons'], {})
+
+
+ORGA = {'maxAgents': 2, 'roles': {'dev': {'name': 'Dev', 'model': 'sonnet', 'effort': 'medium', 'tools': ['read', 'edit'], 'done': 'PR ouverte'},
+                                  'verif': {'name': 'Vérificateur', 'model': 'sonnet', 'effort': 'high', 'tools': ['read'], 'done': 'Preuves relancées'}},
+        'links': [{'from': 'dev', 'to': 'verif', 'verifiedBy': 'verif', 'click': 'after'}]}
+
+
+class DiffOrga(unittest.TestCase):
+	"""FR-016 : la carte d'orga montre les postes et les liens ajoutés, retirés, modifiés avant le clic."""
+
+	def avec(self, **patch):
+		neuve = json.loads(json.dumps(ORGA))
+		for cle, valeur in patch.items():
+			neuve[cle] = valeur
+		return neuve
+
+	def test_identique_ne_dit_rien(self):
+		self.assertEqual(setup.diff_orga(ORGA, ORGA), [])
+
+	def test_poste_et_lien_ajoutes(self):
+		roles = {**ORGA['roles'], 'seo': {'name': 'Relecteur SEO', 'model': 'sonnet', 'effort': 'low', 'tools': ['read'], 'done': 'Audit relu'}}
+		neuve = self.avec(roles=roles, links=ORGA['links'] + [{'from': 'dev', 'to': 'seo', 'click': 'never'}])
+		self.assertEqual(setup.diff_orga(ORGA, neuve), ['- Orga, poste ajouté : seo (Relecteur SEO)', '- Orga, lien ajouté : dev -> seo ; clic jamais'])
+
+	def test_poste_et_lien_retires(self):
+		neuve = self.avec(roles={'dev': ORGA['roles']['dev']}, links=[])
+		self.assertEqual(setup.diff_orga(ORGA, neuve), ['- Orga, poste retiré : verif (Vérificateur)', '- Orga, lien retiré : dev -> verif'])
+
+	def test_poste_et_lien_modifies_disent_le_champ(self):
+		roles = {**ORGA['roles'], 'dev': {**ORGA['roles']['dev'], 'effort': 'high', 'tools': ['read']}}
+		neuve = self.avec(roles=roles, links=[{'from': 'dev', 'to': 'verif', 'click': 'before'}])
+		self.assertEqual(setup.diff_orga(ORGA, neuve), ['- Orga, poste modifié : dev (effort : medium → high ; tools : read, edit → read)',
+		                                               '- Orga, lien modifié : dev -> verif (vérifié par : verif → aucun ; clic : après le travail → avant le travail)'])
+
+	def test_plafond_modifie(self):
+		self.assertEqual(setup.diff_orga(ORGA, self.avec(maxAgents=3)), ['- Orga, agents vivants au plus : 2 → 3'])
 
 
 class Garde(Base):
