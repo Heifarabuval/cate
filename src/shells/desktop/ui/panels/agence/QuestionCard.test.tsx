@@ -62,6 +62,28 @@ it('sends the index of the option clicked, and closes when it is taken', async (
   expect(onDone).toHaveBeenCalledTimes(1)
 })
 
+const ajuster = () => question({
+  id: 'q3', question: 'Ajuster le setup ? « mets le plafond à 2 »',
+  options: [{ label: 'Ouvrir avec la phrase', detail: "ouvre l'agent de setup avec cette phrase ; il propose, rien n'est écrit sans ton clic" }, { label: 'Ignorer', detail: "rien ne s'ouvre" }],
+})
+
+it('shows the setup detection card with Ouvrir and Ignorer, and sends the index the person clicked', async () => {
+  render(ajuster())
+  expect(host.textContent).toContain('Ajuster le setup ?')
+  expect([...host.querySelectorAll('[data-testid="option"]')].map((option) => option.querySelector('b')!.textContent))
+    .toEqual(['Ouvrir avec la phrase (Recommandé)', 'Ignorer'])
+  await click(/^Ignorer/)
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q3', choice: 1 })
+  expect(send).toHaveBeenCalledTimes(1)
+})
+
+it('opens the setup only on the Ouvrir click', async () => {
+  render(ajuster())
+  expect(send).not.toHaveBeenCalled()
+  await click(/^Ouvrir avec la phrase/)
+  expect(send).toHaveBeenCalledWith({ kind: 'answer', questionId: 'q3', choice: 0 })
+})
+
 it('sends the free text, only when there is some', async () => {
   render(question())
   expect(button('Répondre')!.disabled).toBe(true)
