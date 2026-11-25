@@ -1,6 +1,53 @@
 # Rapport de pilote (spec 011, lot 4, fiche F19, besoin n944)
 
-État : **préparé, rien rejoué**. Le rejeu est joué par Heifara à l'écran (constitution : aucun agent ne joue une recette ni une gate). `resultats/` reste vide. Les sections « Résultats » et « Recommandation » du lot 4 (T044, T045) s'écrivent après le rejeu.
+État (2026-11-25, n972) : **3 rejeux exploitables sur 4** (nu #199, nu #26 rouge x4, outil #199) ; **#26 outil invalide deux fois** (défaut d'isolation du harnais, issue #258), pas de 3e rejeu. Pas de SC-005 (aucun chronomètre). Recommandation en fin de rapport : règle à revoir avant la campagne. Les rejeux sont joués par Heifara (T043 ; aucun agent ne joue un rejeu). La recommandation est une proposition, la décision (T045) est à Heifara.
+
+## Résultats (`benchmark.py mesure`, outil `ab9013e12514`, seuil `2732c761...`, contamination 0)
+
+| Rejeu | Temps actif | Temps mural | Arbitre | Interventions | Jetons total (lus, sortie) |
+|---|---|---|---|---|---|
+| #199 nu | 285 s | 373 s | vert au 1er `fini` | 3 | 1 094 570 (1 027 203, 5 598) |
+| #26 nu | 805 s | 3035 s | rouge x4, 3 reprises | 9 | 3 338 834 (3 237 880, 16 535) |
+| #199 outil | 12 s | 125 s | vert au 1er `fini` | 3 | 1 974 118 (1 891 092, 10 255) |
+| #26 outil | invalide x2 (contamination) | non calculé | rouge x3 au 2nd essai | non calculé | non exploitable (6 912 721 au 2nd essai, sessions entières) |
+
+Source : `resultats/199-nu.json`, `resultats/26-nu.json`, `resultats/199-outil.json`. #26 outil invalide : note ci-dessous, pas de fichier de résultat. Durée d'un rejeu : 6 min (#199 nu), 51 min (#26 nu), 2 min (#199 outil). Jetons du régisseur : 0 sur les deux bras outil (`--usage-json`).
+
+## Vérifications du bras outil (2026-11-25)
+
+**#199 outil, 12 s actifs contre 125 s muraux : cohérent avec la règle, mais pas comparable au nu.**
+- Événements humains dans la fenêtre : `debut` (0 s), l'énoncé collé (+2 s), `fini` (125 s). `temps_actif` compte, pour chacun, le délai depuis l'événement précédent. Énoncé : 2 s. `fini` : 9 s après la dernière sortie du système (116 s). Total 11 à 12 s. Les ~113 s intermédiaires sont du temps d'agent (attente), exclu par construction (`benchmark.py:385`).
+- Le 12 s ne compte donc que la saisie et la lecture finale. Ce que l'humain a fait avant `debut` (un collage 13 s avant) est hors fenêtre.
+- Rapport outil / nu = 12 / 285 = 0,04, très sous le seuil 0,75. Ne pas le lire comme un gain : le nu à 285 s contient des gestes d'orchestrateur non marqués par `machine` (chronomètre à 0 s selon la section ci-dessous), donc le nu est surestimé. Sans chronomètre, l'écart SC-005 n'est pas calculable.
+
+**Jetons de #199 outil (1 974 118) : ce sont les jetons de la session du panneau « Agence : 199-outil », pas ceux de la seule fenêtre du rejeu.**
+- Preuve : le total égale 48 + 10 255 + 1 891 092 + 72 723 de ce seul journal (une session lue, `sessions.lues = 1`), qui court de 11:58:31 à 12:03:42. Le rejeu va de 11:58:45 à 12:00:50.
+- Sur la fenêtre `debut` à `fini` seule (calcul du journal, message par message) : 1 763 376, soit 89 % du total. L'écart (+12 %) est la session avant `debut` (14 s) et après `fini` (172 s). Le bras nu a la même construction (session entière), donc la comparaison reste de même nature, mais `mesure` ne borne pas les jetons à la fenêtre.
+- Même calcul sur #26 outil : 1 209 903 dans la fenêtre sur 2 025 617 au total (60 %), session en cours.
+- Un seul panneau est lu : le bras outil de ces rejeux est un orchestrateur seul, sans agent de travail séparé. `jetons_regisseur` à 0 le confirme. Ce que l'outil ajoute (agents reliés, tours de l'orchestrateur) n'est donc pas encore mis à l'épreuve.
+
+**#26 outil : deux rejeux, tous deux invalides (contamination). Ils ne sont pas un résultat, seulement une note.**
+
+Règle (`benchmark.py`) :
+- `controle` rend « invalide » dès qu'un appel d'outil du journal du clone cite le nom GitHub du dépôt d'origine, son checkout local, `/pull/<PR>` ou les 7 premiers caractères du sha de tête de la PR (`motifs`, lignes 294 à 312 ; FR-008). `mesure` met alors `etat: invalide` avant tout autre état (ligne 432).
+- Un rejeu ne se ferme qu'au vert ou à la 4e rouge (`rouges > REPRISES`, `REPRISES = 3`, ligne 273) : `temps_actif_s` et `temps_mural_s` restent `None` tant qu'il est ouvert, quelle que soit l'invalidité (ligne 417).
+- Un rejeu invalide est refait dans un clone neuf (T052) et le rapport compte les invalidés (FR-009).
+
+**Premier essai** (début 12:04:36Z, 3 rouges : 12:06:10, 12:11:51, 12:17:32 ; 9 appels).
+- Les 9 appels vont de 12:12:01 à 12:13:21, après le 2e `fini`. 5 ne matchent que le chemin du harnais (lecture de `benchmark.py`, recherche de `selection.json`). 4 citent le sha `0f76b2e` ou `/pull/27` : deux commandes avec le sha dans le clone, une commande qui mêle un `git checkout --` d'un fichier de test et un `git ls-remote origin refs/pull/27/head`, un `git cat-file` dans le checkout du dépôt d'origine. Contamination réelle : la session a lu la sélection (sha et PR en clair) et s'en est servie.
+- Les 2 premiers `fini` (rouges) précèdent le premier appel qui matche. Ce que la session a fait du fichier de test ensuite : non vérifié.
+- Ancien clone archivé dans `~/.cache/agence-bench/invalide-26-outil-1`. 832 153 jetons : la session de la reprise seule, pas un coût de rejeu.
+
+**Second essai** (clone neuf, début 12:20:03Z, 3 rouges : 12:25:08, 12:26:03, 12:33:27 ; `controle` : 16 appels, `mesure` : invalide ; `resultats/26-outil.json` retiré du dépôt, le fichier d'état est en cache).
+- Les 16 ne sont pas tous du second essai : 9 viennent du premier. Le clone neuf a le même chemin que l'ancien, donc le même dossier de journaux Claude Code (`~/.claude/projects/-Users-ADFINITAS--cache-agence-bench-26-outil`) : `controle` relit les 5 sessions, dont les 3 de l'essai précédent. Après le `debut` du second essai : **7 appels**.
+- Ces 7 ne citent ni le sha ni `/pull/27`. 4 matchent le nom du dépôt : le brief du dev (12:21:16) et 3 commandes de l'orchestration (`agence draft new --cible pr:Heifarabuval/cate:...`, `cate agent send`, 12:24:03 à 12:24:13). C'est le flux normal du bras outil, qui prépare une PR vers le dépôt où l'agence tourne : le motif « nom du dépôt » invalide donc le bras outil par construction quand l'issue rejouée vient de ce même dépôt. 3 matchent le chemin du harnais (lecture de `benchmark.py`, 12:25:27 à 12:25:43, après le 1er `fini`) : le harnais est de nouveau accessible depuis la session.
+- Rien ne prouve, dans ces 7 appels, un accès à la solution ; rien ne prouve non plus le contraire : le harnais a été lu et `selection.json` n'a pas été relu par moi. Non vérifié.
+- Jetons 6 912 721 : deux sessions (orchestrateur 08f7aa8c, dev d94fcdb9), toutes deux du second essai : ce n'est pas le cumul de l'essai précédent. C'est la session entière de chaque panneau, non bornée à la fenêtre du rejeu.
+- Rouge : `npm ci` s'est fait sous node v24.21.0 alors que `package.json` exige `>=22.16 <23` (`engines`, ligne 21 ; node de cette machine : v24.21.0 ; l'avertissement EBADENGINE est rapporté par l'orchestrateur, le log d'`npm ci` n'est plus sur disque). Les 3 rouges, comme les 4 du bras nu, peuvent venir de cet environnement : non vérifié, aucun test rejoué ici.
+
+**Ce qui est rapportable pour #26 outil** : rien en indicateurs (temps actif, mural, interventions, durée, qualité) ; la seule chose établie est que le harnais invalide le rejeu deux fois, pour des raisons de dispositif (isolation, motif « nom du dépôt », journaux partagés entre clones de même chemin), tracées dans l'issue #258 (isolation du harnais, ouverte à part par Heifara). Le pilote n'a donc que 3 rejeux exploitables : #199 nu, #26 nu (rouge x4, jamais vert), #199 outil (vert).
+
+**Chronomètres (q1062, 2026-11-25)** : aucun noté. Réponse de Heifara : « je n'ai rien eu a faire sur les deux » (lue comme : sur les deux rejeux outil). Aucune valeur pour #199 nu ni #26 nu. L'écart SC-005 (25 % max) n'est pas calculable : un chronomètre à 0 s contre 12 s mesurés sur #199 outil n'a pas de rapport défini. SC-005 : **non vérifié**, la mesure du temps actif reste non calibrée.
 
 ## Contrôlé en lecture seule (2026-11-24, base origin/main 452607b8)
 
@@ -147,15 +194,28 @@ python3 /Users/ADFINITAS/Documents/cate/.cate/worktrees/n944-preparateur/tools/a
 
 (Même schéma pour 26 nu, 199 outil et 26 outil, avec leur nom dans le fichier.)
 
-## Reste à jouer
+## Recommandation (proposition, pas une décision : T045 reste à Heifara)
 
-- Les 4 rejeux et les 4 chronomètres de Heifara (T043).
-- `mesure` sur les 4 rejeux, puis ce rapport complété : tableau des quatre indicateurs, écart au chronomètre (≤ 25 %), durée et jetons par rejeu, recommandation (T044).
-- Décision de Heifara : campagne telle quelle ou règle revue, avec nouveau `seuil.json` recommité avant la campagne (T045).
-- Preuve de la fiche F19 : issue #154 fermée, après le rejeu. Elle est ouverte aujourd'hui.
+Ne pas lancer la campagne telle quelle. La règle est à revoir avant, dans cet ordre :
+1. **Isoler le rejeu** (issue #258) : harnais et `selection.json` hors de portée de la session ; un clone refait à un chemin neuf (ou ses journaux archivés avec lui) pour que `controle` ne relise pas l'essai précédent.
+2. **Revoir le motif « nom du dépôt »** : il invalide le bras outil quand l'issue vient du dépôt où l'agence tourne (4 des 7 appels du second essai). Ne garder que le sha, `/pull/<PR>` et le checkout, ou accepter que le flux de PR cite le dépôt.
+3. **Imposer node 22** au clone avant `npm ci` (`engines` `>=22.16 <23`), puis vérifier si le rouge de #26 disparaît. Tant que ce n'est pas fait, #26 (nu comme outil) ne départage rien.
+4. **Calibrer le temps actif** : un chronomètre réel sur au moins un rejeu (SC-005 non vérifié ; #199 outil 12 s contre 285 s au nu non marqué).
+5. **Borner les jetons à la fenêtre du rejeu** : `mesure` lit la session entière du panneau (89 % du total sur #199 outil).
+
+Seuil : aucune donnée valide ne justifie un nouveau `seuil.json`. À noter pour T045 : sur la seule paire valide (#199), les jetons de l'outil valent 1,80 fois ceux du nu (1 974 118 contre 1 094 570), et 1,61 sur la fenêtre seule, au-dessus du plafond de 1,5 de `seuil.json`. Une paire ne conclut pas, mais le plafond de +50 % est déjà sous tension.
+
+## Reste à faire
+
+- Décision de Heifara (q1070, 2026-11-25) : clore le pilote à 3 rejeux, pas de 3e essai de #26 outil.
+- Heifara : trancher T045 (campagne après correctifs, ou arrêt) ; issue #258 (isolation).
+- Preuve de la fiche F19 : issue #154, à fermer par la PR de ce rapport seulement si Heifara juge le pilote réglé, sinon `Réf. #154`.
 - Correction du test `test_debut_refuse_tant_que_le_seuil_est_une_hypothese` et alignement de `spec.md`, `plan.md`, `tasks.md` sur 0,75 (fiche à ouvrir).
 
 ## Non vérifié
 
-- Aucun rejeu, aucun `prepare`, `debut`, `fini` ni `mesure` n'a été lancé : le fonctionnement de bout en bout sur ces 2 issues est inconnu (clone, dépendances, arbitre).
-- Que les fichiers de test de #199 et #26 passent à leur `headRefOid` dans un clone sans `node_modules` ne se sait qu'à `prepare` (dépendances « à installer » possible).
+- SC-005 (aucun chronomètre).
+- La cause du rouge de #26 (node 24 contre 22 : hypothèse), dans les deux bras.
+- Ce que la session du premier essai a fait du fichier de test, et si celle du second a relu `selection.json`.
+- Le log `npm ci` du second essai (EBADENGINE) : rapporté, non vu.
+- Le nombre de tours de l'orchestrateur : non rendu par `benchmark.py`.
