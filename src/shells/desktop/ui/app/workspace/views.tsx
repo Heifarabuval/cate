@@ -27,6 +27,7 @@ import {
 } from '../../client/layout/canvas'
 import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, UsageOverview, agentContextPreview, useAgentAvailability, useAgentContextTransport, useAgentPanelDecorations } from '../../services/agents'
 import { SkillsDialog } from '../../workspace/skills'
+import { OrgPreviewView } from '../../workspace/org'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
 import {
@@ -114,6 +115,15 @@ function UsageOverlay({ workspaceId }: OverlayViewProps) {
   )
 }
 
+function OrgOverlay() {
+  return (
+    <ContentOverlay>
+      <OverlayHeader title="Org Preview" />
+      <OrgPreviewView />
+    </ContentOverlay>
+  )
+}
+
 // --- Panel chrome and canvas toolbar -------------------------------------------------
 
 const WorktreeChip = ({ record }: { workspaceId: string; record: PanelRecord }) => <WorktreePill panel={record} />
@@ -196,6 +206,7 @@ export function registerWorkspaceViews(): () => void {
     registerOverlay('skills', SkillsOverlay),
     registerOverlay('pullRequests', RepositoryOverlay),
     registerOverlay('usage', UsageOverlay),
+    registerOverlay('org', OrgOverlay),
     registerPanelDecorations(useAgentPanelDecorations),
     registerPanelChromeOverlay(WorktreeChip),
     registerPanelChromeOverlay(RelationToggle),
