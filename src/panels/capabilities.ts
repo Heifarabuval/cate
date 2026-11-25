@@ -18,6 +18,7 @@ import { vcsCapability } from '@workspace/repository/contract/capability'
 import { skillsCapability } from '@workspace/skills/contract/capability'
 import { notificationsCapability } from '@workspace/notifications/contract/capability'
 import { observationCapability } from '@workspace/observation/contract/capability'
+import { orgCapability } from '@workspace/org/contract/capability'
 import { agentsCapability } from '@services/agents/contract/capability'
 import { browserDataCapability } from '@services/browser/contract/capability'
 import { processCapability } from '@services/terminal/contract/capability'
@@ -41,6 +42,7 @@ export const RUNTIME_CAPABILITIES = [
   skillsCapability,
   notificationsCapability,
   observationCapability,
+  orgCapability,
   agentsCapability,
   browserDataCapability,
   processCapability,

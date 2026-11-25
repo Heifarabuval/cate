@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ORG_AGENCY, ORG_DUO, ORG_SOLO } from './examples'
-import { orgCost, orgDefects, orgPath, previewOrg } from './preview'
+import { capacityOptions, orgCost, orgDefects, orgPath, previewOrg } from './preview'
 import type { OrgFile } from './schema'
 
 describe('orgPath', () => {
@@ -102,5 +102,14 @@ describe('previewOrg', () => {
 	it('bundles path, defects and cost', () => {
 		const preview = previewOrg(ORG_SOLO)
 		expect(Object.keys(preview).sort()).toEqual(['cost', 'defects', 'path'])
+	})
+})
+
+describe('capacityOptions', () => {
+	it('turns the machine ceiling into the memory cap, measured per agent', () => {
+		const options = capacityOptions({ ceiling: 3, avgAgentMb: 1536 })
+		expect(options).toEqual({ memoryCapGb: 4.5, agentMemoryGb: 1.5 })
+		expect(orgDefects(ORG_AGENCY, options).some((d) => d.kind === 'over-memory')).toBe(false)
+		expect(orgDefects(ORG_AGENCY, capacityOptions({ ceiling: 1, avgAgentMb: 1536 })).some((d) => d.kind === 'over-memory')).toBe(true)
 	})
 })

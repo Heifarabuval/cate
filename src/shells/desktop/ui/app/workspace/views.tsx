@@ -115,11 +115,11 @@ function UsageOverlay({ workspaceId }: OverlayViewProps) {
   )
 }
 
-function OrgOverlay() {
+function OrgOverlay({ workspaceId }: OverlayViewProps) {
   return (
     <ContentOverlay>
       <OverlayHeader title="Org Preview" />
-      <OrgPreviewView />
+      <OrgPreviewView workspaceId={workspaceId} />
     </ContentOverlay>
   )
 }
