@@ -1751,6 +1751,8 @@ downloads list and its views, and hands page work to it.
   snapshots, actions, screenshots, waits, file choosers and uploads, the
   page's console and network log, locators), the guest preload, the password
   autofill bridge, JavaScript dialogs, and **passkeys**.
+  On Apple Silicon, desktop main enables Chromium's Skia Graphite pipeline
+  precompilation to reduce stalls during cold navigation.
   **Agents never take the person's input.** The page keeps its own focus
   (the driver emulates it, and sends keys to the guest's own widget), so the
   window's focus stays where the person put it: an agent's click focuses its
@@ -1763,8 +1765,9 @@ downloads list and its views, and hands page work to it.
   workspace, off the canvas, behind a tab) stages it: the surface registry
   puts it in the window, transparent and without pointer input, until the op
   ends, and screenshots work wherever the panel is.
-  **Idle page lifetime (desktop).** An unused start page creates no guest
-  until navigation or page control needs it. Once created, a guest remains
+  **Idle page lifetime (desktop).** A new page mounts its guest when the
+  client shows it or page control requests it. An unused start page creates
+  a guest on demand for page control. Once created, a guest remains
   subject to the same lifetime policy even on returning to the start page.
   A manual page may be discarded after ten
   minutes off screen or in a background tab/workspace and reloads when shown
@@ -1932,8 +1935,9 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     removes fully reverted file contributions (and empty records). Cold disk
     records are shown before Git attribution finishes; cached results stay
     visible during revalidation. The
-    repository owns Git evidence: exact reported-change matching against commit
-    diffs, with captured HEAD baselines for new edits. Revert pruning requires
+    repository owns Git evidence: batched working-tree and staged diffs,
+    path-scoped commit candidates, and exact reported-change matching against
+    commit diffs, with captured HEAD baselines for new edits. Revert pruning requires
     a verified return to the baseline, considers staged changes and retains
     commits on other branches. Git evidence is cached by HEAD, index and file
     stamps; missing or ambiguous evidence never deletes records. Older records
@@ -2495,8 +2499,8 @@ Desktop panel labels use `PanelTitle` (`ui/client/host`): the type icon or
 agent logo, derived title, working shimmer, worktree tint and status. Services
 contribute through `registerPanelDecorations`; generic title views never branch
 on panel or agent types. Lists read `usePanelTitles` once and pass its props to
-each label, sharing the existing agent stream. Review omits per-file source
-labels while a source panel filter already identifies that panel.
+each label, sharing the existing agent stream. The terminal outline in Review
+labels each source once in its group header.
 
 The client core: everything a desktop app or the iOS app needs that is not
 drawing, with no Electron, no Node, no React and no DOM. It holds the

@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.2-fork.1] - 2026-11-27
+
+The fork follows Cate 2.1.2 (see below): the Electron 45 upgrade, deferred loading of off-screen browser panels, browser sign-in and signup fixes, terminal mouse tracking and TUI mode resets, and the Threads sidebar with background workspace observation.
+
+### Changed
+
+- **Agent Review**: the fork keeps its Review panel (commit, conversation and pull request grouping, source filters, pull request view). Only upstream's faster loading of recorded changes and its lighter virtual rows are taken.
+
+## [2.1.2] - 2026-11-22
+
+This patch speeds up Agent Review, improves saved login and signup handling, and upgrades the desktop app to Electron 45.4.1. Connection compatibility version remains 2.
+
+### Changed
+
+- **Agent Review** groups edits by terminal and file, loads large diffs in pages, and preserves the terminal filter when opened from a terminal's Changes overlay. Recorded-change loading and Git attribution are faster.
+- **Browser panels** defer the first load of off-screen pages until you show them or an agent requests them.
+- **Cate CLI** scopes `cate browser tab list` to the targeted browser panel and accepts `--panel` for `agent read`, `panel close`, and `panel set`. The Cate API version is now 12.
+
+### Fixed
+
+- **Browser credentials** fill paired passwords when selecting a saved username, fill signup confirmation fields associated with the form, and detect signups submitted through buttons outside a form.
+- **Browser navigation on Windows and Linux** skips the macOS passkey availability check that could block webviews from loading.
+- **Terminal appearance** uses the active terminal theme behind the grid, avoiding a two-color flash while a new terminal sizes itself.
+
 ## [2.1.1-fork.1] - 2026-11-20
 
 First numbered release of the fork. It is Cate 2.1.1 plus an orchestrator you drive from the canvas: the agence panel, the validation inbox, custom panels you can share, practices you can tune, and a CLI that now covers agents, relations, pull requests and canvas frames. Updates are built from source and never check Cate releases.
