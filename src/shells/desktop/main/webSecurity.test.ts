@@ -28,10 +28,10 @@ const h = vi.hoisted(() => {
   }
   return { app, guestSession, appSession, fresh, fromPartition: vi.fn((partition: string) => (partition.includes('-fresh') ? freshSession(partition) : partition.startsWith('app-') ? appSession : guestSession)) }
 })
-vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition } }))
+vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition, defaultSession: h.appSession } }))
 vi.mock('@services/browser/desktop', () => ({ isAgentKeyInput: () => false, sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
 
-import { browserActionForInput, declaredHosts, forwardedActionForInput, installWebSecurity, isAllowedGuestUrl, isPanelRequestAllowed, isTrustedAppUrl, LOCKED_WEBRTC_POLICY, type PanelPage } from './webSecurity'
+import { browserActionForInput, declaredHosts, forwardedActionForInput, installAppCsp, installWebSecurity, isAllowedGuestUrl, isPanelRequestAllowed, isTrustedAppUrl, LOCKED_WEBRTC_POLICY, type PanelPage } from './webSecurity'
 
 describe('isPanelRequestAllowed (FR-004, FR-005)', () => {
   const page: PanelPage = { origin: 'http://127.0.0.1:4000', hosts: ['api.exemple.fr', '*.cdn.fr', 'files.exemple.fr:8443'] }
@@ -251,4 +251,17 @@ describe('web security', () => {
     expect(forwardedActionForInput({ ...key, key: 'k' }, guestKeys, 'darwin')).toBe('commandPalette')
     expect(forwardedActionForInput({ ...key, key: 't' }, guestKeys, 'darwin')).toBeNull()
   })
+})
+
+describe('installAppCsp', () => {
+	it('lets the renderer play a blob: or same-origin video and audio (media-src)', () => {
+		h.appSession.webRequest.onHeadersReceived.mockClear()
+		installAppCsp(undefined)
+		const handler = h.appSession.webRequest.onHeadersReceived.mock.calls[0][0] as (details: unknown, callback: (response: { responseHeaders: Record<string, string[]> }) => void) => void
+		const callback = vi.fn()
+		handler({ url: 'file:///app/index.html', responseHeaders: {} }, callback)
+		const csp = callback.mock.calls[0][0].responseHeaders['Content-Security-Policy'][0]
+		const media = csp.split(';').map((d: string) => d.trim()).find((d: string) => d.startsWith('media-src'))
+		expect(media?.split(' ')).toEqual(expect.arrayContaining(["'self'", 'blob:']))
+	})
 })
